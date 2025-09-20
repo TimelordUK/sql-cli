@@ -6,66 +6,96 @@
 -- ============================================================================
 -- Run: ./target/release/sql-cli -f examples/range_mathematical_sequences.sql -o table
 -- ============================================================================
-
--- 1. Prime Numbers Analysi s
-WITH is_primes AS (
-    SELECT 
-        value,
-        IS_PRIME(value) AS is_prime,
-        PRIME_PI(value) AS cumulative_primes
-    FROM RANGE(1, 50)
-),
-primes as (
-  select value, is_prime, cumulative_primes from is_primes where is_prime = true
-)
-SELECT 
+WITH
+    is_primes AS (
+        SELECT
+            value,
+            IS_PRIME(value) AS is_prime,
+            PRIME_PI(value) AS cumulative_primes
+        FROM RANGE(1, 50)
+    ),
+    primes AS (
+        SELECT value, is_prime, cumulative_primes
+        FROM is_primes
+        WHERE is_prime = TRUE
+    ),
+    primes_with_lag AS (
+        SELECT
+            value,
+            is_prime,
+            cumulative_primes,
+            LAG(value, 1, 0) OVER (ORDER BY value ASC) AS prev_value
+        FROM primes
+        WHERE is_prime = TRUE AND value <= 30
+    )
+SELECT
     value,
-    CASE WHEN is_prime = true THEN 'PRIME' ELSE '' END AS is_prime,
+    CASE
+        WHEN is_prime = TRUE THEN 'PRIME'
+        ELSE ''
+    END AS is_prime,
     cumulative_primes,
-    value - LAG(value, 1, 0) OVER (ORDER BY value) AS gap_from_prev
-FROM primes
-WHERE is_prime = true AND value <= 30
-ORDER BY value;
+    value - prev_value AS gap_from_prev
+FROM primes_with_lag
+ORDER BY value ASC;
 GO
 
 -- 2. Triangular Numbers Sequence
-WITH sequence AS (
-    SELECT value FROM RANGE(1, 15)
-),
-triangular AS (
-    SELECT 
-        value as n,
-        SUM_N(value) AS triangular_number
-    FROM sequence
-)
-SELECT 
-    n,
-    triangular_number,
-    n * (n + 1) / 2 AS formula_check,
-    triangular_number - LAG(triangular_number, 1, 0) OVER (ORDER BY n) AS difference
-FROM triangular
+WITH
+    sequence AS (
+        SELECT value
+        FROM RANGE(1, 15)
+    ),
+    triangular_1 AS (
+        SELECT
+            value AS n,
+            SUM_N(value) AS triangular_number
+        FROM sequence
+    ),
+    lagged AS (
+        SELECT
+            n,
+            triangular_number,
+            (n * (n + 1)) / 2 AS formula_check,
+            LAG(triangular_number, 1, 0) OVER (ORDER BY n ASC) AS triangular_lag
+        FROM triangular_1
+    )
+SELECT
+    *,
+    triangular_number - triangular_lag AS difference
+FROM lagged
 ORDER BY n;
 GO
 
 -- 3. Perfect Squares and Their Properties
 WITH numbers AS (
-    SELECT value FROM RANGE(1, 10)
+    SELECT value as n FROM RANGE(1, 10)
 ),
-squares AS (
-    SELECT 
-        value AS n,
-        value * value AS perfect_square,
-        SQRT(value * value) AS square_root
+sq AS (
+    SELECT
+        n,
+        n * n AS perfect_square,
+        SQRT(n * n) AS square_root
     FROM numbers
+),
+squares_with_lag AS (
+    SELECT
+        n,
+        perfect_square,
+        square_root,
+        SUM(perfect_square) OVER (ORDER BY n) AS sum_of_squares,
+        LAG(perfect_square, 1, 0) OVER (ORDER BY n) AS prev_square,
+        (2 * n - 1) AS expected_diff
+    FROM sq
 )
-SELECT 
+SELECT
     n,
     perfect_square,
     square_root,
-    SUM(perfect_square) OVER (ORDER BY n) AS sum_of_squares,
-    perfect_square - LAG(perfect_square, 1, 0) OVER (ORDER BY n) AS difference,
-    (2 * n - 1) AS expected_diff
-FROM squares
+    sum_of_squares,
+    perfect_square - prev_square AS difference,
+    expected_diff
+FROM squares_with_lag
 ORDER BY n;
 GO
 
@@ -161,20 +191,27 @@ GO
 WITH sequence AS (
     SELECT value AS n FROM RANGE(1, 10)
 ),
-harmonic AS (
-    SELECT 
+harmonic_terms AS (
+    SELECT
         n,
         1.0 / n AS term,
-        SUM(1.0 / n) OVER (ORDER BY n) AS harmonic_sum,
         LOG(n) AS ln_n
     FROM sequence
+),
+harmonic_series AS (
+    SELECT
+        n,
+        term,
+        SUM(term) OVER (ORDER BY n) AS harmonic_sum,
+        ln_n
+    FROM harmonic_terms
 )
-SELECT 
+SELECT
     n,
     ROUND(term, 4) AS harmonic_term,
     ROUND(harmonic_sum, 4) AS sum_to_n,
     ROUND(ln_n, 4) AS natural_log,
     ROUND(harmonic_sum - ln_n, 4) AS difference
-FROM harmonic
+FROM harmonic_series
 ORDER BY n;
 GO

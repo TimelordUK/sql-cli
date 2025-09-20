@@ -1,3 +1,5 @@
+-- #! ../data/solar_system.csv
+
 -- ============================================================================
 -- Solar System Queries with CTEs (Working Examples)
 -- Demonstrates using CTEs to compute and filter on solar system functions
@@ -16,7 +18,7 @@ WITH planet_properties AS (
         RADIUS_SOLAR_BODY(name) AS radius_m,
         GRAVITY_SOLAR_BODY(name) AS gravity_ms2,
         ESCAPE_VELOCITY_SOLAR_BODY(name) AS escape_vel_ms
-    FROM test
+    FROM solar_system
     WHERE type != 'Star'
 )
 SELECT 
@@ -35,7 +37,7 @@ WITH orbital_data AS (
         type,
         DISTANCE_SOLAR_BODY(name) / AU() AS distance_au,
         ORBITAL_PERIOD_SOLAR_BODY(name) / 365.256 AS period_years
-    FROM test
+    FROM solar_system
     WHERE type IN ('Terrestrial', 'Gas Giant', 'Ice Giant')
 )
 SELECT 
@@ -57,7 +59,7 @@ WITH density_calc AS (
             WHEN DENSITY_SOLAR_BODY(name) < 3000 THEN 'Medium density (ice/gas)'
             ELSE 'High density (rock/metal)'
         END AS density_category
-    FROM test
+    FROM solar_system
     WHERE name != 'Sun'
 )
 SELECT 
@@ -81,7 +83,7 @@ WITH moon_data AS (
             WHEN MOONS_SOLAR_BODY(name) <= 20 THEN 'Several moons'
             ELSE 'Many moons'
         END AS moon_category
-    FROM test
+    FROM solar_system
     WHERE type != 'Star'
 )
 SELECT * FROM moon_data
@@ -101,7 +103,7 @@ WITH temperature_zones AS (
             ELSE 'Frozen zone'
         END AS temp_zone,
         ROUND(MASS_SOLAR_BODY(name) / MASS_EARTH(), 2) AS mass_earths
-    FROM test
+    FROM solar_system
     WHERE type IN ('Terrestrial', 'Dwarf Planet')
 )
 SELECT 
@@ -120,7 +122,7 @@ WITH giants AS (
         RADIUS_SOLAR_BODY(name) / RADIUS_EARTH() AS radius_earths,
         MASS_SOLAR_BODY(name) / MASS_EARTH() AS mass_earths,
         GRAVITY_SOLAR_BODY(name) / 9.807 AS gravity_earths
-    FROM test
+    FROM solar_system
     WHERE type IN ('Gas Giant', 'Ice Giant')
 )
 SELECT 

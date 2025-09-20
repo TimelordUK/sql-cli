@@ -219,6 +219,7 @@ When creating new files, please follow these conventions:
 3. **Use Non-Interactive Mode**: Test queries with `-q` flag before TUI testing
 4. **Format Always**: Run `cargo fmt` before every commit
 5. **Check Functions**: Use `--list-functions` when unsure about available functions
+6. **CTE Pattern for Aggregate Expressions**: Window functions can't handle expressions directly. Use CTEs to pre-calculate expressions, then apply window functions to the resulting columns.
 
 ## 🔧 Common Tasks
 
