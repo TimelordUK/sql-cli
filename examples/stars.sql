@@ -26,3 +26,73 @@ WHERE distance_ly = (
 );
 GO
 
+-- Query 5: Distance differences between consecutive stars using LAG
+-- Shows each star with its previous neighbor and the gap between them
+SELECT
+    designation,
+    distance_ly,
+    constellation,
+    LAG(designation) OVER (ORDER BY distance_ly) AS prev_star,
+    LAG(distance_ly) OVER (ORDER BY distance_ly) AS prev_distance,
+    LAG(constellation) OVER (ORDER BY distance_ly) AS prev_constellation,
+    ROUND(distance_ly - LAG(distance_ly) OVER (ORDER BY distance_ly), 2) AS distance_delta
+FROM star_systems_20_25_ly
+ORDER BY distance_ly;
+GO
+
+-- Query 6: Partition stars into 5 light-year bands and rank within each band
+-- Shows concentration of stars in distance ranges
+-- Note: Using a pre-calculated band column since PARTITION BY doesn't support CASE expressions yet
+WITH distance_bands AS (
+    SELECT
+        designation,
+        distance_ly,
+        constellation,
+        stellar_class,
+        CASE
+            WHEN distance_ly < 15 THEN '10-15 ly'
+            WHEN distance_ly < 20 THEN '15-20 ly'
+            ELSE '20-25 ly'
+        END AS distance_band
+    FROM star_systems_20_25_ly
+),
+ranked_bands AS (
+    SELECT
+        designation,
+        distance_ly,
+        constellation,
+        stellar_class,
+        distance_band,
+        ROW_NUMBER() OVER (PARTITION BY distance_band ORDER BY distance_ly) AS rank_in_band
+    FROM distance_bands
+)
+SELECT
+    distance_band,
+    rank_in_band,
+    designation,
+    distance_ly,
+    constellation
+FROM ranked_bands
+ORDER BY distance_band, rank_in_band;
+GO
+
+-- Query 7: Summary of stars per 5 ly band with statistics
+SELECT
+    CASE
+        WHEN distance_ly < 15 THEN '10-15 ly'
+        WHEN distance_ly < 20 THEN '15-20 ly'
+        ELSE '20-25 ly'
+    END AS distance_band,
+    COUNT('*') AS star_count,
+    ROUND(MIN(distance_ly), 1) AS min_distance,
+    ROUND(MAX(distance_ly), 1) AS max_distance,
+    ROUND(AVG(distance_ly), 1) AS avg_distance
+FROM star_systems_20_25_ly
+GROUP BY CASE
+    WHEN distance_ly < 15 THEN '10-15 ly'
+    WHEN distance_ly < 20 THEN '15-20 ly'
+    ELSE '20-25 ly'
+END
+ORDER BY min_distance;
+GO
+
