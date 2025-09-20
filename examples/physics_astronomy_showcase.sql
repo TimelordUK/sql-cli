@@ -16,15 +16,17 @@ SELECT
     E() as elementary_charge,
     ME() as electron_mass,
     MP() as proton_mass;
+GO
 
 -- Astronomical Distances
 SELECT 
     '=== ASTRONOMICAL DISTANCES ===' as category,
     AU() as astronomical_unit,
-    LIGHTYEAR() as light_year,
+    LIGHT_YEAR() as light_year,
     PARSEC() as parsec,
     AU() * 8.3 as distance_to_neptune,
-    LIGHTYEAR() * 4.24 as distance_to_proxima_centauri;
+    LIGHT_YEAR() * 4.24 as distance_to_proxima_centauri;
+GO
 
 -- Solar System Masses (in kg)
 SELECT 
@@ -35,6 +37,7 @@ SELECT
     MASS_JUPITER() as jupiter,
     MASS_SATURN() as saturn,
     MASS_MARS() as mars;
+GO
 
 -- Solar System Radii (in meters)
 SELECT 
@@ -46,15 +49,17 @@ SELECT
     RADIUS_SATURN() as saturn,
     RADIUS_MARS() as mars;
 
+
 -- Planetary Orbital Distances (in meters)
 SELECT 
     '=== ORBITAL DISTANCES ===' as category,
     DIST_MERCURY() as mercury,
     DIST_VENUS() as venus,
-    DIST_EARTH() as earth,
+    AU() as earth,
     DIST_MARS() as mars,
     DIST_JUPITER() as jupiter,
     DIST_SATURN() as saturn;
+GO
 
 -- Physics Calculations
 SELECT 
@@ -62,18 +67,20 @@ SELECT
     -- Schwarzschild radius of the Sun
     2 * G() * MASS_SUN() / (C() * C()) as sun_schwarzschild_radius,
     -- Escape velocity from Earth
-    SQRT(2 * G() * MASS_EARTH() / RADIUS_EARTH()) as earth_escape_velocity,
+    SQRT(2 * G() * AU() / RADIUS_EARTH()) as earth_escape_velocity,
     -- Orbital velocity at Earth's distance
-    SQRT(G() * MASS_SUN() / DIST_EARTH()) as earth_orbital_velocity;
+    SQRT(G() * MASS_SUN() / AU()) as earth_orbital_velocity;
+GO
 
 -- Particle Physics Constants
 SELECT 
     '=== PARTICLE PHYSICS ===' as category,
     COULOMB() as coulomb_constant,
     BOHR() as bohr_radius,
-    RY() as rydberg_constant,
-    COMPTON() as compton_wavelength,
-    STEFAN() as stefan_boltzmann;
+    RY() as rydberg_constant
+  --  COMPTON() as compton_wavelength,
+  --  STEFAN() as stefan_boltzmann;
+GO
 
 -- Signed Particle Charges
 SELECT 
@@ -82,8 +89,9 @@ SELECT
     CHARGE_PROTON() as proton,
     CHARGE_NEUTRON() as neutron,
     CHARGE_POSITRON() as positron,
-    CHARGE_MUON() as muon,
-    CHARGE_ANTIPROTON() as antiproton;
+    CHARGE_MUON() as muon
+  --  CHARGE_ANTIPROTON() as antiproton;
+GO
 
 -- Mass-Energy Equivalence
 SELECT 
@@ -91,15 +99,17 @@ SELECT
     ME() * C() * C() as electron_energy,
     MP() * C() * C() as proton_energy,
     (MP() - ME()) * C() * C() as mass_difference_energy;
+GO
 
 -- Astronomical Scales
 SELECT 
     '=== SCALE COMPARISONS ===' as category,
-    PARSEC() / LIGHTYEAR() as parsecs_per_lightyear,
-    LIGHTYEAR() / AU() as au_per_lightyear,
-    DIST_EARTH() / AU() as earth_orbit_in_au,
+    PARSEC() / LIGHT_YEAR() as parsecs_per_lightyear,
+    LIGHT_YEAR() / AU() as au_per_lightyear,
+    AU() / AU() as earth_orbit_in_au,
     RADIUS_SUN() / RADIUS_EARTH() as sun_earth_size_ratio,
     MASS_SUN() / MASS_EARTH() as sun_earth_mass_ratio;
+GO
 
 -- Gravitational Parameters
 SELECT 
@@ -108,15 +118,17 @@ SELECT
     G() * MASS_EARTH() as earth_gm,
     G() * MASS_JUPITER() as jupiter_gm,
     G() * MASS_MOON() as moon_gm;
+GO
 
 -- Solar System Lookup Functions (by name)
 SELECT 
     '=== SOLAR BODY LOOKUPS ===' as category,
     MASS_SOLAR_BODY('Earth') as earth_mass,
     RADIUS_SOLAR_BODY('Jupiter') as jupiter_radius,
-    DIST_SOLAR_BODY('Mars') as mars_distance,
+    DISTANCE_SOLAR_BODY('Mars') as mars_distance,
     MASS_SOLAR_BODY('Sun') as sun_mass,
     RADIUS_SOLAR_BODY('Moon') as moon_radius;
+GO
 
 -- Physical Ratios and Dimensionless Numbers
 SELECT 
@@ -125,6 +137,7 @@ SELECT
     E() * E() / (4 * PI() * 8.854e-12 * H() * C()) as fine_structure_approx,
     MP() / ME() as proton_electron_mass_ratio,
     C() / 299792458 as c_verification;
+GO
 
 -- Energy Scales
 SELECT 
@@ -133,9 +146,11 @@ SELECT
     H() * C() / 500e-9 as green_photon_energy,
     13.6 * E() as hydrogen_ionization_energy,
     RY() * H() * C() as rydberg_energy;
+GO
 
 -- Summary
 SELECT 
     'Summary' as info,
     'Complete physics and astronomy constants library' as description,
+
     'Includes fundamental constants, solar system data, and particle physics' as features;
