@@ -47,6 +47,8 @@ sql-cli trades.json
 ### 📝 **Neovim Plugin Mode** (Advanced)
 A sophisticated Neovim plugin provides an IDE-like experience for SQL development:
 
+![Description](docs/images/screenshot-20250920-210319.png)
+
 ```vim
 " Execute queries directly from Neovim with intelligent features:
 " - Visual selection execution

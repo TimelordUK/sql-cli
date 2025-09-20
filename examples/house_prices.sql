@@ -29,9 +29,9 @@ GO
 -- Note: median_income is in tens of thousands ($10,000 units)
 SELECT
     ocean_proximity,
-    FORMAT_CURRENCY(AVG(median_income) * 10000, 'USD') as avg_annual_income,
-    FORMAT_CURRENCY(AVG(median_house_value), 'USD') as avg_house_price,
-    ROUND(AVG(median_house_value) / (AVG(median_income) * 10000), 2) as price_to_income_ratio
+    FORMAT_CURRENCY(AVG(median_income) * 10000, 'USD') AS avg_annual_income,
+    FORMAT_CURRENCY(AVG(median_house_value), 'USD') AS avg_house_price,
+    ROUND(AVG(median_house_value) / AVG(median_income) * 10000, 2) AS price_to_income_ratio
 FROM house_prices_sample
 GROUP BY ocean_proximity
 ORDER BY price_to_income_ratio DESC;
@@ -63,10 +63,10 @@ GO
 -- Population Density Analysis
 SELECT
     ocean_proximity,
-    COUNT(*) as districts,
-    ROUND(AVG(population / households), 1) as avg_persons_per_household,
-    ROUND(AVG(total_rooms / households), 1) as avg_rooms_per_household,
-    ROUND(AVG(total_bedrooms / households), 2) as avg_bedrooms_per_household
+    COUNT('*') AS districts,
+    ROUND(AVG(population / households), 1) AS avg_persons_per_household,
+    ROUND(AVG(total_rooms / households), 1) AS avg_rooms_per_household,
+    ROUND(AVG(total_bedrooms / households), 2) AS avg_bedrooms_per_household
 FROM house_prices_sample
 WHERE households > 0
 GROUP BY ocean_proximity
@@ -75,13 +75,13 @@ GO
 
 -- High-Value Districts (Top prices)
 SELECT
-    FORMAT_CURRENCY(median_house_value, 'USD') as house_value,
-    FORMAT_CURRENCY(median_income * 10000, 'USD') as annual_income,
+    FORMAT_CURRENCY(median_house_value, 'USD') AS house_value,
+    FORMAT_CURRENCY(median_income * 10000, 'USD') AS annual_income,
     ocean_proximity,
-    FORMAT_NUMBER(population, 0) as population,
-    housing_median_age as age,
-    median_house_value as value_sort,
-    median_income as income_sort
+    FORMAT_NUMBER(population, 0) AS population,
+    housing_median_age AS age,
+    median_house_value AS value_sort,
+    median_income AS income_sort
 FROM house_prices_sample
 WHERE median_house_value > 400000
 ORDER BY value_sort DESC, income_sort DESC
@@ -92,22 +92,22 @@ GO
 -- (Lower is better - shows months of income needed to buy median house)
 SELECT
     ocean_proximity,
-    COUNT(*) as districts,
-    ROUND(AVG(median_house_value) / (AVG(median_income) * 10000 / 12), 1) as months_income_for_house,
-    FORMAT_CURRENCY(AVG(median_income) * 10000, 'USD') as avg_annual_income,
-    FORMAT_CURRENCY(AVG(median_house_value), 'USD') as avg_house_price
+    COUNT('*') AS districts,
+    ROUND(AVG(median_house_value) / AVG(median_income) * 10000 / 12, 1) AS months_income_for_house,
+    FORMAT_CURRENCY(AVG(median_income) * 10000, 'USD') AS avg_annual_income,
+    FORMAT_CURRENCY(AVG(median_house_value), 'USD') AS avg_house_price
 FROM house_prices_sample
 GROUP BY ocean_proximity
-ORDER BY months_income_for_house;
+ORDER BY months_income_for_house ASC;
 GO
 
 -- Room Distribution Statistics
 SELECT
     ocean_proximity,
-    ROUND(AVG(total_rooms), 0) as avg_total_rooms,
-    ROUND(AVG(total_bedrooms), 0) as avg_bedrooms,
-    ROUND(AVG(total_rooms) - AVG(total_bedrooms), 0) as avg_other_rooms,
-    ROUND((AVG(total_bedrooms) / AVG(total_rooms)) * 100, 1) as bedroom_percentage
+    ROUND(AVG(total_rooms), 0) AS avg_total_rooms,
+    ROUND(AVG(total_bedrooms), 0) AS avg_bedrooms,
+    ROUND(AVG(total_rooms) - AVG(total_bedrooms), 0) AS avg_other_rooms,
+    ROUND(AVG(total_bedrooms) / AVG(total_rooms) * 100, 1) AS bedroom_percentage
 FROM house_prices_sample
 GROUP BY ocean_proximity
 ORDER BY avg_total_rooms DESC;
@@ -144,10 +144,10 @@ WITH
         SELECT
             *,
             CASE
-        WHEN ocean_proximity = 'NEAR BAY' then 'Coastal'
-        WHEN ocean_proximity = '<1H OCEAN' then 'Coastal'
-        WHEN ocean_proximity = 'NEAR OCEAN' then 'Coastal'
-        WHEN ocean_proximity = 'ISLAND' then 'Coastal'
+        WHEN ocean_proximity = 'NEAR BAY' THEN 'Coastal'
+        WHEN ocean_proximity = '<1H OCEAN' THEN 'Coastal'
+        WHEN ocean_proximity = 'NEAR OCEAN' THEN 'Coastal'
+        WHEN ocean_proximity = 'ISLAND' THEN 'Coastal'
         ELSE 'Inland'
     END AS location_type
         FROM house_prices_sample
@@ -167,15 +167,13 @@ GO
 -- (High income areas with relatively lower house prices)
 SELECT
     ocean_proximity,
-    FORMAT_CURRENCY(median_income * 10000, 'USD') as annual_income,
-    FORMAT_CURRENCY(median_house_value, 'USD') as house_price,
-    ROUND(median_house_value / (median_income * 10000), 2) as price_income_ratio,
-    ROUND(total_rooms / households, 1) as rooms_per_household,
-    housing_median_age as age
+    FORMAT_CURRENCY(median_income * 10000, 'USD') AS annual_income,
+    FORMAT_CURRENCY(median_house_value, 'USD') AS house_price,
+    ROUND(median_house_value / median_income * 10000, 2) AS price_income_ratio,
+    ROUND(total_rooms / households, 1) AS rooms_per_household,
+    housing_median_age AS age
 FROM house_prices_sample
-WHERE median_income > 4
-    AND median_house_value < 300000
-    AND households > 0
-ORDER BY price_income_ratio
+WHERE median_income > 4 AND median_house_value < 300000 AND households > 0
+ORDER BY price_income_ratio ASC
 LIMIT 15;
 GO
