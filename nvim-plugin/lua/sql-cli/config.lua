@@ -77,6 +77,10 @@ M.defaults = {
     -- Export keymaps (when in table navigation mode)
     export_menu = "<leader>se",     -- Export menu (all formats)
     export_browser = "<leader>sb",  -- Open in Browser for Gmail/Teams
+    -- CTE testing
+    test_cte = "<leader>sC",         -- Test CTE at cursor (C for CTE)
+    test_cte_new = "<leader>sN",     -- Test CTE in new buffer (N for new)
+    cte_analysis = "<leader>sA",     -- Show CTE analysis popup (A for Analysis)
     export_markdown = "<leader>sm", -- Export as Markdown
     export_tsv = "<leader>st",      -- Export as Tab-separated (Excel)
     -- Chart visualizations (execute query at cursor and visualize)

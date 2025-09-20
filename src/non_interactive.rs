@@ -10,7 +10,35 @@ use crate::data::data_view::DataView;
 use crate::data::datatable::{DataTable, DataValue};
 use crate::data::datatable_loaders::{load_csv_to_datatable, load_json_to_datatable};
 use crate::services::query_execution_service::QueryExecutionService;
+use crate::sql::parser::ast::{CTEType, TableSource, CTE};
 use crate::sql::script_parser::{ScriptParser, ScriptResult};
+
+/// Extract dependencies from a CTE by analyzing what tables it references
+fn extract_cte_dependencies(cte: &CTE) -> Vec<String> {
+    // For now, we'll just return the from_table if it exists
+    // This could be enhanced to do deeper analysis of the query AST
+    let mut deps = Vec::new();
+
+    if let CTEType::Standard(query) = &cte.cte_type {
+        if let Some(from_table) = &query.from_table {
+            deps.push(from_table.clone());
+        }
+
+        // Could also check joins, subqueries, etc.
+        for join in &query.joins {
+            match &join.table {
+                TableSource::Table(table_name) => {
+                    deps.push(table_name.clone());
+                }
+                TableSource::DerivedTable { alias, .. } => {
+                    deps.push(alias.clone());
+                }
+            }
+        }
+    }
+
+    deps
+}
 
 /// Output format for query results
 #[derive(Debug, Clone)]
@@ -48,6 +76,7 @@ pub struct NonInteractiveConfig {
     pub query_plan: bool,
     pub show_work_units: bool,
     pub execution_plan: bool,
+    pub cte_info: bool,
     pub lift_in_expressions: bool,
     pub script_file: Option<String>, // Path to the script file for relative path resolution
     pub debug_trace: bool,
@@ -147,6 +176,52 @@ pub fn execute_non_interactive(config: NonInteractiveConfig) -> Result<()> {
             }
             Err(e) => {
                 eprintln!("Failed to parse query for plan: {e}");
+            }
+        }
+    }
+
+    // If CTE info is requested, parse and output CTE information as JSON
+    if config.cte_info {
+        use crate::sql::recursive_parser::Parser;
+        use serde_json::json;
+
+        let mut parser = Parser::new(&config.query);
+        match parser.parse() {
+            Ok(statement) => {
+                let mut cte_info = Vec::new();
+
+                // Extract CTE information
+                for (index, cte) in statement.ctes.iter().enumerate() {
+                    let cte_json = json!({
+                        "index": index,
+                        "name": cte.name,
+                        "columns": cte.column_list,
+                        // We can't easily get line numbers from the AST,
+                        // but we can provide the structure
+                        "dependencies": extract_cte_dependencies(cte),
+                    });
+                    cte_info.push(cte_json);
+                }
+
+                let output = json!({
+                    "success": true,
+                    "ctes": cte_info,
+                    "total": statement.ctes.len(),
+                    "has_final_select": !statement.columns.is_empty() || !statement.select_items.is_empty(),
+                });
+
+                println!("{}", serde_json::to_string_pretty(&output).unwrap());
+                return Ok(());
+            }
+            Err(e) => {
+                let output = json!({
+                    "success": false,
+                    "error": format!("{}", e),
+                    "ctes": [],
+                    "total": 0,
+                });
+                println!("{}", serde_json::to_string_pretty(&output).unwrap());
+                return Ok(());
             }
         }
     }

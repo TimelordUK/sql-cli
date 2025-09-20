@@ -16,6 +16,9 @@ local results = require('sql-cli.results')
 local table_nav = require('sql-cli.table_nav')
 local multi_table_nav = require('sql-cli.multi_table_nav')
 local visualize = require('sql-cli.visualize')
+local cte_tester = require('sql-cli.cte_tester')
+local cte_debug = require('sql-cli.cte_debug')
+local cte_parser_cli = require('sql-cli.cte_parser_cli')
 
 -- Plugin configuration
 M.config = {}
@@ -121,6 +124,26 @@ function M.create_commands()
   vim.api.nvim_create_user_command("SqlCliSaveResults", function(opts)
     results.save_results_csv(opts.args, M.state)
   end, { nargs = "?", complete = "file", desc = "Save query results to CSV" })
+
+  vim.api.nvim_create_user_command("SqlCliTestCte", function()
+    cte_tester.test_cte_at_cursor(M.config, M.state)
+  end, { desc = "Test CTE at cursor position" })
+
+  vim.api.nvim_create_user_command("SqlCliTestCteNewBuffer", function()
+    cte_tester.test_cte_in_new_buffer(M.config, M.state)
+  end, { desc = "Test CTE in new buffer" })
+
+  vim.api.nvim_create_user_command("SqlCliCteAnalysis", function()
+    cte_debug.show_cte_analysis_popup()
+  end, { desc = "Show CTE analysis popup" })
+
+  vim.api.nvim_create_user_command("SqlCliCteDebug", function()
+    cte_debug.debug_cte_parsing()
+  end, { desc = "Debug CTE parsing" })
+
+  vim.api.nvim_create_user_command("SqlCliCteAnalysisCli", function()
+    cte_parser_cli.show_cte_analysis_popup()
+  end, { desc = "Show CTE analysis using CLI parser" })
 
   vim.api.nvim_create_user_command("SqlCliResultsToBuffer", function()
     results.results_to_buffer(M.state)
@@ -248,6 +271,24 @@ function M.setup_keymaps()
     vim.keymap.set("n", keymaps.results_to_buffer, function()
       results.results_to_buffer(M.state)
     end, { desc = "Results to buffer", silent = true })
+  end
+
+  if keymaps.test_cte then
+    vim.keymap.set("n", keymaps.test_cte, function()
+      cte_tester.test_cte_at_cursor(M.config, M.state)
+    end, { desc = "Test CTE at cursor", silent = true })
+  end
+
+  if keymaps.test_cte_new then
+    vim.keymap.set("n", keymaps.test_cte_new, function()
+      cte_tester.test_cte_in_new_buffer(M.config, M.state)
+    end, { desc = "Test CTE in new buffer", silent = true })
+  end
+
+  if keymaps.cte_analysis then
+    vim.keymap.set("n", keymaps.cte_analysis, function()
+      cte_debug.show_cte_analysis_popup()
+    end, { desc = "Show CTE analysis", silent = true })
   end
 
   if keymaps.function_help then
