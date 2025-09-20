@@ -173,6 +173,51 @@ class BenchmarkSuite:
 
         return results
 
+    def benchmark_joins(self, csv_file: str, num_rows: int) -> Dict[str, float]:
+        """Benchmark JOIN operations using CTEs"""
+        # Use smaller ranges for JOINs to keep reasonable performance
+        join_size = min(100, num_rows // 100)
+
+        queries = [
+            ("Hash JOIN (equality) - small",
+             f"""WITH t1 AS (SELECT value as n FROM RANGE(1, {join_size})),
+                      t2 AS (SELECT value as m FROM RANGE(1, {join_size}))
+                 SELECT COUNT(*) FROM t1 INNER JOIN t2 ON n = m"""),
+
+            ("Hash JOIN (equality) - medium",
+             f"""WITH t1 AS (SELECT value as n FROM RANGE(1, {join_size * 5})),
+                      t2 AS (SELECT value as m FROM RANGE(1, {join_size * 5}))
+                 SELECT COUNT(*) FROM t1 INNER JOIN t2 ON n = m"""),
+
+            ("Nested loop JOIN (inequality) - small",
+             f"""WITH t1 AS (SELECT value as n FROM RANGE(1, {join_size})),
+                      t2 AS (SELECT value as m FROM RANGE(1, {join_size}))
+                 SELECT COUNT(*) FROM t1 INNER JOIN t2 ON n <= m"""),
+
+            ("Self-join for cumulative sum",
+             f"""WITH nums AS (SELECT value as n FROM RANGE(1, {min(50, join_size)})),
+                      nums2 AS (SELECT value as m FROM RANGE(1, {min(50, join_size)}))
+                 SELECT n, SUM(m) FROM nums INNER JOIN nums2 ON n >= m GROUP BY n"""),
+
+            ("LEFT JOIN with inequality",
+             f"""WITH small AS (SELECT value as s FROM RANGE(1, {join_size})),
+                      large AS (SELECT value * 2 as l FROM RANGE(1, {join_size}))
+                 SELECT COUNT(*) FROM small LEFT JOIN large ON s < l"""),
+
+            ("JOIN with CTE categories",
+             f"""WITH cat1 AS (SELECT value as id, value % 10 as cat FROM RANGE(1, {join_size * 2})),
+                      cat2 AS (SELECT value as id2, value % 10 as cat2 FROM RANGE(1, {join_size * 2}))
+                 SELECT COUNT(*) FROM cat1 INNER JOIN cat2 ON cat = cat2"""),
+        ]
+
+        results = {}
+        for name, query in queries:
+            time_ms = self.run_query(csv_file, query)
+            results[name] = time_ms
+            print(f"    {name:<45} {self.format_time(time_ms):>10}")
+
+        return results
+
     def benchmark_basic_operations(self, csv_file: str, num_rows: int) -> Dict[str, float]:
         """Benchmark basic SQL operations"""
         queries = [
@@ -236,6 +281,9 @@ class BenchmarkSuite:
 
                 print(f"\n{Colors.CYAN}Window Functions:{Colors.NC}")
                 row_results['window'] = self.benchmark_window_functions(csv_file, num_rows)
+
+                print(f"\n{Colors.CYAN}JOIN Operations:{Colors.NC}")
+                row_results['joins'] = self.benchmark_joins(csv_file, num_rows)
 
                 all_results[num_rows] = row_results
 
@@ -407,7 +455,7 @@ def main():
                        help='Save results to JSON file')
     parser.add_argument('--compare', type=str, metavar='BASELINE_FILE',
                        help='Compare with baseline results file')
-    parser.add_argument('--category', choices=['basic', 'like', 'group_by', 'window', 'all'],
+    parser.add_argument('--category', choices=['basic', 'like', 'group_by', 'window', 'joins', 'all'],
                        default='all', help='Benchmark category to run')
 
     args = parser.parse_args()
