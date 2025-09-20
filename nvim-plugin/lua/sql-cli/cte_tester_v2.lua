@@ -178,7 +178,12 @@ function M.generate_simple_test_query(query_lines, target_cte, all_ctes)
   -- Simple approach: Include everything from WITH up to and including target CTE
   for i, line in ipairs(query_lines) do
     local upper = line:upper()
+    local trimmed = vim.trim(line)
 
+    -- Skip pure comment lines when looking for WITH
+    if not with_found and trimmed:match("^%-%-") then
+      goto continue
+    end
 
     -- Look for WITH to start (be more permissive)
     if not with_found then
@@ -240,6 +245,8 @@ function M.generate_simple_test_query(query_lines, target_cte, all_ctes)
         break
       end
     end
+
+    ::continue::
   end
 
   vim.notify(string.format("Total lines collected: %d", #test_lines), vim.log.levels.DEBUG)
