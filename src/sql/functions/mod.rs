@@ -19,6 +19,7 @@ pub mod format_number;
 pub mod geometry;
 pub mod group_num;
 pub mod hash;
+pub mod integer_limits;
 pub mod math;
 pub mod mathematics;
 pub mod number_words;
@@ -569,6 +570,11 @@ impl FunctionRegistry {
         use base_conversion::{
             FromBase, FromBinary, FromHex, FromOctal, ToBase, ToBinary, ToHex, ToOctal,
         };
+        use integer_limits::{
+            ByteMax, ByteMin, CharMax, CharMin, Int16Max, Int16Min, Int32Max, Int32Min, Int64Max,
+            Int64Min, Int8Max, Int8Min, IntMax, IntMin, LongMax, LongMin, ShortMax, ShortMin,
+            Uint16Max, Uint32Max, Uint8Max,
+        };
         use mathematics::{
             IsPrimeFunction, NextPrimeFunction, NthPrimeFunction, PrevPrimeFunction,
             PrimeCountFunction, PrimeFunction, PrimePiFunction,
@@ -611,6 +617,31 @@ impl FunctionRegistry {
         self.register(Box::new(FromHex));
         self.register(Box::new(ToOctal));
         self.register(Box::new(FromOctal));
+
+        // Integer limit functions
+        self.register(Box::new(Int8Min));
+        self.register(Box::new(Int8Max));
+        self.register(Box::new(Uint8Max));
+        self.register(Box::new(Int16Min));
+        self.register(Box::new(Int16Max));
+        self.register(Box::new(Uint16Max));
+        self.register(Box::new(Int32Min));
+        self.register(Box::new(Int32Max));
+        self.register(Box::new(Uint32Max));
+        self.register(Box::new(Int64Min));
+        self.register(Box::new(Int64Max));
+
+        // Alias functions for common names
+        self.register(Box::new(ByteMin));
+        self.register(Box::new(ByteMax));
+        self.register(Box::new(CharMin));
+        self.register(Box::new(CharMax));
+        self.register(Box::new(ShortMin));
+        self.register(Box::new(ShortMax));
+        self.register(Box::new(IntMin));
+        self.register(Box::new(IntMax));
+        self.register(Box::new(LongMin));
+        self.register(Box::new(LongMax));
 
         // General math functions
         math::register_math_functions(self);
