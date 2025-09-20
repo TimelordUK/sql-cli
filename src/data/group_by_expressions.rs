@@ -1,6 +1,7 @@
 // GROUP BY expression evaluation support
 
 use anyhow::{anyhow, Result};
+use fxhash::FxHashMap;
 use std::collections::HashMap;
 use std::sync::Arc;
 
@@ -23,7 +24,7 @@ pub trait GroupByExpressions {
         &self,
         view: DataView,
         group_by_exprs: &[SqlExpression],
-    ) -> Result<HashMap<GroupKey, DataView>>;
+    ) -> Result<FxHashMap<GroupKey, DataView>>;
 
     /// Apply GROUP BY with expressions to the view
     fn apply_group_by_expressions(
@@ -42,9 +43,12 @@ impl GroupByExpressions for QueryEngine {
         &self,
         view: DataView,
         group_by_exprs: &[SqlExpression],
-    ) -> Result<HashMap<GroupKey, DataView>> {
-        let mut groups = HashMap::new();
-        let mut group_rows: HashMap<GroupKey, Vec<usize>> = HashMap::new();
+    ) -> Result<FxHashMap<GroupKey, DataView>> {
+        // Estimate cardinality for pre-sizing
+        let estimated_groups = self.estimate_group_cardinality(&view, group_by_exprs);
+        let mut groups = FxHashMap::with_capacity_and_hasher(estimated_groups, Default::default());
+        let mut group_rows: FxHashMap<GroupKey, Vec<usize>> =
+            FxHashMap::with_capacity_and_hasher(estimated_groups, Default::default());
 
         // Process each visible row
         for row_idx in view.get_visible_rows().iter().copied() {

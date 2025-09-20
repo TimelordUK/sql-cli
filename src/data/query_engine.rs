@@ -1,4 +1,6 @@
 use anyhow::{anyhow, Result};
+use fxhash::{FxHashMap, FxHashSet};
+use std::cmp::min;
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Instant;
@@ -1296,6 +1298,48 @@ impl QueryEngine {
             self.case_insensitive,
             self.date_notation.clone(),
         )
+    }
+
+    /// Estimate the cardinality (number of unique groups) for GROUP BY operations
+    /// This helps pre-size hash tables for better performance
+    pub fn estimate_group_cardinality(
+        &self,
+        view: &DataView,
+        group_by_exprs: &[SqlExpression],
+    ) -> usize {
+        // If we have few rows, just return the row count as upper bound
+        let row_count = view.get_visible_rows().len();
+        if row_count <= 100 {
+            return row_count;
+        }
+
+        // Sample first 1000 rows or 10% of data, whichever is smaller
+        let sample_size = min(1000, row_count / 10).max(100);
+        let mut seen = FxHashSet::default();
+
+        let visible_rows = view.get_visible_rows();
+        for (i, &row_idx) in visible_rows.iter().enumerate() {
+            if i >= sample_size {
+                break;
+            }
+
+            // Evaluate GROUP BY expressions for this row
+            let mut key_values = Vec::new();
+            for expr in group_by_exprs {
+                let mut evaluator = ArithmeticEvaluator::new(view.source());
+                let value = evaluator.evaluate(expr, row_idx).unwrap_or(DataValue::Null);
+                key_values.push(value);
+            }
+
+            seen.insert(key_values);
+        }
+
+        // Estimate total cardinality based on sample
+        let sample_cardinality = seen.len();
+        let estimated = (sample_cardinality * row_count) / sample_size;
+
+        // Cap at row count and ensure minimum of sample cardinality
+        estimated.min(row_count).max(sample_cardinality)
     }
 }
 
