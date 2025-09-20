@@ -6,6 +6,7 @@ use std::sync::Arc;
 use crate::data::datatable::DataValue;
 
 pub mod astronomy;
+pub mod case_convert;
 pub mod chemistry;
 pub mod comparison;
 pub mod constants;
@@ -480,6 +481,10 @@ impl FunctionRegistry {
 
     /// Register string method functions
     fn register_string_methods(&mut self) {
+        use case_convert::{
+            ToCamelCaseFunction, ToConstantCaseFunction, ToKebabCaseFunction, ToPascalCaseFunction,
+            ToSnakeCaseFunction,
+        };
         use number_words::{ToOrdinal, ToOrdinalWords, ToWords};
         use string_fun::{
             InitCapFunction, MorseCodeFunction, PigLatinFunction, ProperFunction, ReverseFunction,
@@ -494,6 +499,13 @@ impl FunctionRegistry {
         self.register(Box::new(RepeatFunction));
         self.register(Box::new(LPadFunction));
         self.register(Box::new(RPadFunction));
+
+        // Case conversion functions
+        self.register(Box::new(ToSnakeCaseFunction));
+        self.register(Box::new(ToCamelCaseFunction));
+        self.register(Box::new(ToPascalCaseFunction));
+        self.register(Box::new(ToKebabCaseFunction));
+        self.register(Box::new(ToConstantCaseFunction));
 
         // String fun & transformation functions
         self.register(Box::new(ReverseFunction));
