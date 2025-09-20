@@ -1,6 +1,6 @@
 use crate::query_plan::{QueryPlan, WorkUnit, WorkUnitExpression, WorkUnitType};
 use crate::sql::parser::ast::{
-    CTEType, SelectItem, SelectStatement, SqlExpression, WhereClause, CTE,
+    CTEType, ColumnRef, SelectItem, SelectStatement, SqlExpression, WhereClause, CTE,
 };
 use std::collections::HashSet;
 
@@ -174,7 +174,9 @@ impl ExpressionLifter {
                 use crate::sql::parser::ast::Condition;
                 stmt.where_clause = Some(WhereClause {
                     conditions: vec![Condition {
-                        expr: SqlExpression::Column("lifted_value".to_string()),
+                        expr: SqlExpression::Column(ColumnRef::unquoted(
+                            "lifted_value".to_string(),
+                        )),
                         connector: None,
                     }],
                 });
@@ -281,7 +283,7 @@ impl ExpressionLifter {
                     if deps.iter().any(|(a, _)| a == alias) =>
                 {
                     // Replace with simple column reference
-                    new_select_items.push(SelectItem::Column(alias.clone()));
+                    new_select_items.push(SelectItem::Column(ColumnRef::unquoted(alias.clone())));
                 }
                 _ => {
                     new_select_items.push(item.clone());
@@ -351,7 +353,7 @@ pub fn analyze_dependencies(expr: &SqlExpression) -> HashSet<String> {
 
     match expr {
         SqlExpression::Column(col) => {
-            deps.insert(col.clone());
+            deps.insert(col.name.clone());
         }
 
         SqlExpression::FunctionCall { args, .. } => {
@@ -445,7 +447,9 @@ mod tests {
         let lifter = ExpressionLifter::new();
 
         let simple_expr = SqlExpression::BinaryOp {
-            left: Box::new(SqlExpression::Column("col1".to_string())),
+            left: Box::new(SqlExpression::Column(ColumnRef::unquoted(
+                "col1".to_string(),
+            ))),
             op: "=".to_string(),
             right: Box::new(SqlExpression::NumberLiteral("42".to_string())),
         };
@@ -456,9 +460,13 @@ mod tests {
     #[test]
     fn test_analyze_dependencies() {
         let expr = SqlExpression::BinaryOp {
-            left: Box::new(SqlExpression::Column("col1".to_string())),
+            left: Box::new(SqlExpression::Column(ColumnRef::unquoted(
+                "col1".to_string(),
+            ))),
             op: "+".to_string(),
-            right: Box::new(SqlExpression::Column("col2".to_string())),
+            right: Box::new(SqlExpression::Column(ColumnRef::unquoted(
+                "col2".to_string(),
+            ))),
         };
 
         let deps = analyze_dependencies(&expr);

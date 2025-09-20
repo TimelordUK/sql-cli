@@ -6,7 +6,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use crate::data::datatable::DataValue;
-use crate::sql::parser::ast::{SqlExpression, WindowSpec};
+use crate::sql::parser::ast::{ColumnRef, SqlExpression, WindowSpec};
 use crate::sql::window_context::WindowContext;
 
 /// Window function computation trait
@@ -151,7 +151,7 @@ impl WindowFunction for MovingAvgFunction {
         // The window has already been configured by transform_window_spec
         // Just compute the average over the frame
         context
-            .get_frame_avg(row_index, column)
+            .get_frame_avg(row_index, &column.name)
             .ok_or_else(|| anyhow::anyhow!("Failed to compute moving average"))
     }
 
@@ -223,7 +223,7 @@ impl WindowFunction for RollingStddevFunction {
         };
 
         context
-            .get_frame_stddev(row_index, column)
+            .get_frame_stddev(row_index, &column.name)
             .ok_or_else(|| anyhow::anyhow!("Failed to compute rolling stddev"))
     }
 
@@ -295,7 +295,7 @@ impl WindowFunction for CumulativeSumFunction {
         };
 
         context
-            .get_frame_sum(row_index, column)
+            .get_frame_sum(row_index, &column.name)
             .ok_or_else(|| anyhow::anyhow!("Failed to compute cumulative sum"))
     }
 
@@ -356,7 +356,7 @@ impl WindowFunction for CumulativeAvgFunction {
         };
 
         context
-            .get_frame_avg(row_index, column)
+            .get_frame_avg(row_index, &column.name)
             .ok_or_else(|| anyhow::anyhow!("Failed to compute cumulative average"))
     }
 
@@ -420,7 +420,7 @@ impl WindowFunction for ZScoreFunction {
         let current_value = {
             let source = context.source();
             let col_idx = source
-                .get_column_index(column)
+                .get_column_index(&column.name)
                 .ok_or_else(|| anyhow::anyhow!("Column {} not found", column))?;
             source
                 .get_value(row_index, col_idx)
@@ -430,10 +430,10 @@ impl WindowFunction for ZScoreFunction {
 
         // Get mean and stddev over the window
         let mean = context
-            .get_frame_avg(row_index, column)
+            .get_frame_avg(row_index, &column.name)
             .unwrap_or(DataValue::Null);
         let stddev = context
-            .get_frame_stddev(row_index, column)
+            .get_frame_stddev(row_index, &column.name)
             .unwrap_or(DataValue::Null);
 
         // Calculate Z-score
@@ -519,10 +519,10 @@ impl WindowFunction for BollingerUpperFunction {
 
         // Get mean and stddev over the window
         let mean = context
-            .get_frame_avg(row_index, column)
+            .get_frame_avg(row_index, &column.name)
             .unwrap_or(DataValue::Null);
         let stddev = context
-            .get_frame_stddev(row_index, column)
+            .get_frame_stddev(row_index, &column.name)
             .unwrap_or(DataValue::Null);
 
         // Calculate upper band: mean + (num_std * stddev)
@@ -603,10 +603,10 @@ impl WindowFunction for BollingerLowerFunction {
 
         // Get mean and stddev over the window
         let mean = context
-            .get_frame_avg(row_index, column)
+            .get_frame_avg(row_index, &column.name)
             .unwrap_or(DataValue::Null);
         let stddev = context
-            .get_frame_stddev(row_index, column)
+            .get_frame_stddev(row_index, &column.name)
             .unwrap_or(DataValue::Null);
 
         // Calculate lower band: mean - (num_std * stddev)
@@ -690,13 +690,13 @@ impl WindowFunction for PercentChangeFunction {
         let current_value = {
             let source = context.source();
             let col_idx = source
-                .get_column_index(column)
+                .get_column_index(&column.name)
                 .ok_or_else(|| anyhow!("Column {} not found", column))?;
             source.get_value(row_index, col_idx).cloned()
         };
 
         // Get previous value using offset
-        let previous_value = context.get_offset_value(row_index, -periods, column);
+        let previous_value = context.get_offset_value(row_index, -periods, &column.name);
 
         // Calculate percent change: ((current - previous) / previous) * 100
         match (current_value, previous_value) {
@@ -767,7 +767,7 @@ mod tests {
         };
 
         let args = vec![
-            SqlExpression::Column("close".to_string()),
+            SqlExpression::Column(ColumnRef::unquoted("close".to_string())),
             SqlExpression::NumberLiteral("20".to_string()),
         ];
 

@@ -472,7 +472,7 @@ impl Parser {
             .iter()
             .map(|item| match item {
                 SelectItem::Star => "*".to_string(),
-                SelectItem::Column(name) => name.clone(),
+                SelectItem::Column(col_ref) => col_ref.name.clone(),
                 SelectItem::Expression { alias, .. } => alias.clone(),
             })
             .collect();
@@ -943,16 +943,16 @@ impl Parser {
                 } else {
                     // Generate default alias based on expression
                     match &expr {
-                        SqlExpression::Column(col_name) => col_name.clone(),
+                        SqlExpression::Column(col_ref) => col_ref.name.clone(),
                         _ => format!("expr_{}", items.len() + 1), // Default alias for computed expressions
                     }
                 };
 
                 // Create SelectItem based on expression type
                 let item = match expr {
-                    SqlExpression::Column(col_name) if alias == col_name => {
+                    SqlExpression::Column(col_ref) if alias == col_ref.name => {
                         // Simple column reference without alias
-                        SelectItem::Column(col_name)
+                        SelectItem::Column(col_ref)
                     }
                     _ => {
                         // Computed expression or column with different alias

@@ -1,3 +1,5 @@
+-- #! ../data/sales_sample.csv
+
 -- GROUP BY and aggregate functions with STDDEV/VARIANCE
 -- sql-cli now supports STDDEV and VARIANCE aggregates!
 -- 

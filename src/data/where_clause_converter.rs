@@ -159,7 +159,7 @@ impl WhereClauseConverter {
 
     fn extract_column_name(expr: &SqlExpression) -> Result<String> {
         match expr {
-            SqlExpression::Column(name) => Ok(name.clone()),
+            SqlExpression::Column(column_ref) => Ok(column_ref.name.clone()),
             _ => Err(anyhow::anyhow!("Expected column name, got: {:?}", expr)),
         }
     }

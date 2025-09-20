@@ -1,5 +1,5 @@
 use crate::sql::parser::ast::{
-    CTEType, Condition, SelectItem, SelectStatement, SqlExpression, CTE,
+    CTEType, ColumnRef, Condition, SelectItem, SelectStatement, SqlExpression, CTE,
 };
 
 /// Specialized lifter for IN operator expressions with function calls
@@ -57,7 +57,9 @@ impl InOperatorLifter {
                         // Create new simple condition
                         new_conditions.push(Condition {
                             expr: SqlExpression::InList {
-                                expr: Box::new(SqlExpression::Column(column_alias)),
+                                expr: Box::new(SqlExpression::Column(ColumnRef::unquoted(
+                                    column_alias,
+                                ))),
                                 values: values.clone(),
                             },
                             connector: condition.connector.clone(),
@@ -79,7 +81,9 @@ impl InOperatorLifter {
                         // Create new simple condition
                         new_conditions.push(Condition {
                             expr: SqlExpression::NotInList {
-                                expr: Box::new(SqlExpression::Column(column_alias)),
+                                expr: Box::new(SqlExpression::Column(ColumnRef::unquoted(
+                                    column_alias,
+                                ))),
                                 values: values.clone(),
                             },
                             connector: condition.connector.clone(),
@@ -220,7 +224,9 @@ mod tests {
     fn test_needs_in_lifting() {
         // Simple column IN doesn't need lifting
         let simple_in = SqlExpression::InList {
-            expr: Box::new(SqlExpression::Column("col".to_string())),
+            expr: Box::new(SqlExpression::Column(ColumnRef::unquoted(
+                "col".to_string(),
+            ))),
             values: vec![SqlExpression::StringLiteral("a".to_string())],
         };
         assert!(!InOperatorLifter::needs_in_lifting(&simple_in));
@@ -229,7 +235,9 @@ mod tests {
         let func_in = SqlExpression::InList {
             expr: Box::new(SqlExpression::FunctionCall {
                 name: "LOWER".to_string(),
-                args: vec![SqlExpression::Column("col".to_string())],
+                args: vec![SqlExpression::Column(ColumnRef::unquoted(
+                    "col".to_string(),
+                ))],
                 distinct: false,
             }),
             values: vec![SqlExpression::StringLiteral("a".to_string())],
@@ -241,14 +249,16 @@ mod tests {
     fn test_is_complex_expression() {
         // Column is not complex
         assert!(!InOperatorLifter::is_complex_expression(
-            &SqlExpression::Column("col".to_string())
+            &SqlExpression::Column(ColumnRef::unquoted("col".to_string()))
         ));
 
         // Function call is complex
         assert!(InOperatorLifter::is_complex_expression(
             &SqlExpression::FunctionCall {
                 name: "LOWER".to_string(),
-                args: vec![SqlExpression::Column("col".to_string())],
+                args: vec![SqlExpression::Column(ColumnRef::unquoted(
+                    "col".to_string()
+                ))],
                 distinct: false,
             }
         ));
@@ -256,7 +266,7 @@ mod tests {
         // Binary op is complex
         assert!(InOperatorLifter::is_complex_expression(
             &SqlExpression::BinaryOp {
-                left: Box::new(SqlExpression::Column("a".to_string())),
+                left: Box::new(SqlExpression::Column(ColumnRef::unquoted("a".to_string()))),
                 op: "+".to_string(),
                 right: Box::new(SqlExpression::NumberLiteral("1".to_string())),
             }

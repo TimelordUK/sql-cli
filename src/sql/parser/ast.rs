@@ -5,9 +5,80 @@
 
 // ===== Expression Types =====
 
+/// Quote style for identifiers (column names, table names, etc.)
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub enum QuoteStyle {
+    /// No quotes needed (valid unquoted identifier)
+    None,
+    /// Double quotes: "Customer Id"
+    DoubleQuotes,
+    /// SQL Server style brackets: [Customer Id]
+    Brackets,
+}
+
+/// Column reference with optional quoting information
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct ColumnRef {
+    pub name: String,
+    pub quote_style: QuoteStyle,
+}
+
+impl ColumnRef {
+    /// Create an unquoted column reference
+    pub fn unquoted(name: String) -> Self {
+        Self {
+            name,
+            quote_style: QuoteStyle::None,
+        }
+    }
+
+    /// Create a double-quoted column reference
+    pub fn quoted(name: String) -> Self {
+        Self {
+            name,
+            quote_style: QuoteStyle::DoubleQuotes,
+        }
+    }
+
+    /// Create a bracket-quoted column reference
+    pub fn bracketed(name: String) -> Self {
+        Self {
+            name,
+            quote_style: QuoteStyle::Brackets,
+        }
+    }
+
+    /// Format the column reference with appropriate quoting
+    pub fn to_sql(&self) -> String {
+        match self.quote_style {
+            QuoteStyle::None => self.name.clone(),
+            QuoteStyle::DoubleQuotes => format!("\"{}\"", self.name),
+            QuoteStyle::Brackets => format!("[{}]", self.name),
+        }
+    }
+}
+
+impl PartialEq<str> for ColumnRef {
+    fn eq(&self, other: &str) -> bool {
+        self.name == other
+    }
+}
+
+impl PartialEq<&str> for ColumnRef {
+    fn eq(&self, other: &&str) -> bool {
+        self.name == *other
+    }
+}
+
+impl std::fmt::Display for ColumnRef {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.to_sql())
+    }
+}
+
 #[derive(Debug, Clone)]
 pub enum SqlExpression {
-    Column(String),
+    Column(ColumnRef),
     StringLiteral(String),
     NumberLiteral(String),
     BooleanLiteral(bool),
@@ -179,7 +250,7 @@ pub struct WindowSpec {
 #[derive(Debug, Clone)]
 pub enum SelectItem {
     /// Simple column reference: "`column_name`"
-    Column(String),
+    Column(ColumnRef),
     /// Computed expression with alias: "expr AS alias"
     Expression { expr: SqlExpression, alias: String },
     /// Star selector: "*"

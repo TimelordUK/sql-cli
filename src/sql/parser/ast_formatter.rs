@@ -314,7 +314,7 @@ impl<'a> AstFormatter<'a> {
             .map(|item| {
                 match item {
                     SelectItem::Star => 1,
-                    SelectItem::Column(col) => col.len(),
+                    SelectItem::Column(col) => col.name.len(),
                     SelectItem::Expression { expr, alias } => {
                         self.format_expression(expr).len() + 4 + alias.len() // " AS " = 4
                     }
@@ -373,7 +373,7 @@ impl<'a> AstFormatter<'a> {
     fn format_select_item(&self, result: &mut String, item: &SelectItem) {
         match item {
             SelectItem::Star => write!(result, "*").unwrap(),
-            SelectItem::Column(col) => write!(result, "{}", col).unwrap(),
+            SelectItem::Column(col) => write!(result, "{}", col.to_sql()).unwrap(),
             SelectItem::Expression { expr, alias } => {
                 write!(
                     result,
@@ -389,7 +389,7 @@ impl<'a> AstFormatter<'a> {
 
     fn format_expression(&self, expr: &SqlExpression) -> String {
         match expr {
-            SqlExpression::Column(name) => name.clone(),
+            SqlExpression::Column(column_ref) => column_ref.to_sql(),
             SqlExpression::StringLiteral(s) => format!("'{}'", s),
             SqlExpression::NumberLiteral(n) => n.clone(),
             SqlExpression::BooleanLiteral(b) => b.to_string().to_uppercase(),

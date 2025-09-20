@@ -88,7 +88,9 @@ fn test_between_expression() {
 fn test_between_ast_format() {
     // Create a BETWEEN expression
     let expr = SqlExpression::Between {
-        expr: Box::new(SqlExpression::Column("price".to_string())),
+        expr: Box::new(SqlExpression::Column(ColumnRef::unquoted(
+            "price".to_string(),
+        ))),
         lower: Box::new(SqlExpression::NumberLiteral("50".to_string())),
         upper: Box::new(SqlExpression::NumberLiteral("100".to_string())),
     };

@@ -16,7 +16,7 @@ echo "================================"
 
 # Configuration for examples that need specific data files
 declare -A example_data_files
-example_data_files["group_by_aggregates.sql"]="data/sales_sample.csv"
+# example_data_files["group_by_aggregates.sql"]="data/sales_sample.csv"
 example_data_files["window_functions.sql"]="data/sales_data.csv"
 example_data_files["window_functions_filtering.sql"]="data/sales_data.csv"
 example_data_files["solar_system_demo.sql"]="data/solar_system.csv"

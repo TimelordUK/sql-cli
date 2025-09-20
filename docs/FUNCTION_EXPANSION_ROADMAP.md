@@ -48,7 +48,7 @@
 - [ ] **ASIN(value)** - Arc sine
 - [ ] **ACOS(value)** - Arc cosine
 - [ ] **ATAN(value)** - Arc tangent
-- [ ] **ATAN2(y, x)** - Two-argument arc tangent
+- [ ] **ATAN2(y, x)** - Two-argument:w arc tangent
 - [ ] **ACOT(value)** - Arc cotangent
 
 ### Hyperbolic Functions

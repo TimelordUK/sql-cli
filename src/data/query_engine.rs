@@ -19,6 +19,7 @@ use crate::data::subquery_executor::SubqueryExecutor;
 use crate::data::virtual_table_generator::VirtualTableGenerator;
 use crate::execution_plan::{ExecutionPlan, ExecutionPlanBuilder, StepType};
 use crate::sql::aggregates::{contains_aggregate, is_aggregate_compatible};
+use crate::sql::parser::ast::ColumnRef;
 use crate::sql::parser::ast::TableSource;
 use crate::sql::recursive_parser::{
     CTEType, OrderByColumn, Parser, SelectItem, SelectStatement, SortDirection, SqlExpression,
@@ -1028,7 +1029,9 @@ impl QueryEngine {
                 SelectItem::Star => {
                     // Expand * to all columns from source table
                     for col_name in source_table.column_names() {
-                        expanded_items.push(SelectItem::Column(col_name));
+                        expanded_items.push(SelectItem::Column(ColumnRef::unquoted(
+                            col_name.to_string(),
+                        )));
                     }
                 }
                 _ => expanded_items.push(item.clone()),
@@ -1041,7 +1044,7 @@ impl QueryEngine {
 
         for item in &expanded_items {
             let base_name = match item {
-                SelectItem::Column(name) => name.clone(),
+                SelectItem::Column(col_ref) => col_ref.name.clone(),
                 SelectItem::Expression { alias, .. } => alias.clone(),
                 SelectItem::Star => unreachable!("Star should have been expanded"),
             };
@@ -1069,19 +1072,25 @@ impl QueryEngine {
 
             for item in &expanded_items {
                 let value = match item {
-                    SelectItem::Column(col_name) => {
+                    SelectItem::Column(col_ref) => {
                         // Simple column reference
-                        let col_idx = source_table.get_column_index(col_name).ok_or_else(|| {
-                            let suggestion = self.find_similar_column(source_table, col_name);
-                            match suggestion {
-                                Some(similar) => anyhow::anyhow!(
-                                    "Column '{}' not found. Did you mean '{}'?",
-                                    col_name,
-                                    similar
-                                ),
-                                None => anyhow::anyhow!("Column '{}' not found", col_name),
-                            }
-                        })?;
+                        let col_idx =
+                            source_table
+                                .get_column_index(&col_ref.name)
+                                .ok_or_else(|| {
+                                    let suggestion =
+                                        self.find_similar_column(source_table, &col_ref.name);
+                                    match suggestion {
+                                        Some(similar) => anyhow::anyhow!(
+                                            "Column '{}' not found. Did you mean '{}'?",
+                                            col_ref.name,
+                                            similar
+                                        ),
+                                        None => {
+                                            anyhow::anyhow!("Column '{}' not found", col_ref.name)
+                                        }
+                                    }
+                                })?;
                         let row = source_table
                             .get_row(row_idx)
                             .ok_or_else(|| anyhow::anyhow!("Row {} not found", row_idx))?;
@@ -1167,19 +1176,19 @@ impl QueryEngine {
 
         for item in select_items {
             match item {
-                SelectItem::Column(col_name) => {
+                SelectItem::Column(col_ref) => {
                     let index = table_columns
                         .iter()
-                        .position(|c| c.eq_ignore_ascii_case(col_name))
+                        .position(|c| c.eq_ignore_ascii_case(&col_ref.name))
                         .ok_or_else(|| {
-                            let suggestion = self.find_similar_column(table, col_name);
+                            let suggestion = self.find_similar_column(table, &col_ref.name);
                             match suggestion {
                                 Some(similar) => anyhow::anyhow!(
                                     "Column '{}' not found. Did you mean '{}'?",
-                                    col_name,
+                                    col_ref.name,
                                     similar
                                 ),
-                                None => anyhow::anyhow!("Column '{}' not found", col_name),
+                                None => anyhow::anyhow!("Column '{}' not found", col_ref.name),
                             }
                         })?;
                     indices.push(index);

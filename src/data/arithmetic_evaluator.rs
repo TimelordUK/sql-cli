@@ -5,7 +5,7 @@ use crate::data::value_comparisons::compare_with_op;
 use crate::sql::aggregate_functions::AggregateFunctionRegistry; // New registry
 use crate::sql::aggregates::AggregateRegistry; // Old registry (for migration)
 use crate::sql::functions::FunctionRegistry;
-use crate::sql::parser::ast::WindowSpec;
+use crate::sql::parser::ast::{ColumnRef, WindowSpec};
 use crate::sql::recursive_parser::SqlExpression;
 use crate::sql::window_context::WindowContext;
 use crate::sql::window_functions::{ExpressionEvaluator, WindowFunctionRegistry};
@@ -130,7 +130,7 @@ impl<'a> ArithmeticEvaluator<'a> {
         );
 
         match expr {
-            SqlExpression::Column(column_name) => self.evaluate_column(column_name, row_index),
+            SqlExpression::Column(column_ref) => self.evaluate_column(&column_ref.name, row_index),
             SqlExpression::StringLiteral(s) => Ok(DataValue::String(s.clone())),
             SqlExpression::BooleanLiteral(b) => Ok(DataValue::Boolean(*b)),
             SqlExpression::NumberLiteral(n) => self.evaluate_number_literal(n),
@@ -597,7 +597,7 @@ impl<'a> ArithmeticEvaluator<'a> {
             if name_upper == "COUNT" || name_upper == "COUNT_STAR" {
                 if args.is_empty()
                     || (args.len() == 1
-                        && matches!(&args[0], SqlExpression::Column(col) if col == "*"))
+                        && matches!(&args[0], SqlExpression::Column(col) if col.name == "*"))
                     || (args.len() == 1
                         && matches!(&args[0], SqlExpression::StringLiteral(s) if s == "*"))
                 {
@@ -668,7 +668,8 @@ impl<'a> ArithmeticEvaluator<'a> {
 
             // Evaluate arguments first if needed (to avoid borrow issues)
             let values = if !args.is_empty()
-                && !(args.len() == 1 && matches!(&args[0], SqlExpression::Column(c) if c == "*"))
+                && !(args.len() == 1
+                    && matches!(&args[0], SqlExpression::Column(c) if c.name == "*"))
             {
                 // Evaluate the argument expression for each row
                 let mut vals = Vec::new();
@@ -825,7 +826,7 @@ impl<'a> ArithmeticEvaluator<'a> {
 
                 // Get value at offset
                 Ok(context
-                    .get_offset_value(row_index, -offset, &column)
+                    .get_offset_value(row_index, -offset, &column.name)
                     .unwrap_or(DataValue::Null))
             }
             "LEAD" => {
@@ -852,7 +853,7 @@ impl<'a> ArithmeticEvaluator<'a> {
 
                 // Get value at offset
                 Ok(context
-                    .get_offset_value(row_index, offset, &column)
+                    .get_offset_value(row_index, offset, &column.name)
                     .unwrap_or(DataValue::Null))
             }
             "ROW_NUMBER" => {
@@ -873,11 +874,11 @@ impl<'a> ArithmeticEvaluator<'a> {
                 // Use frame-aware version if frame is specified
                 if context.has_frame() {
                     Ok(context
-                        .get_frame_first_value(row_index, &column)
+                        .get_frame_first_value(row_index, &column.name)
                         .unwrap_or(DataValue::Null))
                 } else {
                     Ok(context
-                        .get_first_value(row_index, &column)
+                        .get_first_value(row_index, &column.name)
                         .unwrap_or(DataValue::Null))
                 }
             }
@@ -895,11 +896,11 @@ impl<'a> ArithmeticEvaluator<'a> {
                 // Use frame-aware version if frame is specified
                 if context.has_frame() {
                     Ok(context
-                        .get_frame_last_value(row_index, &column)
+                        .get_frame_last_value(row_index, &column.name)
                         .unwrap_or(DataValue::Null))
                 } else {
                     Ok(context
-                        .get_last_value(row_index, &column)
+                        .get_last_value(row_index, &column.name)
                         .unwrap_or(DataValue::Null))
                 }
             }
@@ -917,11 +918,11 @@ impl<'a> ArithmeticEvaluator<'a> {
                 // Use frame-aware sum if frame is specified, otherwise use partition sum
                 if context.has_frame() {
                     Ok(context
-                        .get_frame_sum(row_index, &column)
+                        .get_frame_sum(row_index, &column.name)
                         .unwrap_or(DataValue::Null))
                 } else {
                     Ok(context
-                        .get_partition_sum(row_index, &column)
+                        .get_partition_sum(row_index, &column.name)
                         .unwrap_or(DataValue::Null))
                 }
             }
@@ -937,7 +938,7 @@ impl<'a> ArithmeticEvaluator<'a> {
                 };
 
                 Ok(context
-                    .get_frame_avg(row_index, &column)
+                    .get_frame_avg(row_index, &column.name)
                     .unwrap_or(DataValue::Null))
             }
             "STDDEV" | "STDEV" => {
@@ -952,7 +953,7 @@ impl<'a> ArithmeticEvaluator<'a> {
                 };
 
                 Ok(context
-                    .get_frame_stddev(row_index, &column)
+                    .get_frame_stddev(row_index, &column.name)
                     .unwrap_or(DataValue::Null))
             }
             "VARIANCE" | "VAR" => {
@@ -967,7 +968,7 @@ impl<'a> ArithmeticEvaluator<'a> {
                 };
 
                 Ok(context
-                    .get_frame_variance(row_index, &column)
+                    .get_frame_variance(row_index, &column.name)
                     .unwrap_or(DataValue::Null))
             }
             "MIN" => {
@@ -988,8 +989,8 @@ impl<'a> ArithmeticEvaluator<'a> {
 
                 let source_table = context.source();
                 let col_idx = source_table
-                    .get_column_index(&column)
-                    .ok_or_else(|| anyhow!("Column '{}' not found", column))?;
+                    .get_column_index(&column.name)
+                    .ok_or_else(|| anyhow!("Column '{}' not found", column.name))?;
 
                 let mut min_value: Option<DataValue> = None;
                 for &row_idx in &frame_rows {
@@ -1027,8 +1028,8 @@ impl<'a> ArithmeticEvaluator<'a> {
 
                 let source_table = context.source();
                 let col_idx = source_table
-                    .get_column_index(&column)
-                    .ok_or_else(|| anyhow!("Column '{}' not found", column))?;
+                    .get_column_index(&column.name)
+                    .ok_or_else(|| anyhow!("Column '{}' not found", column.name))?;
 
                 let mut max_value: Option<DataValue> = None;
                 for &row_idx in &frame_rows {
@@ -1067,7 +1068,7 @@ impl<'a> ArithmeticEvaluator<'a> {
                     // Check for COUNT(*)
                     let column = match &args[0] {
                         SqlExpression::Column(col) => {
-                            if col == "*" {
+                            if col.name == "*" {
                                 // COUNT(*) - count all rows
                                 if context.has_frame() {
                                     return Ok(context
@@ -1099,11 +1100,11 @@ impl<'a> ArithmeticEvaluator<'a> {
                     // COUNT(column) - count non-null values
                     if context.has_frame() {
                         Ok(context
-                            .get_frame_count(row_index, Some(&column))
+                            .get_frame_count(row_index, Some(&column.name))
                             .unwrap_or(DataValue::Null))
                     } else {
                         Ok(context
-                            .get_partition_count(row_index, Some(&column))
+                            .get_partition_count(row_index, Some(&column.name))
                             .unwrap_or(DataValue::Null))
                     }
                 }
@@ -1333,7 +1334,7 @@ mod tests {
         let table = create_test_table();
         let mut evaluator = ArithmeticEvaluator::new(&table);
 
-        let expr = SqlExpression::Column("a".to_string());
+        let expr = SqlExpression::Column(ColumnRef::unquoted("a".to_string()));
         let result = evaluator.evaluate(&expr, 0).unwrap();
         assert_eq!(result, DataValue::Integer(10));
     }
@@ -1417,9 +1418,9 @@ mod tests {
 
         // a * b where a=10, b=2.5
         let expr = SqlExpression::BinaryOp {
-            left: Box::new(SqlExpression::Column("a".to_string())),
+            left: Box::new(SqlExpression::Column(ColumnRef::unquoted("a".to_string()))),
             op: "*".to_string(),
-            right: Box::new(SqlExpression::Column("b".to_string())),
+            right: Box::new(SqlExpression::Column(ColumnRef::unquoted("b".to_string()))),
         };
 
         let result = evaluator.evaluate(&expr, 0).unwrap();

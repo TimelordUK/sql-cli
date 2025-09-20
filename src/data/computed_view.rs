@@ -1,4 +1,5 @@
 use crate::data::datatable::{DataTable, DataValue};
+use crate::sql::parser::ast::ColumnRef;
 use crate::sql::recursive_parser::SqlExpression;
 use std::sync::Arc;
 
@@ -225,7 +226,7 @@ mod tests {
             },
             ViewColumn::Derived {
                 name: "doubled".to_string(),
-                expression: SqlExpression::Column("a".to_string()), // Placeholder
+                expression: SqlExpression::Column(ColumnRef::unquoted("a".to_string())), // Placeholder
                 cached_values: vec![
                     DataValue::Integer(20), // 10 * 2
                     DataValue::Integer(40), // 20 * 2

@@ -42,7 +42,7 @@ function M.format_query_at_cursor(config, state)
     if last_line:match(";%s*$") then
       terminator = ";"
       lines[end_line] = last_line:gsub(";%s*$", "")
-    elseif last_line:match("^%s*GO%s*$") then
+    elseif last_line:upper():match("^%s*GO%s*$") then
       terminator = "GO"
       end_line = end_line - 1  -- Exclude the GO line
     end

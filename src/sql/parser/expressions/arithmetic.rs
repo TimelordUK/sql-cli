@@ -2,7 +2,7 @@
 // Handles additive (+, -) and multiplicative (*, /, %) expressions
 // Also handles method calls (e.g., column.upper()) as part of multiplicative precedence
 
-use crate::sql::parser::ast::SqlExpression;
+use crate::sql::parser::ast::{ColumnRef, SqlExpression};
 use crate::sql::parser::lexer::Token;
 use tracing::debug;
 
@@ -119,7 +119,7 @@ where
                             "Creating method call on column"
                         );
                         SqlExpression::MethodCall {
-                            object: obj,
+                            object: obj.name,
                             method: name_str,
                             args,
                         }
@@ -159,7 +159,10 @@ where
                             column = %name_str,
                             "Creating qualified column reference"
                         );
-                        SqlExpression::Column(format!("{}.{}", table_or_alias, name_str))
+                        SqlExpression::Column(ColumnRef::unquoted(format!(
+                            "{}.{}",
+                            table_or_alias, name_str
+                        )))
                     }
                     _ => {
                         // If left is not a simple column, this is an error

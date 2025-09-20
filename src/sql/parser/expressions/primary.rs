@@ -1,7 +1,7 @@
 // Primary expression parsing
 // Handles literals, identifiers, function calls, and parenthesized expressions
 
-use crate::sql::parser::ast::{SqlExpression, WindowSpec};
+use crate::sql::parser::ast::{ColumnRef, SqlExpression, WindowSpec};
 use crate::sql::parser::lexer::Token;
 use tracing::{debug, trace};
 
@@ -42,7 +42,7 @@ where
                 parser.current_token(),
                 "Number literal matches column name, treating as column",
             );
-            let expr = SqlExpression::Column(num_str.clone());
+            let expr = SqlExpression::Column(ColumnRef::unquoted(num_str.clone()));
             parser.advance();
             let result = Ok(expr);
             trace_parse_exit("parse_primary", &result);
@@ -118,7 +118,7 @@ where
                         &Token::Identifier(id_clone.clone()),
                         "Column reference",
                     );
-                    Ok(SqlExpression::Column(id_clone))
+                    Ok(SqlExpression::Column(ColumnRef::unquoted(id_clone)))
                 }
             }
         }
@@ -139,7 +139,7 @@ where
                     parser.current_token(),
                     "Quoted identifier as column name",
                 );
-                SqlExpression::Column(id.clone())
+                SqlExpression::Column(ColumnRef::quoted(id.clone()))
             };
             parser.advance();
             Ok(expr)

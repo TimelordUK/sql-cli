@@ -43,7 +43,7 @@ fn test_datetime_parsing() {
     use sql_cli::sql::recursive_parser::SqlExpression;
     if let SqlExpression::BinaryOp { left, op, right } = &where_clause.conditions[0].expr {
         assert_eq!(op, ">");
-        assert!(matches!(left.as_ref(), SqlExpression::Column(col) if col == "createdDate"));
+        assert!(matches!(left.as_ref(), SqlExpression::Column(col) if col.name == "createdDate"));
         assert!(matches!(
             right.as_ref(),
             SqlExpression::DateTimeConstructor {

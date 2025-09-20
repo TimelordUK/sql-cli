@@ -639,13 +639,9 @@ pub fn format_sql_pretty_compact(query: &str, cols_per_line: usize) -> Vec<Strin
 
 pub fn format_expression(expr: &SqlExpression) -> String {
     match expr {
-        SqlExpression::Column(name) => {
-            // Check if column name needs quotes (contains special characters)
-            if needs_quotes(name) {
-                format!("\"{}\"", name)
-            } else {
-                name.clone()
-            }
+        SqlExpression::Column(column_ref) => {
+            // Use the to_sql() method which handles quoting based on quote_style
+            column_ref.to_sql()
         }
         SqlExpression::StringLiteral(value) => format!("'{value}'"),
         SqlExpression::NumberLiteral(value) => value.clone(),

@@ -10,7 +10,7 @@ use crate::data::data_view::DataView;
 use crate::data::datatable::{DataColumn, DataRow, DataTable, DataValue};
 use crate::data::query_engine::QueryEngine;
 use crate::sql::aggregates::contains_aggregate;
-use crate::sql::parser::ast::{SelectItem, SqlExpression};
+use crate::sql::parser::ast::{ColumnRef, SelectItem, SqlExpression};
 use tracing::debug;
 
 /// Key for grouping rows - contains the evaluated expression values
@@ -119,7 +119,7 @@ impl GroupByExpressions for QueryEngine {
 
             // Use found alias or generate a default one
             let alias = found_alias.unwrap_or_else(|| match group_expr {
-                SqlExpression::Column(name) => name.clone(),
+                SqlExpression::Column(column_ref) => column_ref.name.clone(),
                 _ => format!("group_expr_{}", i + 1),
             });
 
@@ -151,7 +151,7 @@ impl GroupByExpressions for QueryEngine {
                                 // Check if this column is referenced in any GROUP BY expression
                                 let referenced = group_by_exprs
                                     .iter()
-                                    .any(|ge| expression_references_column(ge, col));
+                                    .any(|ge| expression_references_column(ge, &col.name));
                                 if !referenced {
                                     return Err(anyhow!(
                                         "Expression '{}' must appear in GROUP BY clause or be used in an aggregate function",
@@ -167,16 +167,16 @@ impl GroupByExpressions for QueryEngine {
                         }
                     }
                 }
-                SelectItem::Column(col_name) => {
+                SelectItem::Column(col_ref) => {
                     // Check if this column is in a GROUP BY expression
                     let in_group_by = group_by_exprs.iter().any(
-                        |expr| matches!(expr, SqlExpression::Column(name) if name == col_name),
+                        |expr| matches!(expr, SqlExpression::Column(name) if name.name == col_ref.name),
                     );
 
                     if !in_group_by {
                         return Err(anyhow!(
                             "Column '{}' must appear in GROUP BY clause or be used in an aggregate function",
-                            col_name
+                            col_ref.name
                         ));
                     }
                 }

@@ -1,5 +1,5 @@
 use crate::sql::parser::ast::{
-    SelectStatement, SelectItem, SqlExpression, OrderByColumn, CTE, CTEType
+    ColumnRef, SelectStatement, SelectItem, SqlExpression, OrderByColumn, CTE, CTEType
 };
 use std::collections::{HashMap, HashSet};
 
@@ -288,20 +288,20 @@ mod tests {
                             SqlExpression::FunctionCall {
                                 name: "CONTAINS".to_string(),
                                 args: vec![
-                                    SqlExpression::Column("id".to_string()),
+                                    SqlExpression::Column(ColumnRef::unquoted("id".to_string())),
                                     SqlExpression::String("|".to_string()),
                                 ],
                             },
                             SqlExpression::FunctionCall {
                                 name: "SUBSTRING_AFTER".to_string(),
                                 args: vec![
-                                    SqlExpression::Column("id".to_string()),
+                                    SqlExpression::Column(ColumnRef::unquoted("id".to_string())),
                                     SqlExpression::String("|".to_string()),
                                     SqlExpression::Integer(1),
                                 ],
                             },
                         )],
-                        else_clause: Some(Box::new(SqlExpression::Column("id".to_string()))),
+                        else_clause: Some(Box::new(SqlExpression::Column(ColumnRef::unquoted("id".to_string())))),
                     },
                     alias: "root".to_string(),
                 },

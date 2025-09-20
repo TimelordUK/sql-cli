@@ -32,7 +32,8 @@ end
 -- Check if a line is a query terminator
 function M.is_terminator(line)
   if not line then return false end
-  return line:match("^%s*GO%s*$") or        -- GO on its own line
+  local upper_line = line:upper()
+  return upper_line:match("^%s*GO%s*$") or   -- GO on its own line (case insensitive)
          line:match(";%s*$") or              -- Semicolon at end of line
          line:match(";%s*%-%-") or           -- Semicolon followed by comment
          line:match(";%s*/")                 -- Semicolon followed by comment

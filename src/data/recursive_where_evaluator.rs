@@ -912,16 +912,16 @@ impl<'a, 'ctx> RecursiveWhereEvaluator<'a, 'ctx> {
 
     fn extract_column_name(&self, expr: &SqlExpression) -> Result<String> {
         match expr {
-            SqlExpression::Column(name) => {
+            SqlExpression::Column(column_ref) => {
                 // Handle qualified column names
-                if name.contains('.') {
-                    if let Some(dot_pos) = name.rfind('.') {
-                        Ok(name[dot_pos + 1..].to_string())
+                if column_ref.name.contains('.') {
+                    if let Some(dot_pos) = column_ref.name.rfind('.') {
+                        Ok(column_ref.name[dot_pos + 1..].to_string())
                     } else {
-                        Ok(name.clone())
+                        Ok(column_ref.name.clone())
                     }
                 } else {
-                    Ok(name.clone())
+                    Ok(column_ref.name.clone())
                 }
             }
             _ => Err(anyhow::anyhow!("Expected column name, got: {:?}", expr)),

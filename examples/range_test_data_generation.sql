@@ -30,75 +30,86 @@ LIMIT 10;
 GO
 
 -- 2. Generate Time Series Data (Mock Daily Sales)
-WITH dates AS (
-    SELECT 
-        value AS day_number,
-        TEXTJOIN('-', 1, '2024', '01', 
-            CASE WHEN value < 10 THEN TEXTJOIN('', 1, '0', value) ELSE value END
-        ) AS date_str
-    FROM RANGE(1, 30)
-),
-sales_data AS (
-    SELECT 
-        day_number,
-        date_str,
-        -- Simulate sales with some pattern
-        (value * 10) + (value % 7) * 5 AS daily_sales,
-        CASE 
-            WHEN value % 7 IN (0, 6) THEN 'Weekend'
-            ELSE 'Weekday'
-        END AS day_type
-    FROM dates
-)
-SELECT 
-    date_str AS date,
-    day_type,
+WITH
+    dates_1 AS (
+        SELECT value AS day_number
+        FROM RANGE(1, 30)
+    ),
+    dates AS (
+        SELECT
+            day_number,
+            DATEADD('day', day_number, '2024-01-01') AS new_date
+        FROM dates_1
+    ),
+    sales_data AS (
+        SELECT
+            new_date,
+            day_number,
+            DAYOFWEEK(new_date) AS weekday_num,
+            day_number * 10 + day_number % 7 * 5 AS daily_sales
+        FROM dates
+    )
+SELECT
+    day_number,
+    new_date,
     daily_sales,
-    SUM(daily_sales) OVER (ORDER BY day_number) AS cumulative_sales,
-    LAG(daily_sales, 7, 0) OVER (ORDER BY day_number) AS same_day_last_week
+    SUM(daily_sales) OVER (ORDER BY day_number ASC) AS cumulative_sales,
+    LAG(daily_sales, 7, 0) OVER (ORDER BY day_number ASC) AS same_day_last_week
 FROM sales_data
 WHERE day_number <= 14
-ORDER BY day_number;
+ORDER BY day_number ASC;
 GO
 
 -- 3. Generate Product Inventory Test Data
-WITH products AS (
-    SELECT 
-        value AS product_id,
-        TEXTJOIN('_', 1, 'PROD', (1000 + value)) AS sku,
-        CASE 
-            WHEN IS_PRIME(value) = true THEN 'Electronics'
-            WHEN value % 2 = 0 THEN 'Clothing'
-            ELSE 'Books'
-        END AS category,
-        value * 10 AS base_price
-    FROM RANGE(1, 30)
-),
-inventory AS (
-    SELECT 
-        product_id,
-        sku,
-        category,
-        base_price,
-        (50 - value) AS stock_quantity,
-        CASE 
-            WHEN (50 - value) < 10 THEN 'Low Stock'
-            WHEN (50 - value) < 25 THEN 'Normal'
-            ELSE 'Well Stocked'
-        END AS stock_status
-    FROM products
-)
-SELECT 
+WITH
+    ranged AS (
+        SELECT value AS product_id
+        FROM RANGE(1, 30)
+    ),
+    products AS (
+        SELECT
+            product_id,
+            TEXTJOIN('_', 1, 'PROD', 1000 + product_id) AS sku,
+            CASE
+        WHEN IS_PRIME(product_id) = TRUE THEN 'Electronics'
+        WHEN product_id % 2 = 0 THEN 'Clothing'
+        ELSE 'Books'
+    END AS category,
+            product_id * 10 AS base_price
+        FROM ranged
+    ),
+    inventory AS (
+        SELECT
+            product_id,
+            sku,
+            category,
+            base_price,
+            50 - product_id AS stock_quantity,
+            CASE
+        WHEN 50 - product_id < 10 THEN 'Low Stock'
+        WHEN 50 - product_id < 25 THEN 'Normal'
+        ELSE 'Well Stocked'
+    END AS stock_status
+        FROM products
+    ),
+    inventory_2 AS (
+        SELECT
+            *,
+            base_price * stock_quantity AS inv_value
+        FROM inventory
+    )
+SELECT
+    product_id,
     sku,
     category,
     base_price,
     stock_quantity,
     stock_status,
-    COUNT(*) OVER (PARTITION BY category) AS products_in_category,
-    SUM(base_price * stock_quantity) OVER (PARTITION BY category) AS category_inventory_value
-FROM inventory
+    COUNT('*') OVER (PARTITION BY category) AS products_in_category,
+    SUM(inv_value) OVER (PARTITION BY category) AS category_inventory_value
+FROM inventory_2
 WHERE stock_quantity > 0
-ORDER BY category, product_id
+ORDER BY category ASC, product_id ASC
 LIMIT 15;
 GO
 
