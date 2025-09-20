@@ -1227,9 +1227,20 @@ cargo run data.csv
 
 Comprehensive documentation available in the `docs/` folder covering:
 - Architecture and design decisions
-- SQL parser implementation  
+- SQL parser implementation
 - TUI component system
 - Performance optimization techniques
+
+## ⚡ Performance
+
+SQL CLI is optimized for handling large datasets efficiently:
+
+- **In-memory processing** for sub-second query response on 100K+ row datasets
+- **Optimized GROUP BY** with FxHashMap and cardinality estimation
+- **Regex caching** for massive performance gains on pattern matching
+- **Streaming operations** minimize memory usage on large files
+
+See [Performance Benchmarks](docs/PERFORMANCE_BENCHMARKS.md) for detailed metrics and optimization roadmap.
 
 ## 🤝 Contributing
 
