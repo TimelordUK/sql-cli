@@ -426,7 +426,7 @@ impl<'a> ArithmeticEvaluator<'a> {
 
             // Check if it's an aggregate function in either registry
             if self.aggregate_registry.is_aggregate(&name_upper)
-                || (name_upper == "SUM" && self.new_aggregate_registry.contains(&name_upper))
+                || self.new_aggregate_registry.contains(&name_upper)
             {
                 return self.evaluate_aggregate_with_distinct(&name_upper, args, row_index);
             } else {
@@ -448,8 +448,8 @@ impl<'a> ArithmeticEvaluator<'a> {
     ) -> Result<DataValue> {
         let name_upper = name.to_uppercase();
 
-        // Check new aggregate registry first for migrated functions (SUM)
-        if name_upper == "SUM" && self.new_aggregate_registry.get(&name_upper).is_some() {
+        // Check new aggregate registry first for migrated functions
+        if self.new_aggregate_registry.get(&name_upper).is_some() {
             let rows_to_process: Vec<usize> = if let Some(ref visible) = self.visible_rows {
                 visible.clone()
             } else {
@@ -580,35 +580,8 @@ impl<'a> ArithmeticEvaluator<'a> {
         // Check if this is an aggregate function
         let name_upper = name.to_uppercase();
 
-        // Handle COUNT(*) special case
-        if name_upper == "COUNT" && args.len() == 1 {
-            match &args[0] {
-                SqlExpression::Column(col) if col == "*" => {
-                    // COUNT(*) - count all rows (or visible rows if filtered)
-                    let count = if let Some(ref visible) = self.visible_rows {
-                        visible.len() as i64
-                    } else {
-                        self.table.rows.len() as i64
-                    };
-                    return Ok(DataValue::Integer(count));
-                }
-                SqlExpression::StringLiteral(s) if s == "*" => {
-                    // COUNT(*) parsed as StringLiteral
-                    let count = if let Some(ref visible) = self.visible_rows {
-                        visible.len() as i64
-                    } else {
-                        self.table.rows.len() as i64
-                    };
-                    return Ok(DataValue::Integer(count));
-                }
-                _ => {
-                    // COUNT(column) - will be handled below
-                }
-            }
-        }
-
         // Check new aggregate registry first (for migrated functions)
-        if name_upper == "SUM" && self.new_aggregate_registry.get(&name_upper).is_some() {
+        if self.new_aggregate_registry.get(&name_upper).is_some() {
             // Use new registry for SUM
             let rows_to_process: Vec<usize> = if let Some(ref visible) = self.visible_rows {
                 visible.clone()
@@ -620,11 +593,32 @@ impl<'a> ArithmeticEvaluator<'a> {
             let agg_func = self.new_aggregate_registry.get(&name_upper).unwrap();
             let mut state = agg_func.create_state();
 
-            // Evaluate arguments and accumulate
-            if !args.is_empty() {
-                for &row_idx in &rows_to_process {
-                    let value = self.evaluate(&args[0], row_idx)?;
-                    state.accumulate(&value)?;
+            // Special handling for COUNT(*)
+            if name_upper == "COUNT" || name_upper == "COUNT_STAR" {
+                if args.is_empty()
+                    || (args.len() == 1
+                        && matches!(&args[0], SqlExpression::Column(col) if col == "*"))
+                    || (args.len() == 1
+                        && matches!(&args[0], SqlExpression::StringLiteral(s) if s == "*"))
+                {
+                    // COUNT(*) or COUNT_STAR - count all rows
+                    for _ in &rows_to_process {
+                        state.accumulate(&DataValue::Integer(1))?;
+                    }
+                } else {
+                    // COUNT(column) - count non-null values
+                    for &row_idx in &rows_to_process {
+                        let value = self.evaluate(&args[0], row_idx)?;
+                        state.accumulate(&value)?;
+                    }
+                }
+            } else {
+                // Other aggregates - evaluate arguments and accumulate
+                if !args.is_empty() {
+                    for &row_idx in &rows_to_process {
+                        let value = self.evaluate(&args[0], row_idx)?;
+                        state.accumulate(&value)?;
+                    }
                 }
             }
 

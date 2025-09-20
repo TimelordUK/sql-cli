@@ -101,6 +101,7 @@ impl AggregateFunctionRegistry {
     fn register_builtin_functions(&mut self) {
         // Basic aggregates
         self.register(Box::new(CountFunction));
+        self.register(Box::new(CountStarFunction));
         self.register(Box::new(SumFunction));
         self.register(Box::new(AvgFunction));
         self.register(Box::new(MinFunction));
@@ -130,7 +131,7 @@ impl AggregateFunction for CountFunction {
     }
 
     fn description(&self) -> &str {
-        "Count the number of non-null values or rows"
+        "Count the number of non-null values"
     }
 
     fn create_state(&self) -> Box<dyn AggregateState> {
@@ -144,7 +145,7 @@ struct CountState {
 
 impl AggregateState for CountState {
     fn accumulate(&mut self, value: &DataValue) -> Result<()> {
-        // COUNT(*) counts all rows, COUNT(column) counts non-nulls
+        // COUNT(column) counts non-nulls only
         if !matches!(value, DataValue::Null) {
             self.count += 1;
         }
@@ -157,6 +158,47 @@ impl AggregateState for CountState {
 
     fn clone_box(&self) -> Box<dyn AggregateState> {
         Box::new(CountState { count: self.count })
+    }
+
+    fn reset(&mut self) {
+        self.count = 0;
+    }
+}
+
+// COUNT(*) - counts all rows including nulls
+struct CountStarFunction;
+
+impl AggregateFunction for CountStarFunction {
+    fn name(&self) -> &str {
+        "COUNT_STAR"
+    }
+
+    fn description(&self) -> &str {
+        "Count all rows including nulls"
+    }
+
+    fn create_state(&self) -> Box<dyn AggregateState> {
+        Box::new(CountStarState { count: 0 })
+    }
+}
+
+struct CountStarState {
+    count: i64,
+}
+
+impl AggregateState for CountStarState {
+    fn accumulate(&mut self, _value: &DataValue) -> Result<()> {
+        // COUNT(*) counts all rows, even nulls
+        self.count += 1;
+        Ok(())
+    }
+
+    fn finalize(self: Box<Self>) -> DataValue {
+        DataValue::Integer(self.count)
+    }
+
+    fn clone_box(&self) -> Box<dyn AggregateState> {
+        Box::new(CountStarState { count: self.count })
     }
 
     fn reset(&mut self) {

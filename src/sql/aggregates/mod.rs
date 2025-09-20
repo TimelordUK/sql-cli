@@ -556,8 +556,8 @@ impl AggregateRegistry {
         };
 
         let functions: Vec<Box<dyn AggregateFunction>> = vec![
-            Box::new(CountFunction),
-            Box::new(CountStarFunction),
+            // Box::new(CountFunction), // MIGRATED to new registry
+            // Box::new(CountStarFunction), // MIGRATED to new registry
             // Box::new(SumFunction), // MIGRATED to new registry
             Box::new(AvgFunction),
             Box::new(MinFunction),
@@ -599,11 +599,11 @@ impl AggregateRegistry {
         use crate::sql::aggregate_functions::AggregateFunctionRegistry;
 
         // Check this registry
-        if self.get(name).is_some() || name.to_uppercase() == "COUNT" {
+        if self.get(name).is_some() {
             return true;
         }
 
-        // Also check new registry for migrated functions
+        // Also check new registry for migrated functions (including COUNT, COUNT_STAR, SUM)
         let new_registry = AggregateFunctionRegistry::new();
         new_registry.contains(name)
     }
