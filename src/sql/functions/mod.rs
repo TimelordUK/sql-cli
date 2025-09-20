@@ -31,6 +31,7 @@ pub mod string_fun;
 pub mod string_methods;
 pub mod string_utils;
 pub mod text_processing;
+pub mod trigonometry;
 pub mod type_checking;
 
 // Re-export MethodFunction trait
@@ -568,6 +569,10 @@ impl FunctionRegistry {
             IsPrimeFunction, NextPrimeFunction, NthPrimeFunction, PrevPrimeFunction,
             PrimeCountFunction, PrimeFunction, PrimePiFunction,
         };
+        use trigonometry::{
+            AcosFunction, AsinFunction, Atan2Function, AtanFunction, CosFunction, CoshFunction,
+            CotFunction, SinFunction, SinhFunction, TanFunction, TanhFunction,
+        };
 
         // Prime number functions
         self.register(Box::new(PrimeFunction));
@@ -577,6 +582,21 @@ impl FunctionRegistry {
         self.register(Box::new(PrimePiFunction)); // Alias for PRIME_COUNT
         self.register(Box::new(NextPrimeFunction));
         self.register(Box::new(PrevPrimeFunction));
+
+        // Trigonometric functions
+        self.register(Box::new(SinFunction));
+        self.register(Box::new(CosFunction));
+        self.register(Box::new(TanFunction));
+        self.register(Box::new(CotFunction));
+        self.register(Box::new(AsinFunction));
+        self.register(Box::new(AcosFunction));
+        self.register(Box::new(AtanFunction));
+        self.register(Box::new(Atan2Function));
+
+        // Hyperbolic functions
+        self.register(Box::new(SinhFunction));
+        self.register(Box::new(CoshFunction));
+        self.register(Box::new(TanhFunction));
 
         // General math functions
         math::register_math_functions(self);

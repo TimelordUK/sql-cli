@@ -7,16 +7,16 @@
 ## 📊 Statistical Functions (High Business Value)
 
 ### Priority 1 - Essential Statistics
-- [ ] **MEDIAN()** - Middle value in sorted dataset
-- [ ] **MODE()** - Most frequent value(s)
-- [ ] **PERCENTILE(value, n)** - Nth percentile (0-100)
+- [x] **MEDIAN()** - Middle value in sorted dataset ✅
+- [x] **MODE()** - Most frequent value(s) ✅ (numeric only)
+- [x] **PERCENTILE(value, n)** - Nth percentile (0-100) ✅
 - [ ] **QUARTILE(value, n)** - Quartiles (1-4)
-- [ ] **VARIANCE() / VAR()** - Statistical variance
-- [ ] **VAR_POP()** - Population variance
-- [ ] **VAR_SAMP()** - Sample variance
+- [x] **VARIANCE() / VAR()** - Statistical variance ✅
+- [x] **VAR_POP()** - Population variance ✅
+- [x] **VAR_SAMP()** - Sample variance ✅
 
 ### Priority 2 - Advanced Statistics
-- [ ] **CORR(x, y)** - Pearson correlation coefficient
+- [x] **CORR(x, y)** - Pearson correlation coefficient ✅
 - [ ] **COVAR_POP(x, y)** - Population covariance
 - [ ] **COVAR_SAMP(x, y)** - Sample covariance
 - [ ] **SKEW() / SKEWNESS()** - Distribution skewness
