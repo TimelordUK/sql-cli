@@ -20,7 +20,6 @@ declare -A example_data_files
 example_data_files["window_functions.sql"]="data/sales_data.csv"
 example_data_files["window_functions_filtering.sql"]="data/sales_data.csv"
 example_data_files["solar_system_demo.sql"]="data/solar_system.csv"
-example_data_files["solar_system_calculations.sql"]="data/solar_system.csv"
 example_data_files["solar_system_calculations_simple.sql"]="data/solar_system.csv"
 example_data_files["solar_system_working.sql"]="data/solar_system.csv"
 example_data_files["solar_system_with_cte.sql"]="data/solar_system.csv"
@@ -36,7 +35,6 @@ declare -A skip_examples
 skip_examples["solar_system_with_cte_future.sql"]=1  # Advanced CTE features (joins, multiple CTEs)
 # Temporarily skip failing examples - to be fixed later
 skip_examples["nvim_completion_demo.sql"]=1  # Column 'region' not found error
-skip_examples["test_dates.sql"]=1  # Parse error (empty file or syntax issue)
 # skip_examples["test_group_num.sql"]=1  # Parser issues with complex queries
 skip_examples["trade_reconciliation_final.sql"]=1  # Needs data file check
 
