@@ -1,3 +1,5 @@
+-- #! ../data/sales_data.csv
+
 -- ============================================================================
 -- CTE Cookbook: Sales Analytics (Simplified Working Examples)
 -- Real-world patterns using only supported SQL features

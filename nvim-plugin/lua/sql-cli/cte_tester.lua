@@ -37,35 +37,45 @@ function M.parse_ctes(query_lines)
     local upper = line:upper()
     local trimmed = vim.trim(line)
 
-    -- Skip comment lines
-    if trimmed:match("^%-%-") then
+    -- Skip comment lines and empty lines
+    if trimmed == "" or trimmed:match("^%-%-") then
       goto continue
     end
 
-    -- Check for WITH keyword
-    if upper:match("^%s*WITH%s*$") or upper:match("^%s*WITH%s+%w") then
+    -- Check for WITH keyword (including WITH followed by CTE name)
+    if upper:match("^%s*WITH%s+[%w_]") or upper:match("^%s*WITH%s*$") then
       in_with_block = true
+      -- Check if WITH line has CTE definition
+      local name = trimmed:match("^WITH%s+([%w_]+)%s+AS%s*%(")
+      if name then
+        current_cte = {
+          name = name,
+          start_line = i,
+          end_line = nil
+        }
+        paren_depth = 1
+      end
     end
 
     -- Look for CTE definitions
     if in_with_block then
       -- Match CTE name pattern (name AS ( )
       -- Use [%w_]+ to match alphanumeric and underscores
-      local name = trimmed:match("^([%w_]+)%s+AS%s*%(")
-      if name then
-        -- Close previous CTE if exists
-        if current_cte then
-          table.insert(ctes, current_cte)
+      -- Skip if we already found a CTE on the WITH line
+      if not current_cte then
+        local name = trimmed:match("^([%w_]+)%s+AS%s*%(")
+        if name then
+          -- Start new CTE
+          current_cte = {
+            name = name,
+            start_line = i,
+            end_line = nil
+          }
+          paren_depth = 1  -- We found the opening paren
         end
+      end
 
-        -- Start new CTE
-        current_cte = {
-          name = name,
-          start_line = i,
-          end_line = nil
-        }
-        paren_depth = 1  -- We found the opening paren
-      elseif current_cte then
+      if current_cte then
         -- Track parentheses to find end of current CTE
         for char in line:gmatch(".") do
           if char == "(" then
@@ -131,30 +141,89 @@ end
 function M.generate_test_query(query_lines, cte_index, ctes)
   local test_lines = {}
 
-  -- Add WITH keyword
-  table.insert(test_lines, "WITH")
+  -- Debug: Show what we're working with
+  vim.notify(string.format("Generating test query for CTE %d of %d", cte_index, #ctes), vim.log.levels.INFO)
 
-  -- Add all CTEs up to and including the target CTE
-  for i = 1, cte_index do
-    local cte = ctes[i]
+  -- Find the actual WITH line
+  local with_line_found = false
+  for i, line in ipairs(query_lines) do
+    if line:upper():match("^%s*WITH%s") then
+      table.insert(test_lines, line)
+      with_line_found = true
 
-    -- Copy CTE lines
-    for line_num = cte.start_line, cte.end_line do
-      local line = query_lines[line_num]
+      -- If WITH and first CTE are on same line (e.g., "WITH daily_ranges AS (")
+      -- We need to handle this specially
+      if line:match("WITH%s+[%w_]+%s+AS%s*%(") then
+        -- The WITH and CTE name are on the same line
+        -- Continue from next line
+        local cte = ctes[1]
+        for line_num = cte.start_line + 1, cte.end_line do
+          if query_lines[line_num] then
+            table.insert(test_lines, query_lines[line_num])
+          end
+        end
 
-      -- For the last CTE, ensure it doesn't end with comma
-      if i == cte_index and line_num == cte.end_line then
-        line = line:gsub(",%s*$", "")
+        -- If we only want the first CTE, we're done
+        if cte_index == 1 then
+          -- Remove trailing comma if present
+          local last_line = test_lines[#test_lines]
+          test_lines[#test_lines] = last_line:gsub(",%s*$", "")
+        end
+      else
+        -- WITH is on its own line, copy CTEs normally
+        for j = 1, cte_index do
+          local cte = ctes[j]
+          for line_num = cte.start_line, cte.end_line do
+            local line = query_lines[line_num]
+
+            -- For the last CTE, ensure it doesn't end with comma
+            if j == cte_index and line_num == cte.end_line then
+              line = line:gsub(",%s*$", "")
+            end
+
+            table.insert(test_lines, line)
+          end
+
+          -- Add comma after CTE if not the last one
+          if j < cte_index then
+            local last_line = test_lines[#test_lines]
+            if not last_line:match(",%s*$") then
+              test_lines[#test_lines] = last_line .. ","
+            end
+          end
+        end
       end
 
-      table.insert(test_lines, line)
+      break
     end
+  end
 
-    -- Add comma after CTE if not the last one
-    if i < cte_index then
-      local last_line = test_lines[#test_lines]
-      if not last_line:match(",%s*$") then
-        test_lines[#test_lines] = last_line .. ","
+  -- If we didn't find WITH, add it
+  if not with_line_found then
+    table.insert(test_lines, "WITH")
+
+    -- Add all CTEs up to and including the target CTE
+    for i = 1, cte_index do
+      local cte = ctes[i]
+
+      -- Copy CTE lines
+      for line_num = cte.start_line, cte.end_line do
+        local line = query_lines[line_num]
+
+        -- For the last CTE, ensure it doesn't end with comma
+        if i == cte_index and line_num == cte.end_line then
+          line = line:gsub(",%s*$", "")
+        end
+
+        table.insert(test_lines, line)
+      end
+
+      -- Add comma after CTE if not the last one
+      if i < cte_index then
+        local last_line = test_lines[#test_lines]
+        if not last_line:match(",%s*$") then
+          test_lines[#test_lines] = last_line .. ","
+        end
       end
     end
   end
@@ -164,7 +233,12 @@ function M.generate_test_query(query_lines, cte_index, ctes)
   table.insert(test_lines, "SELECT *")
   table.insert(test_lines, "FROM " .. target_cte.name .. ";")
 
-  return table.concat(test_lines, "\n")
+  local generated_query = table.concat(test_lines, "\n")
+
+  -- Debug: Show generated query
+  vim.notify("Generated test query:\n" .. generated_query:sub(1, 200) .. "...", vim.log.levels.DEBUG)
+
+  return generated_query
 end
 
 -- Test CTE at cursor

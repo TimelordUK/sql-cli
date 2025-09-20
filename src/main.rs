@@ -848,6 +848,10 @@ fn main() -> io::Result<()> {
         .iter()
         .any(|arg| arg == "--cte-info" || arg == "--cte-json");
 
+    let rewrite_analysis_arg = args
+        .iter()
+        .any(|arg| arg == "--analyze-rewrite" || arg == "--rewrite-analysis");
+
     let debug_arg = args
         .iter()
         .any(|arg| arg == "--debug" || arg == "--debug-trace");
@@ -914,6 +918,7 @@ fn main() -> io::Result<()> {
             show_work_units: show_work_units_arg,
             execution_plan: execution_plan_arg,
             cte_info: cte_info_arg,
+            rewrite_analysis: rewrite_analysis_arg,
             lift_in_expressions: lift_in_arg,
             script_file: query_file_arg.clone(),
             debug_trace: debug_arg,

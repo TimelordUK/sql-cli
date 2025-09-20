@@ -85,10 +85,12 @@ function M.show_cte_analysis_popup()
       table.insert(content, "─────────────────────────────────")
       for _, cte in ipairs(result.ctes) do
         table.insert(content, string.format("%d. %s", cte.index + 1, cte.name))
-        if cte.columns and #cte.columns > 0 then
+        -- Handle null/nil columns from JSON
+        if cte.columns and type(cte.columns) == "table" and #cte.columns > 0 then
           table.insert(content, "   Columns: " .. table.concat(cte.columns, ", "))
         end
-        if cte.dependencies and #cte.dependencies > 0 then
+        -- Handle dependencies
+        if cte.dependencies and type(cte.dependencies) == "table" and #cte.dependencies > 0 then
           table.insert(content, "   Depends on: " .. table.concat(cte.dependencies, ", "))
         else
           table.insert(content, "   Depends on: (none - base CTE)")
@@ -99,9 +101,10 @@ function M.show_cte_analysis_popup()
       table.insert(content, "CTE DEPENDENCY CHAIN:")
       table.insert(content, "─────────────────────────────────")
       for _, cte in ipairs(result.ctes) do
-        local deps = cte.dependencies and #cte.dependencies > 0
-          and table.concat(cte.dependencies, ", ")
-          or "(base)"
+        local deps = "(base)"
+        if cte.dependencies and type(cte.dependencies) == "table" and #cte.dependencies > 0 then
+          deps = table.concat(cte.dependencies, ", ")
+        end
         table.insert(content, string.format("  %s <- %s", cte.name, deps))
       end
 

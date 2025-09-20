@@ -77,6 +77,7 @@ pub struct NonInteractiveConfig {
     pub show_work_units: bool,
     pub execution_plan: bool,
     pub cte_info: bool,
+    pub rewrite_analysis: bool,
     pub lift_in_expressions: bool,
     pub script_file: Option<String>, // Path to the script file for relative path resolution
     pub debug_trace: bool,
@@ -176,6 +177,35 @@ pub fn execute_non_interactive(config: NonInteractiveConfig) -> Result<()> {
             }
             Err(e) => {
                 eprintln!("Failed to parse query for plan: {e}");
+            }
+        }
+    }
+
+    // If rewrite analysis is requested, analyze query for optimization opportunities
+    if config.rewrite_analysis {
+        use crate::sql::query_rewriter::{QueryRewriter, RewriteAnalysis};
+        use crate::sql::recursive_parser::Parser;
+        use serde_json::json;
+
+        let mut parser = Parser::new(&config.query);
+        match parser.parse() {
+            Ok(statement) => {
+                let mut rewriter = QueryRewriter::new();
+                let suggestions = rewriter.analyze(&statement);
+
+                let analysis = RewriteAnalysis::from_suggestions(suggestions);
+                println!("{}", serde_json::to_string_pretty(&analysis).unwrap());
+                return Ok(());
+            }
+            Err(e) => {
+                let output = json!({
+                    "success": false,
+                    "error": format!("{}", e),
+                    "suggestions": [],
+                    "can_auto_rewrite": false,
+                });
+                println!("{}", serde_json::to_string_pretty(&output).unwrap());
+                return Ok(());
             }
         }
     }

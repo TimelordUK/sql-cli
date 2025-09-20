@@ -16,7 +16,7 @@ local results = require('sql-cli.results')
 local table_nav = require('sql-cli.table_nav')
 local multi_table_nav = require('sql-cli.multi_table_nav')
 local visualize = require('sql-cli.visualize')
-local cte_tester = require('sql-cli.cte_tester')
+local cte_tester = require('sql-cli.cte_tester_v2')
 local cte_debug = require('sql-cli.cte_debug')
 local cte_parser_cli = require('sql-cli.cte_parser_cli')
 
@@ -144,6 +144,10 @@ function M.create_commands()
   vim.api.nvim_create_user_command("SqlCliCteAnalysisCli", function()
     cte_parser_cli.show_cte_analysis_popup()
   end, { desc = "Show CTE analysis using CLI parser" })
+
+  vim.api.nvim_create_user_command("SqlCliTestCteV2", function()
+    cte_tester.test_cte_at_cursor(M.config, M.state)
+  end, { desc = "Test CTE at cursor (v2 with debug)" })
 
   vim.api.nvim_create_user_command("SqlCliResultsToBuffer", function()
     results.results_to_buffer(M.state)
@@ -287,7 +291,8 @@ function M.setup_keymaps()
 
   if keymaps.cte_analysis then
     vim.keymap.set("n", keymaps.cte_analysis, function()
-      cte_debug.show_cte_analysis_popup()
+      -- Use CLI parser by default as it's more robust
+      cte_parser_cli.show_cte_analysis_popup()
     end, { desc = "Show CTE analysis", silent = true })
   end
 

@@ -11,6 +11,7 @@ pub mod functions;
 pub mod generators;
 pub mod hybrid_parser;
 pub mod parser;
+pub mod query_rewriter;
 pub mod recursive_parser;
 pub mod script_parser;
 pub mod smart_parser;
