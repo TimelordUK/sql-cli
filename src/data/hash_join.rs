@@ -35,38 +35,78 @@ impl HashJoinExecutor {
         // Extract column references from the join condition
         let (left_col_name, right_col_name) = self.parse_join_columns(join_clause)?;
 
-        // Find column indices
-        let left_col_idx = self.find_column_index(&left_table, &left_col_name)?;
-        let right_col_idx = self.find_column_index(&right_table, &right_col_name)?;
+        // For join conditions, we need to be smart about which table each column belongs to
+        // The left column could reference either table, same with right column
+        // Try to resolve based on table prefixes or column existence
+        let (left_col_idx, right_col_idx) =
+            self.resolve_join_columns(&left_table, &right_table, &left_col_name, &right_col_name)?;
 
-        // Perform the appropriate join based on type
+        // Choose join algorithm based on operator
+        let use_hash_join = join_clause.condition.operator == JoinOperator::Equal;
+
+        // Perform the appropriate join based on type and operator
         match join_clause.join_type {
-            JoinType::Inner => self.hash_join_inner(
-                left_table,
-                right_table,
-                left_col_idx,
-                right_col_idx,
-                &left_col_name,
-                &right_col_name,
-            ),
-            JoinType::Left => self.hash_join_left(
-                left_table,
-                right_table,
-                left_col_idx,
-                right_col_idx,
-                &left_col_name,
-                &right_col_name,
-            ),
+            JoinType::Inner => {
+                if use_hash_join {
+                    self.hash_join_inner(
+                        left_table,
+                        right_table,
+                        left_col_idx,
+                        right_col_idx,
+                        &left_col_name,
+                        &right_col_name,
+                    )
+                } else {
+                    self.nested_loop_join_inner(
+                        left_table,
+                        right_table,
+                        left_col_idx,
+                        right_col_idx,
+                        &join_clause.condition.operator,
+                    )
+                }
+            }
+            JoinType::Left => {
+                if use_hash_join {
+                    self.hash_join_left(
+                        left_table,
+                        right_table,
+                        left_col_idx,
+                        right_col_idx,
+                        &left_col_name,
+                        &right_col_name,
+                    )
+                } else {
+                    self.nested_loop_join_left(
+                        left_table,
+                        right_table,
+                        left_col_idx,
+                        right_col_idx,
+                        &join_clause.condition.operator,
+                    )
+                }
+            }
             JoinType::Right => {
-                // Right join is just a left join with tables swapped
-                self.hash_join_left(
-                    right_table,
-                    left_table,
-                    right_col_idx,
-                    left_col_idx,
-                    &right_col_name,
-                    &left_col_name,
-                )
+                if use_hash_join {
+                    // Right join is just a left join with tables swapped
+                    self.hash_join_left(
+                        right_table,
+                        left_table,
+                        right_col_idx,
+                        left_col_idx,
+                        &right_col_name,
+                        &left_col_name,
+                    )
+                } else {
+                    // Right join is just a left join with tables swapped
+                    self.nested_loop_join_left(
+                        right_table,
+                        left_table,
+                        right_col_idx,
+                        left_col_idx,
+                        &self.reverse_operator(&join_clause.condition.operator),
+                    )
+                }
             }
             JoinType::Cross => self.cross_join(left_table, right_table),
             JoinType::Full => {
@@ -77,17 +117,57 @@ impl HashJoinExecutor {
 
     /// Parse join columns from the join condition
     fn parse_join_columns(&self, join_clause: &JoinClause) -> Result<(String, String)> {
-        // For now, we only support simple equality conditions
-        if join_clause.condition.operator != JoinOperator::Equal {
-            return Err(anyhow!(
-                "Only equality JOIN conditions are currently supported"
-            ));
-        }
-
         Ok((
             join_clause.condition.left_column.clone(),
             join_clause.condition.right_column.clone(),
         ))
+    }
+
+    /// Resolve which table each column belongs to in a join condition
+    fn resolve_join_columns(
+        &self,
+        left_table: &DataTable,
+        right_table: &DataTable,
+        left_col_name: &str,
+        right_col_name: &str,
+    ) -> Result<(usize, usize)> {
+        // Try to find the left column in left table, then right table
+        let left_col_idx = if let Ok(idx) = self.find_column_index(left_table, left_col_name) {
+            idx
+        } else if let Ok(idx) = self.find_column_index(right_table, left_col_name) {
+            // The "left" column in the condition is actually from the right table
+            // This means we need to swap the comparison
+            return Err(anyhow!(
+                "Column '{}' found in right table but specified as left operand. \
+                Please rewrite the condition with columns in correct positions.",
+                left_col_name
+            ));
+        } else {
+            return Err(anyhow!(
+                "Column '{}' not found in either table",
+                left_col_name
+            ));
+        };
+
+        // Try to find the right column in right table, then left table
+        let right_col_idx = if let Ok(idx) = self.find_column_index(right_table, right_col_name) {
+            idx
+        } else if let Ok(idx) = self.find_column_index(left_table, right_col_name) {
+            // The "right" column in the condition is actually from the left table
+            // This means we need to swap the comparison
+            return Err(anyhow!(
+                "Column '{}' found in left table but specified as right operand. \
+                Please rewrite the condition with columns in correct positions.",
+                right_col_name
+            ));
+        } else {
+            return Err(anyhow!(
+                "Column '{}' not found in either table",
+                right_col_name
+            ));
+        };
+
+        Ok((left_col_idx, right_col_idx))
     }
 
     /// Find column index in a table
@@ -98,6 +178,12 @@ impl HashJoinExecutor {
         } else {
             col_name
         };
+
+        debug!(
+            "Looking for column '{}' in table with columns: {:?}",
+            col_name,
+            table.column_names()
+        );
 
         table
             .columns
@@ -448,5 +534,219 @@ impl HashJoinExecutor {
         } else {
             col_name.to_string()
         }
+    }
+
+    /// Reverse a join operator for right joins
+    fn reverse_operator(&self, op: &JoinOperator) -> JoinOperator {
+        match op {
+            JoinOperator::Equal => JoinOperator::Equal,
+            JoinOperator::NotEqual => JoinOperator::NotEqual,
+            JoinOperator::LessThan => JoinOperator::GreaterThan,
+            JoinOperator::GreaterThan => JoinOperator::LessThan,
+            JoinOperator::LessThanOrEqual => JoinOperator::GreaterThanOrEqual,
+            JoinOperator::GreaterThanOrEqual => JoinOperator::LessThanOrEqual,
+        }
+    }
+
+    /// Compare two values based on the join operator
+    fn compare_values(&self, left: &DataValue, right: &DataValue, op: &JoinOperator) -> bool {
+        match op {
+            JoinOperator::Equal => left == right,
+            JoinOperator::NotEqual => left != right,
+            JoinOperator::LessThan => left < right,
+            JoinOperator::GreaterThan => left > right,
+            JoinOperator::LessThanOrEqual => left <= right,
+            JoinOperator::GreaterThanOrEqual => left >= right,
+        }
+    }
+
+    /// Nested loop join for INNER JOIN with inequality conditions
+    fn nested_loop_join_inner(
+        &self,
+        left_table: Arc<DataTable>,
+        right_table: Arc<DataTable>,
+        left_col_idx: usize,
+        right_col_idx: usize,
+        operator: &JoinOperator,
+    ) -> Result<DataTable> {
+        let start = std::time::Instant::now();
+
+        info!(
+            "Executing nested loop INNER JOIN with {:?} operator: {} x {} rows",
+            operator,
+            left_table.row_count(),
+            right_table.row_count()
+        );
+
+        // Create result table with columns from both tables
+        let mut result = DataTable::new("joined");
+
+        // Add columns from left table
+        for col in &left_table.columns {
+            result.add_column(DataColumn {
+                name: col.name.clone(),
+                data_type: col.data_type.clone(),
+                nullable: col.nullable,
+                unique_values: col.unique_values,
+                null_count: col.null_count,
+                metadata: col.metadata.clone(),
+            });
+        }
+
+        // Add columns from right table
+        for col in &right_table.columns {
+            if !left_table
+                .columns
+                .iter()
+                .any(|left_col| left_col.name == col.name)
+            {
+                result.add_column(DataColumn {
+                    name: col.name.clone(),
+                    data_type: col.data_type.clone(),
+                    nullable: col.nullable,
+                    unique_values: col.unique_values,
+                    null_count: col.null_count,
+                    metadata: col.metadata.clone(),
+                });
+            } else {
+                result.add_column(DataColumn {
+                    name: format!("{}_right", col.name),
+                    data_type: col.data_type.clone(),
+                    nullable: col.nullable,
+                    unique_values: col.unique_values,
+                    null_count: col.null_count,
+                    metadata: col.metadata.clone(),
+                });
+            }
+        }
+
+        // Nested loop join
+        let mut match_count = 0;
+        for left_row in &left_table.rows {
+            let left_value = &left_row.values[left_col_idx];
+
+            for right_row in &right_table.rows {
+                let right_value = &right_row.values[right_col_idx];
+
+                if self.compare_values(left_value, right_value, operator) {
+                    let mut joined_row = DataRow { values: Vec::new() };
+                    joined_row.values.extend_from_slice(&left_row.values);
+                    joined_row.values.extend_from_slice(&right_row.values);
+                    result.add_row(joined_row);
+                    match_count += 1;
+                }
+            }
+        }
+
+        info!(
+            "Nested loop INNER JOIN complete: {} matches found in {:?}",
+            match_count,
+            start.elapsed()
+        );
+
+        Ok(result)
+    }
+
+    /// Nested loop join for LEFT JOIN with inequality conditions
+    fn nested_loop_join_left(
+        &self,
+        left_table: Arc<DataTable>,
+        right_table: Arc<DataTable>,
+        left_col_idx: usize,
+        right_col_idx: usize,
+        operator: &JoinOperator,
+    ) -> Result<DataTable> {
+        let start = std::time::Instant::now();
+
+        info!(
+            "Executing nested loop LEFT JOIN with {:?} operator: {} x {} rows",
+            operator,
+            left_table.row_count(),
+            right_table.row_count()
+        );
+
+        // Create result table with columns from both tables
+        let mut result = DataTable::new("joined");
+
+        // Add columns from left table
+        for col in &left_table.columns {
+            result.add_column(DataColumn {
+                name: col.name.clone(),
+                data_type: col.data_type.clone(),
+                nullable: col.nullable,
+                unique_values: col.unique_values,
+                null_count: col.null_count,
+                metadata: col.metadata.clone(),
+            });
+        }
+
+        // Add columns from right table (all nullable for LEFT JOIN)
+        for col in &right_table.columns {
+            if !left_table
+                .columns
+                .iter()
+                .any(|left_col| left_col.name == col.name)
+            {
+                result.add_column(DataColumn {
+                    name: col.name.clone(),
+                    data_type: col.data_type.clone(),
+                    nullable: true, // Always nullable for outer join
+                    unique_values: col.unique_values,
+                    null_count: col.null_count,
+                    metadata: col.metadata.clone(),
+                });
+            } else {
+                result.add_column(DataColumn {
+                    name: format!("{}_right", col.name),
+                    data_type: col.data_type.clone(),
+                    nullable: true, // Always nullable for outer join
+                    unique_values: col.unique_values,
+                    null_count: col.null_count,
+                    metadata: col.metadata.clone(),
+                });
+            }
+        }
+
+        // Nested loop join
+        let mut match_count = 0;
+        let mut null_count = 0;
+
+        for left_row in &left_table.rows {
+            let left_value = &left_row.values[left_col_idx];
+            let mut found_match = false;
+
+            for right_row in &right_table.rows {
+                let right_value = &right_row.values[right_col_idx];
+
+                if self.compare_values(left_value, right_value, operator) {
+                    let mut joined_row = DataRow { values: Vec::new() };
+                    joined_row.values.extend_from_slice(&left_row.values);
+                    joined_row.values.extend_from_slice(&right_row.values);
+                    result.add_row(joined_row);
+                    match_count += 1;
+                    found_match = true;
+                }
+            }
+
+            // If no match found, emit left row with NULLs for right columns
+            if !found_match {
+                let mut joined_row = DataRow { values: Vec::new() };
+                joined_row.values.extend_from_slice(&left_row.values);
+                for _ in 0..right_table.column_count() {
+                    joined_row.values.push(DataValue::Null);
+                }
+                result.add_row(joined_row);
+                null_count += 1;
+            }
+        }
+
+        info!(
+            "Nested loop LEFT JOIN complete: {} matches, {} nulls in {:?}",
+            match_count,
+            null_count,
+            start.elapsed()
+        );
+
+        Ok(result)
     }
 }
