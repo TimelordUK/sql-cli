@@ -458,8 +458,114 @@ fn main() -> io::Result<()> {
                 return Ok(());
             }
 
+            // Try window functions (both syntactic sugar and standard)
+            let window_registry = sql_cli::sql::window_functions::WindowFunctionRegistry::new();
+            let name_upper = name.to_uppercase();
+
+            // Check syntactic sugar window functions
+            if window_registry.contains(&name_upper) {
+                if let Some(func) = window_registry.get(&name_upper) {
+                    println!("Function: {}() OVER", func.name());
+                    println!("Category: Window Function (Syntactic Sugar)");
+                    println!("Description: {}", func.description());
+                    println!("Signature: {}", func.signature());
+                    println!("\nNote: Requires an OVER clause with ORDER BY");
+                    println!("Example: {}() OVER (ORDER BY date)", func.name());
+                    return Ok(());
+                }
+            }
+
+            // Check standard window functions
+            let standard_window_funcs = vec![
+                (
+                    "ROW_NUMBER",
+                    "Assigns a unique sequential integer to each row within a partition",
+                    "ROW_NUMBER() OVER (PARTITION BY ... ORDER BY ...)",
+                ),
+                (
+                    "RANK",
+                    "Assigns a rank to each row within a partition with gaps",
+                    "RANK() OVER (PARTITION BY ... ORDER BY ...)",
+                ),
+                (
+                    "DENSE_RANK",
+                    "Assigns a rank to each row within a partition without gaps",
+                    "DENSE_RANK() OVER (PARTITION BY ... ORDER BY ...)",
+                ),
+                (
+                    "LAG",
+                    "Access data from a previous row in the same result set",
+                    "LAG(column, offset, default) OVER (PARTITION BY ... ORDER BY ...)",
+                ),
+                (
+                    "LEAD",
+                    "Access data from a following row in the same result set",
+                    "LEAD(column, offset, default) OVER (PARTITION BY ... ORDER BY ...)",
+                ),
+                (
+                    "FIRST_VALUE",
+                    "Returns the first value in an ordered set of values",
+                    "FIRST_VALUE(column) OVER (PARTITION BY ... ORDER BY ...)",
+                ),
+                (
+                    "LAST_VALUE",
+                    "Returns the last value in an ordered set of values",
+                    "LAST_VALUE(column) OVER (PARTITION BY ... ORDER BY ...)",
+                ),
+                (
+                    "NTH_VALUE",
+                    "Returns the value at the nth position in an ordered set",
+                    "NTH_VALUE(column, n) OVER (PARTITION BY ... ORDER BY ...)",
+                ),
+                (
+                    "PERCENT_RANK",
+                    "Calculates the relative rank of a row as a percentage",
+                    "PERCENT_RANK() OVER (PARTITION BY ... ORDER BY ...)",
+                ),
+                (
+                    "CUME_DIST",
+                    "Calculates the cumulative distribution of a value",
+                    "CUME_DIST() OVER (PARTITION BY ... ORDER BY ...)",
+                ),
+                (
+                    "NTILE",
+                    "Distributes rows into a specified number of groups",
+                    "NTILE(n) OVER (PARTITION BY ... ORDER BY ...)",
+                ),
+            ];
+
+            for (func_name, desc, signature) in standard_window_funcs {
+                if name_upper == func_name {
+                    println!("Function: {}() OVER", func_name);
+                    println!("Category: Standard Window Function");
+                    println!("Description: {}", desc);
+                    println!("Signature: {}", signature);
+                    println!("\nExamples:");
+                    match func_name {
+                        "ROW_NUMBER" => {
+                            println!("  SELECT ROW_NUMBER() OVER (ORDER BY column) AS row_num FROM table");
+                            println!("  SELECT ROW_NUMBER() OVER (PARTITION BY category ORDER BY value) AS rank_in_category FROM table");
+                        }
+                        "LAG" => {
+                            println!(
+                                "  SELECT LAG(price) OVER (ORDER BY date) AS prev_price FROM table"
+                            );
+                            println!("  SELECT LAG(value, 2, 0) OVER (ORDER BY id) AS two_rows_back FROM table");
+                        }
+                        "LEAD" => {
+                            println!("  SELECT LEAD(price) OVER (ORDER BY date) AS next_price FROM table");
+                            println!("  SELECT LEAD(value, 1, -1) OVER (ORDER BY id) AS next_value FROM table");
+                        }
+                        _ => {
+                            println!("  SELECT {}() OVER (ORDER BY column) FROM table", func_name);
+                        }
+                    }
+                    return Ok(());
+                }
+            }
+
             eprintln!(
-                "'{}' not found in functions, aggregates, or generators",
+                "'{}' not found in functions, aggregates, generators, or window functions",
                 name
             );
             eprintln!("\nUse --list-functions, --list-aggregates, or --list-generators to see available items");

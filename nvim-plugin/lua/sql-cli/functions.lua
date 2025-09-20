@@ -151,6 +151,46 @@ function M.list_functions(config)
     table.insert(lines, "")
   end
 
+  -- Also add generators at the end
+  local gen_cmd = command_path .. " --list-generators"
+  local gen_result = vim.fn.system(gen_cmd)
+  local gen_exit_code = vim.v.shell_error
+
+  if gen_exit_code == 0 then
+    table.insert(lines, "## Generator Functions")
+    table.insert(lines, "")
+    table.insert(lines, "These functions generate sequences of values:")
+    table.insert(lines, "")
+
+    for line in gen_result:gmatch("[^\n]+") do
+      if line:match("^%s+") then
+        -- Generator function line
+        table.insert(lines, line)
+      end
+    end
+    table.insert(lines, "")
+  end
+
+  -- Add standard window functions
+  table.insert(lines, "## Standard Window Functions")
+  table.insert(lines, "")
+  table.insert(lines, "These are built-in window functions that require an OVER clause:")
+  table.insert(lines, "")
+  table.insert(lines, "  ROW_NUMBER()         - Assigns unique sequential integers to rows")
+  table.insert(lines, "  RANK()               - Assigns ranks with gaps for ties")
+  table.insert(lines, "  DENSE_RANK()         - Assigns ranks without gaps for ties")
+  table.insert(lines, "  LAG()                - Access data from previous rows")
+  table.insert(lines, "  LEAD()               - Access data from following rows")
+  table.insert(lines, "  FIRST_VALUE()        - Returns first value in ordered set")
+  table.insert(lines, "  LAST_VALUE()         - Returns last value in ordered set")
+  table.insert(lines, "  NTH_VALUE()          - Returns value at nth position")
+  table.insert(lines, "  PERCENT_RANK()       - Calculates relative rank as percentage")
+  table.insert(lines, "  CUME_DIST()          - Calculates cumulative distribution")
+  table.insert(lines, "  NTILE()              - Distributes rows into groups")
+  table.insert(lines, "")
+  table.insert(lines, "Press K on any function name to see detailed help")
+  table.insert(lines, "")
+
   -- Set content
   vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
 

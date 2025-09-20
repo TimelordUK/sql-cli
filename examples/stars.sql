@@ -108,39 +108,28 @@ ORDER BY star_count desc;
 GO
 
 -- Query 8: Bar chart visualization of star distribution by distance band
-WITH
-    distance_bands AS (
-        SELECT
-            designation,
-            distance_ly,
-            constellation,
-            stellar_class,
-            CASE
-                WHEN distance_ly < 15 THEN '10-15 ly'
-                WHEN distance_ly < 20 THEN '15-20 ly'
-                WHEN distance_ly < 25 THEN '20-25 ly'
-                WHEN distance_ly < 30 THEN '25-30 ly'
-                ELSE '> 30 ly'
-            END AS distance_band
-        FROM star_systems_20_25_ly
-    ),
-    counts AS (
-        SELECT
-            distance_band,
-            COUNT('*') AS star_count,
-            ROUND(MIN(distance_ly), 1) AS min_distance,
-            ROUND(MAX(distance_ly), 1) AS max_distance,
-            ROUND(AVG(distance_ly), 1) AS avg_distance
-        FROM distance_bands
-        GROUP BY distance_band
-    )
+-- Using direct CASE in GROUP BY (SQL CLI supports CASE label references!)
 SELECT
-    distance_band,
-    star_count,
-    REPEAT('*', star_count) AS bar_chart,
-    ROUND((star_count * 100.0 / (SELECT SUM(star_count) FROM counts)), 1) AS percent,
-    min_distance
-FROM counts
+    CASE
+        WHEN distance_ly < 15 THEN '10-15 ly'
+        WHEN distance_ly < 20 THEN '15-20 ly'
+        WHEN distance_ly < 25 THEN '20-25 ly'
+        WHEN distance_ly < 30 THEN '25-30 ly'
+        ELSE '> 30 ly'
+    END AS distance_band,
+    COUNT('*') AS star_count,
+    REPEAT('*', COUNT('*')) AS bar_chart,
+    ROUND((COUNT('*') * 100.0 / (SELECT COUNT('*') FROM star_systems_20_25_ly)), 1) AS percent,
+    ROUND(MIN(distance_ly), 1) AS min_distance,
+    ROUND(MAX(distance_ly), 1) AS max_distance
+FROM star_systems_20_25_ly
+GROUP BY CASE
+        WHEN distance_ly < 15 THEN '10-15 ly'
+        WHEN distance_ly < 20 THEN '15-20 ly'
+        WHEN distance_ly < 25 THEN '20-25 ly'
+        WHEN distance_ly < 30 THEN '25-30 ly'
+        ELSE '> 30 ly'
+    END
 ORDER BY min_distance;
 GO
 
