@@ -35,12 +35,12 @@ example_data_files["trade_reconciliation_final.sql"]="data/sample_trades.csv"
 declare -A skip_examples
 skip_examples["solar_system_with_cte_future.sql"]=1  # Advanced CTE features (joins, multiple CTEs)
 # Temporarily skip failing examples - to be fixed later
-skip_examples["nvim_completion_demo.sql"]=1  # Needs fixing
-skip_examples["range_mathematical_sequences.sql"]=1  # Needs fixing
-skip_examples["range_test_data_generation.sql"]=1  # Needs fixing
-skip_examples["test_dates.sql"]=1  # Missing data file
-skip_examples["test_group_num.sql"]=1  # Needs fixing
-skip_examples["trade_reconciliation_final.sql"]=1  # Needs fixing
+skip_examples["nvim_completion_demo.sql"]=1  # Column 'region' not found error
+skip_examples["range_mathematical_sequences.sql"]=1  # Parser issues with complex queries
+skip_examples["range_test_data_generation.sql"]=1  # Parser issues with TEXTJOIN/complex CTEs
+skip_examples["test_dates.sql"]=1  # Parse error (empty file or syntax issue)
+skip_examples["test_group_num.sql"]=1  # Parser issues with complex queries
+skip_examples["trade_reconciliation_final.sql"]=1  # Needs data file check
 
 failed=0
 passed=0
