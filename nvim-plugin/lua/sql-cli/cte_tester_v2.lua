@@ -142,7 +142,6 @@ function M.generate_simple_test_query(query_lines, target_cte, all_ctes)
   local with_found = false
   local paren_depth = 0
   local current_cte_idx = 0
-  local inside_cte = false
 
   -- Find which position our target CTE is in (1-based)
   local target_position = nil
@@ -160,73 +159,62 @@ function M.generate_simple_test_query(query_lines, target_cte, all_ctes)
 
   vim.notify(string.format("Building query for CTE '%s' at position %d", target_cte.name, target_position), vim.log.levels.DEBUG)
 
+  -- Simple approach: Include everything from WITH up to and including target CTE
   for i, line in ipairs(query_lines) do
     local upper = line:upper()
 
-    -- Look for WITH
-    if not with_found and (upper:match("^%s*WITH%s") or upper:match("^%s*%-%-.*WITH%s")) then
-      with_found = true
-      table.insert(test_lines, line)
-
-      -- Check if CTE name is on same line
-      if line:match("WITH%s+([%w_]+)%s+AS%s*%(") then
-        current_cte_idx = 1
-        inside_cte = true
-        -- Count parens
-        for char in line:gmatch(".") do
-          if char == "(" then paren_depth = paren_depth + 1 end
-          if char == ")" then paren_depth = paren_depth - 1 end
-        end
-        -- Check if we're done
-        if paren_depth == 0 and current_cte_idx >= target_position then
-          -- Remove trailing comma
-          test_lines[#test_lines] = test_lines[#test_lines]:gsub(",%s*$", "")
-          break
+    -- Look for WITH to start
+    if not with_found then
+      if upper:match("^%s*WITH%s") or upper:match("^%s*%-%-.*WITH%s") then
+        with_found = true
+        -- Check if first CTE is on same line
+        if line:match("WITH%s+([%w_]+)%s+AS%s*%(") then
+          current_cte_idx = 1
         end
       end
-    elseif with_found then
-      -- Check for new CTE starting
+    else
+      -- Check for new CTE definitions (not on WITH line)
       local cte_name = line:match("^%s*([%w_]+)%s+AS%s*%(")
       if cte_name then
         current_cte_idx = current_cte_idx + 1
-        inside_cte = true
         vim.notify(string.format("Found CTE %d: %s", current_cte_idx, cte_name), vim.log.levels.DEBUG)
 
-        -- If this is beyond our target, stop before adding this line
+        -- If we've gone past our target, don't include this line
         if current_cte_idx > target_position then
-          -- Remove trailing comma from previous line if present
+          -- Clean up trailing comma from previous line
           if #test_lines > 0 then
             test_lines[#test_lines] = test_lines[#test_lines]:gsub(",%s*$", "")
           end
           break
         end
       end
+    end
 
-      -- Track parentheses
+    -- If we found WITH, start adding lines
+    if with_found then
+      table.insert(test_lines, line)
+
+      -- Track parentheses to know when CTEs end
       for char in line:gmatch(".") do
         if char == "(" then paren_depth = paren_depth + 1 end
         if char == ")" then paren_depth = paren_depth - 1 end
       end
 
-      -- Add the line
-      table.insert(test_lines, line)
-
-      -- Check if current CTE closed
-      if inside_cte and paren_depth == 0 then
-        inside_cte = false
-        -- If this was our target CTE, we're done
-        if current_cte_idx == target_position then
-          -- Remove trailing comma from last line
-          test_lines[#test_lines] = test_lines[#test_lines]:gsub(",%s*$", "")
-          break
-        end
+      -- If we've completed our target CTE (parens balanced and we're at target)
+      if current_cte_idx == target_position and paren_depth == 0 and line:match("%)") then
+        -- Remove trailing comma if present
+        test_lines[#test_lines] = test_lines[#test_lines]:gsub(",%s*$", "")
+        break
       end
     end
   end
 
-  -- Ensure no trailing comma
+  -- Final cleanup: ensure no trailing comma
   if #test_lines > 0 then
-    test_lines[#test_lines] = test_lines[#test_lines]:gsub("%)%s*,$", ")")
+    local last_line = test_lines[#test_lines]
+    if last_line:match("%)%s*,$") then
+      test_lines[#test_lines] = last_line:gsub("%)%s*,$", ")")
+    end
   end
 
   -- Add SELECT from target CTE
