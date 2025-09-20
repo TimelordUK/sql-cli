@@ -1,8 +1,9 @@
 -- #! ../data/trade_reconciliation.csv
 
 
-SELECT PlatformOrderId, FieldName, "Prod-Value", "Test-Value", Difference
-FROM trade_reconciliation;;
+SELECT PlatformOrderId, "Prod-Value", "Test-Value", Difference
+FROM trade_reconciliation;
+go
 
 
 SELECT * FROM trade_reconciliation 
@@ -45,7 +46,8 @@ WHERE IS_DATE("Prod-Value") = true
 select
     PlatformOrderId,
     (Difference-delta_days) as as_expected
-FROM x;;
+FROM x;
+GO
 
 SELECT
     PlatformOrderId,

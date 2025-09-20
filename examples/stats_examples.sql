@@ -169,7 +169,8 @@ WITH range_data AS (
         CASE
             WHEN value % 2 = 0 THEN 'Even'
             ELSE 'Odd'
-        END as parity
+        END as parity,
+        value % 2 as parity_num  -- 0 for even, 1 for odd (for MODE)
     FROM RANGE(1, 50)
 )
 SELECT
@@ -179,7 +180,10 @@ SELECT
     MAX(value) as maximum,
     AVG(value) as arithmetic_mean,
     MEDIAN(value) as median_value,
-    MODE(parity) as modal_parity,
+    CASE
+        WHEN MODE(parity_num) = 0 THEN 'Even'
+        ELSE 'Odd'
+    END as modal_parity,
     STDDEV(value) as standard_deviation,
     VARIANCE(value) as variance,
     AVG(quadratic) as mean_quadratic,
