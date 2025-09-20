@@ -55,12 +55,21 @@ function M.test_cte_at_cursor(config, state)
     local upper = line:upper()
 
     -- Check for CTE definition
-    if line:match("^%s*([%w_]+)%s+AS%s*%(") or
-       (upper:match("WITH%s+") and line:match("WITH%s+([%w_]+)%s+AS%s*%(")) then
-      -- New CTE starts
+    if line:match("^%s*([%w_]+)%s+AS%s*%(") then
+      -- New CTE starts (not on WITH line)
       current_cte_idx = current_cte_idx + 1
       cte_start_line = i
       paren_depth = 0
+    elseif upper:match("WITH%s+") and line:match("WITH%s+([%w_]+)%s+AS%s*%(") then
+      -- CTE starts on WITH line
+      if current_cte_idx == 0 then  -- Only count if we haven't already
+        current_cte_idx = 1
+        cte_start_line = i
+        paren_depth = 0
+      end
+    elseif upper:match("^%s*WITH%s*$") then
+      -- WITH on its own line, CTE will follow
+      -- Don't count yet
     end
 
     -- Track parentheses to find CTE end
@@ -216,6 +225,18 @@ function M.generate_simple_test_query(query_lines, target_cte, all_ctes)
         -- Remove trailing comma if present
         test_lines[#test_lines] = test_lines[#test_lines]:gsub(",%s*$", "")
         vim.notify(string.format("Target CTE complete at line %d", i), vim.log.levels.DEBUG)
+        break
+      end
+
+      -- Also check if we hit a SELECT after CTEs (main query starts)
+      if current_cte_idx > 0 and paren_depth == 0 and upper:match("^%s*SELECT%s") then
+        -- We've hit the main SELECT, remove it and stop
+        table.remove(test_lines, #test_lines)  -- Remove the SELECT line we just added
+        -- Clean up trailing comma from previous line
+        if #test_lines > 0 then
+          test_lines[#test_lines] = test_lines[#test_lines]:gsub(",%s*$", "")
+        end
+        vim.notify("Found main SELECT, stopping", vim.log.levels.DEBUG)
         break
       end
     end
