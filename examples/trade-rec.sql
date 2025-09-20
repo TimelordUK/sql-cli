@@ -1,12 +1,12 @@
--- #! ../data/trade_reconciliation.csv
+-- #! ../data/trade_field_differences.csv
 
 
 SELECT PlatformOrderId, "Prod-Value", "Test-Value", Difference
-FROM trade_reconciliation;
+FROM trade_field_differences;
 go
 
 
-SELECT * FROM trade_reconciliation 
+SELECT * FROM trade_field_differences 
 WHERE 
   IS_DATE("Prod-Value") = true;
 go
@@ -14,7 +14,7 @@ go
 SELECT
     PlatformOrderId,
     count(*) as difference_count
-FROM trade_reconciliation
+FROM trade_field_differences
 GROUP BY PlatformOrderId
 ORDER BY PlatformOrderId;
 GO
@@ -28,7 +28,7 @@ SELECT
     DateDiff('day',
     "Prod-Value",
     "Test-Value") as delta_days
-FROM trade_reconciliation
+FROM trade_field_differences
 WHERE IS_DATE("Prod-Value") = true;
 GO
 
@@ -40,7 +40,7 @@ SELECT
     "Test-Value", 
     Difference,
     DateDiff('day', "Prod-Value", "Test-Value") as delta_days
-FROM trade_reconciliation
+FROM trade_field_differences
 WHERE IS_DATE("Prod-Value") = true
 ) 
 select
@@ -58,7 +58,7 @@ SELECT
     IS_NUMERIC("Prod-Value") as is_numeric,
     IS_FLOAT("Prod-Value") as is_float,
     IS_INTEGER("Prod-Value") as is_int
-FROM trade_reconciliation;
+FROM trade_field_differences;
 GO
 
 
