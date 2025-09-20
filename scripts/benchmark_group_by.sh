@@ -39,16 +39,34 @@ run_benchmark() {
 
     # Run query 3 times and take average
     local total_time=0
+    local valid_runs=0
     for run in {1..3}; do
         local output=$($SQL_CLI "$csv_file" -q "$query" -o csv 2>&1)
-        local time_ms=$(echo "$output" | grep -oP '\d+\.\d+ms' | grep -oP '\d+\.\d+' | head -1)
-        if [ -z "$time_ms" ]; then
-            time_ms=$(echo "$output" | grep -oP '\d+ms' | grep -oP '\d+' | head -1)
+        # Look for time in various formats
+        local time_ms=$(echo "$output" | grep -E "Query completed.*in" | grep -oE '[0-9]+\.[0-9]+ms|[0-9]+ms|[0-9]+\.[0-9]+s' | head -1)
+
+        if [ -n "$time_ms" ]; then
+            # Convert to milliseconds if needed
+            if [[ "$time_ms" == *"s" ]]; then
+                # Remove 's' and convert to ms
+                time_ms=$(echo "$time_ms" | sed 's/s$//')
+                time_ms=$(echo "$time_ms * 1000" | bc)
+            else
+                # Remove 'ms'
+                time_ms=$(echo "$time_ms" | sed 's/ms$//')
+            fi
+
+            if [ -n "$time_ms" ]; then
+                total_time=$(echo "$total_time + $time_ms" | bc 2>/dev/null || echo "$total_time")
+                ((valid_runs++))
+            fi
         fi
-        total_time=$(echo "$total_time + $time_ms" | bc)
     done
 
-    local avg_time=$(echo "scale=2; $total_time / 3" | bc)
+    local avg_time=0
+    if [ "$valid_runs" -gt 0 ]; then
+        avg_time=$(echo "scale=2; $total_time / $valid_runs" | bc 2>/dev/null || echo "0")
+    fi
     printf "%-45s %8.2fms\n" "$label" "$avg_time"
 
     # Clean up

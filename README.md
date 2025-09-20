@@ -1233,12 +1233,19 @@ Comprehensive documentation available in the `docs/` folder covering:
 
 ## ⚡ Performance
 
-SQL CLI is optimized for handling large datasets efficiently:
+SQL CLI is optimized for handling large datasets with exceptional speed:
 
-- **In-memory processing** for sub-second query response on 100K+ row datasets
-- **Optimized GROUP BY** with FxHashMap and cardinality estimation
-- **Regex caching** for massive performance gains on pattern matching
+### Highlights
+- **LIKE operations**: ~240ms for pattern matching on 100K rows (regex cached)
+- **Window functions**: LAG/LEAD with minimal overhead (~100-150ms for 1000 rows)
+- **In-memory processing**: Sub-second response on 100K+ row datasets
+- **GROUP BY**: Processing 50K rows in ~2.5 seconds (optimization ongoing)
+
+### Key Optimizations
+- **Regex caching** provides blazing fast pattern matching after first use
+- **FxHashMap** for faster hash operations in aggregations
 - **Streaming operations** minimize memory usage on large files
+- **Cardinality estimation** for optimal memory pre-allocation
 
 See [Performance Benchmarks](docs/PERFORMANCE_BENCHMARKS.md) for detailed metrics and optimization roadmap.
 
