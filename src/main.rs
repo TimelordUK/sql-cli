@@ -187,7 +187,11 @@ fn print_help() {
     );
 
     println!();
-    println!("{}", "Function Documentation:".yellow());
+    println!("{}", "Documentation & Help:".yellow());
+    println!(
+        "  {} <name>         - Show help for any function, aggregate, or generator",
+        "--item-help".green()
+    );
     println!(
         "  {}         - List all available SQL functions",
         "--list-functions".green()
@@ -395,6 +399,74 @@ fn main() -> io::Result<()> {
         println!("\nNote: Window functions require an OVER clause with ORDER BY");
         println!("Example: MOVING_AVG(column, 20) OVER (ORDER BY date)");
 
+        return Ok(());
+    }
+
+    // Unified help for functions, aggregates, and generators
+    if let Some(pos) = args
+        .iter()
+        .position(|arg| arg == "--item-help" || arg == "--ihelp")
+    {
+        if let Some(name) = args.get(pos + 1) {
+            let func_registry = sql_cli::sql::functions::FunctionRegistry::new();
+            let gen_registry = sql_cli::sql::generators::GeneratorRegistry::new();
+            let agg_registry = sql_cli::sql::aggregate_functions::AggregateFunctionRegistry::new();
+            let old_agg_registry = sql_cli::sql::aggregates::AggregateRegistry::new();
+
+            // Try regular function first
+            if let Some(help) = func_registry.generate_function_help(name) {
+                println!("{help}");
+                return Ok(());
+            }
+
+            // Try new aggregate registry
+            let name_upper = name.to_uppercase();
+            if agg_registry.contains(&name_upper) {
+                if let Some(func) = agg_registry.get(&name_upper) {
+                    println!("Function: {}()", func.name());
+                    println!("Category: Aggregate");
+                    println!("Description: {}", func.description());
+                    println!("Arguments: 1 argument (column)");
+                    println!("Returns: Aggregated value\n");
+                    println!("Examples:");
+                    println!("  SELECT {}(value) FROM table", func.name());
+                    println!(
+                        "  SELECT category, {}(amount) FROM table GROUP BY category",
+                        func.name()
+                    );
+                    return Ok(());
+                }
+            }
+
+            // Try old aggregate registry
+            if old_agg_registry.is_aggregate(&name_upper) {
+                if let Some(func) = old_agg_registry.get(&name_upper) {
+                    println!("Function: {}()", func.name());
+                    println!("Category: Aggregate");
+                    println!("Description: Aggregate function");
+                    println!("Arguments: 1 argument (column)");
+                    println!("Returns: Aggregated value\n");
+                    println!("Examples:");
+                    println!("  SELECT {}(value) FROM table", func.name());
+                    return Ok(());
+                }
+            }
+
+            // Try generator if not found elsewhere
+            if let Some(help) = gen_registry.get_generator_help(name) {
+                println!("{help}");
+                return Ok(());
+            }
+
+            eprintln!(
+                "'{}' not found in functions, aggregates, or generators",
+                name
+            );
+            eprintln!("\nUse --list-functions, --list-aggregates, or --list-generators to see available items");
+        } else {
+            eprintln!("Error: --item-help requires a name");
+            eprintln!("Usage: sql-cli --item-help <function_aggregate_or_generator_name>");
+        }
         return Ok(());
     }
 

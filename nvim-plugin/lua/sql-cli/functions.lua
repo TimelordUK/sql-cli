@@ -22,26 +22,15 @@ function M.function_help_at_cursor(config)
     return
   end
 
-  -- First try as a function
-  local cmd = command_path .. " --function-help " .. vim.fn.shellescape(word)
+  -- Use unified item-help that checks functions, aggregates, and generators
+  local cmd = command_path .. " --item-help " .. vim.fn.shellescape(word)
 
   -- Execute command
   local result = vim.fn.system(cmd)
   local exit_code = vim.v.shell_error
 
   if exit_code ~= 0 then
-    -- Try as a generator
-    local gen_cmd = command_path .. " --generator-help " .. vim.fn.shellescape(word)
-    local gen_result = vim.fn.system(gen_cmd)
-    local gen_exit_code = vim.v.shell_error
-
-    if gen_exit_code == 0 then
-      -- It's a generator, show generator help
-      M.show_help_in_float(word .. " (Generator)", gen_result)
-      return
-    end
-
-    -- Neither function nor generator found, try searching
+    -- Item not found, try searching
     local search_cmd = command_path .. " --list-functions"
     local all_functions = vim.fn.system(search_cmd)
 

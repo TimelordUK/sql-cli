@@ -5,6 +5,54 @@ All notable changes to SQL CLI will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.49.0] - 2025-09-20
+
+### 🎯 Aggregate Registry Migration & Developer Experience
+
+This release continues the migration of aggregate functions to the new registry system, adds comprehensive benchmarking tools, and significantly improves the Neovim plugin experience with unified help system.
+
+### ✨ New Features
+
+#### **Unified Help System**
+- **`--item-help` command** - Single CLI switch that checks functions, aggregates, and generators
+- **Neovim K mapping** - Press K on any SQL function/aggregate/generator for instant help
+- **Automatic type detection** - CLI automatically determines if item is a function, aggregate, or generator
+
+#### **String Case Conversion Functions**
+- **TO_SNAKE_CASE()** - Convert text to snake_case
+- **TO_CAMEL_CASE()** - Convert text to camelCase
+- **TO_PASCAL_CASE()** - Convert text to PascalCase
+- **TO_KEBAB_CASE()** - Convert text to kebab-case
+- **TO_CONSTANT_CASE()** - Convert text to CONSTANT_CASE
+- **Intelligent word splitting** - Handles transitions between uppercase/lowercase/numbers correctly
+
+#### **Performance Benchmarking Suite**
+- **Python benchmark script** (`scripts/benchmark_all.py`) - Comprehensive performance testing
+- **Scaling analysis** - Automatically determines O(1), O(n), O(n log n), O(n²) complexity
+- **Performance comparison** - Compare results against baseline for regression detection
+- **LIKE operator optimization** - Documented 7-14ms performance for 25K rows
+- **GROUP BY optimization** - Confirmed O(n) scaling, not O(n²) as initially feared
+
+### 🔧 Technical Improvements
+
+#### **Aggregate Function Migration**
+- **COUNT/COUNT_STAR migrated** - Moved from hardcoded to new registry system
+- **Unified registry checking** - ArithmeticEvaluator now checks new registry for all aggregates
+- **Sample vs Population variance** - VARIANCE now correctly returns sample variance (n-1 denominator)
+- **Test suite updates** - Python tests updated to expect sample variance/stddev
+
+### 🐛 Bug Fixes
+
+- **Fixed case conversion tests** - Corrected expectations for word-splitting behavior
+- **Fixed STDDEV/VARIANCE tests** - Updated to use sample variance calculations
+- **Fixed Neovim K mapping** - Now properly bound and working for all item types
+- **Fixed generator help** - No longer shows function error before checking generators
+
+### 📚 Documentation
+
+- **Performance metrics in README** - Added benchmarks showing exceptional LIKE performance
+- **Migration documentation** - Updated docs for aggregate function migration process
+
 ## [1.48.0] - 2025-09-18
 
 ### 🚀 Major Performance Improvements & Data Generation
