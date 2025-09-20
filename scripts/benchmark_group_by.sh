@@ -56,7 +56,7 @@ run_benchmark() {
                 time_ms=$(echo "$time_ms" | sed 's/ms$//')
             fi
 
-            if [ -n "$time_ms" ]; then
+            if [ -n "$time_ms" ] && [[ "$time_ms" =~ ^[0-9]+\.?[0-9]*$ ]]; then
                 total_time=$(echo "$total_time + $time_ms" | bc 2>/dev/null || echo "$total_time")
                 ((valid_runs++))
             fi
@@ -64,10 +64,18 @@ run_benchmark() {
     done
 
     local avg_time=0
-    if [ "$valid_runs" -gt 0 ]; then
-        avg_time=$(echo "scale=2; $total_time / $valid_runs" | bc 2>/dev/null || echo "0")
+    if [ "$valid_runs" -gt 0 ] 2>/dev/null; then
+        if [ -n "$total_time" ] && [[ "$total_time" =~ ^[0-9]+\.?[0-9]*$ ]]; then
+            avg_time=$(echo "scale=2; $total_time / $valid_runs" | bc 2>/dev/null || echo "0")
+        fi
     fi
-    printf "%-45s %8.2fms\n" "$label" "$avg_time"
+
+    # If we still have no valid time, mark as error
+    if [ "$valid_runs" -eq 0 ] 2>/dev/null || [ -z "$avg_time" ]; then
+        printf "%-45s %8s\n" "$label" "ERROR"
+    else
+        printf "%-45s %8.2fms\n" "$label" "$avg_time"
+    fi
 
     # Clean up
     rm -f $csv_file
