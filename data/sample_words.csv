@@ -1,0 +1,21 @@
+id,original_text,description
+1,userId,Common camelCase field
+2,first_name,Typical snake_case column
+3,LastName,PascalCase property
+4,phone-number,kebab-case attribute
+5,EMAIL_ADDRESS,CONSTANT_CASE variable
+6,HTTPResponse,Acronym with word
+7,XMLHttpRequest,Multiple acronyms
+8,api_v2,Snake with version
+9,v2API,Version with acronym
+10,user-profile-settings,Multi-word kebab
+11,MAXIMUM_RETRY_COUNT,Multi-word constant
+12,isActive,Boolean camelCase
+13,created_at,Timestamp snake_case
+14,UpdatedAt,Timestamp PascalCase
+15,order-items,Plural kebab-case
+16,ProductID,Mixed case ID field
+17,customer_email_address,Multi-word snake
+18,IoError,Acronym edge case
+19,HTMLParser,Acronym combination
+20,hello world,Space separated
