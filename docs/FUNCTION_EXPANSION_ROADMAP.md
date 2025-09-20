@@ -1,7 +1,7 @@
 # SQL CLI Function Expansion Roadmap
 
-**Date**: September 18, 2025
-**Current Function Count**: ~200 functions
+**Date**: September 21, 2025 (Last updated)
+**Current Function Count**: ~210 functions (added 12 trig functions)
 **Goal**: Comprehensive function library for business analytics and data science
 
 ## 📊 Statistical Functions (High Business Value)
@@ -37,32 +37,36 @@
 ## 🔢 Trigonometric Functions (Mathematical Completeness)
 
 ### Basic Trigonometry
-- [ ] **SIN(radians)** - Sine
-- [ ] **COS(radians)** - Cosine
-- [ ] **TAN(radians)** - Tangent
+- [x] **SIN(radians)** - Sine ✅
+- [x] **COS(radians)** - Cosine ✅
+- [x] **TAN(radians)** - Tangent ✅
 - [ ] **COT(radians)** - Cotangent
 - [ ] **SEC(radians)** - Secant
 - [ ] **CSC(radians)** - Cosecant
 
 ### Inverse Trigonometry
-- [ ] **ASIN(value)** - Arc sine
-- [ ] **ACOS(value)** - Arc cosine
-- [ ] **ATAN(value)** - Arc tangent
-- [ ] **ATAN2(y, x)** - Two-argument:w: arc tangent
+- [x] **ASIN(value)** - Arc sine ✅
+- [x] **ACOS(value)** - Arc cosine ✅
+- [x] **ATAN(value)** - Arc tangent ✅
+- [x] **ATAN2(y, x)** - Two-argument arc tangent ✅
 - [ ] **ACOT(value)** - Arc cotangent
 
 ### Hyperbolic Functions
-- [ ] **SINH(value)** - Hyperbolic sine
-- [ ] **COSH(value)** - Hyperbolic cosine
-- [ ] **TANH(value)** - Hyperbolic tangent
+- [x] **SINH(value)** - Hyperbolic sine ✅
+- [x] **COSH(value)** - Hyperbolic cosine ✅
+- [x] **TANH(value)** - Hyperbolic tangent ✅
 - [ ] **ASINH(value)** - Inverse hyperbolic sine
 - [ ] **ACOSH(value)** - Inverse hyperbolic cosine
 - [ ] **ATANH(value)** - Inverse hyperbolic tangent
 
+### Angle Conversion
+- [x] **DEGREES(radians)** - Convert radians to degrees ✅
+- [x] **RADIANS(degrees)** - Convert degrees to radians ✅
+
 ## 🔤 String Manipulation Functions
 
 ### Text Transformation
-- [ ] **REVERSE(string)** - Reverse string
+- [x] **REVERSE(string)** - Reverse string ✅
 - [ ] **INITCAP(string)** / **PROPER(string)** - Capitalize each word
 - [ ] **SWAPCASE(string)** - Swap case
 - [ ] **ROT13(string)** - ROT13 encoding
@@ -211,15 +215,19 @@
 
 ## Implementation Priority
 
-### Phase 1: Core Statistics (Today!)
-1. MEDIAN()
-2. PERCENTILE()
-3. MODE()
-4. VARIANCE() family
-5. CORRELATION()
+### Phase 1: Core Statistics ✅ (Completed)
+1. MEDIAN() ✅
+2. PERCENTILE() ✅
+3. MODE() ✅
+4. VARIANCE() family ✅
+5. CORRELATION() ✅
 
-### Phase 2: Trigonometry
-Complete mathematical foundation with all trig functions
+### Phase 2: Trigonometry ✅ (Mostly Completed)
+- Basic trig functions (SIN, COS, TAN) ✅
+- Inverse trig functions (ASIN, ACOS, ATAN, ATAN2) ✅
+- Hyperbolic functions (SINH, COSH, TANH) ✅
+- Angle conversion (DEGREES, RADIANS) ✅
+- Remaining: COT, SEC, CSC, inverse hyperbolics
 
 ### Phase 3: Advanced String
 Regex support and phonetic matching
