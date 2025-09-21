@@ -66,6 +66,7 @@ M.defaults = {
     column_help = "<leader>sk",     -- Smart column/function detection at cursor
     expand_star = "<leader>sE",     -- Expand SELECT * to column names (capital E)
     copy_query = "<leader>sy",       -- Copy query at cursor to clipboard (y for yank)
+    copy_query_shell = "<leader>sY", -- Copy query for shell execution (capital Y)
     toggle_table_nav = "<leader>sn", -- Toggle table navigation mode (n for nav)
     -- Multi-table navigation (for scripts with GO statements)
     next_table = "]t",              -- Jump to next result table

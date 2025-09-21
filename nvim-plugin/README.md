@@ -179,6 +179,7 @@ SELECT MEDIAN(salary) FROM employees;
 - `<leader>sx` - Execute query at cursor (from SELECT to GO/semicolon)
 - `<leader>sp` - Show query plan
 - `<leader>sy` - Copy query at cursor to clipboard
+- `<leader>sY` - Copy query as shell command (formats as `sql-cli -q "query"` with proper escaping)
 - `<leader>sf` - Format/prettify query at cursor (uses AST-based formatter)
 
 #### Navigation

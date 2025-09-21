@@ -127,6 +127,52 @@ function M.copy_query_at_cursor()
   vim.notify("Query copied to clipboard", vim.log.levels.INFO)
 end
 
+-- Copy query at cursor in shell-friendly format
+function M.copy_query_for_shell()
+  local bufnr = vim.api.nvim_get_current_buf()
+  local cursor_line = vim.fn.line('.')
+  local lines = vim.api.nvim_buf_get_lines(bufnr, 0, -1, false)
+
+  -- Find query boundaries
+  local start_line, end_line = utils.find_query_at_cursor(lines, cursor_line)
+
+  if not start_line then
+    vim.notify("No SQL statement found at cursor", vim.log.levels.WARN)
+    return
+  end
+
+  -- Extract the query, skipping comments and terminators
+  local query_lines = {}
+  for i = start_line, end_line do
+    local line = lines[i]
+    -- Skip GO terminators and comment lines
+    if not line:match("^%s*GO%s*$") and not line:match("^%s*%-%-") then
+      -- Trim whitespace from each line
+      local trimmed = line:match("^%s*(.-)%s*$")
+      if trimmed and trimmed ~= "" then
+        table.insert(query_lines, trimmed)
+      end
+    end
+  end
+
+  -- Join with spaces and escape for shell
+  local query = table.concat(query_lines, " ")
+
+  -- Escape double quotes and backslashes for shell
+  query = query:gsub('\\', '\\\\')  -- Escape backslashes first
+  query = query:gsub('"', '\\"')    -- Escape double quotes
+
+  -- Format as a complete shell command
+  local shell_command = string.format('sql-cli -q "%s"', query)
+
+  -- Copy to system clipboard (+ register)
+  vim.fn.setreg('+', shell_command)
+  -- Also copy to unnamed register for convenience
+  vim.fn.setreg('"', shell_command)
+
+  vim.notify("Shell command copied to clipboard", vim.log.levels.INFO)
+end
+
 -- Toggle comment for query at cursor
 function M.toggle_comment_query()
   local bufnr = vim.api.nvim_get_current_buf()

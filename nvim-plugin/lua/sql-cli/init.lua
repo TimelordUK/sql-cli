@@ -105,6 +105,14 @@ function M.create_commands()
     navigation.select_query_at_cursor()
   end, { desc = "Select SQL query at cursor" })
 
+  vim.api.nvim_create_user_command("SqlCliCopyQuery", function()
+    navigation.copy_query_at_cursor()
+  end, { desc = "Copy SQL query at cursor to clipboard" })
+
+  vim.api.nvim_create_user_command("SqlCliCopyQueryShell", function()
+    navigation.copy_query_for_shell()
+  end, { desc = "Copy SQL query for shell execution" })
+
   vim.api.nvim_create_user_command("SqlCliPreviewQuery", function()
     ui.preview_query_at_cursor(M.config)
   end, { desc = "Preview SQL query at cursor in floating window" })
@@ -349,6 +357,11 @@ function M.setup_keymaps()
   if keymaps.copy_query then
     vim.keymap.set("n", keymaps.copy_query, navigation.copy_query_at_cursor,
       { desc = "Copy SQL query at cursor to clipboard", silent = true })
+  end
+
+  if keymaps.copy_query_shell then
+    vim.keymap.set("n", keymaps.copy_query_shell, navigation.copy_query_for_shell,
+      { desc = "Copy SQL query for shell execution", silent = true })
   end
 
   if keymaps.format_query then
