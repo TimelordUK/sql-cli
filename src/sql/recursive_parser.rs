@@ -36,9 +36,10 @@ use super::parser::expressions::ExpressionParser;
 pub struct Parser {
     lexer: Lexer,
     current_token: Token,
-    in_method_args: bool, // Track if we're parsing method arguments
-    columns: Vec<String>, // Known column names for context-aware parsing
-    paren_depth: i32,     // Track parentheses nesting depth
+    in_method_args: bool,        // Track if we're parsing method arguments
+    columns: Vec<String>,        // Known column names for context-aware parsing
+    paren_depth: i32,            // Track parentheses nesting depth
+    paren_depth_stack: Vec<i32>, // Stack to save/restore paren depth for nested contexts
     #[allow(dead_code)]
     config: ParserConfig, // Parser configuration including case sensitivity
 }
@@ -54,6 +55,7 @@ impl Parser {
             in_method_args: false,
             columns: Vec::new(),
             paren_depth: 0,
+            paren_depth_stack: Vec::new(),
             config: ParserConfig::default(),
         }
     }
@@ -68,6 +70,7 @@ impl Parser {
             in_method_args: false,
             columns: Vec::new(),
             paren_depth: 0,
+            paren_depth_stack: Vec::new(),
             config,
         }
     }
@@ -148,6 +151,19 @@ impl Parser {
         self.current_token = self.lexer.next_token();
     }
 
+    fn push_paren_depth(&mut self) {
+        self.paren_depth_stack.push(self.paren_depth);
+        self.paren_depth = 0;
+    }
+
+    fn pop_paren_depth(&mut self) {
+        if let Some(depth) = self.paren_depth_stack.pop() {
+            // Ignore the internal depth - just restore the saved value
+            self.paren_depth = depth;
+        } else {
+        }
+    }
+
     pub fn parse(&mut self) -> Result<SelectStatement, String> {
         // Check for WITH clause at the beginning
         if matches!(self.current_token, Token::With) {
@@ -201,21 +217,27 @@ impl Parser {
             // Expect AS
             self.consume(Token::As)?;
 
-            // Expect opening parenthesis
-            self.consume(Token::LeftParen)?;
-
             let cte_type = if is_web {
+                // Expect opening parenthesis for WEB CTE
+                self.consume(Token::LeftParen)?;
                 // Parse WEB CTE specification
                 let web_spec = self.parse_web_cte_spec()?;
+                // Consume closing parenthesis for WEB CTE
+                self.consume(Token::RightParen)?;
                 CTEType::Web(web_spec)
             } else {
-                // Parse the CTE query (inner version that doesn't check parentheses)
+                // For standard CTEs, push depth BEFORE consuming opening paren
+                // This ensures the paren is counted in the inner context
+                self.push_paren_depth();
+                // Now consume opening parenthesis
+                self.consume(Token::LeftParen)?;
                 let query = self.parse_select_statement_inner()?;
+                // Expect closing parenthesis while still in CTE context
+                self.consume(Token::RightParen)?;
+                // Now pop to restore outer depth after consuming both parens
+                self.pop_paren_depth();
                 CTEType::Standard(query)
             };
-
-            // Expect closing parenthesis
-            self.consume(Token::RightParen)?;
 
             ctes.push(CTE {
                 name,
@@ -230,9 +252,22 @@ impl Parser {
             self.advance();
         }
 
-        // Parse the main SELECT statement (with parenthesis checking)
-        let mut main_query = self.parse_select_statement()?;
+        // Parse the main SELECT statement - use inner version since we're already tracking parens
+        let mut main_query = self.parse_select_statement_inner()?;
         main_query.ctes = ctes;
+
+        // Check for balanced parentheses at the end of parsing
+        if self.paren_depth > 0 {
+            return Err(format!(
+                "Unclosed parenthesis - missing {} closing parenthes{}",
+                self.paren_depth,
+                if self.paren_depth == 1 { "is" } else { "es" }
+            ));
+        } else if self.paren_depth < 0 {
+            return Err(
+                "Extra closing parenthesis found - no matching opening parenthesis".to_string(),
+            );
+        }
 
         Ok(main_query)
     }
@@ -411,21 +446,27 @@ impl Parser {
             // Expect AS
             self.consume(Token::As)?;
 
-            // Expect opening parenthesis
-            self.consume(Token::LeftParen)?;
-
             let cte_type = if is_web {
+                // Expect opening parenthesis for WEB CTE
+                self.consume(Token::LeftParen)?;
                 // Parse WEB CTE specification
                 let web_spec = self.parse_web_cte_spec()?;
+                // Consume closing parenthesis for WEB CTE
+                self.consume(Token::RightParen)?;
                 CTEType::Web(web_spec)
             } else {
-                // Parse the CTE query (inner version that doesn't check parentheses)
+                // For standard CTEs, push depth BEFORE consuming opening paren
+                // This ensures the paren is counted in the inner context
+                self.push_paren_depth();
+                // Now consume opening parenthesis
+                self.consume(Token::LeftParen)?;
                 let query = self.parse_select_statement_inner()?;
+                // Expect closing parenthesis while still in CTE context
+                self.consume(Token::RightParen)?;
+                // Now pop to restore outer depth after consuming both parens
+                self.pop_paren_depth();
                 CTEType::Standard(query)
             };
-
-            // Expect closing parenthesis
-            self.consume(Token::RightParen)?;
 
             ctes.push(CTE {
                 name,
@@ -498,7 +539,9 @@ impl Parser {
                 // Check for table function like RANGE()
                 if let Token::Identifier(name) = &self.current_token.clone() {
                     // Check if this is a generator function (including RANGE and SPLIT)
-                    if name.to_uppercase() == "RANGE"
+                    // We need to lookahead to see if there's a parenthesis to distinguish
+                    // between a generator function call and a table with the same name
+                    let is_generator = (name.to_uppercase() == "RANGE"
                         || name.to_uppercase() == "SPLIT"
                         || name.to_uppercase() == "TOKENIZE"
                         || name.to_uppercase() == "CHARS"
@@ -513,8 +556,10 @@ impl Parser {
                         || name.to_uppercase() == "PASCAL_TRIANGLE"
                         || name.to_uppercase() == "TRIANGULAR"
                         || name.to_uppercase() == "SQUARES"
-                        || name.to_uppercase() == "FACTORIALS"
-                    {
+                        || name.to_uppercase() == "FACTORIALS")
+                        && self.peek_token() == Some(Token::LeftParen);
+
+                    if is_generator {
                         // Parse generator function
                         let generator_name = name.clone();
                         self.advance(); // Skip generator name
