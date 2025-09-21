@@ -2,6 +2,7 @@ use crate::data::datatable::{DataColumn, DataRow, DataTable, DataValue};
 use anyhow::Result;
 use std::sync::Arc;
 
+pub mod literal_generators;
 pub mod math_generators;
 pub mod prime_generators;
 pub mod random_generators;
@@ -42,11 +43,16 @@ impl GeneratorRegistry {
     }
 
     fn register_default_generators(&mut self) {
+        use literal_generators::{Array, Values};
         use math_generators::{Collatz, Factorials, PascalTriangle, Squares, TriangularNumbers};
         use prime_generators::{Fibonacci, GeneratePrimes, PrimeFactors};
         use random_generators::{GenerateUUIDs, RandomFloats, RandomIntegers};
         use sequence_generators::{Dates, Range, Series};
         use string_generators::{Chars, Lines, Split, Tokenize};
+
+        // Literal value generators
+        self.register(Box::new(Values));
+        self.register(Box::new(Array));
 
         // Sequence generators
         self.register(Box::new(Range));
