@@ -33,6 +33,11 @@ use super::parser::expressions::primary::{
     parse_primary as parse_primary_expr, ParsePrimary, PrimaryExpressionContext,
 };
 use super::parser::expressions::ExpressionParser;
+
+// Import function registry to check for function existence
+use crate::sql::functions::{FunctionCategory, FunctionRegistry};
+use crate::sql::generators::GeneratorRegistry;
+use std::sync::Arc;
 pub struct Parser {
     lexer: Lexer,
     current_token: Token,
@@ -40,8 +45,11 @@ pub struct Parser {
     columns: Vec<String>,        // Known column names for context-aware parsing
     paren_depth: i32,            // Track parentheses nesting depth
     paren_depth_stack: Vec<i32>, // Stack to save/restore paren depth for nested contexts
-    #[allow(dead_code)]
-    config: ParserConfig, // Parser configuration including case sensitivity
+    config: ParserConfig,        // Parser configuration including case sensitivity
+    debug_trace: bool,           // Enable detailed token-by-token trace
+    trace_depth: usize,          // Track recursion depth for indented trace
+    function_registry: Arc<FunctionRegistry>, // Function registry for validation
+    generator_registry: Arc<GeneratorRegistry>, // Generator registry for table functions
 }
 
 impl Parser {
@@ -57,6 +65,10 @@ impl Parser {
             paren_depth: 0,
             paren_depth_stack: Vec::new(),
             config: ParserConfig::default(),
+            debug_trace: false,
+            trace_depth: 0,
+            function_registry: Arc::new(FunctionRegistry::new()),
+            generator_registry: Arc::new(GeneratorRegistry::new()),
         }
     }
 
@@ -72,6 +84,10 @@ impl Parser {
             paren_depth: 0,
             paren_depth_stack: Vec::new(),
             config,
+            debug_trace: false,
+            trace_depth: 0,
+            function_registry: Arc::new(FunctionRegistry::new()),
+            generator_registry: Arc::new(GeneratorRegistry::new()),
         }
     }
 
@@ -79,6 +95,50 @@ impl Parser {
     pub fn with_columns(mut self, columns: Vec<String>) -> Self {
         self.columns = columns;
         self
+    }
+
+    #[must_use]
+    pub fn with_debug_trace(mut self, enabled: bool) -> Self {
+        self.debug_trace = enabled;
+        self
+    }
+
+    #[must_use]
+    pub fn with_function_registry(mut self, registry: Arc<FunctionRegistry>) -> Self {
+        self.function_registry = registry;
+        self
+    }
+
+    #[must_use]
+    pub fn with_generator_registry(mut self, registry: Arc<GeneratorRegistry>) -> Self {
+        self.generator_registry = registry;
+        self
+    }
+
+    fn trace_enter(&mut self, context: &str) {
+        if self.debug_trace {
+            let indent = "  ".repeat(self.trace_depth);
+            eprintln!("{}→ {} | Token: {:?}", indent, context, self.current_token);
+            self.trace_depth += 1;
+        }
+    }
+
+    fn trace_exit(&mut self, context: &str, result: &Result<impl std::fmt::Debug, String>) {
+        if self.debug_trace {
+            self.trace_depth = self.trace_depth.saturating_sub(1);
+            let indent = "  ".repeat(self.trace_depth);
+            match result {
+                Ok(val) => eprintln!("{}← {} ✓ | Result: {:?}", indent, context, val),
+                Err(e) => eprintln!("{}← {} ✗ | Error: {}", indent, context, e),
+            }
+        }
+    }
+
+    fn trace_token(&self, action: &str) {
+        if self.debug_trace {
+            let indent = "  ".repeat(self.trace_depth);
+            eprintln!("{}  {} | Token: {:?}", indent, action, self.current_token);
+        }
     }
 
     #[allow(dead_code)]
@@ -94,6 +154,7 @@ impl Parser {
     }
 
     fn consume(&mut self, expected: Token) -> Result<(), String> {
+        self.trace_token(&format!("Consuming expected {:?}", expected));
         if std::mem::discriminant(&self.current_token) == std::mem::discriminant(&expected) {
             // Track parentheses depth
             match &expected {
@@ -148,7 +209,15 @@ impl Parser {
             }
             _ => {}
         }
+        let old_token = self.current_token.clone();
         self.current_token = self.lexer.next_token();
+        if self.debug_trace {
+            let indent = "  ".repeat(self.trace_depth);
+            eprintln!(
+                "{}  Advanced: {:?} → {:?}",
+                indent, old_token, self.current_token
+            );
+        }
     }
 
     fn push_paren_depth(&mut self) {
@@ -165,12 +234,17 @@ impl Parser {
     }
 
     pub fn parse(&mut self) -> Result<SelectStatement, String> {
+        self.trace_enter("parse");
+
         // Check for WITH clause at the beginning
-        if matches!(self.current_token, Token::With) {
+        let result = if matches!(self.current_token, Token::With) {
             self.parse_with_clause()
         } else {
             self.parse_select_statement()
-        }
+        };
+
+        self.trace_exit("parse", &result);
+        result
     }
 
     fn parse_with_clause(&mut self) -> Result<SelectStatement, String> {
@@ -181,8 +255,10 @@ impl Parser {
         // Parse CTEs
         loop {
             // Check for WEB keyword for each CTE (can be different for each one)
+            // Check for WEB keyword - should be a token eventually
             let is_web = if let Token::Identifier(id) = &self.current_token {
                 if id.to_uppercase() == "WEB" {
+                    self.trace_token("Found WEB keyword for CTE");
                     self.advance();
                     true
                 } else {
@@ -415,8 +491,10 @@ impl Parser {
         // Parse CTEs
         loop {
             // Check for WEB keyword for each CTE (can be different for each one)
+            // Check for WEB keyword - should be a token eventually
             let is_web = if let Token::Identifier(id) = &self.current_token {
                 if id.to_uppercase() == "WEB" {
+                    self.trace_token("Found WEB keyword for CTE");
                     self.advance();
                     true
                 } else {
@@ -489,6 +567,7 @@ impl Parser {
     }
 
     fn parse_select_statement(&mut self) -> Result<SelectStatement, String> {
+        self.trace_enter("parse_select_statement");
         let result = self.parse_select_statement_inner()?;
 
         // Check for balanced parentheses at the end of parsing
@@ -538,31 +617,70 @@ impl Parser {
 
                 // Check for table function like RANGE()
                 if let Token::Identifier(name) = &self.current_token.clone() {
-                    // Check if this is a generator function (including RANGE and SPLIT)
+                    // Check if this is a table function by consulting the registry
                     // We need to lookahead to see if there's a parenthesis to distinguish
-                    // between a generator function call and a table with the same name
-                    let is_generator = (name.to_uppercase() == "RANGE"
-                        || name.to_uppercase() == "SPLIT"
-                        || name.to_uppercase() == "TOKENIZE"
-                        || name.to_uppercase() == "CHARS"
-                        || name.to_uppercase() == "LINES"
-                        || name.to_uppercase() == "SERIES"
-                        || name.to_uppercase() == "DATES"
-                        || name.to_uppercase().starts_with("GENERATE_")
-                        || name.to_uppercase().starts_with("RANDOM_")
-                        || name.to_uppercase() == "FIBONACCI"
-                        || name.to_uppercase() == "PRIME_FACTORS"
-                        || name.to_uppercase() == "COLLATZ"
-                        || name.to_uppercase() == "PASCAL_TRIANGLE"
-                        || name.to_uppercase() == "TRIANGULAR"
-                        || name.to_uppercase() == "SQUARES"
-                        || name.to_uppercase() == "FACTORIALS")
-                        && self.peek_token() == Some(Token::LeftParen);
+                    // between a function call and a table with the same name
+                    let has_paren = self.peek_token() == Some(Token::LeftParen);
+                    if self.debug_trace {
+                        eprintln!(
+                            "  Checking {} for table function, has_paren={}",
+                            name, has_paren
+                        );
+                    }
 
-                    if is_generator {
-                        // Parse generator function
-                        let generator_name = name.clone();
-                        self.advance(); // Skip generator name
+                    // Check if it's a known table function or generator
+                    // In FROM clause context, prioritize generators over scalar functions
+                    let is_table_function = if has_paren {
+                        // First check generator registry (for FROM clause context)
+                        if self.debug_trace {
+                            eprintln!("  Checking generator registry for {}", name.to_uppercase());
+                        }
+                        if let Some(_gen) = self.generator_registry.get(&name.to_uppercase()) {
+                            if self.debug_trace {
+                                eprintln!("  Found {} in generator registry", name);
+                            }
+                            self.trace_token(&format!("Found generator: {}", name));
+                            true
+                        } else {
+                            // Then check if it's a table function in the function registry
+                            if let Some(func) = self.function_registry.get(&name.to_uppercase()) {
+                                let sig = func.signature();
+                                let is_table_fn = sig.category == FunctionCategory::TableFunction;
+                                if self.debug_trace {
+                                    eprintln!(
+                                        "  Found {} in function registry, is_table_function={}",
+                                        name, is_table_fn
+                                    );
+                                }
+                                if is_table_fn {
+                                    self.trace_token(&format!(
+                                        "Found table function in function registry: {}",
+                                        name
+                                    ));
+                                }
+                                is_table_fn
+                            } else {
+                                if self.debug_trace {
+                                    eprintln!("  {} not found in either registry", name);
+                                    self.trace_token(&format!(
+                                        "Not found as generator or table function: {}",
+                                        name
+                                    ));
+                                }
+                                false
+                            }
+                        }
+                    } else {
+                        if self.debug_trace {
+                            eprintln!("  No parenthesis after {}, treating as table", name);
+                        }
+                        false
+                    };
+
+                    if is_table_function {
+                        // Parse table function
+                        let function_name = name.clone();
+                        self.advance(); // Skip function name
 
                         // Parse arguments
                         self.consume(Token::LeftParen)?;
@@ -605,7 +723,7 @@ impl Parser {
                             None,
                             None,
                             Some(TableFunction::Generator {
-                                name: generator_name,
+                                name: function_name,
                                 args,
                             }),
                             alias,
@@ -776,11 +894,14 @@ impl Parser {
 
         // Parse ORDER BY clause (comes after GROUP BY and HAVING)
         let order_by = if matches!(self.current_token, Token::OrderBy) {
+            self.trace_token("Found OrderBy token");
             self.advance();
             Some(self.parse_order_by_list()?)
         } else if let Token::Identifier(s) = &self.current_token {
+            // This shouldn't happen if the lexer properly tokenizes ORDER BY
+            // But keeping as fallback for compatibility
             if s.to_uppercase() == "ORDER" {
-                // Handle ORDER BY as two separate tokens
+                self.trace_token("Warning: ORDER as identifier instead of OrderBy token");
                 self.advance(); // consume ORDER
                 if matches!(&self.current_token, Token::Identifier(by_token) if by_token.to_uppercase() == "BY")
                 {
@@ -1193,6 +1314,7 @@ impl Parser {
     }
 
     fn parse_expression(&mut self) -> Result<SqlExpression, String> {
+        self.trace_enter("parse_expression");
         // Start with logical OR as the lowest precedence operator
         // The hierarchy is: OR -> AND -> comparison -> additive -> multiplicative -> primary
         let mut left = self.parse_logical_or()?;
@@ -1201,7 +1323,9 @@ impl Parser {
         // This uses the modular comparison module
         left = parse_in_operator(self, left)?;
 
-        Ok(left)
+        let result = Ok(left);
+        self.trace_exit("parse_expression", &result);
+        result
     }
 
     fn parse_comparison(&mut self) -> Result<SqlExpression, String> {
@@ -2099,8 +2223,14 @@ fn extract_partial_at_end(query: &str) -> Option<String> {
     let last_word = trimmed.split_whitespace().last()?;
 
     // Check if it's a partial identifier (not a keyword or operator)
-    if last_word.chars().all(|c| c.is_alphanumeric() || c == '_') && !is_sql_keyword(last_word) {
-        Some(last_word.to_string())
+    // First check if it's alphanumeric (potential identifier)
+    if last_word.chars().all(|c| c.is_alphanumeric() || c == '_') {
+        // Use lexer to determine if it's a keyword or identifier
+        if !is_sql_keyword(last_word) {
+            Some(last_word.to_string())
+        } else {
+            None
+        }
     } else {
         None
     }
@@ -2341,20 +2471,10 @@ impl ParseCase for Parser {
 }
 
 fn is_sql_keyword(word: &str) -> bool {
-    matches!(
-        word.to_uppercase().as_str(),
-        "SELECT"
-            | "FROM"
-            | "WHERE"
-            | "AND"
-            | "OR"
-            | "IN"
-            | "ORDER"
-            | "BY"
-            | "GROUP"
-            | "HAVING"
-            | "ASC"
-            | "DESC"
-            | "DISTINCT"
-    )
+    // Use the lexer to check if this word produces a keyword token
+    let mut lexer = Lexer::new(word);
+    let token = lexer.next_token();
+
+    // Check if it's a keyword token (not an identifier)
+    !matches!(token, Token::Identifier(_) | Token::Eof)
 }

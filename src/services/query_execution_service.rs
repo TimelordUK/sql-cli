@@ -102,6 +102,9 @@ impl QueryExecutionService {
         original_source: Option<&crate::data::datatable::DataTable>,
         debug_context: Option<DebugContext>,
     ) -> Result<QueryExecutionResult> {
+        // Check if debug context is enabled before moving it
+        let debug_enabled = debug_context.is_some();
+
         let mut trace = if let Some(ctx) = debug_context {
             QueryTrace::new(ctx)
         } else {
@@ -114,7 +117,12 @@ impl QueryExecutionService {
         let parse_timer = ScopedTimer::new();
         trace.log("PARSER", "START", format!("Parsing query: {}", query));
 
-        let mut parser = Parser::new(query);
+        // Enable parser's internal debug trace if debug context is active
+        let mut parser = if debug_enabled {
+            Parser::new(query).with_debug_trace(true)
+        } else {
+            Parser::new(query)
+        };
         let mut statement = parser
             .parse()
             .map_err(|e| anyhow::anyhow!("Parse error: {}", e))?;
