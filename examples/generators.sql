@@ -186,6 +186,14 @@ GO
 SELECT * FROM PRIME_FACTORS(1234567);
 GO
 
+-- a literal array of numbers
+SELECT
+    FORMAT_NUMBER(value) AS n,
+    FORMAT_NUMBER(POW(value, 2)) AS n_squared,
+    IS_PRIME(value) AS is_prime
+FROM VALUES(3, 12, 17, 20, 2026, 3045, 19);
+go
+
 -- ============================================================================
 -- EXTENSIBILITY
 -- ============================================================================
