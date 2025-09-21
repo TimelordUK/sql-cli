@@ -9,7 +9,8 @@ SELECT
         WHEN value > 60 AND value <= 80 THEN 'Level 4'
         WHEN value > 80 THEN 'Level 5'
     END AS value_band
-FROM RANGE(1, 100);
+FROM RANGE(1, 100)
+limit 30;
 go
 
 -- FIX Protocol Message Analysis using File CTEs
@@ -54,5 +55,42 @@ SELECT
     median_house_value
 FROM prices
 GO
+
+-- cursor over value and \swl to create a lag and delta from previous
+SELECT
+    value,
+    LAG(value, 1) OVER (ORDER BY value ASC) AS prev_value,
+    value - LAG(value, 1) OVER (ORDER BY value ASC) AS value_change
+FROM RANGE(1, 20);
+go
+
+-- cursor over column \swr window function for row number
+WITH
+    WEB sales_data AS (
+        URL 'file://data/sales_data.csv'
+    )
+SELECT
+    region,
+    ROW_NUMBER() OVER (PARTITION BY region ORDER BY region ASC, salesperson DESC) AS region_rank,
+    salesperson,
+    month,
+    sales_amount,
+    product
+FROM sales_data
+ORDER BY region ASC, region_rank ASC;
+go
+
+-- use generator to iterate over a string
+WITH
+    words AS (
+        SELECT index, value AS word
+        FROM SPLIT(TOKENIZE('here, there are some words, both meaningful and meaningless.'))
+    )
+SELECT
+    *,
+    UPPER(word) AS in_upper,
+    MORSE_CODE(word) AS in_morse
+FROM words;
+go
 
 
