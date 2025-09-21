@@ -35,14 +35,16 @@ GO
 
 -- Example 4: Powers of 2 showing exponential growth
 -- Demonstrate how quickly powers of 2 grow
-with  ranged as (
-  select value as n from range(1, 101, 10)
-)
+WITH
+    ranged AS (
+        SELECT value AS n
+        FROM RANGE(1, 101, 10)
+    )
 SELECT
     n,
-    BIGPOW('2', n) as power_of_2,
-    LENGTH(BIGPOW('2', n)) as decimal_digits,
-    TO_BINARY(BIGPOW('2', n)) as binary_representation
+    BIGPOW('2', n) AS power_of_2,
+    LENGTH(BIGPOW('2', n)) AS decimal_digits,
+    TO_BINARY(BIGPOW('2', n)) AS binary_representation
 FROM ranged
 LIMIT 5;
 GO
@@ -141,42 +143,49 @@ GO
 
 -- Example 12: Prime factorization using generator
 -- Factor some interesting numbers (shows individual prime factors)
+
 SELECT
-    1001 as number,
+    1001 AS number,
     factor,
     power,
-    factor || '^' || power as factor_term
-FROM PRIME_FACTORS(1001)
-UNION ALL
+    TEXTJOIN('', 1, TEXTJOIN('', 1, factor, '^'), power) AS factor_term
+FROM PRIME_FACTORS(1001);
+go
+
 SELECT
-    12345,
+    12345 AS number,
     factor,
     power,
-    factor || '^' || power
-FROM PRIME_FACTORS(12345)
-UNION ALL
+    TEXTJOIN('', 1, TEXTJOIN('', 1, factor, '^'), power) AS expr_4
+FROM PRIME_FACTORS(12345);
+GO
+
 SELECT
     60,
     factor,
     power,
-    factor || '^' || power
+    factor || '^' || power as expression
 FROM PRIME_FACTORS(60);
 GO
 
 -- Example 13: Powers of different bases in binary
 -- Show how different bases grow in binary representation
-with ranged as (
-  SELECT value as base FROM RANGE(2, 11,2)
-), 
-bases AS (
-    SELECT
-        base,
-        BIGPOW(base, '10') as power_10,
-        TO_BINARY(BIGPOW(base, '10')) as binary,
-        LENGTH(TO_BINARY(BIGPOW(base, '10'))) as bits
-    FROM ranged
-)
-SELECT * FROM bases
+WITH
+    ranged AS (
+        SELECT value AS base
+        FROM RANGE(2, 11, 2)
+    ),
+    bases AS (
+        SELECT
+            base,
+            BIGPOW(base, '10') AS power_10,
+            TO_BINARY(BIGPOW(base, '10')) AS binary,
+            LENGTH(TO_BINARY(BIGPOW(base, '10'))) AS bits
+        FROM ranged
+    )
+SELECT *
+FROM bases
+GO
 GO
 
 -- Example 14: Maximum values and their properties
