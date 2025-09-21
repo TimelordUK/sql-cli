@@ -165,14 +165,35 @@ impl QueryEngine {
             let cte_result = match &cte.cte_type {
                 CTEType::Standard(query) => {
                     // Execute the CTE query (it might reference earlier CTEs)
-                    self.build_view_with_context(table.clone(), query.clone(), &mut cte_context)?
+                    let view = self.build_view_with_context(
+                        table.clone(),
+                        query.clone(),
+                        &mut cte_context,
+                    )?;
+
+                    // Materialize the view and enrich columns with qualified names
+                    let mut materialized = self.materialize_view(view)?;
+
+                    // Enrich columns with qualified names for proper scoping
+                    for column in materialized.columns_mut() {
+                        column.qualified_name = Some(format!("{}.{}", cte.name, column.name));
+                        column.source_table = Some(cte.name.clone());
+                    }
+
+                    DataView::new(Arc::new(materialized))
                 }
                 CTEType::Web(web_spec) => {
                     // Fetch data from URL
                     use crate::web::http_fetcher::WebDataFetcher;
 
                     let fetcher = WebDataFetcher::new()?;
-                    let data_table = fetcher.fetch(web_spec, &cte.name)?;
+                    let mut data_table = fetcher.fetch(web_spec, &cte.name)?;
+
+                    // Enrich columns with qualified names for proper scoping
+                    for column in data_table.columns_mut() {
+                        column.qualified_name = Some(format!("{}.{}", cte.name, column.name));
+                        column.source_table = Some(cte.name.clone());
+                    }
 
                     // Convert DataTable to DataView
                     DataView::new(Arc::new(data_table))
@@ -210,14 +231,35 @@ impl QueryEngine {
             debug!("QueryEngine: Processing nested CTE '{}'...", cte.name);
             let cte_result = match &cte.cte_type {
                 CTEType::Standard(query) => {
-                    self.build_view_with_context(table.clone(), query.clone(), &mut local_context)?
+                    let view = self.build_view_with_context(
+                        table.clone(),
+                        query.clone(),
+                        &mut local_context,
+                    )?;
+
+                    // Materialize the view and enrich columns with qualified names
+                    let mut materialized = self.materialize_view(view)?;
+
+                    // Enrich columns with qualified names for proper scoping
+                    for column in materialized.columns_mut() {
+                        column.qualified_name = Some(format!("{}.{}", cte.name, column.name));
+                        column.source_table = Some(cte.name.clone());
+                    }
+
+                    DataView::new(Arc::new(materialized))
                 }
                 CTEType::Web(web_spec) => {
                     // Fetch data from URL
                     use crate::web::http_fetcher::WebDataFetcher;
 
                     let fetcher = WebDataFetcher::new()?;
-                    let data_table = fetcher.fetch(web_spec, &cte.name)?;
+                    let mut data_table = fetcher.fetch(web_spec, &cte.name)?;
+
+                    // Enrich columns with qualified names for proper scoping
+                    for column in data_table.columns_mut() {
+                        column.qualified_name = Some(format!("{}.{}", cte.name, column.name));
+                        column.source_table = Some(cte.name.clone());
+                    }
 
                     // Convert DataTable to DataView
                     DataView::new(Arc::new(data_table))
@@ -301,11 +343,22 @@ impl QueryEngine {
                         );
                         let processed_query = subquery_executor.execute_subqueries(query)?;
 
-                        self.build_view_with_context(
+                        let view = self.build_view_with_context(
                             table.clone(),
                             processed_query,
                             &mut cte_context,
-                        )?
+                        )?;
+
+                        // Materialize the view and enrich columns with qualified names
+                        let mut materialized = self.materialize_view(view)?;
+
+                        // Enrich columns with qualified names for proper scoping
+                        for column in materialized.columns_mut() {
+                            column.qualified_name = Some(format!("{}.{}", cte.name, column.name));
+                            column.source_table = Some(cte.name.clone());
+                        }
+
+                        DataView::new(Arc::new(materialized))
                     }
                     CTEType::Web(web_spec) => {
                         plan_builder.add_detail(format!("URL: {}", web_spec.url));
@@ -320,7 +373,13 @@ impl QueryEngine {
                         use crate::web::http_fetcher::WebDataFetcher;
 
                         let fetcher = WebDataFetcher::new()?;
-                        let data_table = fetcher.fetch(web_spec, &cte.name)?;
+                        let mut data_table = fetcher.fetch(web_spec, &cte.name)?;
+
+                        // Enrich columns with qualified names for proper scoping
+                        for column in data_table.columns_mut() {
+                            column.qualified_name = Some(format!("{}.{}", cte.name, column.name));
+                            column.source_table = Some(cte.name.clone());
+                        }
 
                         // Convert DataTable to DataView
                         DataView::new(Arc::new(data_table))
@@ -443,7 +502,19 @@ impl QueryEngine {
             // Execute the CTE query (it might reference earlier CTEs)
             let cte_result = match &cte.cte_type {
                 CTEType::Standard(query) => {
-                    self.build_view_with_context(table.clone(), query.clone(), cte_context)?
+                    let view =
+                        self.build_view_with_context(table.clone(), query.clone(), cte_context)?;
+
+                    // Materialize the view and enrich columns with qualified names
+                    let mut materialized = self.materialize_view(view)?;
+
+                    // Enrich columns with qualified names for proper scoping
+                    for column in materialized.columns_mut() {
+                        column.qualified_name = Some(format!("{}.{}", cte.name, column.name));
+                        column.source_table = Some(cte.name.clone());
+                    }
+
+                    DataView::new(Arc::new(materialized))
                 }
                 CTEType::Web(_web_spec) => {
                     // Web CTEs should have been processed earlier in execute_select
@@ -698,6 +769,8 @@ impl QueryEngine {
                 unique_values: col.unique_values,
                 null_count: col.null_count,
                 metadata: col.metadata.clone(),
+                qualified_name: col.qualified_name.clone(), // Preserve qualified name
+                source_table: col.source_table.clone(),     // Preserve source table
             };
             result_table.add_column(new_col);
         }
@@ -869,11 +942,16 @@ impl QueryEngine {
                 // 2. OR we have a mix of star and other items (e.g., SELECT *, computed_col)
                 if has_non_star_items || statement.select_items.len() > 1 {
                     view = self.apply_select_items(view, &statement.select_items)?;
+                } else {
                 }
                 // If it's just a single star, no projection needed
             } else if !statement.columns.is_empty() && statement.columns[0] != "*" {
+                debug!("QueryEngine: Using legacy columns path");
                 // Fallback to legacy column projection for backward compatibility
-                let column_indices = self.resolve_column_indices(&table, &statement.columns)?;
+                // Use the current view's source table, not the original table
+                let source_table = view.source();
+                let column_indices =
+                    self.resolve_column_indices(source_table, &statement.columns)?;
                 view = view.with_columns(column_indices);
             }
         }
@@ -1073,24 +1151,47 @@ impl QueryEngine {
             for item in &expanded_items {
                 let value = match item {
                     SelectItem::Column(col_ref) => {
-                        // Simple column reference
-                        let col_idx =
-                            source_table
-                                .get_column_index(&col_ref.name)
-                                .ok_or_else(|| {
-                                    let suggestion =
-                                        self.find_similar_column(source_table, &col_ref.name);
-                                    match suggestion {
-                                        Some(similar) => anyhow::anyhow!(
-                                            "Column '{}' not found. Did you mean '{}'?",
-                                            col_ref.name,
-                                            similar
-                                        ),
-                                        None => {
-                                            anyhow::anyhow!("Column '{}' not found", col_ref.name)
-                                        }
-                                    }
-                                })?;
+                        // Column reference with optional table prefix
+                        let col_idx = if let Some(table_prefix) = &col_ref.table_prefix {
+                            // For qualified references, ONLY try qualified lookup - no fallback
+                            let qualified_name = format!("{}.{}", table_prefix, col_ref.name);
+                            let result = source_table.find_column_by_qualified_name(&qualified_name);
+
+                            // Debug: log what qualified names are available when lookup fails
+                            if result.is_none() {
+                                let available_qualified: Vec<String> = source_table.columns.iter()
+                                    .filter_map(|c| c.qualified_name.clone())
+                                    .collect();
+                                let available_simple: Vec<String> = source_table.columns.iter()
+                                    .map(|c| c.name.clone())
+                                    .collect();
+                                debug!(
+                                    "Qualified column '{}' not found. Available qualified names: {:?}, Simple names: {:?}",
+                                    qualified_name, available_qualified, available_simple
+                                );
+                                // This MUST return None to trigger error
+                            }
+                            result
+                        } else {
+                            // Simple column name lookup
+                            source_table.get_column_index(&col_ref.name)
+                        }
+                        .ok_or_else(|| {
+                            let display_name = if let Some(prefix) = &col_ref.table_prefix {
+                                format!("{}.{}", prefix, col_ref.name)
+                            } else {
+                                col_ref.name.clone()
+                            };
+                            let suggestion = self.find_similar_column(source_table, &col_ref.name);
+                            match suggestion {
+                                Some(similar) => anyhow::anyhow!(
+                                    "Column '{}' not found. Did you mean '{}'?",
+                                    display_name,
+                                    similar
+                                ),
+                                None => anyhow::anyhow!("Column '{}' not found", display_name),
+                            }
+                        })?;
                         let row = source_table
                             .get_row(row_idx)
                             .ok_or_else(|| anyhow::anyhow!("Row {} not found", row_idx))?;
@@ -1177,20 +1278,41 @@ impl QueryEngine {
         for item in select_items {
             match item {
                 SelectItem::Column(col_ref) => {
-                    let index = table_columns
-                        .iter()
-                        .position(|c| c.eq_ignore_ascii_case(&col_ref.name))
-                        .ok_or_else(|| {
-                            let suggestion = self.find_similar_column(table, &col_ref.name);
-                            match suggestion {
-                                Some(similar) => anyhow::anyhow!(
-                                    "Column '{}' not found. Did you mean '{}'?",
-                                    col_ref.name,
-                                    similar
-                                ),
-                                None => anyhow::anyhow!("Column '{}' not found", col_ref.name),
-                            }
-                        })?;
+                    // Check if this has a table prefix
+                    let index = if let Some(table_prefix) = &col_ref.table_prefix {
+                        // For qualified references, ONLY try qualified lookup - no fallback
+                        let qualified_name = format!("{}.{}", table_prefix, col_ref.name);
+                        table.find_column_by_qualified_name(&qualified_name)
+                            .ok_or_else(|| {
+                                // Check if any columns have qualified names for better error message
+                                let has_qualified = table.columns.iter()
+                                    .any(|c| c.qualified_name.is_some());
+                                if !has_qualified {
+                                    anyhow::anyhow!(
+                                        "Column '{}' not found. Note: Table '{}' may not support qualified column names",
+                                        qualified_name, table_prefix
+                                    )
+                                } else {
+                                    anyhow::anyhow!("Column '{}' not found", qualified_name)
+                                }
+                            })?
+                    } else {
+                        // Simple column name lookup
+                        table_columns
+                            .iter()
+                            .position(|c| c.eq_ignore_ascii_case(&col_ref.name))
+                            .ok_or_else(|| {
+                                let suggestion = self.find_similar_column(table, &col_ref.name);
+                                match suggestion {
+                                    Some(similar) => anyhow::anyhow!(
+                                        "Column '{}' not found. Did you mean '{}'?",
+                                        col_ref.name,
+                                        similar
+                                    ),
+                                    None => anyhow::anyhow!("Column '{}' not found", col_ref.name),
+                                }
+                            })?
+                    };
                     indices.push(index);
                 }
                 SelectItem::Star => {

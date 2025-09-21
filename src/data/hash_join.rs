@@ -261,6 +261,8 @@ impl HashJoinExecutor {
                 unique_values: col.unique_values,
                 null_count: col.null_count,
                 metadata: col.metadata.clone(),
+                qualified_name: col.qualified_name.clone(), // Preserve qualified name
+                source_table: col.source_table.clone(),     // Preserve source table
             });
         }
 
@@ -279,6 +281,8 @@ impl HashJoinExecutor {
                     unique_values: col.unique_values,
                     null_count: col.null_count,
                     metadata: col.metadata.clone(),
+                    qualified_name: col.qualified_name.clone(), // Preserve qualified name
+                    source_table: col.source_table.clone(),     // Preserve source table
                 });
             } else {
                 // If there's a name conflict, add with a suffix
@@ -289,6 +293,8 @@ impl HashJoinExecutor {
                     unique_values: col.unique_values,
                     null_count: col.null_count,
                     metadata: col.metadata.clone(),
+                    qualified_name: col.qualified_name.clone(), // Preserve qualified name
+                    source_table: col.source_table.clone(),     // Preserve source table
                 });
             }
         }
@@ -327,10 +333,20 @@ impl HashJoinExecutor {
             }
         }
 
+        // Debug: log the qualified names in the result table
+        let qualified_cols: Vec<String> = result
+            .columns
+            .iter()
+            .filter_map(|c| c.qualified_name.clone())
+            .collect();
+
         info!(
-            "INNER JOIN complete: {} matches found in {:?}",
+            "INNER JOIN complete: {} matches found in {:?}. Result has {} columns ({} qualified: {:?})",
             match_count,
-            start.elapsed()
+            start.elapsed(),
+            result.columns.len(),
+            qualified_cols.len(),
+            qualified_cols
         );
 
         Ok(result)
@@ -372,6 +388,8 @@ impl HashJoinExecutor {
                 unique_values: col.unique_values,
                 null_count: col.null_count,
                 metadata: col.metadata.clone(),
+                qualified_name: col.qualified_name.clone(), // Preserve qualified name
+                source_table: col.source_table.clone(),     // Preserve source table
             });
         }
 
@@ -390,6 +408,8 @@ impl HashJoinExecutor {
                     unique_values: col.unique_values,
                     null_count: col.null_count,
                     metadata: col.metadata.clone(),
+                    qualified_name: col.qualified_name.clone(), // Preserve qualified name
+                    source_table: col.source_table.clone(),     // Preserve source table
                 });
             } else {
                 // If there's a name conflict, add with a suffix
@@ -400,6 +420,8 @@ impl HashJoinExecutor {
                     unique_values: col.unique_values,
                     null_count: col.null_count,
                     metadata: col.metadata.clone(),
+                    qualified_name: col.qualified_name.clone(), // Preserve qualified name
+                    source_table: col.source_table.clone(),     // Preserve source table
                 });
             }
         }
@@ -444,11 +466,21 @@ impl HashJoinExecutor {
             }
         }
 
+        // Debug: log the qualified names in the result table
+        let qualified_cols: Vec<String> = result
+            .columns
+            .iter()
+            .filter_map(|c| c.qualified_name.clone())
+            .collect();
+
         info!(
-            "LEFT JOIN complete: {} matches, {} nulls in {:?}",
+            "LEFT JOIN complete: {} matches, {} nulls in {:?}. Result has {} columns ({} qualified: {:?})",
             match_count,
             null_count,
-            start.elapsed()
+            start.elapsed(),
+            result.columns.len(),
+            qualified_cols.len(),
+            qualified_cols
         );
 
         Ok(result)
@@ -590,6 +622,8 @@ impl HashJoinExecutor {
                 unique_values: col.unique_values,
                 null_count: col.null_count,
                 metadata: col.metadata.clone(),
+                qualified_name: col.qualified_name.clone(), // Preserve qualified name
+                source_table: col.source_table.clone(),     // Preserve source table
             });
         }
 
@@ -607,6 +641,8 @@ impl HashJoinExecutor {
                     unique_values: col.unique_values,
                     null_count: col.null_count,
                     metadata: col.metadata.clone(),
+                    qualified_name: col.qualified_name.clone(), // Preserve qualified name
+                    source_table: col.source_table.clone(),     // Preserve source table
                 });
             } else {
                 result.add_column(DataColumn {
@@ -616,6 +652,8 @@ impl HashJoinExecutor {
                     unique_values: col.unique_values,
                     null_count: col.null_count,
                     metadata: col.metadata.clone(),
+                    qualified_name: col.qualified_name.clone(), // Preserve qualified name
+                    source_table: col.source_table.clone(),     // Preserve source table
                 });
             }
         }
@@ -677,6 +715,8 @@ impl HashJoinExecutor {
                 unique_values: col.unique_values,
                 null_count: col.null_count,
                 metadata: col.metadata.clone(),
+                qualified_name: col.qualified_name.clone(), // Preserve qualified name
+                source_table: col.source_table.clone(),     // Preserve source table
             });
         }
 
@@ -694,6 +734,8 @@ impl HashJoinExecutor {
                     unique_values: col.unique_values,
                     null_count: col.null_count,
                     metadata: col.metadata.clone(),
+                    qualified_name: col.qualified_name.clone(), // Preserve qualified name
+                    source_table: col.source_table.clone(),     // Preserve source table
                 });
             } else {
                 result.add_column(DataColumn {
@@ -703,6 +745,8 @@ impl HashJoinExecutor {
                     unique_values: col.unique_values,
                     null_count: col.null_count,
                     metadata: col.metadata.clone(),
+                    qualified_name: col.qualified_name.clone(), // Preserve qualified name
+                    source_table: col.source_table.clone(),     // Preserve source table
                 });
             }
         }

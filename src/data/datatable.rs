@@ -72,6 +72,10 @@ pub struct DataColumn {
     pub unique_values: Option<usize>,
     pub null_count: usize,
     pub metadata: HashMap<String, String>,
+    /// Qualified name with table prefix (e.g., "messages.field_name")
+    pub qualified_name: Option<String>,
+    /// Source table or CTE name
+    pub source_table: Option<String>,
 }
 
 impl DataColumn {
@@ -83,6 +87,8 @@ impl DataColumn {
             unique_values: None,
             null_count: 0,
             metadata: HashMap::new(),
+            qualified_name: None,
+            source_table: None,
         }
     }
 
@@ -90,6 +96,19 @@ impl DataColumn {
     pub fn with_type(mut self, data_type: DataType) -> Self {
         self.data_type = data_type;
         self
+    }
+
+    /// Set the qualified name (table.column format)
+    #[must_use]
+    pub fn with_qualified_name(mut self, table_name: &str) -> Self {
+        self.qualified_name = Some(format!("{}.{}", table_name, self.name));
+        self.source_table = Some(table_name.to_string());
+        self
+    }
+
+    /// Get the qualified name if available, otherwise return the simple name
+    pub fn get_qualified_or_simple_name(&self) -> &str {
+        self.qualified_name.as_deref().unwrap_or(&self.name)
     }
 
     #[must_use]
@@ -321,6 +340,38 @@ impl DataTable {
         self.columns.iter().position(|c| c.name == name)
     }
 
+    /// Find column index by qualified name (e.g., "messages.field_name")
+    #[must_use]
+    pub fn find_column_by_qualified_name(&self, qualified_name: &str) -> Option<usize> {
+        self.columns
+            .iter()
+            .position(|c| c.qualified_name.as_deref() == Some(qualified_name))
+    }
+
+    /// Find column by either qualified or simple name
+    /// First tries qualified match, then falls back to simple name
+    #[must_use]
+    pub fn find_column_flexible(&self, name: &str, table_prefix: Option<&str>) -> Option<usize> {
+        // If table prefix provided, try qualified match first
+        if let Some(prefix) = table_prefix {
+            let qualified = format!("{}.{}", prefix, name);
+            if let Some(idx) = self.find_column_by_qualified_name(&qualified) {
+                return Some(idx);
+            }
+        }
+
+        // Fall back to simple name match
+        self.get_column_index(name)
+    }
+
+    /// Enrich all columns with qualified names based on the table name
+    pub fn enrich_columns_with_qualified_names(&mut self, table_name: &str) {
+        for column in &mut self.columns {
+            column.qualified_name = Some(format!("{}.{}", table_name, column.name));
+            column.source_table = Some(table_name.to_string());
+        }
+    }
+
     #[must_use]
     pub fn column_count(&self) -> usize {
         self.columns.len()
@@ -340,6 +391,11 @@ impl DataTable {
     #[must_use]
     pub fn column_names(&self) -> Vec<String> {
         self.columns.iter().map(|c| c.name.clone()).collect()
+    }
+
+    /// Get mutable access to columns for enrichment
+    pub fn columns_mut(&mut self) -> &mut [DataColumn] {
+        &mut self.columns
     }
 
     /// Infer and update column types based on data

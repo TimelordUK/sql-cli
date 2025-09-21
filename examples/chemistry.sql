@@ -35,7 +35,7 @@ GO
 
 SELECT Element, Symbol, Group, Type
 FROM periodic_table
-WHERE Type.Contains("Noble")
+WHERE Type.Contains('Noble')
 GO
 
 SELECT MAX(Year) AS latest_year_discovery, MIN(Year) AS earliest_year_discovery

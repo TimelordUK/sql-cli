@@ -38,6 +38,8 @@ impl VirtualTableGenerator {
             unique_values: Some(0),
             null_count: 0,
             metadata: HashMap::new(),
+            qualified_name: None,
+            source_table: None,
         };
         table.add_column(column);
 
@@ -76,6 +78,8 @@ impl VirtualTableGenerator {
             unique_values: Some(0),
             null_count: 0,
             metadata: HashMap::new(),
+            qualified_name: None,
+            source_table: None,
         };
         table.add_column(column);
 
@@ -87,6 +91,8 @@ impl VirtualTableGenerator {
             unique_values: Some(0),
             null_count: 0,
             metadata: HashMap::new(),
+            qualified_name: None,
+            source_table: None,
         };
         table.add_column(index_column);
 

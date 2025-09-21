@@ -5,7 +5,7 @@ use crate::sql::parser::ast::{ColumnRef, SqlExpression, WindowSpec};
 use crate::sql::parser::lexer::Token;
 use tracing::{debug, trace};
 
-use super::{log_parse_decision, trace_parse_entry, trace_parse_exit};
+use super::{log_parse_decision, trace_parse_entry, trace_parse_exit, ExpressionParser};
 
 /// Parser context for primary expressions
 pub struct PrimaryExpressionContext<'a> {
@@ -29,28 +29,28 @@ pub fn parse_primary<P>(
     ctx: &PrimaryExpressionContext,
 ) -> Result<SqlExpression, String>
 where
-    P: ParsePrimary + ?Sized,
+    P: ParsePrimary + ExpressionParser + ?Sized,
 {
-    trace_parse_entry("parse_primary", parser.current_token());
+    trace_parse_entry("parse_primary", ExpressionParser::current_token(parser));
 
     // Special case: check if a number literal could actually be a column name
     // This handles cases where columns are named with pure numbers like "202204"
-    if let Token::NumberLiteral(num_str) = parser.current_token() {
+    if let Token::NumberLiteral(num_str) = ExpressionParser::current_token(parser) {
         if ctx.columns.iter().any(|col| col == num_str) {
             log_parse_decision(
                 "parse_primary",
-                parser.current_token(),
+                ExpressionParser::current_token(parser),
                 "Number literal matches column name, treating as column",
             );
             let expr = SqlExpression::Column(ColumnRef::unquoted(num_str.clone()));
-            parser.advance();
+            ExpressionParser::advance(parser);
             let result = Ok(expr);
             trace_parse_exit("parse_primary", &result);
             return result;
         }
     }
 
-    let result = match parser.current_token() {
+    let result = match ExpressionParser::current_token(parser) {
         Token::Case => {
             debug!("Parsing CASE expression");
             parser.parse_case_expression()
@@ -69,36 +69,83 @@ where
             if id_upper == "TRUE" {
                 log_parse_decision(
                     "parse_primary",
-                    parser.current_token(),
+                    ExpressionParser::current_token(parser),
                     "Boolean literal TRUE",
                 );
-                parser.advance();
+                ExpressionParser::advance(parser);
                 Ok(SqlExpression::BooleanLiteral(true))
             } else if id_upper == "FALSE" {
                 log_parse_decision(
                     "parse_primary",
-                    parser.current_token(),
+                    ExpressionParser::current_token(parser),
                     "Boolean literal FALSE",
                 );
-                parser.advance();
+                ExpressionParser::advance(parser);
                 Ok(SqlExpression::BooleanLiteral(false))
             } else {
-                parser.advance();
+                ExpressionParser::advance(parser);
 
+                // Check for table.column notation or method calls
+                if matches!(ExpressionParser::current_token(parser), Token::Dot) {
+                    ExpressionParser::advance(parser); // consume dot
+
+                    if let Token::Identifier(next_id) = ExpressionParser::current_token(parser) {
+                        let next_id = next_id.clone();
+                        ExpressionParser::advance(parser);
+
+                        // Check if this is a method call (followed by parentheses)
+                        if matches!(ExpressionParser::current_token(parser), Token::LeftParen) {
+                            debug!(object = %id_clone, method = %next_id, "Parsing method call");
+                            ExpressionParser::advance(parser); // consume (
+
+                            // Handle empty argument list
+                            let args = if matches!(
+                                ExpressionParser::current_token(parser),
+                                Token::RightParen
+                            ) {
+                                Vec::new()
+                            } else {
+                                parser.parse_expression_list()?
+                            };
+                            ExpressionParser::consume(parser, Token::RightParen)?;
+
+                            log_parse_decision(
+                                "parse_primary",
+                                &Token::Identifier(next_id.clone()),
+                                "Method call",
+                            );
+                            Ok(SqlExpression::MethodCall {
+                                object: id_clone,
+                                method: next_id,
+                                args,
+                            })
+                        } else {
+                            // It's a qualified column reference
+                            let col_ref = ColumnRef::qualified(id_clone, next_id.clone());
+                            log_parse_decision(
+                                "parse_primary",
+                                &Token::Identifier(next_id),
+                                "Qualified column reference",
+                            );
+                            Ok(SqlExpression::Column(col_ref))
+                        }
+                    } else {
+                        Err("Expected identifier after '.'".to_string())
+                    }
                 // Check if this is a function call
-                if matches!(parser.current_token(), Token::LeftParen) {
+                } else if matches!(ExpressionParser::current_token(parser), Token::LeftParen) {
                     debug!(function = %id_upper, "Parsing function call");
-                    parser.advance(); // consume (
+                    ExpressionParser::advance(parser); // consume (
                     let (args, has_distinct) = parser.parse_function_args()?;
-                    parser.consume(Token::RightParen)?;
+                    ExpressionParser::consume(parser, Token::RightParen)?;
 
                     // Check for OVER clause for window functions
-                    if matches!(parser.current_token(), Token::Over) {
+                    if matches!(ExpressionParser::current_token(parser), Token::Over) {
                         debug!(function = %id_upper, "Window function detected");
-                        parser.advance(); // consume OVER
-                        parser.consume(Token::LeftParen)?;
+                        ExpressionParser::advance(parser); // consume OVER
+                        ExpressionParser::consume(parser, Token::LeftParen)?;
                         let window_spec = parser.parse_window_spec()?;
-                        parser.consume(Token::RightParen)?;
+                        ExpressionParser::consume(parser, Token::RightParen)?;
                         Ok(SqlExpression::WindowFunction {
                             name: id_upper,
                             args,
@@ -112,7 +159,7 @@ where
                         })
                     }
                 } else {
-                    // Otherwise treat as column
+                    // Otherwise treat as simple column
                     log_parse_decision(
                         "parse_primary",
                         &Token::Identifier(id_clone.clone()),
@@ -128,7 +175,7 @@ where
                 // In method arguments, treat quoted identifiers as string literals
                 log_parse_decision(
                     "parse_primary",
-                    parser.current_token(),
+                    ExpressionParser::current_token(parser),
                     "Quoted identifier in method args - treating as string",
                 );
                 SqlExpression::StringLiteral(id.clone())
@@ -136,51 +183,51 @@ where
                 // Otherwise it's a column name like "Customer Id"
                 log_parse_decision(
                     "parse_primary",
-                    parser.current_token(),
+                    ExpressionParser::current_token(parser),
                     "Quoted identifier as column name",
                 );
                 SqlExpression::Column(ColumnRef::quoted(id.clone()))
             };
-            parser.advance();
+            ExpressionParser::advance(parser);
             Ok(expr)
         }
 
         Token::StringLiteral(s) => {
             trace!("String literal: {}", s);
             let expr = SqlExpression::StringLiteral(s.clone());
-            parser.advance();
+            ExpressionParser::advance(parser);
             Ok(expr)
         }
 
         Token::NumberLiteral(n) => {
             trace!("Number literal: {}", n);
             let expr = SqlExpression::NumberLiteral(n.clone());
-            parser.advance();
+            ExpressionParser::advance(parser);
             Ok(expr)
         }
 
         Token::Null => {
             trace!("NULL literal");
-            parser.advance();
+            ExpressionParser::advance(parser);
             Ok(SqlExpression::Null)
         }
 
         // Handle LEFT and RIGHT as function names when followed by parentheses
         Token::Left | Token::Right => {
-            let func_name = match parser.current_token() {
+            let func_name = match ExpressionParser::current_token(parser) {
                 Token::Left => "LEFT".to_string(),
                 Token::Right => "RIGHT".to_string(),
                 _ => unreachable!(),
             };
 
-            parser.advance();
+            ExpressionParser::advance(parser);
 
             // Check if this is a function call
-            if matches!(parser.current_token(), Token::LeftParen) {
+            if matches!(ExpressionParser::current_token(parser), Token::LeftParen) {
                 debug!(function = %func_name, "Parsing LEFT/RIGHT function call");
-                parser.advance(); // consume (
+                ExpressionParser::advance(parser); // consume (
                 let (args, _has_distinct) = parser.parse_function_args()?;
-                parser.consume(Token::RightParen)?;
+                ExpressionParser::consume(parser, Token::RightParen)?;
 
                 Ok(SqlExpression::FunctionCall {
                     name: func_name,
@@ -198,13 +245,13 @@ where
 
         Token::LeftParen => {
             debug!("Parsing parenthesized expression or subquery");
-            parser.advance(); // consume (
+            ExpressionParser::advance(parser); // consume (
 
             // Check if this is a subquery (starts with SELECT)
-            if matches!(parser.current_token(), Token::Select) {
+            if matches!(ExpressionParser::current_token(parser), Token::Select) {
                 debug!("Detected subquery - parsing SELECT statement");
                 let subquery = parser.parse_subquery()?;
-                parser.consume(Token::RightParen)?;
+                ExpressionParser::consume(parser, Token::RightParen)?;
                 Ok(SqlExpression::ScalarSubquery {
                     query: Box::new(subquery),
                 })
@@ -212,7 +259,7 @@ where
                 // Regular parenthesized expression
                 debug!("Regular parenthesized expression");
                 let expr = parser.parse_logical_or()?;
-                parser.consume(Token::RightParen)?;
+                ExpressionParser::consume(parser, Token::RightParen)?;
                 Ok(expr)
             }
         }
@@ -225,14 +272,14 @@ where
         Token::Star => {
             // Handle * as a literal (like in COUNT(*))
             trace!("Star token as literal");
-            parser.advance();
+            ExpressionParser::advance(parser);
             Ok(SqlExpression::StringLiteral("*".to_string()))
         }
 
         _ => {
             let err = format!(
                 "Unexpected token in primary expression: {:?}",
-                parser.current_token()
+                ExpressionParser::current_token(parser)
             );
             debug!(error = %err);
             Err(err)
@@ -246,14 +293,14 @@ where
 /// Parse DateTime constructor
 fn parse_datetime_constructor<P>(parser: &mut P) -> Result<SqlExpression, String>
 where
-    P: ParsePrimary + ?Sized,
+    P: ParsePrimary + ExpressionParser + ?Sized,
 {
-    parser.advance(); // consume DateTime
-    parser.consume(Token::LeftParen)?;
+    ExpressionParser::advance(parser); // consume DateTime
+    ExpressionParser::consume(parser, Token::LeftParen)?;
 
     // Check if empty parentheses for DateTime() - today's date
-    if matches!(parser.current_token(), Token::RightParen) {
-        parser.advance(); // consume )
+    if matches!(ExpressionParser::current_token(parser), Token::RightParen) {
+        ExpressionParser::advance(parser); // consume )
         debug!("DateTime() - today's date");
         return Ok(SqlExpression::DateTimeToday {
             hour: None,
@@ -263,59 +310,59 @@ where
     }
 
     // Parse year
-    let year = if let Token::NumberLiteral(n) = parser.current_token() {
+    let year = if let Token::NumberLiteral(n) = ExpressionParser::current_token(parser) {
         n.parse::<i32>().map_err(|_| "Invalid year")?
     } else {
         return Err("Expected year in DateTime constructor".to_string());
     };
-    parser.advance();
-    parser.consume(Token::Comma)?;
+    ExpressionParser::advance(parser);
+    ExpressionParser::consume(parser, Token::Comma)?;
 
     // Parse month
-    let month = if let Token::NumberLiteral(n) = parser.current_token() {
+    let month = if let Token::NumberLiteral(n) = ExpressionParser::current_token(parser) {
         n.parse::<u32>().map_err(|_| "Invalid month")?
     } else {
         return Err("Expected month in DateTime constructor".to_string());
     };
-    parser.advance();
-    parser.consume(Token::Comma)?;
+    ExpressionParser::advance(parser);
+    ExpressionParser::consume(parser, Token::Comma)?;
 
     // Parse day
-    let day = if let Token::NumberLiteral(n) = parser.current_token() {
+    let day = if let Token::NumberLiteral(n) = ExpressionParser::current_token(parser) {
         n.parse::<u32>().map_err(|_| "Invalid day")?
     } else {
         return Err("Expected day in DateTime constructor".to_string());
     };
-    parser.advance();
+    ExpressionParser::advance(parser);
 
     // Check for optional time components
     let mut hour = None;
     let mut minute = None;
     let mut second = None;
 
-    if matches!(parser.current_token(), Token::Comma) {
-        parser.advance(); // consume comma
+    if matches!(ExpressionParser::current_token(parser), Token::Comma) {
+        ExpressionParser::advance(parser); // consume comma
 
         // Parse hour
-        if let Token::NumberLiteral(n) = parser.current_token() {
+        if let Token::NumberLiteral(n) = ExpressionParser::current_token(parser) {
             hour = Some(n.parse::<u32>().map_err(|_| "Invalid hour")?);
-            parser.advance();
+            ExpressionParser::advance(parser);
 
             // Check for minute
-            if matches!(parser.current_token(), Token::Comma) {
-                parser.advance(); // consume comma
+            if matches!(ExpressionParser::current_token(parser), Token::Comma) {
+                ExpressionParser::advance(parser); // consume comma
 
-                if let Token::NumberLiteral(n) = parser.current_token() {
+                if let Token::NumberLiteral(n) = ExpressionParser::current_token(parser) {
                     minute = Some(n.parse::<u32>().map_err(|_| "Invalid minute")?);
-                    parser.advance();
+                    ExpressionParser::advance(parser);
 
                     // Check for second
-                    if matches!(parser.current_token(), Token::Comma) {
-                        parser.advance(); // consume comma
+                    if matches!(ExpressionParser::current_token(parser), Token::Comma) {
+                        ExpressionParser::advance(parser); // consume comma
 
-                        if let Token::NumberLiteral(n) = parser.current_token() {
+                        if let Token::NumberLiteral(n) = ExpressionParser::current_token(parser) {
                             second = Some(n.parse::<u32>().map_err(|_| "Invalid second")?);
-                            parser.advance();
+                            ExpressionParser::advance(parser);
                         }
                     }
                 }
@@ -323,7 +370,7 @@ where
         }
     }
 
-    parser.consume(Token::RightParen)?;
+    ExpressionParser::consume(parser, Token::RightParen)?;
 
     debug!(year = year, month = month, day = day, hour = ?hour, minute = ?minute, second = ?second, "DateTime constructor parsed");
 
@@ -340,19 +387,19 @@ where
 /// Parse NOT expression
 fn parse_not_expression<P>(parser: &mut P) -> Result<SqlExpression, String>
 where
-    P: ParsePrimary + ?Sized,
+    P: ParsePrimary + ExpressionParser + ?Sized,
 {
-    parser.advance(); // consume NOT
+    ExpressionParser::advance(parser); // consume NOT
 
     // Check if this is a NOT IN expression
     if let Ok(inner_expr) = parser.parse_comparison() {
         // After parsing the inner expression, check if we're followed by IN
-        if matches!(parser.current_token(), Token::In) {
+        if matches!(ExpressionParser::current_token(parser), Token::In) {
             debug!("NOT IN expression detected");
-            parser.advance(); // consume IN
-            parser.consume(Token::LeftParen)?;
+            ExpressionParser::advance(parser); // consume IN
+            ExpressionParser::consume(parser, Token::LeftParen)?;
             let values = parser.parse_expression_list()?;
-            parser.consume(Token::RightParen)?;
+            ExpressionParser::consume(parser, Token::RightParen)?;
 
             Ok(SqlExpression::NotInList {
                 expr: Box::new(inner_expr),

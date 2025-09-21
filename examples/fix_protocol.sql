@@ -1,24 +1,36 @@
 -- FIX Protocol Message Analysis using File CTEs
 -- This example demonstrates how to join FIX protocol tables to create enriched message definitions
 
+WITH
+    WEB fields AS (URL 'file://data/FIX44_fields.csv')
+select * from fields 
+limit 20;
+GO
+
+WITH
+    WEB messages AS (URL 'file://data/FIX44_messages.csv')
+select * from messages
+limit 20;
+GO
+
 -- ===============================================
 -- Example 1: Simple Message Field Enrichment
 -- Get all fields for a specific message with descriptions
 -- ===============================================
 WITH
     WEB messages AS (URL 'file://data/FIX44_messages.csv'),
-    WEB fields AS (URL 'file://data/FIX44_fields.csv')
+    WEB field AS (URL 'file://data/FIX44_fields.csv')
 SELECT
-    message_name,
+    messages.message_name,
     position,
-    msgtype,
-    field_name,
-    field_number,
-    required,
-    field_type,
-    description as field_description
+    messages.msgtype,
+    messages.field_name,
+    messages.field_number,
+    messages.required,
+    messages.field_type,
+    field.number as field_number
 FROM messages
-LEFT JOIN fields ON messages.field_number = fields.number
+LEFT JOIN field ON messages.field_number = field.number
 WHERE messages.message_name = 'NewOrderSingle'
 ORDER BY position;
 GO

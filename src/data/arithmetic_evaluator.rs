@@ -130,7 +130,7 @@ impl<'a> ArithmeticEvaluator<'a> {
         );
 
         match expr {
-            SqlExpression::Column(column_ref) => self.evaluate_column(&column_ref.name, row_index),
+            SqlExpression::Column(column_ref) => self.evaluate_column_ref(column_ref, row_index),
             SqlExpression::StringLiteral(s) => Ok(DataValue::String(s.clone())),
             SqlExpression::BooleanLiteral(b) => Ok(DataValue::Boolean(*b)),
             SqlExpression::NumberLiteral(n) => self.evaluate_number_literal(n),
@@ -171,6 +171,28 @@ impl<'a> ArithmeticEvaluator<'a> {
                 "Unsupported expression type for arithmetic evaluation: {:?}",
                 expr
             )),
+        }
+    }
+
+    /// Evaluate a column reference with proper table scoping
+    fn evaluate_column_ref(&self, column_ref: &ColumnRef, row_index: usize) -> Result<DataValue> {
+        if let Some(table_prefix) = &column_ref.table_prefix {
+            // For qualified references, ONLY try qualified lookup - no fallback
+            let qualified_name = format!("{}.{}", table_prefix, column_ref.name);
+
+            if let Some(col_idx) = self.table.find_column_by_qualified_name(&qualified_name) {
+                return self
+                    .table
+                    .get_value(row_index, col_idx)
+                    .ok_or_else(|| anyhow!("Row {} out of bounds", row_index))
+                    .map(|v| v.clone());
+            }
+
+            // If not found, return error - don't fall back
+            Err(anyhow!("Column '{}' not found", qualified_name))
+        } else {
+            // Simple column name lookup
+            self.evaluate_column(&column_ref.name, row_index)
         }
     }
 

@@ -32,6 +32,7 @@ use super::parser::expressions::logical::{
 use super::parser::expressions::primary::{
     parse_primary as parse_primary_expr, ParsePrimary, PrimaryExpressionContext,
 };
+use super::parser::expressions::ExpressionParser;
 pub struct Parser {
     lexer: Lexer,
     current_token: Token,
@@ -75,6 +76,18 @@ impl Parser {
     pub fn with_columns(mut self, columns: Vec<String>) -> Self {
         self.columns = columns;
         self
+    }
+
+    #[allow(dead_code)]
+    fn peek_token(&self) -> Option<Token> {
+        // Alternative peek that returns owned token
+        let mut temp_lexer = self.lexer.clone();
+        let next_token = temp_lexer.next_token();
+        if matches!(next_token, Token::Eof) {
+            None
+        } else {
+            Some(next_token)
+        }
     }
 
     fn consume(&mut self, expected: Token) -> Result<(), String> {
@@ -2172,6 +2185,77 @@ impl ParsePrimary for Parser {
             self.parse_with_clause_inner()
         } else {
             self.parse_select_statement_inner()
+        }
+    }
+}
+
+// Implement the ExpressionParser trait for Parser to use the modular expression parsing
+impl ExpressionParser for Parser {
+    fn current_token(&self) -> &Token {
+        &self.current_token
+    }
+
+    fn advance(&mut self) {
+        // Call the main advance method directly to avoid recursion
+        match &self.current_token {
+            Token::LeftParen => self.paren_depth += 1,
+            Token::RightParen => {
+                self.paren_depth -= 1;
+            }
+            _ => {}
+        }
+        self.current_token = self.lexer.next_token();
+    }
+
+    fn peek(&self) -> Option<&Token> {
+        // We can't return a reference to a token from a temporary lexer,
+        // so we need a different approach. For now, let's use a workaround
+        // that checks the next token type without consuming it.
+        // This is a limitation of the current design.
+        // A proper fix would be to store the peeked token in the Parser struct.
+        None // TODO: Implement proper lookahead
+    }
+
+    fn is_at_end(&self) -> bool {
+        matches!(self.current_token, Token::Eof)
+    }
+
+    fn consume(&mut self, expected: Token) -> Result<(), String> {
+        // Call the main consume method to avoid recursion
+        if std::mem::discriminant(&self.current_token) == std::mem::discriminant(&expected) {
+            match &expected {
+                Token::LeftParen => self.paren_depth += 1,
+                Token::RightParen => {
+                    self.paren_depth -= 1;
+                    if self.paren_depth < 0 {
+                        return Err(
+                            "Unexpected closing parenthesis - no matching opening parenthesis"
+                                .to_string(),
+                        );
+                    }
+                }
+                _ => {}
+            }
+            self.current_token = self.lexer.next_token();
+            Ok(())
+        } else {
+            Err(format!(
+                "Expected {:?}, found {:?}",
+                expected, self.current_token
+            ))
+        }
+    }
+
+    fn parse_identifier(&mut self) -> Result<String, String> {
+        if let Token::Identifier(id) = &self.current_token {
+            let id = id.clone();
+            self.advance();
+            Ok(id)
+        } else {
+            Err(format!(
+                "Expected identifier, found {:?}",
+                self.current_token
+            ))
         }
     }
 }

@@ -16,11 +16,13 @@ pub enum QuoteStyle {
     Brackets,
 }
 
-/// Column reference with optional quoting information
+/// Column reference with optional quoting information and table prefix
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct ColumnRef {
     pub name: String,
     pub quote_style: QuoteStyle,
+    /// Optional table/alias prefix (e.g., "messages" in "messages.field_name")
+    pub table_prefix: Option<String>,
 }
 
 impl ColumnRef {
@@ -29,6 +31,7 @@ impl ColumnRef {
         Self {
             name,
             quote_style: QuoteStyle::None,
+            table_prefix: None,
         }
     }
 
@@ -37,6 +40,24 @@ impl ColumnRef {
         Self {
             name,
             quote_style: QuoteStyle::DoubleQuotes,
+            table_prefix: None,
+        }
+    }
+
+    /// Create a qualified column reference (table.column)
+    pub fn qualified(table: String, name: String) -> Self {
+        Self {
+            name,
+            quote_style: QuoteStyle::None,
+            table_prefix: Some(table),
+        }
+    }
+
+    /// Get the full qualified string representation
+    pub fn to_qualified_string(&self) -> String {
+        match &self.table_prefix {
+            Some(table) => format!("{}.{}", table, self.name),
+            None => self.name.clone(),
         }
     }
 
@@ -45,15 +66,21 @@ impl ColumnRef {
         Self {
             name,
             quote_style: QuoteStyle::Brackets,
+            table_prefix: None,
         }
     }
 
     /// Format the column reference with appropriate quoting
     pub fn to_sql(&self) -> String {
-        match self.quote_style {
+        let column_part = match self.quote_style {
             QuoteStyle::None => self.name.clone(),
             QuoteStyle::DoubleQuotes => format!("\"{}\"", self.name),
             QuoteStyle::Brackets => format!("[{}]", self.name),
+        };
+
+        match &self.table_prefix {
+            Some(table) => format!("{}.{}", table, column_part),
+            None => column_part,
         }
     }
 }

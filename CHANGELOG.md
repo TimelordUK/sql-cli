@@ -5,6 +5,43 @@ All notable changes to SQL CLI will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.51.0] - 2025-09-21
+
+### 🎯 Qualified Column Resolution & Scoping
+
+This release fixes critical issues with qualified column name resolution throughout the query pipeline, ensuring proper column scoping in JOINs, CTEs, and generator functions.
+
+### ✨ Major Fixes
+
+#### **Qualified Column Name Resolution**
+- **Fixed parser distinction** between method calls (`column.Method()`) and qualified columns (`table.column`)
+- **Strict validation** of table prefixes - invalid prefixes like `wrongtable.column` now properly fail
+- **Preserved qualified names through JOINs** - All columns maintain their source table information
+- **Standard CTE column enrichment** - CTEs from generators (RANGE, TRIANGULAR, SQUARES) now support qualified references
+
+#### **Column Scoping Improvements**
+- **JOIN operations** - Columns from both tables preserve their qualified names (`messages.field_name`, `fields.number`)
+- **WEB CTEs** - Proper column enrichment with table prefix (`messages.message_name`)
+- **Standard CTEs** - Generator functions now support qualified references (`tri.value`, `data1.num`)
+- **Materialized views** - Qualified names preserved through view materialization
+
+### 🔧 Technical Improvements
+
+#### **Parser Enhancements**
+- Method call detection now checks for parentheses after dot notation
+- `resolve_select_columns` validates qualified names instead of ignoring prefixes
+- Proper SQL syntax enforcement (single quotes for strings, double quotes for identifiers)
+
+#### **Debug Capabilities**
+- Added column scoping debug output for JOIN operations
+- Enhanced logging shows which columns have qualified names
+- Better error messages for column resolution failures
+
+### 🐛 Bug Fixes
+- Fixed `Type.Contains("value")` being incorrectly parsed as qualified column
+- Corrected SQL examples using wrong quote types for string literals
+- Fixed qualified name resolution in simple SELECT queries
+
 ## [1.50.0] - 2025-09-21
 
 ### 🚀 CTE Testing & SQL Enhancement Release
