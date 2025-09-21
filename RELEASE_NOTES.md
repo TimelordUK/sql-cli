@@ -1,10 +1,10 @@
-# SQL CLI v1.50.0
+# SQL CLI v1.51.0
 
-**Release Date:** September 20, 2025
+**Release Date:** September 21, 2025
 
 ## 📊 Release Overview
-- **Commits in this release:** 20
-- **Files updated:** 58
+- **Commits in this release:** 23
+- **Files updated:** 50
 
 ## ✨ Highlights
 
@@ -15,28 +15,41 @@
 
 ## 📝 Changes by Category
 
+### 🚀 New Features
+- Add file:// URL support to WEB CTEs for dynamic local file loading
+
+### 🐛 Bug Fixes
+- Properly handle qualified column names throughout query pipeline
+
+### 📚 Documentation
+- Add design document for column scoping implementation
+
 <details>
 <summary>📋 View all commits</summary>
 
-- Skip comment lines when searching for WITH clause in CTE testing (TimelordUK)
-- format sql (TimelordUK)
-- Fix CTE test query generation to stop at main SELECT (TimelordUK)
-- Add CTE test query preview modal with execute/yank/cancel options (TimelordUK)
-- Fix CTE test query generation to include WITH clause (TimelordUK)
-- Fix CTE test execution issues with RANGE queries (TimelordUK)
-- Fix CTE cursor detection and test query generation (TimelordUK)
-- Improve CTE testing with enhanced debug output (TimelordUK)
-- Add CTE analysis and testing features to Nvim plugin with CLI integration (TimelordUK)
-- Enhanced SQL formatter with quoted column preservation and Nvim plugin fixes (TimelordUK)
-- Fix aggregate expression limitations using CTE pattern (TimelordUK)
-- Improve test script skip documentation and accuracy (TimelordUK)
-- Fix test script to properly skip future CTE features (TimelordUK)
-- Implement comprehensive trigonometric function library (TimelordUK)
-- Fix trade reconciliation data compatibility issues (TimelordUK)
-- Fix SQL example queries and recreate trade reconciliation data (TimelordUK)
-- Fix SQL limitations in examples and document workarounds (TimelordUK)
-- Add JOIN performance benchmarks (TimelordUK)
-- Add inequality JOIN support with nested loop algorithm (TimelordUK)
+- fix: Properly handle qualified column names throughout query pipeline (TimelordUK)
+- docs: Add design document for column scoping implementation (TimelordUK)
+- feat: Add file:// URL support to WEB CTEs for dynamic local file loading (TimelordUK)
+- add screen shots (TimelordUK)
+- add screen shot for nvim plugin (TimelordUK)
+- use money format to make results more professional (TimelordUK)
+- add house price sql (TimelordUK)
+- house price example csv (TimelordUK)
+- add gdp csv data (TimelordUK)
+- start some queries for particles (TimelordUK)
+- allow all functions, generators, lag, lead etc to all be avialalble in vim plugin. (TimelordUK)
+- add a bar chart example in stars.sql (TimelordUK)
+- improve the stars.sql (TimelordUK)
+- add more complex queries for stars (TimelordUK)
+- add a simple stars.sql (TimelordUK)
+- add nearest star csv (TimelordUK)
+- fix example sql (TimelordUK)
+- fix some example sql (TimelordUK)
+- Add integer type limit functions (INT8_MIN, INT32_MAX, etc.) (TimelordUK)
+- Add base conversion functions (TO_BASE, FROM_BASE, TO_BINARY, etc.) (TimelordUK)
+- Update function expansion roadmap with completed functions (TimelordUK)
+- Fix CHANGELOG.md formatting issue (TimelordUK)
+- Add comprehensive trigonometry examples (TimelordUK)
 
 </details>
 
