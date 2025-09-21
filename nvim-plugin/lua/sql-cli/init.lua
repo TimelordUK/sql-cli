@@ -20,6 +20,7 @@ local cte_tester = require('sql-cli.cte_tester_v2')
 local cte_debug = require('sql-cli.cte_debug')
 local cte_parser_cli = require('sql-cli.cte_parser_cli')
 local refactoring = require('sql-cli.refactoring')
+local window_functions = require('sql-cli.window_functions')
 
 -- Plugin configuration
 M.config = {}
@@ -69,6 +70,9 @@ function M.setup(opts)
 
   -- Setup refactoring keymaps
   refactoring.setup_keymaps(M.config)
+
+  -- Setup window function keymaps
+  window_functions.setup_keymaps(M.config)
 end
 
 -- Create user commands

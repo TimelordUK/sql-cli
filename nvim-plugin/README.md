@@ -221,8 +221,15 @@ SELECT MEDIAN(salary) FROM employees;
 - `<leader>sr` - Generate CASE for numeric range (e.g., for RANGE() function)
 - `<leader>sd` - Generate CASE from data file with column picker
 - `<leader>sb` - Generate banding CASE statement
-- `<leader>sw` - Window function wizard
 - `<leader>sp` - Pivot/conditional aggregation builder
+
+#### Window Function Helpers
+- `<leader>sw` - Window function wizard (interactive menu)
+- `<leader>swr` - Add ROW_NUMBER() ranking with partition
+- `<leader>swl` - Add LAG/LEAD for delta calculations
+- `<leader>swa` - Add windowed aggregates (running totals, moving averages)
+- `<leader>swk` - Add RANK functions (RANK, DENSE_RANK, PERCENT_RANK, NTILE)
+- `<leader>swv` - Add FIRST_VALUE/LAST_VALUE
 
 #### Autocompletion
 - `<C-Space>` - Trigger SQL autocompletion (in INSERT mode)
@@ -260,6 +267,68 @@ GO
 ### Working with CSV Files
 
 When you open a CSV file, it's automatically set as the data source. You can then write queries in another buffer and execute them against this CSV.
+
+## Window Function Helpers
+
+The plugin provides interactive wizards to quickly generate window functions, which are often complex to write:
+
+### Quick Access with `<leader>sw`
+Press `<leader>sw` to open an interactive menu with all window function patterns:
+- ROW_NUMBER() for ranking
+- LAG/LEAD for delta calculations
+- Windowed aggregates (running totals, moving averages)
+- RANK functions (RANK, DENSE_RANK, PERCENT_RANK, NTILE)
+- FIRST/LAST VALUE for boundary values
+
+### Common Patterns
+
+#### Add Ranking (`<leader>swr`)
+Place cursor on a column and press `<leader>swr` to add ROW_NUMBER():
+```sql
+-- Before: cursor on 'region'
+SELECT region, salesperson, sales_amount FROM test;
+
+-- After: adds ranking partitioned by region
+SELECT region, salesperson, sales_amount,
+    ROW_NUMBER() OVER (PARTITION BY region ORDER BY sales_amount DESC) as region_rank
+FROM test;
+```
+
+#### Calculate Deltas (`<leader>swl`)
+Place cursor on a numeric column and press `<leader>swl` to add LAG/LEAD:
+```sql
+-- Before: cursor on 'sales_amount'
+SELECT salesperson, month, sales_amount FROM test;
+
+-- After: adds previous value and change calculation
+SELECT salesperson, month, sales_amount,
+    LAG(sales_amount, 1) OVER (ORDER BY month) as prev_sales_amount,
+    sales_amount - LAG(sales_amount, 1) OVER (ORDER BY month) as sales_amount_change
+FROM test;
+```
+
+#### Running Totals (`<leader>swa`)
+Add cumulative or moving window aggregates:
+```sql
+-- Running total example
+SELECT month, sales_amount,
+    SUM(sales_amount) OVER (ORDER BY month ROWS UNBOUNDED PRECEDING) as running_sum
+FROM test;
+
+-- Moving average example (3-row window)
+SELECT month, sales_amount,
+    AVG(sales_amount) OVER (ORDER BY month ROWS BETWEEN 1 PRECEDING AND 1 FOLLOWING) as moving_avg
+FROM test;
+```
+
+### Interactive Prompts
+Each wizard guides you through:
+1. **Column selection** - Which column to analyze
+2. **Partitioning** - Group calculations by specific columns
+3. **Ordering** - Sort order for window calculations
+4. **Aliases** - Custom names for result columns
+
+The functions are inserted inline at your cursor position with proper SQL formatting.
 
 ## SQL Refactoring & Code Generation
 
