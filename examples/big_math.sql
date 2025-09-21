@@ -35,12 +35,15 @@ GO
 
 -- Example 4: Powers of 2 showing exponential growth
 -- Demonstrate how quickly powers of 2 grow
+with  ranged as (
+  select value as n from range(1, 101, 10)
+)
 SELECT
     n,
     BIGPOW('2', n) as power_of_2,
     LENGTH(BIGPOW('2', n)) as decimal_digits,
     TO_BINARY(BIGPOW('2', n)) as binary_representation
-FROM (SELECT value as n FROM RANGE(1, 101, 10)) AS powers
+FROM ranged
 LIMIT 5;
 GO
 
@@ -61,7 +64,7 @@ GO
 -- Example 6: Factorials and their binary representations
 -- Shows how quickly factorials grow
 WITH factorials AS (
-    SELECT value as n FROM RANGE(1, 21)
+    SELECT value as n FROM RANGE(1, 25)
 )
 SELECT
     n,
@@ -70,12 +73,12 @@ SELECT
     LENGTH(TO_BINARY(BIGFACT(n))) as bits_needed,
     -- Compare to INT64_MAX
     CASE
-        WHEN CAST(BIGFACT(n) AS FLOAT) > INT64_MAX()
+        WHEN LENGTH(TO_BINARY(BIGFACT(n))) > 64
         THEN 'Exceeds INT64_MAX'
         ELSE 'Within INT64'
     END as overflow_status
 FROM factorials
-WHERE n IN (5, 10, 15, 20);
+WHERE n IN (5, 10, 15, 20, 24);
 GO
 
 -- Example 7: Large number calculations
@@ -162,16 +165,18 @@ GO
 
 -- Example 13: Powers of different bases in binary
 -- Show how different bases grow in binary representation
-WITH bases AS (
+with ranged as (
+  SELECT value as base FROM RANGE(2, 11,2)
+), 
+bases AS (
     SELECT
-        b.base,
-        BIGPOW(b.base, '10') as power_10,
-        TO_BINARY(BIGPOW(b.base, '10')) as binary,
-        LENGTH(TO_BINARY(BIGPOW(b.base, '10'))) as bits
-    FROM (SELECT value as base FROM RANGE(2, 11)) b
+        base,
+        BIGPOW(base, '10') as power_10,
+        TO_BINARY(BIGPOW(base, '10')) as binary,
+        LENGTH(TO_BINARY(BIGPOW(base, '10'))) as bits
+    FROM ranged
 )
 SELECT * FROM bases
-WHERE base IN (2, 3, 5, 7, 10);
 GO
 
 -- Example 14: Maximum values and their properties
