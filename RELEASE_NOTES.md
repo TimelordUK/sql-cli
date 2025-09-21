@@ -1,36 +1,23 @@
-# SQL CLI v1.52.0
+# SQL CLI v1.52.1
 
 **Release Date:** September 21, 2025
 
 ## 📊 Release Overview
-- **Commits in this release:** 6
-- **Files updated:** 33
+- **Commits in this release:** 2
+- **Files updated:** 2
 
 ## ✨ Highlights
 
-### 🔍 Enhanced Debugging
-- **Better Diagnostics**: Improved error messages and state dumps
-
 ## 📝 Changes by Category
 
-### 🚀 New Features
-- Add arbitrary precision arithmetic and bit manipulation functions
-- Add interactive window function helpers to Neovim plugin
-- Add shell-friendly query yank command to Neovim plugin
-- Add SQL refactoring & CASE generation tools to Neovim plugin
-
-### 🔧 Refactoring
-- Move RANGE/SPLIT from parser to generator registry
+### 🐛 Bug Fixes
+- Properly handle parenthesis depth tracking in CTE parsing
 
 <details>
 <summary>📋 View all commits</summary>
 
-- nvim test (TimelordUK)
-- feat: Add arbitrary precision arithmetic and bit manipulation functions (TimelordUK)
-- refactor: Move RANGE/SPLIT from parser to generator registry (TimelordUK)
-- feat: Add interactive window function helpers to Neovim plugin (TimelordUK)
-- feat: Add shell-friendly query yank command to Neovim plugin (TimelordUK)
-- feat: Add SQL refactoring & CASE generation tools to Neovim plugin (TimelordUK)
+- patch for parser fix (TimelordUK)
+- fix: Properly handle parenthesis depth tracking in CTE parsing (TimelordUK)
 
 </details>
 
