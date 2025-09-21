@@ -214,6 +214,15 @@ SELECT MEDIAN(salary) FROM employees;
 - `<leader>s3` - Jump to third result table
 - `<leader>sI` - Show current table info (debug modal)
 
+#### SQL Refactoring & CASE Generation
+- `<leader>sD` - Show distinct values for column under cursor (preview in floating window)
+- `<leader>sC` - Generate CASE statement for column under cursor (auto-detects data file)
+- `<leader>sr` - Generate CASE for numeric range (e.g., for RANGE() function)
+- `<leader>sd` - Generate CASE from data file with column picker
+- `<leader>sb` - Generate banding CASE statement
+- `<leader>sw` - Window function wizard
+- `<leader>sp` - Pivot/conditional aggregation builder
+
 #### Autocompletion
 - `<C-Space>` - Trigger SQL autocompletion (in INSERT mode)
   - Completes column names from current data file
@@ -250,6 +259,88 @@ GO
 ### Working with CSV Files
 
 When you open a CSV file, it's automatically set as the data source. You can then write queries in another buffer and execute them against this CSV.
+
+## SQL Refactoring & Code Generation
+
+The plugin includes powerful SQL refactoring tools to speed up query development:
+
+### CASE Statement Generation
+
+#### Explore Column Values (`<leader>sD`)
+Place your cursor on any column name and press `<leader>sD` to see distinct values:
+- Shows top 20 distinct values by frequency
+- Displays total distinct count
+- Helps understand data distribution before writing CASE statements
+- Works with any data file (CSV, or file CTEs)
+
+#### Generate CASE from Column (`<leader>sC`)
+Place cursor on a column name and press `<leader>sC` to automatically generate a CASE statement:
+- Auto-detects data file from context
+- For categorical columns (≤20 distinct values): Creates CASE with exact values
+- For numeric columns (>20 values): Generates smart range-based bands
+- Inserts inline after the column in SELECT statements
+
+Example:
+```sql
+-- Before: cursor on ocean_proximity
+SELECT ocean_proximity FROM house_prices;
+
+-- After pressing \sC:
+SELECT ocean_proximity,
+    CASE
+        WHEN ocean_proximity = '<1H OCEAN' THEN '<1H OCEAN'
+        WHEN ocean_proximity = 'INLAND' THEN 'INLAND'
+        WHEN ocean_proximity = 'ISLAND' THEN 'ISLAND'
+        WHEN ocean_proximity = 'NEAR BAY' THEN 'NEAR BAY'
+        WHEN ocean_proximity = 'NEAR OCEAN' THEN 'NEAR OCEAN'
+        ELSE 'Other'
+    END AS ocean_proximity_category
+FROM house_prices;
+```
+
+#### Generate CASE for Ranges (`<leader>sr`)
+Perfect for synthetic data from RANGE() or numeric columns:
+- Prompts for column name, range (e.g., 1-100), and number of bands
+- Offers preset labels (Very Low/Low/Medium/High/Very High, Level 1-5, etc.)
+- Generates equal-width bands automatically
+
+Example with RANGE():
+```sql
+-- Before:
+SELECT * FROM RANGE(1, 100);
+
+-- After \sr with 5 bands:
+SELECT *,
+    CASE
+        WHEN value <= 20 THEN 'Level 1'
+        WHEN value > 20 AND value <= 40 THEN 'Level 2'
+        WHEN value > 40 AND value <= 60 THEN 'Level 3'
+        WHEN value > 60 AND value <= 80 THEN 'Level 4'
+        WHEN value > 80 THEN 'Level 5'
+    END AS value_band
+FROM RANGE(1, 100);
+```
+
+#### Generate CASE from Data File (`<leader>sd`)
+Interactive CASE generation with column picker:
+- Shows all columns with their data types
+- Automatically determines best CASE style (values vs ranges)
+- Smart data file detection from hints or current context
+
+### Window Functions & Aggregations
+
+#### Window Function Wizard (`<leader>sw`)
+Interactive builder for window functions:
+- ROW_NUMBER(), RANK(), DENSE_RANK()
+- LAG/LEAD for change detection
+- Running totals and moving averages
+- Guides through PARTITION BY and ORDER BY setup
+
+#### Conditional Aggregation Builder (`<leader>sp`)
+Generate pivot-style conditional aggregations:
+- Transforms rows to columns
+- Creates SUM(CASE WHEN...) patterns
+- Useful for pivot tables and cross-tabs
 
 ## Multi-Table Navigation
 

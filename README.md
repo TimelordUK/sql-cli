@@ -59,7 +59,15 @@ A sophisticated Neovim plugin provides an IDE-like experience for SQL developmen
 " - CSV/JSON export capabilities
 " - Intelligent autocompletion (columns, functions, keywords)
 " - Schema inspection with type inference
+" - NEW: SQL Refactoring & Code Generation Tools
 ```
+
+**🆕 New Refactoring Features:**
+- **Smart CASE Generation** - Generate CASE statements from actual data values or ranges
+- **Column Explorer** - Preview distinct values before writing queries (`\sD`)
+- **Auto-detect Data** - Intelligently finds data files from context
+- **Range Banding** - Create equal-width bands for numeric data
+- **Window Functions** - Interactive wizard for complex analytics
 
 See [nvim-plugin/README.md](nvim-plugin/README.md) for installation and full feature list.
 
@@ -67,6 +75,10 @@ See [nvim-plugin/README.md](nvim-plugin/README.md) for installation and full fea
 Execute SQL queries directly from the command line - perfect for scripting and automation:
 
 ![Description](docs/images/screenshot-20250920-212340.png)
+
+![Description](docs/images/screenshot-20250921-104620.png)
+
+![Description](docs/images/screenshot-20250921-110026.png)
 
 ```bash
 # Run a query and get CSV output
