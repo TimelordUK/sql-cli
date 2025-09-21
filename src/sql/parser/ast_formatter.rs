@@ -731,28 +731,6 @@ impl<'a> AstFormatter<'a> {
 
     fn format_table_function(&self, result: &mut String, func: &TableFunction) {
         match func {
-            TableFunction::Range { start, end, step } => {
-                write!(result, "{}(", self.keyword("RANGE")).unwrap();
-                write!(
-                    result,
-                    "{}, {}",
-                    self.format_expression(start),
-                    self.format_expression(end)
-                )
-                .unwrap();
-                if let Some(step_expr) = step {
-                    write!(result, ", {}", self.format_expression(step_expr)).unwrap();
-                }
-                write!(result, ")").unwrap();
-            }
-            TableFunction::Split { text, delimiter } => {
-                write!(result, "{}(", self.keyword("SPLIT")).unwrap();
-                write!(result, "{}", self.format_expression(text)).unwrap();
-                if let Some(delim) = delimiter {
-                    write!(result, ", {}", self.format_expression(delim)).unwrap();
-                }
-                write!(result, ")").unwrap();
-            }
             TableFunction::Generator { name, args } => {
                 write!(result, "{}(", self.keyword(&name.to_uppercase())).unwrap();
                 for (i, arg) in args.iter().enumerate() {

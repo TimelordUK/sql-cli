@@ -497,95 +497,15 @@ impl Parser {
 
                 // Check for table function like RANGE()
                 if let Token::Identifier(name) = &self.current_token.clone() {
-                    if name.to_uppercase() == "RANGE" {
-                        self.advance();
-                        // Parse RANGE function
-                        self.consume(Token::LeftParen)?;
-
-                        // Parse start expression
-                        let start = self.parse_expression()?;
-                        self.consume(Token::Comma)?;
-
-                        // Parse end expression
-                        let end = self.parse_expression()?;
-
-                        // Parse optional step
-                        let step = if matches!(self.current_token, Token::Comma) {
-                            self.advance();
-                            Some(self.parse_expression()?)
-                        } else {
-                            None
-                        };
-
-                        self.consume(Token::RightParen)?;
-
-                        // Optional alias
-                        let alias = if matches!(self.current_token, Token::As) {
-                            self.advance();
-                            match &self.current_token {
-                                Token::Identifier(name) => {
-                                    let alias = name.clone();
-                                    self.advance();
-                                    Some(alias)
-                                }
-                                _ => return Err("Expected alias name after AS".to_string()),
-                            }
-                        } else if let Token::Identifier(name) = &self.current_token {
-                            let alias = name.clone();
-                            self.advance();
-                            Some(alias)
-                        } else {
-                            None
-                        };
-
-                        (
-                            None,
-                            None,
-                            Some(TableFunction::Range { start, end, step }),
-                            alias,
-                        )
-                    } else if name.to_uppercase() == "SPLIT" {
-                        // Parse SPLIT(text[, delimiter])
-                        self.advance(); // Skip "SPLIT"
-                        self.consume(Token::LeftParen)?;
-
-                        let text = self.parse_expression()?;
-
-                        let delimiter = if matches!(self.current_token, Token::Comma) {
-                            self.advance();
-                            Some(self.parse_expression()?)
-                        } else {
-                            None
-                        };
-
-                        self.consume(Token::RightParen)?;
-
-                        // Optional alias
-                        let alias = if matches!(self.current_token, Token::As) {
-                            self.advance();
-                            match &self.current_token {
-                                Token::Identifier(name) => {
-                                    let alias = name.clone();
-                                    self.advance();
-                                    Some(alias)
-                                }
-                                _ => return Err("Expected alias name after AS".to_string()),
-                            }
-                        } else if let Token::Identifier(name) = &self.current_token {
-                            let alias = name.clone();
-                            self.advance();
-                            Some(alias)
-                        } else {
-                            None
-                        };
-
-                        (
-                            None,
-                            None,
-                            Some(TableFunction::Split { text, delimiter }),
-                            alias,
-                        )
-                    } else if name.to_uppercase().starts_with("GENERATE_")
+                    // Check if this is a generator function (including RANGE and SPLIT)
+                    if name.to_uppercase() == "RANGE"
+                        || name.to_uppercase() == "SPLIT"
+                        || name.to_uppercase() == "TOKENIZE"
+                        || name.to_uppercase() == "CHARS"
+                        || name.to_uppercase() == "LINES"
+                        || name.to_uppercase() == "SERIES"
+                        || name.to_uppercase() == "DATES"
+                        || name.to_uppercase().starts_with("GENERATE_")
                         || name.to_uppercase().starts_with("RANDOM_")
                         || name.to_uppercase() == "FIBONACCI"
                         || name.to_uppercase() == "PRIME_FACTORS"

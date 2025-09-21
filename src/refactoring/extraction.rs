@@ -15,7 +15,7 @@ pub struct ExtractionSuggestion {
     pub complexity_score: u32,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone, Copy)]
 pub enum ExtractionReason {
     ComplexCalculation,
     RepeatedExpression,

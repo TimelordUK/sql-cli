@@ -308,15 +308,6 @@ pub struct SelectStatement {
 /// Table function that generates virtual tables
 #[derive(Debug, Clone)]
 pub enum TableFunction {
-    Range {
-        start: SqlExpression,
-        end: SqlExpression,
-        step: Option<SqlExpression>,
-    },
-    Split {
-        text: SqlExpression,
-        delimiter: Option<SqlExpression>,
-    },
     Generator {
         name: String,
         args: Vec<SqlExpression>,

@@ -5,6 +5,8 @@ use std::sync::Arc;
 pub mod math_generators;
 pub mod prime_generators;
 pub mod random_generators;
+pub mod sequence_generators;
+pub mod string_generators;
 
 /// Trait for table-generating functions that produce rows dynamically
 pub trait TableGenerator: Send + Sync {
@@ -43,6 +45,19 @@ impl GeneratorRegistry {
         use math_generators::{Collatz, Factorials, PascalTriangle, Squares, TriangularNumbers};
         use prime_generators::{Fibonacci, GeneratePrimes, PrimeFactors};
         use random_generators::{GenerateUUIDs, RandomFloats, RandomIntegers};
+        use sequence_generators::{Dates, Range, Series};
+        use string_generators::{Chars, Lines, Split, Tokenize};
+
+        // Sequence generators
+        self.register(Box::new(Range));
+        self.register(Box::new(Series));
+        self.register(Box::new(Dates));
+
+        // String generators
+        self.register(Box::new(Split));
+        self.register(Box::new(Tokenize));
+        self.register(Box::new(Chars));
+        self.register(Box::new(Lines));
 
         // Prime and number theory generators
         self.register(Box::new(GeneratePrimes));
@@ -82,6 +97,8 @@ impl GeneratorRegistry {
         output.push_str("=== Available Generator Functions ===\n\n");
 
         // Group generators by category
+        let mut sequence_gens = Vec::new();
+        let mut string_gens = Vec::new();
         let mut math_gens = Vec::new();
         let mut random_gens = Vec::new();
         let mut utility_gens = Vec::new();
@@ -89,13 +106,35 @@ impl GeneratorRegistry {
         for (name, gen) in &self.generators {
             let entry = format!("  {} - {}", name, gen.description());
 
-            if name.starts_with("RANDOM_") {
+            if name == "RANGE" || name == "SERIES" || name == "DATES" {
+                sequence_gens.push(entry);
+            } else if name == "SPLIT" || name == "TOKENIZE" || name == "CHARS" || name == "LINES" {
+                string_gens.push(entry);
+            } else if name.starts_with("RANDOM_") {
                 random_gens.push(entry);
             } else if name == "GENERATE_UUID" {
                 utility_gens.push(entry);
             } else {
                 math_gens.push(entry);
             }
+        }
+
+        if !sequence_gens.is_empty() {
+            sequence_gens.sort();
+            output.push_str("Sequence Generators:\n");
+            for entry in sequence_gens {
+                output.push_str(&format!("{}\n", entry));
+            }
+            output.push('\n');
+        }
+
+        if !string_gens.is_empty() {
+            string_gens.sort();
+            output.push_str("String Generators:\n");
+            for entry in string_gens {
+                output.push_str(&format!("{}\n", entry));
+            }
+            output.push('\n');
         }
 
         if !math_gens.is_empty() {
