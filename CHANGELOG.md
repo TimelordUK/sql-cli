@@ -5,6 +5,52 @@ All notable changes to SQL CLI will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.52.0] - 2025-09-21
+
+### 🔢 Arbitrary Precision Arithmetic & Bit Manipulation
+
+This release adds comprehensive support for arbitrary precision integer arithmetic, bit manipulation operations, and base conversions using Rust's `num-bigint` library.
+
+### ✨ New Features
+
+#### **BigInt Arithmetic Functions**
+- **`BIGINT(value)`** - Convert numbers or strings to arbitrary precision integers
+- **`BIGADD(a, b)`** - Add two arbitrary precision integers
+- **`BIGMUL(a, b)`** - Multiply large numbers (tested with 30-digit numbers)
+- **`BIGPOW(base, exp)`** - Calculate powers like 2^256 or 99^99
+- **`BIGFACT(n)`** - Calculate factorials up to 10000! (1000! has 2568 digits)
+
+#### **Bit Manipulation Operations**
+- **`BITAND(a, b)`** - Bitwise AND on arbitrary precision integers
+- **`BITOR(a, b)`** - Bitwise OR operations
+- **`BITXOR(a, b)`** - Bitwise XOR for large numbers
+- **`BITSHIFT(n, shift)`** - Bit shifting left (positive) or right (negative)
+
+#### **Base Conversion Functions**
+- **`TO_BINARY(n)`** - Convert numbers to binary strings
+- **`FROM_BINARY(s)`** - Parse binary strings to decimal
+- **`TO_HEX(n)`** - Convert to hexadecimal representation
+- **`FROM_HEX(s)`** - Parse hex strings (handles 0x prefix)
+
+### 📊 Example Calculations
+```sql
+-- Calculate 2^100
+SELECT BIGPOW('2', 100);  -- 1267650600228229401496703205376
+
+-- 100 factorial
+SELECT BIGFACT(100);  -- 93326215443944152681699238856266700490715968264381621468592963895217599993229915608941463976156518286253697920827223758251185210916864000000000000000000000000
+
+-- Convert 2^256 to binary
+SELECT TO_BINARY(BITSHIFT('1', 256));  -- 1 followed by 256 zeros
+
+-- Bit operations
+SELECT BITXOR(FROM_BINARY('1010'), FROM_BINARY('1100'));  -- 6
+```
+
+### 🔧 Dependencies
+- Added `num-bigint = "0.4"` for arbitrary precision arithmetic
+- Added `num-traits = "0.2"` for numeric trait implementations
+
 ## [1.51.0] - 2025-09-21
 
 ### 🎯 Qualified Column Resolution & Scoping

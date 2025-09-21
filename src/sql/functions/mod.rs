@@ -7,6 +7,7 @@ use crate::data::datatable::DataValue;
 
 pub mod astronomy;
 pub mod base_conversion;
+pub mod bigint;
 pub mod case_convert;
 pub mod chemistry;
 pub mod comparison;
@@ -42,15 +43,17 @@ pub use string_methods::MethodFunction;
 /// Category of SQL functions for organization and discovery
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum FunctionCategory {
-    Constant,     // Mathematical and physical constants
-    Mathematical, // Mathematical operations
-    Statistical,  // Statistical functions
-    Astronomical, // Astronomical constants and calculations
-    Chemical,     // Chemical elements and properties
-    Date,         // Date/time operations
-    String,       // String manipulation
-    Aggregate,    // Aggregation functions
-    Conversion,   // Unit conversion functions
+    Constant,      // Mathematical and physical constants
+    Mathematical,  // Mathematical operations
+    Statistical,   // Statistical functions
+    Astronomical,  // Astronomical constants and calculations
+    Chemical,      // Chemical elements and properties
+    Date,          // Date/time operations
+    String,        // String manipulation
+    Aggregate,     // Aggregation functions
+    Conversion,    // Unit conversion functions
+    BigNumber,     // Arbitrary precision arithmetic
+    TableFunction, // Table-generating functions
 }
 
 impl fmt::Display for FunctionCategory {
@@ -65,6 +68,8 @@ impl fmt::Display for FunctionCategory {
             FunctionCategory::String => write!(f, "String"),
             FunctionCategory::Aggregate => write!(f, "Aggregate"),
             FunctionCategory::Conversion => write!(f, "Conversion"),
+            FunctionCategory::BigNumber => write!(f, "BigNumber"),
+            FunctionCategory::TableFunction => write!(f, "TableFunction"),
         }
     }
 }
@@ -164,6 +169,7 @@ impl FunctionRegistry {
         registry.register_date_time_functions();
         registry.register_string_methods();
         registry.register_financial_functions();
+        registry.register_bigint_functions();
         registry.register_conversion_functions();
         registry.register_hash_functions();
         registry.register_comparison_functions();
@@ -754,6 +760,34 @@ impl FunctionRegistry {
         self.register(Box::new(IsFloatFunction));
         self.register(Box::new(IsNullFunction));
         self.register(Box::new(IsNotNullFunction));
+    }
+
+    /// Register big integer and bit manipulation functions
+    fn register_bigint_functions(&mut self) {
+        use bigint::{
+            BigAddFunction, BigFactorialFunction, BigIntFunction, BigMulFunction, BigPowFunction,
+            BitAndFunction, BitOrFunction, BitShiftFunction, BitXorFunction, FromBinaryFunction,
+            FromHexFunction, ToBinaryFunction, ToHexFunction,
+        };
+
+        // Arbitrary precision arithmetic
+        self.register(Box::new(BigIntFunction));
+        self.register(Box::new(BigAddFunction));
+        self.register(Box::new(BigMulFunction));
+        self.register(Box::new(BigPowFunction));
+        self.register(Box::new(BigFactorialFunction));
+
+        // Bit manipulation
+        self.register(Box::new(BitAndFunction));
+        self.register(Box::new(BitOrFunction));
+        self.register(Box::new(BitXorFunction));
+        self.register(Box::new(BitShiftFunction));
+
+        // Base conversions
+        self.register(Box::new(ToBinaryFunction));
+        self.register(Box::new(FromBinaryFunction));
+        self.register(Box::new(ToHexFunction));
+        self.register(Box::new(FromHexFunction));
     }
 }
 
