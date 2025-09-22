@@ -477,14 +477,51 @@ function M.highlight_current_cell()
 
     -- Move cursor to the cell in the output window
     if nav_state.window and vim.api.nvim_win_is_valid(nav_state.window) then
-      -- DEBUG: Show what we're trying to do
-      local debug_msg = string.format("Moving cursor to line %d, col %d (row %d/%d, col %d/%d)",
-        line_num, col_pos.start, nav_state.current_row,
-        nav_state.table_info.data_end - nav_state.table_info.data_start + 1,
-        nav_state.current_col, #nav_state.table_info.column_positions)
-      vim.notify(debug_msg, vim.log.levels.INFO)
-
+      -- Set cursor position
       vim.api.nvim_win_set_cursor(nav_state.window, {line_num, col_pos.start})
+
+      -- Ensure header remains visible by managing the viewport
+      local header_line = nav_state.table_info.header_row
+      if header_line then
+        local win_height = vim.api.nvim_win_get_height(nav_state.window)
+        local current_top = vim.fn.line('w0', nav_state.window)
+
+        -- If header is above the viewport, scroll up to show it
+        if header_line < current_top then
+          -- Calculate how many lines to show above header (for context)
+          local context_lines = 2
+          local target_top = math.max(1, header_line - context_lines)
+
+          -- Scroll window to show header with some context
+          vim.api.nvim_win_call(nav_state.window, function()
+            vim.cmd('normal! ' .. target_top .. 'zt')
+            -- Then move cursor back to the data cell
+            vim.api.nvim_win_set_cursor(nav_state.window, {line_num, col_pos.start})
+          end)
+        elseif line_num > current_top + win_height - 3 then
+          -- If cursor would go below visible area, scroll but keep header visible
+          local max_scroll = header_line + win_height - 5  -- Keep some buffer
+          if line_num <= max_scroll then
+            -- Normal scrolling - cursor in middle of window
+            vim.api.nvim_win_call(nav_state.window, function()
+              vim.cmd('normal! zz')
+            end)
+          else
+            -- We're at the limit - ensure header stays visible
+            vim.api.nvim_win_call(nav_state.window, function()
+              vim.cmd('normal! ' .. header_line .. 'zt')
+              -- Scroll down as much as possible while keeping header
+              local lines_to_scroll = math.min(line_num - header_line - 2, win_height - 5)
+              if lines_to_scroll > 0 then
+                vim.cmd('normal! ' .. lines_to_scroll .. 'j')
+                vim.cmd('normal! zt')
+              end
+              -- Set cursor to actual position
+              vim.api.nvim_win_set_cursor(nav_state.window, {line_num, col_pos.start})
+            end)
+          end
+        end
+      end
     end
   end
 end
@@ -695,43 +732,35 @@ function M.setup_keymaps(bufnr, config)
     -- Traditional hjkl navigation
     vim.keymap.set("n", "h", function()
       M.move_left()
-      vim.notify(M.get_status(), vim.log.levels.INFO)
     end, opts)
 
     vim.keymap.set("n", "j", function()
       M.move_down()
-      vim.notify(M.get_status(), vim.log.levels.INFO)
     end, opts)
 
     vim.keymap.set("n", "k", function()
       M.move_up()
-      vim.notify(M.get_status(), vim.log.levels.INFO)
     end, opts)
 
     vim.keymap.set("n", "l", function()
       M.move_right()
-      vim.notify(M.get_status(), vim.log.levels.INFO)
     end, opts)
   else
     -- Alternative arrow-key style navigation (preserves hjkl for normal vim movement)
     vim.keymap.set("n", "<Left>", function()
       M.move_left()
-      vim.notify(M.get_status(), vim.log.levels.INFO)
     end, opts)
 
     vim.keymap.set("n", "<Down>", function()
       M.move_down()
-      vim.notify(M.get_status(), vim.log.levels.INFO)
     end, opts)
 
     vim.keymap.set("n", "<Up>", function()
       M.move_up()
-      vim.notify(M.get_status(), vim.log.levels.INFO)
     end, opts)
 
     vim.keymap.set("n", "<Right>", function()
       M.move_right()
-      vim.notify(M.get_status(), vim.log.levels.INFO)
     end, opts)
   end
 
