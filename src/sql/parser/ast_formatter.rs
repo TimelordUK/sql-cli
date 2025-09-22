@@ -227,6 +227,27 @@ impl<'a> AstFormatter<'a> {
                     web_spec.url
                 );
 
+                // Add METHOD if specified
+                if let Some(method) = &web_spec.method {
+                    web_str.push_str(&format!(
+                        " {} {}",
+                        self.keyword("METHOD"),
+                        match method {
+                            crate::sql::parser::ast::HttpMethod::GET => "GET",
+                            crate::sql::parser::ast::HttpMethod::POST => "POST",
+                            crate::sql::parser::ast::HttpMethod::PUT => "PUT",
+                            crate::sql::parser::ast::HttpMethod::DELETE => "DELETE",
+                            crate::sql::parser::ast::HttpMethod::PATCH => "PATCH",
+                        }
+                    ));
+                }
+
+                // Add BODY if specified
+                if let Some(body) = &web_spec.body {
+                    web_str.push_str(&format!(" {} '{}'", self.keyword("BODY"), body));
+                }
+
+                // Add FORMAT if specified
                 if let Some(format) = &web_spec.format {
                     web_str.push_str(&format!(
                         " {} {}",
@@ -239,17 +260,24 @@ impl<'a> AstFormatter<'a> {
                     ));
                 }
 
+                // Add JSON_PATH if specified
+                if let Some(json_path) = &web_spec.json_path {
+                    web_str.push_str(&format!(" {} '{}'", self.keyword("JSON_PATH"), json_path));
+                }
+
+                // Add CACHE if specified
                 if let Some(cache) = web_spec.cache_seconds {
                     web_str.push_str(&format!(" {} {}", self.keyword("CACHE"), cache));
                 }
 
+                // Add HEADERS if specified
                 if !web_spec.headers.is_empty() {
                     web_str.push_str(&format!(" {} (", self.keyword("HEADERS")));
                     for (i, (key, value)) in web_spec.headers.iter().enumerate() {
                         if i > 0 {
                             web_str.push_str(", ");
                         }
-                        web_str.push_str(&format!("{} = '{}'", key, value));
+                        web_str.push_str(&format!("'{}': '{}'", key, value));
                     }
                     web_str.push(')');
                 }
