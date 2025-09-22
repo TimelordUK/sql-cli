@@ -191,6 +191,20 @@ impl TextNavigator {
             Token::Over => "OVER",
             Token::Partition => "PARTITION",
             Token::By => "BY",
+            // Window frame keywords
+            Token::Rows => "ROWS",
+            Token::Range => "RANGE",
+            Token::Unbounded => "UNBOUNDED",
+            Token::Preceding => "PRECEDING",
+            Token::Following => "FOLLOWING",
+            Token::Current => "CURRENT",
+            Token::Row => "ROW",
+            // Set operation keywords
+            Token::Union => "UNION",
+            Token::Intersect => "INTERSECT",
+            Token::Except => "EXCEPT",
+            // Special CTE keyword
+            Token::Web => "WEB",
             Token::Identifier(s) => s,
             Token::QuotedIdentifier(s) => s,
             Token::StringLiteral(s) => s,

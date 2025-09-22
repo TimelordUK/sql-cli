@@ -37,6 +37,23 @@ pub enum Token {
     Partition, // PARTITION keyword for window functions
     By,        // BY keyword (used with PARTITION BY, ORDER BY)
 
+    // Window frame keywords
+    Rows,      // ROWS frame type
+    Range,     // RANGE frame type
+    Unbounded, // UNBOUNDED for frame bounds
+    Preceding, // PRECEDING for frame bounds
+    Following, // FOLLOWING for frame bounds
+    Current,   // CURRENT for CURRENT ROW
+    Row,       // ROW for CURRENT ROW
+
+    // Set operation keywords
+    Union,     // UNION
+    Intersect, // INTERSECT
+    Except,    // EXCEPT
+
+    // Special CTE keyword
+    Web, // WEB (for WEB CTEs)
+
     // JOIN keywords
     Join,  // JOIN keyword
     Inner, // INNER JOIN
@@ -388,6 +405,21 @@ impl Lexer {
                     "OVER" => Token::Over,
                     "PARTITION" => Token::Partition,
                     "BY" => Token::By,
+                    // Window frame keywords
+                    "ROWS" => Token::Rows,
+                    // Note: RANGE is context-sensitive - it's both a window frame keyword and a table function
+                    // We'll handle this in the parser based on context
+                    "UNBOUNDED" => Token::Unbounded,
+                    "PRECEDING" => Token::Preceding,
+                    "FOLLOWING" => Token::Following,
+                    "CURRENT" => Token::Current,
+                    "ROW" => Token::Row,
+                    // Set operation keywords
+                    "UNION" => Token::Union,
+                    "INTERSECT" => Token::Intersect,
+                    "EXCEPT" => Token::Except,
+                    // Special CTE keyword
+                    "WEB" => Token::Web,
                     // JOIN keywords
                     "JOIN" => Token::Join,
                     "INNER" => Token::Inner,

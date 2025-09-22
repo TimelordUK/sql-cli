@@ -256,15 +256,10 @@ impl Parser {
         // Parse CTEs
         loop {
             // Check for WEB keyword for each CTE (can be different for each one)
-            // Check for WEB keyword - should be a token eventually
-            let is_web = if let Token::Identifier(id) = &self.current_token {
-                if id.to_uppercase() == "WEB" {
-                    self.trace_token("Found WEB keyword for CTE");
-                    self.advance();
-                    true
-                } else {
-                    false
-                }
+            let is_web = if matches!(&self.current_token, Token::Web) {
+                self.trace_token("Found WEB keyword for CTE");
+                self.advance();
+                true
             } else {
                 false
             };
@@ -549,15 +544,10 @@ impl Parser {
         // Parse CTEs
         loop {
             // Check for WEB keyword for each CTE (can be different for each one)
-            // Check for WEB keyword - should be a token eventually
-            let is_web = if let Token::Identifier(id) = &self.current_token {
-                if id.to_uppercase() == "WEB" {
-                    self.trace_token("Found WEB keyword for CTE");
-                    self.advance();
-                    true
-                } else {
-                    false
-                }
+            let is_web = if matches!(&self.current_token, Token::Web) {
+                self.trace_token("Found WEB keyword for CTE");
+                self.advance();
+                true
             } else {
                 false
             };
@@ -961,8 +951,7 @@ impl Parser {
             if s.to_uppercase() == "ORDER" {
                 self.trace_token("Warning: ORDER as identifier instead of OrderBy token");
                 self.advance(); // consume ORDER
-                if matches!(&self.current_token, Token::Identifier(by_token) if by_token.to_uppercase() == "BY")
-                {
+                if matches!(&self.current_token, Token::By) {
                     self.advance(); // consume BY
                     Some(self.parse_order_by_list()?)
                 } else {
@@ -1268,11 +1257,12 @@ impl Parser {
     fn parse_window_frame(&mut self) -> Result<Option<WindowFrame>, String> {
         // Check for ROWS or RANGE keyword
         let unit = match &self.current_token {
-            Token::Identifier(id) if id.to_uppercase() == "ROWS" => {
+            Token::Rows => {
                 self.advance();
                 FrameUnit::Rows
             }
             Token::Identifier(id) if id.to_uppercase() == "RANGE" => {
+                // RANGE as window frame unit
                 self.advance();
                 FrameUnit::Range
             }
@@ -1305,27 +1295,25 @@ impl Parser {
 
     fn parse_frame_bound(&mut self) -> Result<FrameBound, String> {
         match &self.current_token {
-            Token::Identifier(id) if id.to_uppercase() == "UNBOUNDED" => {
+            Token::Unbounded => {
                 self.advance();
                 match &self.current_token {
-                    Token::Identifier(id) if id.to_uppercase() == "PRECEDING" => {
+                    Token::Preceding => {
                         self.advance();
                         Ok(FrameBound::UnboundedPreceding)
                     }
-                    Token::Identifier(id) if id.to_uppercase() == "FOLLOWING" => {
+                    Token::Following => {
                         self.advance();
                         Ok(FrameBound::UnboundedFollowing)
                     }
                     _ => Err("Expected PRECEDING or FOLLOWING after UNBOUNDED".to_string()),
                 }
             }
-            Token::Identifier(id) if id.to_uppercase() == "CURRENT" => {
+            Token::Current => {
                 self.advance();
-                if let Token::Identifier(id) = &self.current_token {
-                    if id.to_uppercase() == "ROW" {
-                        self.advance();
-                        return Ok(FrameBound::CurrentRow);
-                    }
+                if matches!(&self.current_token, Token::Row) {
+                    self.advance();
+                    return Ok(FrameBound::CurrentRow);
                 }
                 Err("Expected ROW after CURRENT".to_string())
             }
@@ -1335,11 +1323,11 @@ impl Parser {
                     .map_err(|_| "Invalid number in window frame".to_string())?;
                 self.advance();
                 match &self.current_token {
-                    Token::Identifier(id) if id.to_uppercase() == "PRECEDING" => {
+                    Token::Preceding => {
                         self.advance();
                         Ok(FrameBound::Preceding(n))
                     }
-                    Token::Identifier(id) if id.to_uppercase() == "FOLLOWING" => {
+                    Token::Following => {
                         self.advance();
                         Ok(FrameBound::Following(n))
                     }
