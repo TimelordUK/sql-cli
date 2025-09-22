@@ -969,42 +969,22 @@ WITH WEB trades AS (
   -- Check if expansion has variables that need substitution
   if expansion:match("${[^}]+}") then
     -- Store context for substitution
-    local saved_line = line
+    local saved_row = row
     local saved_start = start_pos
     local saved_end = end_pos
+    local saved_expansion = expansion
 
     -- Temporarily override functions for substitution
     local orig_replace = M.replace_current_query
     local orig_get = M.get_current_query
 
     M.replace_current_query = function(result)
-      -- Replace the macro with substituted result
-      -- Handle multi-line expansions
-      local lines = vim.split(result, "\n")
-      if #lines == 1 then
-        -- Single line - simple replacement
-        local new_line = saved_line:sub(1, saved_start - 1) .. result .. saved_line:sub(saved_end + 1)
-        vim.api.nvim_set_current_line(new_line)
-        vim.api.nvim_win_set_cursor(0, {row, saved_start - 1 + #result})
-      else
-        -- Multiple lines - need to handle differently
-        local prefix = saved_line:sub(1, saved_start - 1)
-        local suffix = saved_line:sub(saved_end + 1)
-
-        -- First line gets prefix
-        lines[1] = prefix .. lines[1]
-        -- Last line gets suffix
-        lines[#lines] = lines[#lines] .. suffix
-
-        -- Delete current line and insert new lines
-        vim.api.nvim_buf_set_lines(0, row - 1, row, false, lines)
-        -- Position cursor at end of insertion
-        vim.api.nvim_win_set_cursor(0, {row + #lines - 1, #lines[#lines] - #suffix})
-      end
+      -- Use the inline replacement that only affects the macro location
+      M.replace_macro_inline(saved_row, saved_start, saved_end, result)
     end
 
     M.get_current_query = function()
-      return expansion
+      return saved_expansion
     end
 
     -- Run substitution
@@ -1014,29 +994,8 @@ WITH WEB trades AS (
     M.replace_current_query = orig_replace
     M.get_current_query = orig_get
   else
-    -- No variables, just replace
-    -- Handle multi-line expansions
-    local lines = vim.split(expansion, "\n")
-    if #lines == 1 then
-      -- Single line - simple replacement
-      local new_line = line:sub(1, start_pos - 1) .. expansion .. line:sub(end_pos + 1)
-      vim.api.nvim_set_current_line(new_line)
-      vim.api.nvim_win_set_cursor(0, {row, start_pos - 1 + #expansion})
-    else
-      -- Multiple lines - need to handle differently
-      local prefix = line:sub(1, start_pos - 1)
-      local suffix = line:sub(end_pos + 1)
-
-      -- First line gets prefix
-      lines[1] = prefix .. lines[1]
-      -- Last line gets suffix
-      lines[#lines] = lines[#lines] .. suffix
-
-      -- Delete current line and insert new lines
-      vim.api.nvim_buf_set_lines(0, row - 1, row, false, lines)
-      -- Position cursor at end of insertion
-      vim.api.nvim_win_set_cursor(0, {row + #lines - 1, #lines[#lines] - #suffix})
-    end
+    -- No variables, just replace inline
+    M.replace_macro_inline(row, start_pos, end_pos, expansion)
   end
 end
 
@@ -1055,6 +1014,29 @@ function M.replace_current_query(new_text)
     navigation.select_query_at_cursor()
     vim.cmd('normal! "_d')
     M.insert_at_cursor(new_text)
+  end
+end
+
+-- Replace macro inline (used during expand_inline_macro)
+function M.replace_macro_inline(row, start_pos, end_pos, new_text)
+  local line = vim.api.nvim_buf_get_lines(0, row - 1, row, false)[1]
+  local prefix = line:sub(1, start_pos - 1)
+  local suffix = line:sub(end_pos + 1)
+
+  -- Handle multi-line replacements
+  local lines = vim.split(new_text, "\n")
+  if #lines == 1 then
+    -- Single line - simple replacement
+    local new_line = prefix .. new_text .. suffix
+    vim.api.nvim_buf_set_lines(0, row - 1, row, false, {new_line})
+    vim.api.nvim_win_set_cursor(0, {row, start_pos - 1 + #new_text})
+  else
+    -- Multiple lines
+    lines[1] = prefix .. lines[1]
+    lines[#lines] = lines[#lines] .. suffix
+
+    vim.api.nvim_buf_set_lines(0, row - 1, row, false, lines)
+    vim.api.nvim_win_set_cursor(0, {row + #lines - 1, #lines[#lines] - #suffix})
   end
 end
 
