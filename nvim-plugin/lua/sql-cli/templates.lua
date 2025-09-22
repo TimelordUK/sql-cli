@@ -827,7 +827,7 @@ function M.expand_inline_macro()
   local patterns = {
     { pattern = "${([^}:]+):?([^}]*)}", prefix = "${", suffix = "}" },
     { pattern = "@{([^}:]+):?([^}]*)}", prefix = "@{", suffix = "}" },
-    { pattern = "@(%w+)", prefix = "@", suffix = "" }
+    { pattern = "@([%w_]+)", prefix = "@", suffix = "" }  -- Fixed: added underscore to pattern
   }
 
   local start_pos, end_pos, macro_name, macro_args

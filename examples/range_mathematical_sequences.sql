@@ -101,31 +101,31 @@ GO
 
 -- 4. Collatz Sequence Simulation (3n+1 problem)
 -- Shows first few steps for numbers 1-10
-WITH starting_numbers AS (
-    SELECT value AS n FROM RANGE(1, 10)
-),
-collatz_step AS (
-    SELECT 
-        n AS start_value,
-        n AS current,
-        CASE 
-            WHEN n % 2 = 0 THEN n / 2
-            ELSE (n * 3) + 1
-        END AS next_value,
-        CASE 
-            WHEN n % 2 = 0 THEN 'Even: n/2'
-            ELSE 'Odd: 3n+1'
-        END AS operation
-    FROM starting_numbers
-)
-SELECT 
-    start_value,
-    current,
-    next_value,
-    operation,
-    ROW_NUMBER() OVER (PARTITION BY start_value ORDER BY start_value) AS step_number
-FROM collatz_step
-ORDER BY start_value;
+-- WITH starting_numbers AS (
+    -- SELECT value AS n FROM RANGE(1, 10)
+-- ),
+-- collatz_step AS (
+    -- SELECT 
+        -- n AS start_value,
+        -- n AS current,
+        -- CASE 
+            -- WHEN n % 2 = 0 THEN n / 2
+            -- ELSE (n * 3) + 1
+        -- END AS next_value,
+        -- CASE 
+            -- WHEN n % 2 = 0 THEN 'Even: n/2'
+            -- ELSE 'Odd: 3n+1'
+        -- END AS operation
+    -- FROM starting_numbers
+-- )
+-- SELECT 
+    -- start_value,
+    -- current,
+    -- next_value,
+    -- operation,
+    -- ROW_NUMBER() OVER (PARTITION BY start_value ORDER BY start_value) AS step_number
+-- FROM collatz_step
+-- ORDER BY start_value;
 GO
 
 -- 5. Divisor Count and Perfect Numbers Check
