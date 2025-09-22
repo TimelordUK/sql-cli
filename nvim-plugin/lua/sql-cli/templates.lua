@@ -77,7 +77,7 @@ ORDER BY TradeDate DESC]],
     variables = {
       SOURCE = { prompt = "Trade Source", default = "Bloomberg_FIX_FX", type = "select", options = "sources" },
       TRADE_DATE = { prompt = "Trade Date", type = "date_builder" },
-      LIMIT = { prompt = "Limit", default = "100" },
+      COLUMNS = { prompt = "Columns to select", default = "*", optional = true },
       API_TOKEN = { prompt = "API Token", default = "${JWT_TOKEN}", env = true },
       ADDITIONAL_WHERE = { prompt = "Additional WHERE clause", default = "1=1", optional = true },
       BASE_URL = { prompt = "API URL", default = "http://localhost:5001", optional = true }
@@ -101,10 +101,13 @@ ORDER BY TradeDate DESC]],
 
       local where_clause = table.concat(where_parts, " and ")
 
-      -- Build JSON body with proper formatting
-      vars.WHERE_JSON = string.format('{\n        "Where": "%s",\n        "Limit": %s\n    }',
-        where_clause,
-        vars.LIMIT or "100"
+      -- Build select clause (columns)
+      local select_clause = vars.COLUMNS or "*"
+
+      -- Build JSON body with select and where (no limit)
+      vars.WHERE_JSON = string.format('{\n        "select": "%s",\n        "where": "%s"\n    }',
+        select_clause,
+        where_clause
       )
 
       return vars
@@ -118,8 +121,8 @@ WITH WEB trades AS (
     URL '${BASE_URL:http://localhost:5001}/trades'
     METHOD POST
     BODY '{
-        "Where": "Source = \\"${SOURCE}\\"",
-        "Limit": ${LIMIT:100}
+        "select": "${COLUMNS:*}",
+        "where": "Source = \\"${SOURCE}\\""
     }'
     FORMAT JSON
     JSON_PATH 'Result'
@@ -128,7 +131,7 @@ SELECT * FROM trades
 ORDER BY TradeDate DESC]],
     variables = {
       SOURCE = { prompt = "Trade Source", default = "Bloomberg_FIX_FX", type = "select", options = "sources" },
-      LIMIT = { prompt = "Limit", default = "100" },
+      COLUMNS = { prompt = "Columns", default = "*", optional = true },
       BASE_URL = { prompt = "API URL", default = "http://localhost:5001", optional = true }
     }
   },
@@ -140,7 +143,8 @@ WITH WEB trades AS (
     URL 'http://localhost:5001/trades'
     METHOD POST
     BODY '{
-        "Where": "TradeDate >= TradeDate(${START_YEAR}, ${START_MONTH}, ${START_DAY}) and TradeDate <= TradeDate(${END_YEAR}, ${END_MONTH}, ${END_DAY})"
+        "select": "*",
+        "where": "TradeDate >= TradeDate(${START_YEAR}, ${START_MONTH}, ${START_DAY}) and TradeDate <= TradeDate(${END_YEAR}, ${END_MONTH}, ${END_DAY})"
     }'
     FORMAT JSON
     JSON_PATH 'Result'
@@ -165,25 +169,71 @@ ORDER BY trade_count DESC]],
     }
   },
 
+  trade_fetch_broad = {
+    name = "Broad Trade Fetch (All Columns)",
+    template = [[
+-- Fetch broad column set from trade server, then filter in SQL-CLI
+WITH WEB raw_trades AS (
+    URL '${BASE_URL:http://localhost:5001}/trades'
+    METHOD POST
+    BODY '{
+        "select": "${COLUMNS:TradeId, Source, Symbol, Quantity, Price, TradeDate, Status, Account, Currency, ExecutionTime, Broker, Commission, SettlementDate}",
+        "where": "${WHERE_CLAUSE}"
+    }'
+    FORMAT JSON
+    JSON_PATH 'Result'
+    HEADERS (
+        'Authorization': 'Bearer ${API_TOKEN}',
+        'Content-Type': 'application/json'
+    )
+)
+-- Now use SQL-CLI's powerful features to filter and analyze
+SELECT *
+FROM raw_trades
+${LOCAL_FILTER:-- Add your SQL-CLI filters here}]],
+    variables = {
+      WHERE_CLAUSE = {
+        prompt = "Server WHERE clause (basic filter)",
+        default = "TradeDate = TradeDate(2025, 9, 19)",
+        type = "where_builder"
+      },
+      COLUMNS = {
+        prompt = "Columns (or press Enter for default set)",
+        default = "TradeId, Source, Symbol, Quantity, Price, TradeDate, Status, Account, Currency, ExecutionTime, Broker, Commission, SettlementDate",
+        optional = true
+      },
+      API_TOKEN = { prompt = "API Token", default = "${JWT_TOKEN}", env = true },
+      BASE_URL = { prompt = "API URL", default = "http://localhost:5001", optional = true },
+      LOCAL_FILTER = {
+        prompt = "SQL-CLI filter (optional, e.g., WHERE Symbol LIKE 'EUR%')",
+        default = "-- Add your SQL-CLI filters here",
+        optional = true
+      }
+    }
+  },
+
   simple_filter = {
-    name = "Simple Trade Filter",
+    name = "Quick Source/Date Filter",
     template = [[
 WITH WEB trades AS (
     URL '${BASE_URL:http://localhost:5001}/trades'
+    METHOD POST
+    BODY '{
+        "select": "*",
+        "where": "Source = \\"${SOURCE}\\" and TradeDate = TradeDate(${YEAR}, ${MONTH}, ${DAY})"
+    }'
     FORMAT JSON
-    JSON_PATH '${JSON_PATH:Result}'
+    JSON_PATH 'Result'
 )
 SELECT *
 FROM trades
-WHERE ${FILTER_COLUMN} = '${FILTER_VALUE}'
-ORDER BY ${ORDER_BY:TradeDate} ${ORDER_DIR:DESC}]],
+ORDER BY ExecutionTime DESC]],
     variables = {
-      BASE_URL = { prompt = "API Base URL", default = "http://localhost:5001" },
-      JSON_PATH = { prompt = "JSON Path", default = "Result" },
-      FILTER_COLUMN = { prompt = "Filter Column", default = "Source" },
-      FILTER_VALUE = { prompt = "Filter Value", default = "" },
-      ORDER_BY = { prompt = "Order By", default = "TradeDate" },
-      ORDER_DIR = { prompt = "Order Direction", default = "DESC", type = "select", options = {"ASC", "DESC"} }
+      SOURCE = { prompt = "Trade Source", default = "Bloomberg_FIX_FX", type = "select", options = "sources" },
+      YEAR = { prompt = "Year", default = function() return os.date("%Y") end },
+      MONTH = { prompt = "Month", default = function() return os.date("%m") end },
+      DAY = { prompt = "Day", default = function() return os.date("%d") end },
+      BASE_URL = { prompt = "API URL", default = "http://localhost:5001", optional = true }
     }
   }
 }
@@ -369,6 +419,12 @@ function M.apply_template(template_key)
         variables[var_name] = date
         get_next_variable()
       end)
+    elseif var_def.type == "where_builder" then
+      -- Special WHERE clause builder
+      M.where_clause_builder(function(where_clause)
+        variables[var_name] = where_clause
+        get_next_variable()
+      end)
     else
       -- Regular text input
       vim.ui.input({
@@ -426,6 +482,71 @@ function M.quick_source_picker(callback)
   }, function(choice)
     if choice then
       callback(choice)
+    end
+  end)
+end
+
+-- WHERE clause builder
+function M.where_clause_builder(callback)
+  local options = {
+    "Source and Date",
+    "Date Range",
+    "Source Only",
+    "Today's Trades",
+    "Custom WHERE"
+  }
+
+  vim.ui.select(options, {
+    prompt = "Select WHERE clause type:"
+  }, function(choice)
+    if not choice then return end
+
+    if choice == "Source and Date" then
+      M.quick_source_picker(function(source)
+        M.quick_date_picker(function(date)
+          local year, month, day = date:match("(%d+)-(%d+)-(%d+)")
+          local where = string.format('Source = \\"%s\\" and TradeDate = TradeDate(%s, %s, %s)',
+            source, year, month, day)
+          callback(where)
+        end)
+      end)
+    elseif choice == "Date Range" then
+      vim.ui.input({
+        prompt = "Start date (YYYY-MM-DD): ",
+        default = M.common_variables.date_helpers.this_week_start()
+      }, function(start_date)
+        if not start_date then return end
+        vim.ui.input({
+          prompt = "End date (YYYY-MM-DD): ",
+          default = M.common_variables.date_helpers.today()
+        }, function(end_date)
+          if not end_date then return end
+          local sy, sm, sd = start_date:match("(%d+)-(%d+)-(%d+)")
+          local ey, em, ed = end_date:match("(%d+)-(%d+)-(%d+)")
+          local where = string.format('TradeDate >= TradeDate(%s, %s, %s) and TradeDate <= TradeDate(%s, %s, %s)',
+            sy, sm, sd, ey, em, ed)
+          callback(where)
+        end)
+      end)
+    elseif choice == "Source Only" then
+      M.quick_source_picker(function(source)
+        local where = string.format('Source = \\"%s\\"', source)
+        callback(where)
+      end)
+    elseif choice == "Today's Trades" then
+      local today = M.common_variables.date_helpers.today()
+      local year, month, day = today:match("(%d+)-(%d+)-(%d+)")
+      local where = string.format('TradeDate = TradeDate(%s, %s, %s)', year, month, day)
+      callback(where)
+    elseif choice == "Custom WHERE" then
+      vim.ui.input({
+        prompt = "Enter WHERE clause: ",
+        default = 'Source = \\"Bloomberg_FIX_FX\\"'
+      }, function(where)
+        if where then
+          callback(where)
+        end
+      end)
     end
   end)
 end
@@ -497,7 +618,7 @@ function M.get_current_query()
   end
 end
 
--- Quick variable substitution for current query
+-- Quick variable substitution for current query (in-place expansion)
 function M.quick_substitute()
   local query = M.get_current_query()
   if not query then
@@ -539,15 +660,56 @@ function M.quick_substitute()
     local default = variables[var]
     var_index = var_index + 1
 
-    -- Special handling for common variables
-    if var == "SOURCE" then
+    -- Special handling for common variables with smart defaults
+    if var == "SOURCE" or var:match("^SOURCE") then
       M.quick_source_picker(function(value)
         values[var] = value
         get_next_value()
       end)
-    elseif var:match("DATE") or var:match("Day") then
-      M.quick_date_picker(function(value)
-        values[var] = value
+    elseif var == "TRADE_DATE" or var:match("^DATE") then
+      M.quick_date_picker(function(date)
+        -- Auto-convert to TradeDate() function format
+        local year, month, day = date:match("(%d+)-(%d+)-(%d+)")
+        if year then
+          values[var] = string.format("TradeDate(%s, %s, %s)", year, month, day)
+        else
+          values[var] = date
+        end
+        get_next_value()
+      end)
+    elseif var == "YEAR" then
+      vim.ui.input({
+        prompt = "Year: ",
+        default = os.date("%Y")
+      }, function(value)
+        if value ~= nil then
+          values[var] = value
+          get_next_value()
+        end
+      end)
+    elseif var == "MONTH" then
+      vim.ui.input({
+        prompt = "Month: ",
+        default = os.date("%m")
+      }, function(value)
+        if value ~= nil then
+          values[var] = value
+          get_next_value()
+        end
+      end)
+    elseif var == "DAY" then
+      vim.ui.input({
+        prompt = "Day: ",
+        default = os.date("%d")
+      }, function(value)
+        if value ~= nil then
+          values[var] = value
+          get_next_value()
+        end
+      end)
+    elseif var:match("WHERE") then
+      M.where_clause_builder(function(where_clause)
+        values[var] = where_clause
         get_next_value()
       end)
     else
@@ -564,6 +726,196 @@ function M.quick_substitute()
   end
 
   get_next_value()
+end
+
+-- Parse macro definitions from comment blocks in the file
+function M.parse_file_macros()
+  local lines = vim.api.nvim_buf_get_lines(0, 0, -1, false)
+  local macros = {}
+  local in_macro_block = false
+  local current_macro_name = nil
+  local current_macro_lines = {}
+
+  for _, line in ipairs(lines) do
+    -- Check for macro definition start: -- MACRO: NAME
+    local macro_start = line:match("^%s*%-%-+%s*MACRO:%s*([%w_]+)")
+    if macro_start then
+      -- Save previous macro if exists
+      if current_macro_name then
+        macros[current_macro_name] = table.concat(current_macro_lines, "\n")
+      end
+      -- Start new macro
+      in_macro_block = true
+      current_macro_name = macro_start
+      current_macro_lines = {}
+    -- Check for macro end: -- END MACRO
+    elseif line:match("^%s*%-%-+%s*END%s+MACRO") then
+      if current_macro_name then
+        macros[current_macro_name] = table.concat(current_macro_lines, "\n")
+      end
+      in_macro_block = false
+      current_macro_name = nil
+      current_macro_lines = {}
+    -- Collect macro lines (skip comment markers)
+    elseif in_macro_block then
+      -- Remove leading comment markers but preserve indentation
+      local content = line:gsub("^%s*%-%-+%s?", "")
+      table.insert(current_macro_lines, content)
+    end
+  end
+
+  -- Save last macro if not closed
+  if current_macro_name then
+    macros[current_macro_name] = table.concat(current_macro_lines, "\n")
+  end
+
+  return macros
+end
+
+-- Expand all macros from file definitions
+function M.expand_file_macros()
+  local macros = M.parse_file_macros()
+
+  if vim.tbl_isempty(macros) then
+    vim.notify("No macro definitions found in file. Use -- MACRO: NAME ... -- END MACRO", vim.log.levels.INFO)
+    return
+  end
+
+  -- Show available macros
+  local macro_names = vim.tbl_keys(macros)
+  table.sort(macro_names)
+
+  vim.ui.select(macro_names, {
+    prompt = "Select macro to expand:",
+    format_item = function(name)
+      local preview = macros[name]:gsub("\n.*", "...")
+      if #preview > 50 then
+        preview = preview:sub(1, 47) .. "..."
+      end
+      return string.format("%s: %s", name, preview)
+    end
+  }, function(choice)
+    if choice then
+      local expansion = macros[choice]
+
+      -- Check if macro has variables
+      if expansion:match("${[^}]+}") then
+        -- Store the macro content temporarily
+        local temp_query = expansion
+        -- Use quick_substitute on the macro content
+        M.replace_current_query = function(result)
+          M.insert_at_cursor(result)
+        end
+        M.get_current_query = function()
+          return temp_query
+        end
+        M.quick_substitute()
+      else
+        -- No variables, just insert
+        M.insert_at_cursor(expansion)
+      end
+    end
+  end)
+end
+
+-- Inline macro expansion - expand ${MACRO:...} definitions in-place
+function M.expand_inline_macro()
+  local line = vim.api.nvim_get_current_line()
+  local row, col = unpack(vim.api.nvim_win_get_cursor(0))
+
+  -- Look for macro usage like ${TRADE_FETCH} or @{MACRO_NAME}
+  local patterns = {
+    { pattern = "${([^}:]+):?([^}]*)}", prefix = "${", suffix = "}" },
+    { pattern = "@{([^}:]+):?([^}]*)}", prefix = "@{", suffix = "}" },
+    { pattern = "@(%w+)", prefix = "@", suffix = "" }
+  }
+
+  local start_pos, end_pos, macro_name, macro_args
+
+  for _, p in ipairs(patterns) do
+    start_pos, end_pos, macro_name, macro_args = line:find(p.pattern)
+    if start_pos then break end
+  end
+
+  if not start_pos then
+    vim.notify("No macro found at cursor position. Use ${MACRO}, @{MACRO} or @MACRO", vim.log.levels.INFO)
+    return
+  end
+
+  -- First check file-defined macros
+  local file_macros = M.parse_file_macros()
+
+  -- Then check built-in macros
+  local inline_macros = {
+    TRADE_FETCH = [[
+WITH WEB trades AS (
+    URL 'http://localhost:5001/trades'
+    METHOD POST
+    BODY '{
+        "select": "*",
+        "where": "${WHERE}"
+    }'
+    FORMAT JSON
+    JSON_PATH 'Result'
+)]],
+    WHERE_SOURCE = 'Source = \\"${SOURCE}\\"',
+    WHERE_DATE = 'TradeDate = TradeDate(${YEAR}, ${MONTH}, ${DAY})',
+    WHERE_TODAY = function()
+      local today = os.date("%Y-%m-%d")
+      local y, m, d = today:match("(%d+)-(%d+)-(%d+)")
+      return string.format('TradeDate = TradeDate(%s, %s, %s)', y, m, d)
+    end,
+    COLUMNS_BASIC = 'TradeId, Source, Symbol, Quantity, Price, TradeDate',
+    COLUMNS_FULL = 'TradeId, Source, Symbol, Quantity, Price, TradeDate, Status, Account, Currency, ExecutionTime, Broker, Commission, SettlementDate'
+  }
+
+  -- Look for the macro (file macros take precedence)
+  local expansion = file_macros[macro_name] or inline_macros[macro_name]
+
+  if not expansion then
+    vim.notify("Unknown macro: " .. macro_name .. ". Define it with -- MACRO: " .. macro_name, vim.log.levels.WARN)
+    return
+  end
+
+  -- Handle function macros
+  if type(expansion) == "function" then
+    expansion = expansion()
+  end
+
+  -- Check if expansion has variables that need substitution
+  if expansion:match("${[^}]+}") then
+    -- Store context for substitution
+    local saved_line = line
+    local saved_start = start_pos
+    local saved_end = end_pos
+
+    -- Temporarily override functions for substitution
+    local orig_replace = M.replace_current_query
+    local orig_get = M.get_current_query
+
+    M.replace_current_query = function(result)
+      -- Replace the macro with substituted result
+      local new_line = saved_line:sub(1, saved_start - 1) .. result .. saved_line:sub(saved_end + 1)
+      vim.api.nvim_set_current_line(new_line)
+      vim.api.nvim_win_set_cursor(0, {row, saved_start - 1 + #result})
+    end
+
+    M.get_current_query = function()
+      return expansion
+    end
+
+    -- Run substitution
+    M.quick_substitute()
+
+    -- Restore original functions
+    M.replace_current_query = orig_replace
+    M.get_current_query = orig_get
+  else
+    -- No variables, just replace
+    local new_line = line:sub(1, start_pos - 1) .. expansion .. line:sub(end_pos + 1)
+    vim.api.nvim_set_current_line(new_line)
+    vim.api.nvim_win_set_cursor(0, {row, start_pos - 1 + #expansion})
+  end
 end
 
 -- Replace current query with new text
@@ -590,6 +942,8 @@ function M.setup_keymaps()
   vim.keymap.set('n', '<leader>sT', M.select_template, { desc = 'Template: Select and apply' })
   vim.keymap.set('n', '<leader>sTq', M.quick_substitute, { desc = 'Template: Quick substitute variables' })
   vim.keymap.set({'n', 'v'}, '<leader>sTs', M.save_as_template, { desc = 'Template: Save current as template' })
+  vim.keymap.set('n', '<leader>sTe', M.expand_inline_macro, { desc = 'Template: Expand macro at cursor' })
+  vim.keymap.set('n', '<leader>sTm', M.expand_file_macros, { desc = 'Template: Expand all macros from definitions' })
 
   -- Quick pickers
   vim.keymap.set('n', '<leader>sTd', function()
