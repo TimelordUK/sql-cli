@@ -2,9 +2,10 @@
 
 // Re-exports for backward compatibility - these serve as both imports and re-exports
 pub use super::parser::ast::{
-    CTEType, Condition, DataFormat, FrameBound, FrameUnit, JoinClause, JoinCondition, JoinOperator,
-    JoinType, LogicalOp, OrderByColumn, SelectItem, SelectStatement, SortDirection, SqlExpression,
-    TableFunction, TableSource, WebCTESpec, WhenBranch, WhereClause, WindowFrame, WindowSpec, CTE,
+    CTEType, Condition, DataFormat, FrameBound, FrameUnit, HttpMethod, JoinClause, JoinCondition,
+    JoinOperator, JoinType, LogicalOp, OrderByColumn, SelectItem, SelectStatement, SortDirection,
+    SqlExpression, TableFunction, TableSource, WebCTESpec, WhenBranch, WhereClause, WindowFrame,
+    WindowSpec, CTE,
 };
 pub use super::parser::legacy::{ParseContext, ParseState, Schema, SqlParser, SqlToken, TableInfo};
 pub use super::parser::lexer::{Lexer, Token};
@@ -370,6 +371,9 @@ impl Parser {
         let mut format = None;
         let mut headers = Vec::new();
         let mut cache_seconds = None;
+        let mut method = None;
+        let mut body = None;
+        let mut json_path = None;
 
         // Parse optional clauses until we hit the closing parenthesis
         while !matches!(self.current_token, Token::RightParen)
@@ -389,6 +393,18 @@ impl Parser {
                         self.advance();
                         headers = self.parse_headers()?;
                     }
+                    "METHOD" => {
+                        self.advance();
+                        method = Some(self.parse_http_method()?);
+                    }
+                    "BODY" => {
+                        self.advance();
+                        body = Some(self.parse_body()?);
+                    }
+                    "JSON_PATH" => {
+                        self.advance();
+                        json_path = Some(self.parse_json_path()?);
+                    }
                     _ => {
                         return Err(format!(
                             "Unexpected keyword '{}' in WEB CTE specification",
@@ -406,6 +422,9 @@ impl Parser {
             format,
             headers,
             cache_seconds,
+            method,
+            body,
+            json_path,
         })
     }
 
@@ -434,6 +453,45 @@ impl Parser {
                 Ok(duration)
             }
             _ => Err("Expected number for cache duration".to_string()),
+        }
+    }
+
+    fn parse_http_method(&mut self) -> Result<HttpMethod, String> {
+        if let Token::Identifier(id) = &self.current_token {
+            let method = match id.to_uppercase().as_str() {
+                "GET" => HttpMethod::GET,
+                "POST" => HttpMethod::POST,
+                "PUT" => HttpMethod::PUT,
+                "DELETE" => HttpMethod::DELETE,
+                "PATCH" => HttpMethod::PATCH,
+                _ => return Err(format!("Unknown HTTP method: {}", id)),
+            };
+            self.advance();
+            Ok(method)
+        } else {
+            Err("Expected HTTP method (GET, POST, PUT, DELETE, PATCH)".to_string())
+        }
+    }
+
+    fn parse_body(&mut self) -> Result<String, String> {
+        match &self.current_token {
+            Token::StringLiteral(body) => {
+                let body = body.clone();
+                self.advance();
+                Ok(body)
+            }
+            _ => Err("Expected string literal for BODY clause".to_string()),
+        }
+    }
+
+    fn parse_json_path(&mut self) -> Result<String, String> {
+        match &self.current_token {
+            Token::StringLiteral(path) => {
+                let path = path.clone();
+                self.advance();
+                Ok(path)
+            }
+            _ => Err("Expected string literal for JSON_PATH clause".to_string()),
         }
     }
 

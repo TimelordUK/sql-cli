@@ -1,6 +1,7 @@
 // HTTP fetcher for WEB CTEs (now supports file:// URLs too)
 use anyhow::{Context, Result};
 use regex::Regex;
+use serde_json;
 use std::fs::File;
 use std::io::Cursor;
 use std::path::Path;
@@ -9,7 +10,7 @@ use tracing::{debug, info};
 
 use crate::data::datatable::DataTable;
 use crate::data::stream_loader::{load_csv_from_reader, load_json_from_reader};
-use crate::sql::parser::ast::{DataFormat, WebCTESpec};
+use crate::sql::parser::ast::{DataFormat, HttpMethod, WebCTESpec};
 
 /// Fetches data from a URL and converts it to a DataTable
 pub struct WebDataFetcher {
@@ -36,13 +37,29 @@ impl WebDataFetcher {
         }
 
         // Regular HTTP/HTTPS handling
-        // Build request
-        let mut request = self.client.get(&spec.url);
+        // Build request based on method
+        let mut request = match spec.method.as_ref().unwrap_or(&HttpMethod::GET) {
+            HttpMethod::GET => self.client.get(&spec.url),
+            HttpMethod::POST => self.client.post(&spec.url),
+            HttpMethod::PUT => self.client.put(&spec.url),
+            HttpMethod::DELETE => self.client.delete(&spec.url),
+            HttpMethod::PATCH => self.client.patch(&spec.url),
+        };
 
         // Add headers if provided
         for (key, value) in &spec.headers {
             let resolved_value = self.resolve_env_var(value)?;
             request = request.header(key, resolved_value);
+        }
+
+        // Add body if provided (typically for POST/PUT/PATCH)
+        if let Some(body) = &spec.body {
+            let resolved_body = self.resolve_env_var(body)?;
+            request = request.body(resolved_body);
+            // Set Content-Type to JSON if not already set and body looks like JSON
+            if spec.body.as_ref().unwrap().trim().starts_with('{') {
+                request = request.header("Content-Type", "application/json");
+            }
         }
 
         // Execute request
@@ -80,7 +97,36 @@ impl WebDataFetcher {
 
         info!("Using format: {:?} for {}", format, spec.url);
 
-        // Parse based on format
+        // If JSON_PATH is specified and format is JSON, extract the nested data first
+        if let Some(json_path) = &spec.json_path {
+            if matches!(format, DataFormat::JSON | DataFormat::Auto) {
+                // Parse JSON and extract the path
+                let json_value: serde_json::Value = serde_json::from_slice(&bytes)
+                    .with_context(|| "Failed to parse JSON for path extraction")?;
+
+                // Navigate to the specified path
+                let extracted = self
+                    .navigate_json_path(&json_value, json_path)
+                    .with_context(|| format!("Failed to extract JSON path: {}", json_path))?;
+
+                // Convert extracted value to bytes and parse as table
+                let array_value = match extracted {
+                    serde_json::Value::Array(_) => extracted.clone(),
+                    _ => serde_json::Value::Array(vec![extracted.clone()]),
+                };
+
+                let extracted_bytes = serde_json::to_vec(&array_value)?;
+                return self.parse_data(
+                    extracted_bytes,
+                    DataFormat::JSON,
+                    table_name,
+                    "web",
+                    &spec.url,
+                );
+            }
+        }
+
+        // Parse based on format without JSON path extraction
         self.parse_data(bytes.to_vec(), format, table_name, "web", &spec.url)
     }
 
@@ -195,6 +241,60 @@ impl WebDataFetcher {
             // Default to auto-detect
             DataFormat::Auto
         }
+    }
+
+    /// Extract data from a specific JSON path
+    fn extract_json_path(
+        &self,
+        _table: DataTable,
+        json_path: &str,
+        bytes: &[u8],
+    ) -> Result<DataTable> {
+        // Parse the JSON
+        let json_value: serde_json::Value = serde_json::from_slice(bytes)
+            .with_context(|| "Failed to parse JSON for path extraction")?;
+
+        // Navigate to the specified path
+        let extracted = self
+            .navigate_json_path(&json_value, json_path)
+            .with_context(|| format!("Failed to extract JSON path: {}", json_path))?;
+
+        // If the extracted value is already an array, use it directly
+        // Otherwise, wrap it in an array for consistent handling
+        let array_value = match extracted {
+            serde_json::Value::Array(_) => extracted.clone(),
+            _ => serde_json::Value::Array(vec![extracted.clone()]),
+        };
+
+        // Convert to bytes and parse as a table
+        let extracted_bytes = serde_json::to_vec(&array_value)?;
+
+        // Re-parse the extracted JSON as a DataTable
+        let reader = Cursor::new(extracted_bytes);
+        load_json_from_reader(reader, "extracted", "web", json_path)
+    }
+
+    /// Navigate to a specific path in JSON structure
+    fn navigate_json_path<'a>(
+        &self,
+        value: &'a serde_json::Value,
+        path: &str,
+    ) -> Result<&'a serde_json::Value> {
+        let mut current = value;
+
+        // Split path by dots (simple path navigation for now)
+        // Future enhancement: support array indexing like "Result[0]"
+        for part in path.split('.') {
+            if part.is_empty() {
+                continue;
+            }
+
+            current = current
+                .get(part)
+                .ok_or_else(|| anyhow::anyhow!("Path '{}' not found in JSON", part))?;
+        }
+
+        Ok(current)
     }
 
     /// Resolve environment variables in values (${VAR_NAME} or $VAR_NAME syntax)

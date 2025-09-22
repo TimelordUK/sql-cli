@@ -336,6 +336,19 @@ pub struct WebCTESpec {
     pub format: Option<DataFormat>,     // CSV, JSON, or auto-detect
     pub headers: Vec<(String, String)>, // HTTP headers
     pub cache_seconds: Option<u64>,     // Cache duration
+    pub method: Option<HttpMethod>,     // HTTP method (GET, POST, etc.)
+    pub body: Option<String>,           // Request body for POST/PUT
+    pub json_path: Option<String>,      // JSON path to extract (e.g., "Result" for {Result: [...]})
+}
+
+/// HTTP methods for WEB CTEs
+#[derive(Debug, Clone)]
+pub enum HttpMethod {
+    GET,
+    POST,
+    PUT,
+    DELETE,
+    PATCH,
 }
 
 /// Data format for WEB CTEs
