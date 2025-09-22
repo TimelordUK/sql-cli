@@ -47,7 +47,7 @@
 -- )
 -- END MACRO
 
--- MACRO: TODAY_TRADES
+-- MACRO: TODAYS_TRADES
 -- @TRADE_BASE
 -- SELECT
 --     TradeId,
@@ -175,7 +175,7 @@
 -- USAGE EXAMPLES
 -- ============================================
 
--- Example 1: Type @TODAY_TRADES and press \sTe to expand
+-- Example 1: Type @TODAYS_TRADES and press \sTe to expand
 
 -- Example 2: Use the reconciliation template
 -- Type: @RECONCILIATION

@@ -944,9 +944,28 @@ WITH WEB trades AS (
 
     M.replace_current_query = function(result)
       -- Replace the macro with substituted result
-      local new_line = saved_line:sub(1, saved_start - 1) .. result .. saved_line:sub(saved_end + 1)
-      vim.api.nvim_set_current_line(new_line)
-      vim.api.nvim_win_set_cursor(0, {row, saved_start - 1 + #result})
+      -- Handle multi-line expansions
+      local lines = vim.split(result, "\n")
+      if #lines == 1 then
+        -- Single line - simple replacement
+        local new_line = saved_line:sub(1, saved_start - 1) .. result .. saved_line:sub(saved_end + 1)
+        vim.api.nvim_set_current_line(new_line)
+        vim.api.nvim_win_set_cursor(0, {row, saved_start - 1 + #result})
+      else
+        -- Multiple lines - need to handle differently
+        local prefix = saved_line:sub(1, saved_start - 1)
+        local suffix = saved_line:sub(saved_end + 1)
+
+        -- First line gets prefix
+        lines[1] = prefix .. lines[1]
+        -- Last line gets suffix
+        lines[#lines] = lines[#lines] .. suffix
+
+        -- Delete current line and insert new lines
+        vim.api.nvim_buf_set_lines(0, row - 1, row, false, lines)
+        -- Position cursor at end of insertion
+        vim.api.nvim_win_set_cursor(0, {row + #lines - 1, #lines[#lines] - #suffix})
+      end
     end
 
     M.get_current_query = function()
@@ -961,9 +980,28 @@ WITH WEB trades AS (
     M.get_current_query = orig_get
   else
     -- No variables, just replace
-    local new_line = line:sub(1, start_pos - 1) .. expansion .. line:sub(end_pos + 1)
-    vim.api.nvim_set_current_line(new_line)
-    vim.api.nvim_win_set_cursor(0, {row, start_pos - 1 + #expansion})
+    -- Handle multi-line expansions
+    local lines = vim.split(expansion, "\n")
+    if #lines == 1 then
+      -- Single line - simple replacement
+      local new_line = line:sub(1, start_pos - 1) .. expansion .. line:sub(end_pos + 1)
+      vim.api.nvim_set_current_line(new_line)
+      vim.api.nvim_win_set_cursor(0, {row, start_pos - 1 + #expansion})
+    else
+      -- Multiple lines - need to handle differently
+      local prefix = line:sub(1, start_pos - 1)
+      local suffix = line:sub(end_pos + 1)
+
+      -- First line gets prefix
+      lines[1] = prefix .. lines[1]
+      -- Last line gets suffix
+      lines[#lines] = lines[#lines] .. suffix
+
+      -- Delete current line and insert new lines
+      vim.api.nvim_buf_set_lines(0, row - 1, row, false, lines)
+      -- Position cursor at end of insertion
+      vim.api.nvim_win_set_cursor(0, {row + #lines - 1, #lines[#lines] - #suffix})
+    end
   end
 end
 
