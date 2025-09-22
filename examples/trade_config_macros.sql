@@ -1,0 +1,206 @@
+-- SQL-CLI Trade Query Configuration File
+-- Define your environment-specific settings and macros here
+
+-- ============================================
+-- CONFIGURATION
+-- ============================================
+
+-- MACRO: CONFIG
+-- BASE_URL = http://localhost:5001
+-- API_TOKEN = ${JWT_TOKEN}
+-- DEFAULT_COLUMNS = TradeId, Source, Symbol, Quantity, Price, TradeDate, Status
+-- END MACRO
+
+-- MACRO: SOURCES
+-- Bloomberg_FIX_FX
+-- Bloomberg_FIX_Equity
+-- Bloomberg_FIX_Commodities
+-- Reuters_FX
+-- Reuters_Equity
+-- ICE_Energy
+-- CME_Futures
+-- Internal_Trade_System
+-- Manual_Entry
+-- FIX_Bridge_Primary
+-- FIX_Bridge_Backup
+-- API_Gateway_Trades
+-- END MACRO
+
+-- ============================================
+-- REUSABLE QUERY TEMPLATES
+-- ============================================
+
+-- MACRO: TRADE_BASE
+-- WITH WEB trades AS (
+--     URL '${BASE_URL:http://localhost:5001}/trades'
+--     METHOD POST
+--     BODY '{
+--         "select": "${COLUMNS:*}",
+--         "where": "${WHERE_CLAUSE}"
+--     }'
+--     FORMAT JSON
+--     JSON_PATH 'Result'
+--     HEADERS (
+--         'Authorization': 'Bearer ${API_TOKEN}',
+--         'Content-Type': 'application/json'
+--     )
+-- )
+-- END MACRO
+
+-- MACRO: TODAY_TRADES
+-- @TRADE_BASE
+-- SELECT
+--     TradeId,
+--     Source,
+--     Symbol,
+--     Quantity,
+--     Price,
+--     TradeDate,
+--     ExecutionTime,
+--     Status
+-- FROM trades
+-- WHERE Date(TradeDate) = Date('now')
+-- ORDER BY ExecutionTime DESC
+-- END MACRO
+
+-- MACRO: SOURCE_SUMMARY
+-- WITH WEB trades AS (
+--     URL '${BASE_URL:http://localhost:5001}/trades'
+--     METHOD POST
+--     BODY '{
+--         "select": "*",
+--         "where": "TradeDate = TradeDate(${YEAR}, ${MONTH}, ${DAY})"
+--     }'
+--     FORMAT JSON
+--     JSON_PATH 'Result'
+-- ),
+-- summary AS (
+--     SELECT
+--         Source,
+--         COUNT(*) as trade_count,
+--         COUNT(DISTINCT Symbol) as unique_symbols,
+--         SUM(Quantity * Price) as total_value,
+--         AVG(Price) as avg_price,
+--         MIN(ExecutionTime) as first_trade,
+--         MAX(ExecutionTime) as last_trade
+--     FROM trades
+--     GROUP BY Source
+-- )
+-- SELECT
+--     Source,
+--     trade_count,
+--     unique_symbols,
+--     CONVERT(total_value, 'number', 'currency') as total_value,
+--     ROUND(avg_price, 2) as avg_price,
+--     first_trade,
+--     last_trade
+-- FROM summary
+-- ORDER BY total_value DESC
+-- END MACRO
+
+-- MACRO: RECONCILIATION
+-- WITH WEB our_trades AS (
+--     URL '${BASE_URL:http://localhost:5001}/trades'
+--     METHOD POST
+--     BODY '{
+--         "select": "*",
+--         "where": "Source = \\"${OUR_SOURCE}\\" and TradeDate = TradeDate(${YEAR}, ${MONTH}, ${DAY})"
+--     }'
+--     FORMAT JSON
+--     JSON_PATH 'Result'
+-- ),
+-- WEB their_trades AS (
+--     URL '${BASE_URL:http://localhost:5001}/counterparty_trades'
+--     METHOD POST
+--     BODY '{
+--         "select": "*",
+--         "where": "Source = \\"${THEIR_SOURCE}\\" and TradeDate = TradeDate(${YEAR}, ${MONTH}, ${DAY})"
+--     }'
+--     FORMAT JSON
+--     JSON_PATH 'Result'
+-- ),
+-- matched AS (
+--     SELECT
+--         o.TradeId as our_id,
+--         t.TradeId as their_id,
+--         o.Symbol,
+--         o.Quantity as our_qty,
+--         t.Quantity as their_qty,
+--         o.Price as our_price,
+--         t.Price as their_price,
+--         ABS(o.Quantity - t.Quantity) as qty_diff,
+--         ABS(o.Price - t.Price) as price_diff
+--     FROM our_trades o
+--     JOIN their_trades t ON o.Symbol = t.Symbol
+--         AND ABS(o.ExecutionTime - t.ExecutionTime) < 60
+-- )
+-- SELECT
+--     Symbol,
+--     our_id,
+--     their_id,
+--     CASE
+--         WHEN qty_diff = 0 AND price_diff < 0.01 THEN '✓ MATCHED'
+--         WHEN qty_diff > 0 THEN '⚠ QTY MISMATCH'
+--         WHEN price_diff >= 0.01 THEN '⚠ PRICE MISMATCH'
+--         ELSE '⚠ MISMATCH'
+--     END as status,
+--     our_qty,
+--     their_qty,
+--     qty_diff,
+--     our_price,
+--     their_price,
+--     price_diff
+-- FROM matched
+-- WHERE qty_diff > 0 OR price_diff >= 0.01
+-- ORDER BY Symbol, our_id
+-- END MACRO
+
+-- ============================================
+-- COMMON WHERE CLAUSES
+-- ============================================
+
+-- MACRO: WHERE_TODAY
+-- TradeDate = TradeDate(2025, 9, 22)
+-- END MACRO
+
+-- MACRO: WHERE_BLOOMBERG
+-- Source LIKE "Bloomberg%"
+-- END MACRO
+
+-- MACRO: WHERE_FX
+-- Symbol LIKE "%/%" OR Symbol IN ("EURUSD", "GBPUSD", "USDJPY", "AUDUSD", "USDCAD", "USDCHF")
+-- END MACRO
+
+-- ============================================
+-- USAGE EXAMPLES
+-- ============================================
+
+-- Example 1: Type @TODAY_TRADES and press \sTe to expand
+
+-- Example 2: Use the reconciliation template
+-- Type: @RECONCILIATION
+-- Press \sTe
+-- You'll be prompted for:
+--   OUR_SOURCE (will show your custom source list)
+--   THEIR_SOURCE
+--   YEAR, MONTH, DAY
+
+-- Example 3: Quick source summary
+-- Type: @SOURCE_SUMMARY
+-- Press \sTe
+
+-- Example 4: Build custom query with macros
+-- Type:
+-- @TRADE_BASE
+-- SELECT * FROM trades
+-- WHERE @WHERE_FX
+-- Press \sTe on each macro to expand
+
+-- ============================================
+-- TIPS
+-- ============================================
+-- 1. The SOURCES macro defines your dropdown list of sources
+-- 2. The CONFIG macro sets default values for common variables
+-- 3. Macros can reference other macros (like @TRADE_BASE in @TODAY_TRADES)
+-- 4. Use \sTm to browse all macros in this file
+-- 5. Variables like ${SOURCE} will use your SOURCES list automatically

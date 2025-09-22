@@ -8,6 +8,7 @@ M.templates = {}
 
 -- Common variable definitions with quick selectors
 M.common_variables = {
+  -- Default sources - can be overridden by SOURCES macro in file
   sources = {
     "Bloomberg_FIX_FX",
     "Bloomberg_FIX_Equity",
@@ -477,7 +478,27 @@ end
 
 -- Quick source picker
 function M.quick_source_picker(callback)
-  vim.ui.select(M.common_variables.sources, {
+  -- First check if there's a SOURCES macro in the file
+  local file_macros = M.parse_file_macros()
+  local sources_list = M.common_variables.sources  -- Default
+
+  if file_macros.SOURCES then
+    -- Parse the SOURCES macro - expect one source per line
+    sources_list = {}
+    for line in file_macros.SOURCES:gmatch("[^\n]+") do
+      local source = line:match("^%s*(.-)%s*$")  -- Trim whitespace
+      if source and source ~= "" and not source:match("^%-%-") then  -- Skip empty lines and comments
+        table.insert(sources_list, source)
+      end
+    end
+
+    -- If no valid sources found, fall back to defaults
+    if #sources_list == 0 then
+      sources_list = M.common_variables.sources
+    end
+  end
+
+  vim.ui.select(sources_list, {
     prompt = "Select Trade Source:"
   }, function(choice)
     if choice then
@@ -666,6 +687,22 @@ function M.quick_substitute()
         values[var] = value
         get_next_value()
       end)
+    elseif var == "BASE_URL" then
+      -- Check if CONFIG macro defines BASE_URL
+      local file_macros = M.parse_file_macros()
+      local default_url = "http://localhost:5001"
+      if file_macros._CONFIG and file_macros._CONFIG.BASE_URL then
+        default_url = file_macros._CONFIG.BASE_URL
+      end
+      vim.ui.input({
+        prompt = "API Base URL: ",
+        default = default_url
+      }, function(value)
+        if value ~= nil then
+          values[var] = value
+          get_next_value()
+        end
+      end)
     elseif var == "TRADE_DATE" or var:match("^DATE") then
       M.quick_date_picker(function(date)
         -- Auto-convert to TradeDate() function format
@@ -767,6 +804,18 @@ function M.parse_file_macros()
   -- Save last macro if not closed
   if current_macro_name then
     macros[current_macro_name] = table.concat(current_macro_lines, "\n")
+  end
+
+  -- Parse CONFIG macro if present for key-value settings
+  if macros.CONFIG then
+    local config = {}
+    for line in macros.CONFIG:gmatch("[^\n]+") do
+      local key, value = line:match("^%s*([%w_]+)%s*=%s*(.-)%s*$")
+      if key and value then
+        config[key] = value
+      end
+    end
+    macros._CONFIG = config  -- Store parsed config separately
   end
 
   return macros
