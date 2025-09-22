@@ -396,6 +396,28 @@ function M.apply_template(template_key)
       default_value = default_value()
     end
 
+    -- Check for environment variable if env flag is set
+    if var_def.env then
+      -- If default contains ${VAR_NAME}, extract and check that env var
+      if default_value and type(default_value) == "string" and default_value:match("${([^}]+)}") then
+        local env_var_name = default_value:match("${([^}]+)}")
+        local env_value = vim.env[env_var_name]
+        if env_value then
+          variables[var_name] = env_value
+          get_next_variable()
+          return
+        end
+      else
+        -- Check for env var with the same name as the variable
+        local env_value = vim.env[var_name]
+        if env_value then
+          variables[var_name] = env_value
+          get_next_variable()
+          return
+        end
+      end
+    end
+
     -- Handle different variable types
     if var_def.type == "select" then
       local options = var_def.options
@@ -812,7 +834,20 @@ function M.parse_file_macros()
     for line in macros.CONFIG:gmatch("[^\n]+") do
       local key, value = line:match("^%s*([%w_]+)%s*=%s*(.-)%s*$")
       if key and value then
-        config[key] = value
+        -- Check if value contains ${ENV_VAR} and resolve it
+        local env_var_name = value:match("${([^}]+)}")
+        if env_var_name then
+          local env_value = vim.env[env_var_name]
+          if env_value then
+            -- Replace ${ENV_VAR} with actual environment value
+            config[key] = env_value
+          else
+            -- Keep original value if env var not found
+            config[key] = value
+          end
+        else
+          config[key] = value
+        end
       end
     end
     macros._CONFIG = config  -- Store parsed config separately
@@ -881,8 +916,26 @@ function M.expand_inline_macro()
 
   local start_pos, end_pos, macro_name, macro_args
 
+  -- Find the macro at or near cursor position
   for _, p in ipairs(patterns) do
-    start_pos, end_pos, macro_name, macro_args = line:find(p.pattern)
+    -- Search for all occurrences of the pattern in the line
+    local search_start = 1
+    while true do
+      local s, e, name, args = line:find(p.pattern, search_start)
+      if not s then break end
+
+      -- Check if cursor is within or near this match (col is 0-based, positions are 1-based)
+      if col + 1 >= s and col + 1 <= e then
+        start_pos = s
+        end_pos = e
+        macro_name = name
+        macro_args = args
+        break
+      end
+
+      search_start = e + 1
+    end
+
     if start_pos then break end
   end
 
@@ -968,31 +1021,178 @@ WITH WEB trades AS (
 
   -- Check if expansion has variables that need substitution
   if expansion:match("${[^}]+}") then
-    -- Store context for substitution
-    local saved_row = row
-    local saved_start = start_pos
-    local saved_end = end_pos
-    local saved_expansion = expansion
+    -- Inline variable substitution without replacing entire buffer
+    -- Collect all variables first
+    local variables = {}
+    local var_order = {}
 
-    -- Temporarily override functions for substitution
-    local orig_replace = M.replace_current_query
-    local orig_get = M.get_current_query
-
-    M.replace_current_query = function(result)
-      -- Use the inline replacement that only affects the macro location
-      M.replace_macro_inline(saved_row, saved_start, saved_end, result)
+    for var, default in expansion:gmatch("${([^}:]+):?([^}]*)}") do
+      if not variables[var] then
+        variables[var] = default or ""
+        table.insert(var_order, var)
+      end
     end
 
-    M.get_current_query = function()
-      return saved_expansion
+    if #var_order == 0 then
+      -- No variables found, just replace inline
+      M.replace_macro_inline(row, start_pos, end_pos, expansion)
+      return
     end
 
-    -- Run substitution
-    M.quick_substitute()
+    -- Collect values for each variable
+    local values = {}
+    local var_index = 1
 
-    -- Restore original functions
-    M.replace_current_query = orig_replace
-    M.get_current_query = orig_get
+    local function collect_and_expand()
+      if var_index > #var_order then
+        -- All values collected, perform substitution
+        local result = M.substitute_variables(expansion, values)
+        -- Replace only the macro location, not the entire buffer
+        M.replace_macro_inline(row, start_pos, end_pos, result)
+        return
+      end
+
+      local var = var_order[var_index]
+      local default = variables[var]
+      var_index = var_index + 1
+
+      -- First check if CONFIG macro defines a value for this variable
+      local file_macros = M.parse_file_macros()
+
+      if file_macros._CONFIG and file_macros._CONFIG[var] then
+        -- Use the config value (already resolved env vars during parsing)
+        values[var] = file_macros._CONFIG[var]
+        collect_and_expand()
+        return
+      end
+
+      -- Special handling for common variables
+      if var == "SOURCE" or var:match("^SOURCE") then
+        M.quick_source_picker(function(value)
+          values[var] = value
+          collect_and_expand()
+        end)
+      elseif var == "BASE_URL" then
+        -- Check if CONFIG macro defines BASE_URL
+        local file_macros = M.parse_file_macros()
+        local default_url = "http://localhost:5001"
+        if file_macros._CONFIG and file_macros._CONFIG.BASE_URL then
+          default_url = file_macros._CONFIG.BASE_URL
+        end
+        vim.ui.input({
+          prompt = "API Base URL: ",
+          default = default_url
+        }, function(value)
+          if value ~= nil then
+            values[var] = value
+            collect_and_expand()
+          end
+        end)
+      elseif var == "TRADE_DATE" or var:match("^DATE") then
+        M.quick_date_picker(function(date)
+          -- Auto-convert to TradeDate() function format
+          local year, month, day = date:match("(%d+)-(%d+)-(%d+)")
+          if year then
+            values[var] = string.format("TradeDate(%s, %s, %s)", year, month, day)
+          else
+            values[var] = date
+          end
+          collect_and_expand()
+        end)
+      elseif var == "YEAR" then
+        vim.ui.input({
+          prompt = "Year: ",
+          default = os.date("%Y")
+        }, function(value)
+          if value ~= nil then
+            values[var] = value
+            collect_and_expand()
+          end
+        end)
+      elseif var == "MONTH" then
+        vim.ui.input({
+          prompt = "Month: ",
+          default = os.date("%m")
+        }, function(value)
+          if value ~= nil then
+            values[var] = value
+            collect_and_expand()
+          end
+        end)
+      elseif var == "DAY" then
+        vim.ui.input({
+          prompt = "Day: ",
+          default = os.date("%d")
+        }, function(value)
+          if value ~= nil then
+            values[var] = value
+            collect_and_expand()
+          end
+        end)
+      elseif var == "WHERE_CLAUSE" or var == "WHERE" then
+        M.where_clause_builder(function(where)
+          values[var] = where
+          collect_and_expand()
+        end)
+      elseif var == "COLUMNS" then
+        -- Check for defaults from file macros
+        local file_macros = M.parse_file_macros()
+        local default_cols = default
+        if not default_cols or default_cols == "" then
+          if file_macros._CONFIG and file_macros._CONFIG.DEFAULT_COLUMNS then
+            default_cols = file_macros._CONFIG.DEFAULT_COLUMNS
+          else
+            default_cols = "*"
+          end
+        end
+        vim.ui.input({
+          prompt = "Columns to select: ",
+          default = default_cols
+        }, function(value)
+          if value ~= nil then
+            values[var] = value
+            collect_and_expand()
+          end
+        end)
+      else
+        -- Check for environment variable
+        local env_value = nil
+
+        -- Special handling for API_TOKEN with ${JWT_TOKEN} default
+        if var == "API_TOKEN" and default and default:match("${JWT_TOKEN}") then
+          local jwt_token = vim.env.JWT_TOKEN
+          if jwt_token then
+            -- Use JWT_TOKEN from environment
+            values[var] = jwt_token
+            collect_and_expand()
+            return
+          end
+        else
+          -- Check for direct environment variable matching the var name
+          env_value = vim.env[var]
+        end
+
+        if env_value then
+          -- Use environment variable
+          values[var] = env_value
+          collect_and_expand()
+        else
+          -- Generic variable input
+          vim.ui.input({
+            prompt = var .. ": ",
+            default = default
+          }, function(value)
+            if value ~= nil then
+              values[var] = value
+              collect_and_expand()
+            end
+          end)
+        end
+      end
+    end
+
+    -- Start collecting values
+    collect_and_expand()
   else
     -- No variables, just replace inline
     M.replace_macro_inline(row, start_pos, end_pos, expansion)
