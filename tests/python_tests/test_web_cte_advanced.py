@@ -40,7 +40,7 @@ def test_method_parsing():
     for method in methods:
         query = f"""
         WITH WEB test AS (
-            URL 'https://jsonplaceholder.typicode.com/posts'
+            URL 'http://localhost:5000/test'
             METHOD {method}
             FORMAT JSON
         )
@@ -52,7 +52,7 @@ def test_method_parsing():
             [SQL_CLI, "-q", query, "--query-plan"],
             capture_output=True,
             text=True,
-            timeout=5
+            timeout=2  # Short timeout for localhost
         )
         # Check that parsing succeeded - should show the AST with method
         assert "WebCTESpec" in result.stdout or "method:" in result.stdout.lower(), \
@@ -101,7 +101,7 @@ def test_body_parsing():
     """Test BODY clause parsing."""
     query = """
     WITH WEB test AS (
-        URL 'https://httpbin.org/post'
+        URL 'http://localhost:5000/api/test'
         METHOD POST
         BODY '{
             "test": "data",
@@ -111,14 +111,15 @@ def test_body_parsing():
     )
     SELECT 1 as test
     """
-    # Test that it parses correctly
+    # Test that it parses correctly (using localhost to avoid external network)
     result = subprocess.run(
         [SQL_CLI, "-q", query, "--query-plan"],
         capture_output=True,
         text=True,
-        timeout=10
+        timeout=3  # Shorter timeout for localhost
     )
-    assert "WebCTESpec" in result.stdout or "body" in result.stdout.lower(), \
+    # Check that the query plan shows the parsed structure
+    assert "WebCTESpec" in result.stdout or "method:" in result.stdout.lower() or "body:" in result.stdout.lower(), \
         f"Failed to parse BODY clause: {result.stderr}"
     print("✓ BODY clause parsing test passed")
 
