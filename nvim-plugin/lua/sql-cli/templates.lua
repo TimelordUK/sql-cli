@@ -931,6 +931,41 @@ WITH WEB trades AS (
     expansion = expansion()
   end
 
+  -- Recursively expand any macros within the expansion
+  local function expand_nested_macros(text)
+    local expanded = text
+    local max_depth = 10  -- Prevent infinite recursion
+    local depth = 0
+
+    while depth < max_depth do
+      local found = false
+      -- Look for @MACRO_NAME patterns
+      expanded = expanded:gsub("@([%w_]+)", function(nested_macro)
+        local nested_expansion = file_macros[nested_macro] or inline_macros[nested_macro]
+        if nested_expansion then
+          found = true
+          if type(nested_expansion) == "function" then
+            return nested_expansion()
+          else
+            return nested_expansion
+          end
+        else
+          return "@" .. nested_macro  -- Keep unchanged if not found
+        end
+      end)
+
+      if not found then
+        break  -- No more macros to expand
+      end
+      depth = depth + 1
+    end
+
+    return expanded
+  end
+
+  -- Expand nested macros
+  expansion = expand_nested_macros(expansion)
+
   -- Check if expansion has variables that need substitution
   if expansion:match("${[^}]+}") then
     -- Store context for substitution
