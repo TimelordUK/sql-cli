@@ -48,7 +48,16 @@
 -- END MACRO
 
 -- MACRO: TODAYS_TRADES
--- @TRADE_BASE
+-- WITH WEB trades AS (
+--     URL '${BASE_URL:http://localhost:5001}/trades'
+--     METHOD POST
+--     BODY '{
+--         "select": "*",
+--         "where": "Source = \\"${SOURCE}\\" and TradeDate = TradeDate(2025, 9, 22)"
+--     }'
+--     FORMAT JSON
+--     JSON_PATH 'Result'
+-- )
 -- SELECT
 --     TradeId,
 --     Source,
@@ -61,6 +70,22 @@
 -- FROM trades
 -- WHERE Date(TradeDate) = Date('now')
 -- ORDER BY ExecutionTime DESC
+-- END MACRO
+
+-- MACRO: FLEXIBLE_QUERY
+-- Uses TRADE_BASE but lets you specify WHERE_CLAUSE
+-- WITH WEB trades AS (
+--     URL '${BASE_URL:http://localhost:5001}/trades'
+--     METHOD POST
+--     BODY '{
+--         "select": "${COLUMNS:*}",
+--         "where": "${WHERE_CLAUSE}"
+--     }'
+--     FORMAT JSON
+--     JSON_PATH 'Result'
+-- )
+-- SELECT * FROM trades
+-- WHERE ${LOCAL_FILTER:1=1}
 -- END MACRO
 
 -- MACRO: SOURCE_SUMMARY
