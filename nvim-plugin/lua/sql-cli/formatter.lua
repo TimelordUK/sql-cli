@@ -98,12 +98,6 @@ end
 
 -- SQL Formatter function using AST-based formatter
 function M.format_sql(query, config)
-  -- Check if query contains WEB CTE syntax which the formatter doesn't support yet
-  if query:match("WITH%s+WEB%s+") or query:match("with%s+web%s+") then
-    vim.notify("WEB CTEs not supported by formatter yet, preserving original", vim.log.levels.INFO)
-    return query
-  end
-
   -- Use the sql-cli AST formatter for accurate formatting
   local command, err = utils.get_command_path(config.command)
 
