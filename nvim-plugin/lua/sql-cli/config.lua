@@ -48,16 +48,16 @@ M.defaults = {
     preview_query = "<leader>sP",   -- Preview query in floating window
     toggle_output = "<leader>sO",   -- Toggle output window (capital O)
     toggle_orientation = "<leader>so", -- Toggle split orientation (lowercase o)
-    set_data_file = "<leader>sd",   -- Set data file
-    clear_data_file = "<leader>sc", -- Clear data file
+    set_data_file = "<leader>sD",   -- Set data file (capital D)
+    clear_data_file = nil, -- Removed - conflicted with refactoring
     show_plan = "<leader>sp",       -- Show query plan
     format_query = "<leader>sf",    -- Format query at cursor (primary mapping)
     open_data_file = "<leader>sV",  -- View data file (capital V to avoid conflict)
     next_query = "]q",              -- Jump to next query
     prev_query = "[q",              -- Jump to previous query
     toggle_comment = "<leader>s/",  -- Toggle comment for query at cursor
-    save_results_csv = "<leader>sw", -- Write results to CSV file
-    results_to_buffer = "<leader>sb", -- Results to new buffer
+    save_results_csv = "<leader>sW", -- Write results to CSV file (capital W)
+    results_to_buffer = nil, -- Removed - conflicts with export browser
     function_help = "K",            -- Show function help at cursor
     list_functions = "<leader>sL",  -- List all SQL functions (capital L)
     list_generators = "<leader>sG",  -- List all generator functions (capital G)
@@ -77,7 +77,7 @@ M.defaults = {
     table_info = "<leader>sI",      -- Show current table info (capital I to avoid conflict)
     -- Export keymaps (when in table navigation mode)
     export_menu = "<leader>se",     -- Export menu (all formats)
-    export_browser = "<leader>sb",  -- Open in Browser for Gmail/Teams
+    export_browser = nil,  -- Removed - use export menu instead
     -- CTE testing
     test_cte = "<leader>sC",         -- Test CTE at cursor (C for CTE)
     test_cte_new = "<leader>sN",     -- Test CTE in new buffer (N for new)
@@ -86,9 +86,9 @@ M.defaults = {
     export_tsv = "<leader>st",      -- Export as Tab-separated (Excel)
     -- Chart visualizations (execute query at cursor and visualize)
     bar_chart_at_cursor = "<leader>sB",     -- Bar chart from query at cursor (capital B)
-    pie_chart_at_cursor = "<leader>sP",     -- Pie chart from query at cursor (capital P)
+    pie_chart_at_cursor = nil,     -- Removed - conflicts with preview
     histogram_at_cursor = "<leader>sH",     -- Histogram from query at cursor (capital H)
-    scatter_at_cursor = "<leader>sS",       -- Scatter plot from query at cursor (capital S)
+    scatter_at_cursor = nil,       -- Removed - conflicts with selection
     sparkline_at_cursor = "<leader>sl",     -- Sparkline from query at cursor (lowercase l for line)
   },
 

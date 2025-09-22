@@ -1238,19 +1238,18 @@ end
 function M.setup_keymaps(config)
     -- Store config for later use
     M.config = config or require('sql-cli.config').defaults
-    -- Refactoring keymaps
-    vim.keymap.set('v', '<leader>se', M.extract_to_cte, { desc = 'Extract to CTE' })
-    vim.keymap.set('n', '<leader>sb', M.generate_banding, { desc = 'Generate banding CASE' })
-    vim.keymap.set('n', '<leader>sc', M.generate_case_from_data, { desc = 'Generate CASE from data analysis (full)' })
-    vim.keymap.set('n', '<leader>sd', M.quick_case_from_data, { desc = 'Generate CASE from data (quick/inline)' })
-    vim.keymap.set('n', '<leader>sC', M.case_from_cursor_column, { desc = 'Generate CASE for column under cursor' })
-    vim.keymap.set('n', '<leader>sD', M.show_distinct_values, { desc = 'Show distinct values for column under cursor' })
-    vim.keymap.set('n', '<leader>sr', M.generate_inline_case, { desc = 'Generate CASE for range (inline)' })
-    vim.keymap.set('n', '<leader>sw', M.window_function_wizard, { desc = 'Window function wizard' })
-    vim.keymap.set('n', '<leader>sp', M.conditional_aggregation, { desc = 'Pivot/conditional aggregation' })
+    -- Refactoring keymaps - all under \sr prefix for organization
+    vim.keymap.set('v', '<leader>sre', M.extract_to_cte, { desc = 'Refactor: Extract to CTE' })
+    vim.keymap.set('n', '<leader>srb', M.generate_banding, { desc = 'Refactor: Generate banding CASE' })
+    vim.keymap.set('n', '<leader>src', M.generate_case_from_data, { desc = 'Refactor: CASE from data analysis (full)' })
+    vim.keymap.set('n', '<leader>srd', M.quick_case_from_data, { desc = 'Refactor: CASE from data (quick/inline)' })
+    vim.keymap.set('n', '<leader>srC', M.case_from_cursor_column, { desc = 'Refactor: CASE for column under cursor' })
+    vim.keymap.set('n', '<leader>srD', M.show_distinct_values, { desc = 'Refactor: Show distinct values for column' })
+    vim.keymap.set('n', '<leader>srr', M.generate_inline_case, { desc = 'Refactor: CASE for range (inline)' })
+    vim.keymap.set('n', '<leader>srp', M.conditional_aggregation, { desc = 'Refactor: Pivot/conditional aggregation' })
 
     -- Quick insert patterns
-    vim.keymap.set('n', '<leader>si', function()
+    vim.keymap.set('n', '<leader>sri', function()
         local patterns = {
             'ROW_NUMBER() ranking',
             'Running total',
@@ -1269,7 +1268,7 @@ function M.setup_keymaps(config)
                 M.insert_pattern(choice)
             end
         end)
-    end, { desc = 'Insert SQL pattern' })
+    end, { desc = 'Refactor: Insert SQL pattern' })
 end
 
 -- Insert predefined patterns

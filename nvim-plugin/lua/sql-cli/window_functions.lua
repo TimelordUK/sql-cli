@@ -488,19 +488,19 @@ end
 function M.setup_keymaps(config)
   local keymaps = config.keymaps or {}
 
-  -- Window function keymaps (using w prefix for window)
-  vim.keymap.set("n", "<leader>sw", M.window_function_wizard,
-    { desc = "Window function wizard", silent = true })
-  vim.keymap.set("n", "<leader>swr", M.row_number_partition,
-    { desc = "Add ROW_NUMBER() ranking", silent = true })
-  vim.keymap.set("n", "<leader>swl", M.lag_lead_delta,
-    { desc = "Add LAG/LEAD delta", silent = true })
-  vim.keymap.set("n", "<leader>swa", M.windowed_aggregate,
-    { desc = "Add windowed aggregate", silent = true })
-  vim.keymap.set("n", "<leader>swk", M.rank_functions,
-    { desc = "Add RANK functions", silent = true })
-  vim.keymap.set("n", "<leader>swv", M.first_last_value,
-    { desc = "Add FIRST/LAST VALUE", silent = true })
+  -- Window function keymaps - all under \srw prefix for organization
+  vim.keymap.set("n", "<leader>srw", M.window_function_wizard,
+    { desc = "Refactor: Window function wizard", silent = true })
+  vim.keymap.set("n", "<leader>srwr", M.row_number_partition,
+    { desc = "Refactor: Add ROW_NUMBER() ranking", silent = true })
+  vim.keymap.set("n", "<leader>srwl", M.lag_lead_delta,
+    { desc = "Refactor: Add LAG/LEAD delta", silent = true })
+  vim.keymap.set("n", "<leader>srwa", M.windowed_aggregate,
+    { desc = "Refactor: Add windowed aggregate", silent = true })
+  vim.keymap.set("n", "<leader>srwk", M.rank_functions,
+    { desc = "Refactor: Add RANK functions", silent = true })
+  vim.keymap.set("n", "<leader>srwv", M.first_last_value,
+    { desc = "Refactor: Add FIRST/LAST VALUE", silent = true })
 end
 
 return M
