@@ -73,6 +73,11 @@ function M.setup(opts)
 
   -- Setup window function keymaps
   window_functions.setup_keymaps(M.config)
+
+  -- Setup template system
+  local templates = require('sql-cli.templates')
+  templates.setup(M.config)
+  templates.setup_keymaps()
 end
 
 -- Create user commands

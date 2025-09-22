@@ -77,6 +77,46 @@ All keybindings use the `<leader>s` prefix, organized into logical groups:
 | `\sH` | Histogram from query at cursor |
 | `\sl` | Sparkline from query at cursor |
 
+## Templates (`\sT` prefix)
+
+SQL query templates with variable substitution:
+
+| Keybinding | Description |
+|------------|-------------|
+| `\sT` | Select and apply a template |
+| `\sTq` | Quick substitute variables in current query |
+| `\sTs` | Save current query as a template |
+| `\sTd` | Insert a quick date picker |
+| `\sTS` | Insert a trade source selector |
+
+### Template Features
+- **Variable Substitution**: Use `${VARIABLE}` or `${VARIABLE:default}` in queries
+- **Auto-escaping**: Automatically handles quote escaping for JSON bodies
+- **Date Helpers**: Quick date selection (today, yesterday, last business day)
+- **Source Selection**: Quick picker for common trade sources
+- **Environment Variables**: Automatically substitutes env vars like `${JWT_TOKEN}`
+
+### Example Template Usage
+```sql
+WITH WEB trades AS (
+    URL 'http://localhost:5001/trades'
+    METHOD POST
+    BODY '{
+        "Where": "Source = \"${SOURCE}\" and TradeDate = ${TRADE_DATE}",
+        "Limit": ${LIMIT:100}
+    }'
+    FORMAT JSON
+    JSON_PATH 'Result'
+)
+SELECT * FROM trades
+```
+
+When you run `\sTq` on this query:
+1. Prompts for SOURCE (with quick selector)
+2. Prompts for TRADE_DATE (with date picker)
+3. Uses default of 100 for LIMIT
+4. Substitutes all variables and handles escaping
+
 ## Refactoring (`\sr` prefix)
 
 All refactoring operations are grouped under `\sr`:
