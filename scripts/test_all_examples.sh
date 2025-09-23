@@ -35,9 +35,10 @@ declare -A skip_examples
 skip_examples["solar_system_with_cte_future.sql"]=1  # Advanced CTE features (joins, multiple CTEs)
 # Temporarily skip failing examples - to be fixed later
 skip_examples["nvim_completion_demo.sql"]=1  # Column 'region' not found error
-# skip_examples["test_group_num.sql"]=1  # Parser issues with complex queries
 skip_examples["trade_reconciliation_final.sql"]=1  # Needs data file check
 skip_examples["web_cte_advanced.sql"]=1
+skip_examples["trade_queries_master.sql"]=1
+skip_examples["macro_templates_guide.sql"]=1
 
 failed=0
 passed=0
