@@ -4,8 +4,22 @@
 local M = {}
 local token_manager = require('sql-cli.token_manager')
 
+-- Debug mode flag
+M.debug = false  -- Set to true to enable debug output
+
 -- Store user-defined templates
 M.templates = {}
+
+-- Debug logging function
+local function debug_log(msg)
+  if M.debug then
+    if vim and vim.notify then
+      vim.notify("[TEMPLATE DEBUG] " .. msg, vim.log.levels.INFO)
+    else
+      print("[TEMPLATE DEBUG] " .. msg)
+    end
+  end
+end
 
 -- Common variable definitions with quick selectors
 M.common_variables = {
@@ -662,6 +676,546 @@ function M.expand_template_to_string(template_def, callback)
   collect_and_expand()
 end
 
+-- Expand functions in a string (used for macro expansion from file)
+-- Can optionally provide test_values for headless operation
+function M.expand_functions_in_string(text, callback, test_values)
+  debug_log("expand_functions_in_string called with text length: " .. #text)
+
+  -- Pass 1: Collect all function patterns and replace with placeholders
+  local collection_result = M.collect_function_patterns(text)
+  local functions_to_eval = collection_result.functions
+  local expanded_text = collection_result.text
+
+  debug_log("Pass 1 complete: Found " .. #functions_to_eval .. " functions")
+  if #functions_to_eval > 0 then
+    debug_log("Text with placeholders: " .. expanded_text:sub(1, 200))
+  end
+
+  -- If no functions found, just return the original text
+  if #functions_to_eval == 0 then
+    debug_log("No functions found, returning original text")
+    callback(text)
+    return
+  end
+
+  -- Pass 2: Resolve all functions (either from test_values or user input)
+  debug_log("Pass 2: Starting function resolution")
+  M.resolve_functions(functions_to_eval, test_values, function(resolved_values)
+    if resolved_values == nil then
+      -- User cancelled, don't insert anything
+      debug_log("User cancelled, aborting expansion")
+      callback(nil)
+      return
+    end
+    local count = 0
+    for _ in pairs(resolved_values) do count = count + 1 end
+    debug_log("Pass 2 complete: Resolved " .. count .. " values")
+
+    -- Pass 3: Replace all placeholders with resolved values
+    debug_log("Pass 3: Substituting placeholders")
+    local result = M.substitute_placeholders(expanded_text, functions_to_eval, resolved_values)
+    debug_log("Pass 3 complete: Final result length: " .. #result)
+    debug_log("Calling callback with result")
+    callback(result)
+  end)
+  debug_log("expand_functions_in_string setup complete, waiting for async resolution")
+end
+
+-- Pass 1: Collect all function patterns in text and replace with placeholders
+function M.collect_function_patterns(text)
+  debug_log("collect_function_patterns: Starting with text: " .. text:sub(1, 100))
+  local functions_to_eval = {}
+  local function_index = 1
+  local expanded_text = text
+
+  -- Check if we're in JSON context
+  local is_json_context = text:match('\\\"') ~= nil or text:match("BODY%s*'")
+  debug_log("JSON context detected: " .. tostring(is_json_context))
+
+  -- NEW: Simple @{TYPE:prompt} syntax - much clearer!
+  -- Handles @{INPUT:prompt}, @{PICKER:macro:prompt}, @{DATE:prompt}
+  -- Pattern matches optional quotes before and after
+  for match in text:gmatch('\\?"?@{[^}]+}\\?"?') do
+    -- Parse the full match to extract components
+    local prefix, func_type, args, suffix = match:match('^(\\?"?)@{([^:}]+):([^}]+)}(\\?"?)$')
+
+    if func_type and args then
+      local placeholder = "__FUNC_" .. function_index .. "__"
+      local has_escaped_quotes = prefix:match('\\"') and suffix:match('\\"')
+      local has_quotes = (prefix:match('"') and suffix:match('"')) and not has_escaped_quotes
+
+      debug_log("Found @{} function: " .. func_type .. ":" .. args .. " -> " .. placeholder)
+      debug_log("  Match: '" .. match .. "'")
+      debug_log("  Quotes: prefix='" .. prefix .. "' suffix='" .. suffix .. "' escaped=" .. tostring(has_escaped_quotes))
+
+      -- Parse the args (could be "prompt" or "macro:prompt" for PICKER)
+      local arg_parts = {}
+      for part in args:gmatch("[^:]+") do
+        table.insert(arg_parts, part)
+      end
+
+      table.insert(functions_to_eval, {
+        pattern = match,
+        name = func_type,
+        args = args,
+        arg_list = arg_parts,
+        placeholder = placeholder,
+        has_escaped_quotes = has_escaped_quotes,
+        has_quotes = has_quotes,
+        is_json_context = is_json_context or has_escaped_quotes
+      })
+
+      -- Replace with placeholder, keeping quotes if they exist
+      local replacement = has_escaped_quotes and ('\\"' .. placeholder .. '\\"') or
+                         (has_quotes and ('"' .. placeholder .. '"')) or
+                         placeholder
+
+      local pattern_to_replace = match:gsub("([%(%)%.%[%]%+%-%*%?%^%$%%{}\\])", "%%%1")
+      expanded_text = expanded_text:gsub(pattern_to_replace, replacement, 1)
+      function_index = function_index + 1
+    end
+  end
+
+  -- Find all function patterns and replace with placeholders
+  -- First, find escaped quoted function calls like \"Input(...)\"
+  for quoted_func in text:gmatch('\\"([%w_]+%b())\\"') do
+    local func_name, args = quoted_func:match("([%w_]+)%((.*)%)")
+    if func_name then
+      local placeholder = "__FUNC_" .. function_index .. "__"
+      debug_log("Found escaped quoted function: " .. func_name .. " -> " .. placeholder)
+      table.insert(functions_to_eval, {
+        pattern = '\\"' .. quoted_func .. '\\"',
+        name = func_name,
+        args = args,
+        placeholder = placeholder,
+        has_escaped_quotes = true,
+        is_json_context = true
+      })
+      -- Important: Keep the escaped quotes in the replacement!
+      local pattern_to_replace = ('\\"' .. quoted_func .. '\\"'):gsub("([%(%)%.%[%]%+%-%*%?%^%$%%])", "%%%1")
+      expanded_text = expanded_text:gsub(pattern_to_replace, '\\"' .. placeholder .. '\\"', 1)
+      function_index = function_index + 1
+    end
+  end
+
+  -- Then regular quoted function calls like "Input(...)"
+  for quoted_func in expanded_text:gmatch('"([%w_]+%b())"') do
+    local func_name, args = quoted_func:match("([%w_]+)%((.*)%)")
+    if func_name then
+      local placeholder = "__FUNC_" .. function_index .. "__"
+      debug_log("Found quoted function: " .. func_name .. " -> " .. placeholder)
+      table.insert(functions_to_eval, {
+        pattern = '"' .. quoted_func .. '"',
+        name = func_name,
+        args = args,
+        placeholder = placeholder,
+        has_quotes = true,
+        is_json_context = is_json_context
+      })
+      expanded_text = expanded_text:gsub(('"' .. quoted_func .. '"'):gsub("([%(%)%.%[%]%+%-%*%?%^%$%%])", "%%%1"), placeholder, 1)
+      function_index = function_index + 1
+    end
+  end
+
+  -- Then unquoted function calls (but only specific known functions)
+  local known_functions = {Input = true, Picker = true, DateTimePicker = true, DateTime = true, DatePicker = true}
+  for func_call in expanded_text:gmatch("([%w_]+%b())") do
+    local func_name, args = func_call:match("([%w_]+)%((.*)%)")
+    if func_name and known_functions[func_name] then
+      local placeholder = "__FUNC_" .. function_index .. "__"
+      debug_log("Found unquoted function: " .. func_name .. " -> " .. placeholder)
+      table.insert(functions_to_eval, {
+        pattern = func_call,
+        name = func_name,
+        args = args,
+        placeholder = placeholder,
+        has_quotes = false,
+        is_json_context = is_json_context
+      })
+      expanded_text = expanded_text:gsub(func_call:gsub("([%(%)%.%[%]%+%-%*%?%^%$%%])", "%%%1"), placeholder, 1)
+      function_index = function_index + 1
+    end
+  end
+
+  return {
+    functions = functions_to_eval,
+    text = expanded_text
+  }
+end
+
+-- Pass 2: Resolve function values (from test_values or user input)
+function M.resolve_functions(functions_to_eval, test_values, callback)
+  debug_log("resolve_functions: Starting resolution for " .. #functions_to_eval .. " functions")
+  local resolved_values = {}
+  local func_idx = 1
+
+  local function evaluate_next_func()
+    if func_idx > #functions_to_eval then
+      -- All functions resolved
+      local count = 0
+      for _ in pairs(resolved_values) do count = count + 1 end
+      debug_log("All functions resolved, calling callback with " .. count .. " values")
+      callback(resolved_values)
+      return
+    end
+
+    local func_def = functions_to_eval[func_idx]
+    debug_log("Resolving function " .. func_idx .. ": " .. func_def.name .. " (" .. func_def.placeholder .. ")")
+    func_idx = func_idx + 1
+
+    -- Check if we have a test value for this function
+    if test_values and test_values[func_def.placeholder] then
+      debug_log("Using test value for " .. func_def.placeholder)
+      resolved_values[func_idx - 1] = test_values[func_def.placeholder]
+      evaluate_next_func()
+      return
+    end
+
+    -- Parse arguments
+    local args = {}
+    if func_def.args and func_def.args ~= "" then
+      for arg in func_def.args:gmatch("([^,]+)") do
+        arg = arg:match("^%s*(.-)%s*$")
+        if arg:match("^['\"](.+)['\"]$") then
+          arg = arg:match("^['\"](.+)['\"]$")
+        end
+        table.insert(args, arg)
+      end
+    end
+
+    -- Handle different function types
+    if func_def.name == "JINPUT" then
+      -- JSON Input - always returns \"value\"
+      local label = func_def.arg_list and func_def.arg_list[1] or "Value"
+      local default = func_def.arg_list and func_def.arg_list[2] or ""
+      debug_log("Prompting for JSON Input: '" .. label .. "'")
+      vim.ui.input({
+        prompt = label .. " (JSON): ",
+        default = default
+      }, function(value)
+        if value ~= nil then
+          -- Always escape for JSON
+          resolved_values[func_idx - 1] = '\\"' .. value .. '\\"'
+          evaluate_next_func()
+        else
+          callback(nil)
+        end
+      end)
+
+    elseif func_def.name == "VAR" then
+      -- Variable substitution - returns raw value from CONFIG or environment
+      local var_name = func_def.arg_list and func_def.arg_list[1]
+      if var_name then
+        debug_log("Looking up variable: " .. var_name)
+
+        -- First check CONFIG macro
+        local file_macros = M.parse_file_macros()
+        local value = nil
+
+        if file_macros._CONFIG and file_macros._CONFIG[var_name] then
+          value = file_macros._CONFIG[var_name]
+          debug_log("  Found in CONFIG: " .. value)
+
+          -- Special case: if value contains ${JWT_TOKEN}, resolve it
+          if value and value:match("${JWT_TOKEN}") then
+            local jwt_token = os.getenv("JWT_TOKEN") or vim.env.JWT_TOKEN
+            if jwt_token then
+              value = value:gsub("${JWT_TOKEN}", jwt_token)
+              debug_log("  Resolved JWT_TOKEN: " .. value)
+            end
+          end
+        else
+          -- Check environment variable
+          value = os.getenv(var_name)
+          if value then
+            debug_log("  Found in ENV: " .. value)
+          end
+        end
+
+        resolved_values[func_idx - 1] = value or ("${" .. var_name .. "}")
+        evaluate_next_func()
+      else
+        resolved_values[func_idx - 1] = "${VAR}"
+        evaluate_next_func()
+      end
+
+    elseif func_def.name == "JVAR" then
+      -- Variable substitution for JSON - returns \"value\"
+      local var_name = func_def.arg_list and func_def.arg_list[1]
+      if var_name then
+        debug_log("Looking up JSON variable: " .. var_name)
+
+        -- First check CONFIG macro
+        local file_macros = M.parse_file_macros()
+        local value = nil
+
+        if file_macros._CONFIG and file_macros._CONFIG[var_name] then
+          value = file_macros._CONFIG[var_name]
+          debug_log("  Found in CONFIG: " .. value)
+
+          -- Special case: if value contains ${JWT_TOKEN}, resolve it
+          if value and value:match("${JWT_TOKEN}") then
+            local jwt_token = os.getenv("JWT_TOKEN") or vim.env.JWT_TOKEN
+            if jwt_token then
+              value = value:gsub("${JWT_TOKEN}", jwt_token)
+              debug_log("  Resolved JWT_TOKEN: " .. value)
+            end
+          end
+        else
+          -- Check environment variable
+          value = os.getenv(var_name)
+          if value then
+            debug_log("  Found in ENV: " .. value)
+          end
+        end
+
+        if value then
+          resolved_values[func_idx - 1] = '\\"' .. value .. '\\"'
+        else
+          resolved_values[func_idx - 1] = '\\"${' .. var_name .. '}\\"'
+        end
+        evaluate_next_func()
+      else
+        resolved_values[func_idx - 1] = '\\"${JVAR}\\"'
+        evaluate_next_func()
+      end
+
+    elseif func_def.name == "INPUT" or func_def.name == "Input" then
+      -- Regular input - returns raw value
+      local label = func_def.arg_list and func_def.arg_list[1] or args[1] or "Value"
+      local default = func_def.arg_list and func_def.arg_list[2] or args[2] or ""
+      debug_log("Prompting for Input: '" .. label .. "'")
+      vim.ui.input({
+        prompt = label .. ": ",
+        default = default
+      }, function(value)
+        if value ~= nil then
+          -- Return raw value
+          resolved_values[func_idx - 1] = value
+          evaluate_next_func()
+        else
+          callback(nil)
+        end
+      end)
+
+    elseif func_def.name == "JPICKER" then
+      -- JSON Picker - always returns \"value\"
+      local macro_name = func_def.arg_list and func_def.arg_list[1] or args[1]
+      local label = func_def.arg_list and func_def.arg_list[2] or args[2] or macro_name or "Select"
+
+      local file_macros = M.parse_file_macros()
+      local choices = {}
+
+      if macro_name and file_macros[macro_name] then
+        for line in file_macros[macro_name]:gmatch("[^\n]+") do
+          local choice = line:match("^%s*(.-)%s*$")
+          if choice and choice ~= "" and not choice:match("^%-%-") then
+            table.insert(choices, choice)
+          end
+        end
+      end
+
+      if #choices > 0 then
+        vim.ui.select(choices, {
+          prompt = label .. " (JSON): "
+        }, function(choice)
+          if choice then
+            -- Always escape for JSON
+            resolved_values[func_idx - 1] = '\\"' .. choice .. '\\"'
+            evaluate_next_func()
+          else
+            callback(nil)
+          end
+        end)
+      else
+        vim.ui.input({
+          prompt = label .. " (JSON): ",
+          default = ""
+        }, function(value)
+          if value ~= nil then
+            -- Always escape for JSON
+            resolved_values[func_idx - 1] = '\\"' .. value .. '\\"'
+            evaluate_next_func()
+          else
+            callback(nil)
+          end
+        end)
+      end
+
+    elseif func_def.name == "PICKER" or func_def.name == "Picker" then
+      -- For @{PICKER:macro:prompt} syntax, arg_list[1] is macro, arg_list[2] is prompt
+      local macro_name = func_def.arg_list and func_def.arg_list[1] or args[1]
+      local label = func_def.arg_list and func_def.arg_list[2] or args[2] or macro_name or "Select"
+
+      local file_macros = M.parse_file_macros()
+      local choices = {}
+
+      if macro_name and file_macros[macro_name] then
+        for line in file_macros[macro_name]:gmatch("[^\n]+") do
+          local choice = line:match("^%s*(.-)%s*$")
+          if choice and choice ~= "" and not choice:match("^%-%-") then
+            table.insert(choices, choice)
+          end
+        end
+      end
+
+      if #choices > 0 then
+        vim.ui.select(choices, {
+          prompt = label .. ": "
+        }, function(choice)
+          if choice then
+            -- Return raw value - let the user be explicit with JPICKER if they need JSON escaping
+            resolved_values[func_idx - 1] = choice
+            evaluate_next_func()
+          else
+            callback(nil)
+          end
+        end)
+      else
+        vim.ui.input({
+          prompt = label .. ": ",
+          default = ""
+        }, function(value)
+          if value ~= nil then
+            local formatted_value
+            if func_def.has_escaped_quotes then
+              -- Escaped quotes are already in the placeholder, just return the value
+              formatted_value = value
+            elseif func_def.has_quotes then
+              if func_def.is_json_context then
+                formatted_value = '\\"' .. value .. '\\"'
+              else
+                formatted_value = '"' .. value .. '"'
+              end
+            else
+              formatted_value = value
+            end
+            resolved_values[func_idx - 1] = formatted_value
+            evaluate_next_func()
+          else
+            -- User cancelled
+            callback(nil)
+          end
+        end)
+      end
+
+    elseif func_def.name == "DATE" or func_def.name == "DateTimePicker" or func_def.name == "DateTime" then
+      -- For @{DATE:prompt} syntax
+      local label = func_def.arg_list and func_def.arg_list[1] or "Date"
+      debug_log("Prompting for Date: '" .. label .. "'")
+      M.quick_date_picker(function(date)
+        local year, month, day = date:match("(%d+)-(%d+)-(%d+)")
+        if year then
+          resolved_values[func_idx - 1] = string.format("DateTime(%s, %s, %s)", year, tonumber(month), tonumber(day))
+        else
+          resolved_values[func_idx - 1] = date
+        end
+        evaluate_next_func()
+      end)
+
+    else
+      -- Unknown function, keep as-is
+      resolved_values[func_idx - 1] = func_def.pattern
+      evaluate_next_func()
+    end
+  end
+
+  evaluate_next_func()
+end
+
+-- Pass 3: Substitute placeholders with resolved values
+function M.substitute_placeholders(text_with_placeholders, functions, resolved_values)
+  local result = text_with_placeholders
+
+  for i, func_def in ipairs(functions) do
+    local replacement = resolved_values[i] or func_def.pattern
+
+    debug_log("Substituting " .. func_def.placeholder .. " with: '" .. tostring(replacement) .. "'")
+    debug_log("  In text: " .. (text_with_placeholders:match("(.{0,50}" .. func_def.placeholder .. ".{0,50})") or "not found"))
+
+    -- For gsub, we need to escape % but NOT \ (backslash should pass through)
+    local safe_replacement = replacement:gsub("%%", "%%%%")
+    result = result:gsub(func_def.placeholder, safe_replacement)
+
+    debug_log("  After substitution: " .. (result:match("(.{0,100}StartsWith.{0,50})") or "not found"))
+  end
+
+  debug_log("Final substitution result preview: " .. result:sub(1, 200))
+  return result
+end
+
+-- Headless test function - expand a macro with test values
+function M.test_macro_expansion(macro_text, test_values)
+  -- Pass 1: Collect function patterns
+  local collection_result = M.collect_function_patterns(macro_text)
+
+  -- If no functions, return original
+  if #collection_result.functions == 0 then
+    return macro_text
+  end
+
+  -- Create test values map if needed
+  local test_map = {}
+  if test_values then
+    -- Convert array of values to placeholder map
+    for i, func_def in ipairs(collection_result.functions) do
+      if test_values[i] then
+        test_map[func_def.placeholder] = test_values[i]
+      elseif test_values[func_def.name] then
+        -- Also support mapping by function name
+        test_map[func_def.placeholder] = test_values[func_def.name]
+      end
+    end
+  end
+
+  -- Pass 2: Use test values directly (no user interaction)
+  local resolved_values = {}
+  for i, func_def in ipairs(collection_result.functions) do
+    if test_map[func_def.placeholder] then
+      resolved_values[i] = test_map[func_def.placeholder]
+    else
+      -- Generate default test value based on function type
+      if func_def.name == "Input" then
+        resolved_values[i] = func_def.has_escaped_quotes and '\\"TEST_INPUT\\"' or
+                           (func_def.has_quotes and '"TEST_INPUT"' or "TEST_INPUT")
+      elseif func_def.name == "Picker" then
+        resolved_values[i] = func_def.has_escaped_quotes and '\\"TEST_CHOICE\\"' or
+                           (func_def.has_quotes and '"TEST_CHOICE"' or "TEST_CHOICE")
+      elseif func_def.name == "DateTimePicker" or func_def.name == "DateTime" then
+        resolved_values[i] = "DateTime(2025, 1, 1)"
+      else
+        resolved_values[i] = func_def.pattern
+      end
+    end
+  end
+
+  -- Pass 3: Substitute and return
+  return M.substitute_placeholders(collection_result.text, collection_result.functions, resolved_values)
+end
+
+-- Debug function to show what functions would be resolved
+function M.debug_show_functions(macro_text)
+  local collection_result = M.collect_function_patterns(macro_text)
+
+  if #collection_result.functions == 0 then
+    print("No functions found in macro")
+    return
+  end
+
+  print("Functions found in macro:")
+  for i, func_def in ipairs(collection_result.functions) do
+    print(string.format("%d. %s: %s -> %s",
+      i,
+      func_def.placeholder,
+      func_def.pattern,
+      func_def.name .. "(" .. (func_def.args or "") .. ")"
+    ))
+  end
+
+  print("\nText with placeholders:")
+  print(collection_result.text)
+end
+
 -- Expand simple macro (without function patterns)
 function M.expand_simple_macro(template, row, start_pos, end_pos, is_json_context)
   -- Find function patterns in the template
@@ -750,7 +1304,10 @@ function M.expand_simple_macro(template, row, start_pos, end_pos, is_json_contex
       -- All functions evaluated, substitute back
       local result = expanded_template
       for i, func_def in ipairs(functions_to_eval) do
-        result = result:gsub(func_def.placeholder, func_values[i] or func_def.pattern)
+        local replacement = func_values[i] or func_def.pattern
+        -- Escape special characters in replacement string
+        replacement = replacement:gsub("%%", "%%%%")
+        result = result:gsub(func_def.placeholder, replacement)
       end
       M.replace_macro_inline(row, start_pos, end_pos, result)
       return
@@ -876,7 +1433,21 @@ function M.expand_simple_macro(template, row, start_pos, end_pos, is_json_contex
         default = default
       }, function(value)
         if value ~= nil then
-          func_values[func_idx - 1] = value
+          -- Handle quotes based on context (same as Picker)
+          if func_def.has_escaped_quotes then
+            -- Template had escaped quotes around Input(), keep them escaped
+            func_values[func_idx - 1] = '\\"' .. value .. '\\"'
+          elseif func_def.has_quotes then
+            -- Template had regular quotes, add them back (escaped for JSON if needed)
+            if func_def.is_json_context then
+              func_values[func_idx - 1] = '\\"' .. value .. '\\"'
+            else
+              func_values[func_idx - 1] = '"' .. value .. '"'
+            end
+          else
+            -- No quotes in template, return raw value
+            func_values[func_idx - 1] = value
+          end
           evaluate_next()
         end
       end)
@@ -1459,8 +2030,20 @@ function M.expand_file_macros()
     if choice then
       local expansion = macros[choice]
 
+      -- Check if macro has function patterns (like Input(), Picker(), etc.)
+      if expansion:match("[%w_]+%b()") then
+        -- Expand functions in string and insert the result
+        M.expand_functions_in_string(expansion, function(result)
+          if result then
+            -- Debug output
+            -- vim.notify("Expanded result: " .. vim.inspect(result), vim.log.levels.INFO)
+            M.insert_at_cursor(result)
+          else
+            vim.notify("Macro expansion cancelled", vim.log.levels.INFO)
+          end
+        end)
       -- Check if macro has variables
-      if expansion:match("${[^}]+}") then
+      elseif expansion:match("${[^}]+}") then
         -- Store the macro content temporarily
         local temp_query = expansion
         -- Use quick_substitute on the macro content
@@ -1472,7 +2055,7 @@ function M.expand_file_macros()
         end
         M.quick_substitute()
       else
-        -- No variables, just insert
+        -- No variables or functions, just insert
         M.insert_at_cursor(expansion)
       end
     end
@@ -1552,10 +2135,68 @@ WITH WEB trades AS (
   local expansion = file_macros[macro_name] or inline_macros[macro_name]
   local template_def = file_macros["_TEMPLATE_" .. macro_name]
 
-  -- Check if it's a simple macro with function patterns
-  if expansion and type(expansion) == "string" and expansion:match("[%w_]+%b()") then
-    -- Has function patterns, use simple expansion
-    M.expand_simple_macro(expansion, row, start_pos, end_pos)
+  debug_log("expand_inline_macro: Found macro '" .. macro_name .. "', expansion type: " .. type(expansion))
+  if expansion and type(expansion) == "string" then
+    debug_log("Macro content preview: " .. expansion:sub(1, 100))
+  end
+
+  -- Check if it's a simple macro with function patterns (old or new syntax)
+  if expansion and type(expansion) == "string" and (expansion:match("[%w_]+%b()") or expansion:match("@{[^}]+}")) then
+    debug_log("Macro has function patterns, using expand_functions_in_string")
+    -- Has function patterns, expand them properly
+    M.expand_functions_in_string(expansion, function(result)
+      debug_log("expand_functions_in_string callback called, result: " .. tostring(result and #result or "nil"))
+      if result then
+        -- Check if result still has variables that need substitution
+        if result:match("${[^}]+}") then
+          vim.notify("Result has variables that need substitution", vim.log.levels.INFO)
+          debug_log("Result has variables, performing substitution")
+          -- Load CONFIG values
+          local file_macros = M.parse_file_macros()
+          local values = {}
+
+          -- Add CONFIG values
+          if file_macros._CONFIG then
+            vim.notify("Found CONFIG with " .. vim.tbl_count(file_macros._CONFIG) .. " values", vim.log.levels.INFO)
+            for k, v in pairs(file_macros._CONFIG) do
+              values[k] = v
+              debug_log("  CONFIG: " .. k .. " = " .. v)
+            end
+          else
+            vim.notify("No CONFIG macro found", vim.log.levels.WARN)
+          end
+
+          -- Also check environment variables
+          for var in result:gmatch("${([^}:]+):?[^}]*}") do
+            debug_log("Checking variable: " .. var)
+            if not values[var] then
+              local env_val = os.getenv(var)
+              if env_val then
+                values[var] = env_val
+                debug_log("  ENV: " .. var .. " = " .. env_val)
+              else
+                debug_log("  No value found for: " .. var)
+              end
+            end
+          end
+
+          vim.notify("Substituting with " .. vim.tbl_count(values) .. " values", vim.log.levels.INFO)
+          result = M.substitute_variables(result, values)
+
+          -- Check if substitution worked
+          if result:match("${BASE_URL}") then
+            vim.notify("WARNING: BASE_URL still not substituted!", vim.log.levels.WARN)
+          end
+        else
+          debug_log("No variables found in result")
+        end
+        debug_log("Replacing inline macro at pos " .. start_pos .. "-" .. end_pos)
+        M.replace_macro_inline(row, start_pos, end_pos, result)
+      else
+        vim.notify("Macro expansion cancelled", vim.log.levels.INFO)
+      end
+    end)
+    debug_log("Returning from expand_inline_macro (async expansion started)")
     return
   end
 
@@ -1869,6 +2510,9 @@ end
 
 -- Replace macro inline (used during expand_inline_macro)
 function M.replace_macro_inline(row, start_pos, end_pos, new_text)
+  debug_log("replace_macro_inline called: row=" .. row .. ", start=" .. start_pos .. ", end=" .. end_pos)
+  debug_log("Replacement text preview: " .. new_text:sub(1, 100))
+
   local line = vim.api.nvim_buf_get_lines(0, row - 1, row, false)[1]
   local prefix = line:sub(1, start_pos - 1)
   local suffix = line:sub(end_pos + 1)
