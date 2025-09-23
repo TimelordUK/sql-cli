@@ -276,6 +276,25 @@ where
             Ok(SqlExpression::StringLiteral("*".to_string()))
         }
 
+        // Handle window-related keywords that can also be column names
+        Token::Row => {
+            trace!("ROW token treated as identifier in expression context");
+            ExpressionParser::advance(parser);
+            Ok(SqlExpression::Column(ColumnRef::unquoted("row".to_string())))
+        }
+
+        Token::Rows => {
+            trace!("ROWS token treated as identifier in expression context");
+            ExpressionParser::advance(parser);
+            Ok(SqlExpression::Column(ColumnRef::unquoted("rows".to_string())))
+        }
+
+        Token::Range => {
+            trace!("RANGE token treated as identifier in expression context");
+            ExpressionParser::advance(parser);
+            Ok(SqlExpression::Column(ColumnRef::unquoted("range".to_string())))
+        }
+
         _ => {
             let err = format!(
                 "Unexpected token in primary expression: {:?}",
