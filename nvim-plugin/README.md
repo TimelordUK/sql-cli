@@ -464,6 +464,48 @@ The navigation wraps around - pressing `]t` on the last table takes you to the f
 2. Press `<leader>sp` to see the execution plan
 3. Optimize based on the plan output
 
+## Token Management (JWT Auto-Refresh)
+
+For APIs with short-lived tokens (e.g., 15-minute expiry), the plugin can automatically refresh tokens:
+
+### Configuration
+
+```lua
+require('sql-cli').setup({
+  -- ... other config ...
+
+  token = {
+    -- Your token endpoint URL
+    token_endpoint = 'http://localhost:5000/token',
+
+    -- Auto-refresh before expiry
+    auto_refresh = true,
+
+    -- Refresh every 14 minutes (for 15-min tokens)
+    refresh_interval = 14 * 60,
+
+    -- JSON path to extract token
+    token_path = 'token',  -- For {"token": "xxx"}
+  }
+})
+```
+
+### Commands
+
+- `:TokenRefresh` - Manually refresh token
+- `:TokenShow` - Display current token (truncated)
+- `:TokenConfig <url>` - Set token endpoint
+
+### Usage in Macros
+
+```sql
+-- MACRO: CONFIG
+-- API_TOKEN = ${JWT_TOKEN}  -- Auto-uses fresh token
+-- END MACRO
+```
+
+The token refreshes automatically, no need to exit Neovim!
+
 ## Tips
 
 - The plugin remembers your last query, so toggling the output window will re-run it
