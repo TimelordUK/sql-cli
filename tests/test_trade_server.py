@@ -7,6 +7,8 @@ Runs on port 5001 to match the macro examples
 from flask import Flask, request, jsonify
 from datetime import datetime, timedelta
 import random
+import time
+import hashlib
 
 app = Flask(__name__)
 
@@ -86,6 +88,27 @@ def counterparty_trades():
     """Counterparty trades for reconciliation"""
     return jsonify({"Result": generate_trades()})
 
+@app.route('/token', methods=['GET'])
+def get_token():
+    """Generate a test token that expires in 15 minutes"""
+    # Create a simple token (not a real JWT, just for testing)
+    timestamp = str(int(time.time()))
+    expires = int(time.time()) + 900  # 15 minutes from now
+
+    # Create a simple hash for the token
+    token_data = f"test-token-{timestamp}-{expires}"
+    token_hash = hashlib.sha256(token_data.encode()).hexdigest()[:32]
+
+    # Format as a fake JWT-like token
+    token = f"eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.{token_hash}.{timestamp}"
+
+    return jsonify({
+        "token": token,
+        "expires_in": 900,
+        "expires_at": datetime.fromtimestamp(expires).isoformat(),
+        "type": "Bearer"
+    })
+
 @app.route('/health', methods=['GET'])
 def health():
     return jsonify({"status": "healthy", "timestamp": datetime.now().isoformat()})
@@ -115,15 +138,21 @@ if __name__ == '__main__':
 ║  Running on: http://localhost:5001                          ║
 ║                                                              ║
 ║  Endpoints:                                                  ║
+║    GET  /token          - Get test JWT token (15 min expiry)║
 ║    POST /trades         - Trade data (select/where body)    ║
 ║    GET  /trades         - All trades                        ║
 ║    POST /counterparty_trades - For reconciliation           ║
 ║    GET  /health         - Health check                      ║
 ║    GET  /protected/data - Requires Bearer token             ║
 ║                                                              ║
-║  Test with:                                                  ║
-║    export JWT_TOKEN="test-token-123"                        ║
-║    Then use your SQL macros in Neovim!                      ║
+║  Test token refresh:                                         ║
+║    curl http://localhost:5001/token                         ║
+║                                                              ║
+║  Configure Neovim:                                          ║
+║    token = {                                                ║
+║      token_endpoint = 'http://localhost:5001/token'        ║
+║      auto_refresh = true                                    ║
+║    }                                                         ║
 ╚══════════════════════════════════════════════════════════════╝
     """)
 

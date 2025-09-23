@@ -2,6 +2,7 @@
 -- Allows quick reuse of common query patterns with variable substitution
 
 local M = {}
+local token_manager = require('sql-cli.token_manager')
 
 -- Store user-defined templates
 M.templates = {}
@@ -1260,6 +1261,15 @@ function M.parse_file_macros()
       if key and value then
         -- Resolve any ${ENV_VAR} references in the value
         local resolved_value = value:gsub("${([^}]+)}", function(env_var_name)
+          -- Check if this is the token variable and use fresh token
+          if env_var_name == token_manager.config.token_var_name then
+            local token = token_manager.get_token()
+            if token then
+              return token
+            end
+          end
+
+          -- Otherwise check environment
           local env_value = vim.env[env_var_name] or os.getenv(env_var_name)
           if env_value then
             return env_value

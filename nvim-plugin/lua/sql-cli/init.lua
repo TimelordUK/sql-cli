@@ -78,6 +78,11 @@ function M.setup(opts)
   local templates = require('sql-cli.templates')
   templates.setup(M.config)
   templates.setup_keymaps()
+
+  -- Setup token manager
+  local token_manager = require('sql-cli.token_manager')
+  token_manager.setup(M.config.token or {})
+  token_manager.create_commands()
 end
 
 -- Create user commands
