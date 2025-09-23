@@ -2016,10 +2016,39 @@ fn analyze_statement(
     (CursorContext::Unknown, None)
 }
 
-fn analyze_partial(query: &str, cursor_pos: usize) -> (CursorContext, Option<String>) {
-    let upper = query.to_uppercase();
+/// Helper function to find the last occurrence of a token type in the token stream
+fn find_last_token(tokens: &[(usize, usize, Token)], target: &Token) -> Option<usize> {
+    tokens.iter().rposition(|(_, _, t)| t == target).map(|idx| tokens[idx].0)
+}
 
-    // Check for method call context first (e.g., "columnName." or "columnName.Con")
+/// Helper function to find the last occurrence of any matching token
+fn find_last_matching_token<F>(tokens: &[(usize, usize, Token)], predicate: F) -> Option<(usize, &Token)>
+where
+    F: Fn(&Token) -> bool,
+{
+    tokens.iter().rposition(|(_, _, t)| predicate(t)).map(|idx| (tokens[idx].0, &tokens[idx].2))
+}
+
+/// Helper function to check if we're in a specific clause based on tokens
+fn is_in_clause(tokens: &[(usize, usize, Token)], clause_token: Token, exclude_tokens: &[Token]) -> bool {
+    // Find the last occurrence of the clause token
+    if let Some(clause_pos) = find_last_token(tokens, &clause_token) {
+        // Check if any exclude tokens appear after it
+        for (pos, _, token) in tokens.iter() {
+            if *pos > clause_pos && exclude_tokens.contains(token) {
+                return false;
+            }
+        }
+        return true;
+    }
+    false
+}
+
+fn analyze_partial(query: &str, cursor_pos: usize) -> (CursorContext, Option<String>) {
+    // Tokenize the query up to cursor position
+    let mut lexer = Lexer::new(query);
+    let tokens = lexer.tokenize_all_with_positions();
+
     let trimmed = query.trim();
 
     #[cfg(test)]
@@ -2202,52 +2231,61 @@ fn analyze_partial(query: &str, cursor_pos: usize) -> (CursorContext, Option<Str
         }
     }
 
-    // Check if we're after AND/OR - but only after checking for method calls
-    if let Some(and_pos) = upper.rfind(" AND ") {
-        // Check if cursor is after AND
-        if cursor_pos >= and_pos + 5 {
-            // Extract any partial word after AND
-            let after_and = safe_slice_from(query, and_pos + 5);
-            let partial = extract_partial_at_end(after_and);
-            return (CursorContext::AfterLogicalOp(LogicalOp::And), partial);
-        }
-    }
-
-    if let Some(or_pos) = upper.rfind(" OR ") {
-        // Check if cursor is after OR
-        if cursor_pos >= or_pos + 4 {
-            // Extract any partial word after OR
-            let after_or = safe_slice_from(query, or_pos + 4);
-            let partial = extract_partial_at_end(after_or);
-            return (CursorContext::AfterLogicalOp(LogicalOp::Or), partial);
-        }
-    }
-
-    // Handle case where AND/OR is at the very end
-    if trimmed.to_uppercase().ends_with(" AND") || trimmed.to_uppercase().ends_with(" OR") {
-        let op = if trimmed.to_uppercase().ends_with(" AND") {
-            LogicalOp::And
+    // Check if we're after AND/OR using tokens - but only after checking for method calls
+    if let Some((pos, token)) = find_last_matching_token(&tokens, |t| matches!(t, Token::And | Token::Or)) {
+        // Check if cursor is after the logical operator
+        let token_end_pos = if matches!(token, Token::And) {
+            pos + 3  // "AND" is 3 characters
         } else {
-            LogicalOp::Or
+            pos + 2  // "OR" is 2 characters
         };
-        return (CursorContext::AfterLogicalOp(op), None);
+
+        if cursor_pos > token_end_pos {
+            // Extract any partial word after the operator
+            let after_op = safe_slice_from(query, token_end_pos + 1); // +1 for the space
+            let partial = extract_partial_at_end(after_op);
+            let op = if matches!(token, Token::And) {
+                LogicalOp::And
+            } else {
+                LogicalOp::Or
+            };
+            return (CursorContext::AfterLogicalOp(op), partial);
+        }
     }
 
-    // Check if we're after ORDER BY
-    if upper.ends_with(" ORDER BY ") || upper.ends_with(" ORDER BY") || upper.contains("ORDER BY ")
-    {
-        return (CursorContext::OrderByClause, extract_partial_at_end(query));
+    // Check if the last token is AND or OR (handles case where it's at the very end)
+    if let Some((_, _, last_token)) = tokens.last() {
+        if matches!(last_token, Token::And | Token::Or) {
+            let op = if matches!(last_token, Token::And) {
+                LogicalOp::And
+            } else {
+                LogicalOp::Or
+            };
+            return (CursorContext::AfterLogicalOp(op), None);
+        }
     }
 
-    if upper.contains("WHERE") && !upper.contains("ORDER") && !upper.contains("GROUP") {
+    // Check if we're in ORDER BY clause using tokens
+    if let Some(order_pos) = find_last_token(&tokens, &Token::OrderBy) {
+        // Check if there's a BY token after ORDER
+        let has_by = tokens.iter().any(|(pos, _, t)| *pos > order_pos && matches!(t, Token::By));
+        if has_by || tokens.last().map_or(false, |(_, _, t)| matches!(t, Token::OrderBy)) {
+            return (CursorContext::OrderByClause, extract_partial_at_end(query));
+        }
+    }
+
+    // Check if we're in WHERE clause using tokens
+    if is_in_clause(&tokens, Token::Where, &[Token::OrderBy, Token::GroupBy]) {
         return (CursorContext::WhereClause, extract_partial_at_end(query));
     }
 
-    if upper.contains("FROM") && !upper.contains("WHERE") && !upper.contains("ORDER") {
+    // Check if we're in FROM clause using tokens
+    if is_in_clause(&tokens, Token::From, &[Token::Where, Token::OrderBy, Token::GroupBy]) {
         return (CursorContext::FromClause, extract_partial_at_end(query));
     }
 
-    if upper.contains("SELECT") && !upper.contains("FROM") {
+    // Check if we're in SELECT clause using tokens
+    if find_last_token(&tokens, &Token::Select).is_some() && find_last_token(&tokens, &Token::From).is_none() {
         return (CursorContext::SelectClause, extract_partial_at_end(query));
     }
 
