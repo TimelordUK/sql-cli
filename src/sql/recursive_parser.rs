@@ -1226,6 +1226,19 @@ impl Parser {
                     self.advance();
                     col
                 }
+                // Handle window keywords that can be column names
+                Token::Row => {
+                    self.advance();
+                    "row".to_string()
+                }
+                Token::Rows => {
+                    self.advance();
+                    "rows".to_string()
+                }
+                Token::Range => {
+                    self.advance();
+                    "range".to_string()
+                }
                 _ => return Err("Expected column name in ORDER BY".to_string()),
             };
 
