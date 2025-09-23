@@ -278,6 +278,10 @@ SELECT *
 FROM SPLIT('hello world sql cli');
 GO
 
+SELECT TO_INT(value) + 1 as v_plus1
+FROM SPLIT('1 2 3 4 5');
+GO
+
 SELECT
     value AS word,
     LENGTH(value) AS word_length

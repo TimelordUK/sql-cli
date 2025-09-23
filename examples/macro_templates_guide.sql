@@ -64,6 +64,7 @@
 -- WHERE Templates Using Generic Picker
 -- ============================================
 
+-- Standard WHERE templates for regular SQL contexts
 -- MACRO: WHERE_DEAL_TYPE
 -- DealType = "Picker(DEAL_TYPES)" and TradeDate = DateTimePicker()
 -- END MACRO
@@ -82,6 +83,27 @@
 
 -- MACRO: WHERE_CUSTOM_FILTER
 -- DealType IN ("Picker(DEAL_TYPES, First Type)", "Picker(DEAL_TYPES, Second Type)") and TradeDate = DateTimePicker()
+-- END MACRO
+
+-- ============================================
+-- JSON WHERE Templates (with escaped quotes)
+-- ============================================
+-- Use these when the WHERE clause is inside a JSON BODY
+
+-- MACRO: WHERE_DEAL_TYPE_JSON
+-- DealType = \"Picker(DEAL_TYPES)\" and TradeDate = DateTimePicker()
+-- END MACRO
+
+-- MACRO: WHERE_CURRENCY_PAIR_JSON
+-- BaseCurrency = \"Picker(CURRENCIES, Base Currency)\" and QuoteCurrency = \"Picker(CURRENCIES, Quote Currency)\"
+-- END MACRO
+
+-- MACRO: WHERE_STATUS_CHECK_JSON
+-- Status = \"Picker(STATUSES)\" and Account = \"Picker(ACCOUNTS)\"
+-- END MACRO
+
+-- MACRO: WHERE_COMPLEX_TRADE_JSON
+-- CTGSource = \"Picker(SOURCES)\" and DealType = \"Picker(DEAL_TYPES)\" and Status != \"Picker(STATUSES, Exclude Status)\"
 -- END MACRO
 
 -- ============================================
@@ -109,7 +131,7 @@
 -- - Anything you need!
 
 -- ============================================
--- Complete Trade Query Example
+-- Complete Trade Query Examples
 -- ============================================
 
 -- MACRO: TRADE_QUERY_FLEXIBLE
@@ -119,6 +141,26 @@
 --     BODY '{
 --         "select": "${COLUMNS}",
 --         "where": "${WHERE}"
+--     }'
+--     FORMAT JSON
+--     JSON_PATH 'Result'
+--     HEADERS (
+--         'Authorization': 'Bearer ${API_TOKEN}',
+--         'Content-Type': 'application/json'
+--     )
+-- )
+-- SELECT * FROM trades
+-- ORDER BY ExecutionTime DESC
+-- END MACRO
+
+-- Example of using a JSON WHERE macro directly in a query
+-- MACRO: TRADE_QUERY_WITH_PICKER
+-- WITH WEB trades AS (
+--     URL '${BASE_URL}/query/trades'
+--     METHOD POST
+--     BODY '{
+--         "select": "DealId,PlatformOrderId,DealType,SignedQuantity,BuySell",
+--         "where": "@WHERE_DEAL_TYPE_JSON"
 --     }'
 --     FORMAT JSON
 --     JSON_PATH 'Result'

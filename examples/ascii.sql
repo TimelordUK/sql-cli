@@ -1,4 +1,10 @@
 -- ASCII and Character Code Functions Demo
+SELECT
+    value,
+    TO_INT(value) * 10 AS times_10,
+    CHAR(TO_INT(value) + 64) AS letter
+FROM SPLIT('1 2 3 4 5');
+GO
 
 -- Get ASCII/Unicode code of characters
 SELECT ASCII('A') as letter_A,

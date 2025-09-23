@@ -663,20 +663,72 @@ function M.expand_template_to_string(template_def, callback)
 end
 
 -- Expand simple macro (without function patterns)
-function M.expand_simple_macro(template, row, start_pos, end_pos)
+function M.expand_simple_macro(template, row, start_pos, end_pos, is_json_context)
   -- Find function patterns in the template
   local functions_to_eval = {}
   local function_index = 1
   local expanded_template = template
 
+  -- Check if we're in a JSON body context
+  if is_json_context == nil then
+    -- Check if we're inside a BODY block by looking at surrounding context
+    local lines = vim.api.nvim_buf_get_lines(0, math.max(0, row - 10), math.min(vim.api.nvim_buf_line_count(0), row + 10), false)
+    local context_text = table.concat(lines, "\n")
+
+    -- We're in JSON context if we're between BODY and FORMAT or if escaped quotes are present
+    is_json_context = (context_text:match("BODY%s*'") and context_text:match("FORMAT%s+JSON")) or template:match('\\\"') ~= nil
+  end
+
   -- Pattern to match function calls like SourcePicker(), DateTimePicker(label), Input(label, default)
-  for func_call in template:gmatch("([%w_]+%b())") do
+  -- Also check if they're wrapped in quotes like "Picker(DEAL_TYPES)" or escaped quotes \"Picker(DEAL_TYPES)\"
+
+  -- First, find escaped quoted function calls like \"Picker(DEAL_TYPES)\"
+  for quoted_func in template:gmatch('\\"([%w_]+%b())\\"') do
+    local func_name, args = quoted_func:match("([%w_]+)%((.*)%)")
+    table.insert(functions_to_eval, {
+      pattern = '\\"' .. quoted_func .. '\\"',
+      func_pattern = quoted_func,
+      name = func_name,
+      args = args,
+      placeholder = "__FUNC_" .. function_index .. "__",
+      is_json_context = true, -- Escaped quotes mean JSON context
+      has_escaped_quotes = true
+    })
+    -- Replace with placeholder
+    local pattern_to_replace = ('\\"' .. quoted_func .. '\\"'):gsub("([%(%)%.%[%]%+%-%*%?%^%$%%])", "%%%1")
+    expanded_template = expanded_template:gsub(pattern_to_replace, "__FUNC_" .. function_index .. "__", 1)
+    function_index = function_index + 1
+  end
+
+  -- Then find regular quoted function calls like "Picker(DEAL_TYPES)"
+  for quoted_func in template:gmatch('"([%w_]+%b())"') do
+    local func_name, args = quoted_func:match("([%w_]+)%((.*)%)")
+    table.insert(functions_to_eval, {
+      pattern = '"' .. quoted_func .. '"',
+      func_pattern = quoted_func,
+      name = func_name,
+      args = args,
+      placeholder = "__FUNC_" .. function_index .. "__",
+      is_json_context = is_json_context,
+      has_quotes = true
+    })
+    -- Replace with placeholder
+    local pattern_to_replace = ('"' .. quoted_func .. '"'):gsub("([%(%)%.%[%]%+%-%*%?%^%$%%])", "%%%1")
+    expanded_template = expanded_template:gsub(pattern_to_replace, "__FUNC_" .. function_index .. "__", 1)
+    function_index = function_index + 1
+  end
+
+  -- Then find unquoted function calls
+  for func_call in expanded_template:gmatch("([%w_]+%b())") do
     local func_name, args = func_call:match("([%w_]+)%((.*)%)")
     table.insert(functions_to_eval, {
       pattern = func_call,
+      func_pattern = func_call,
       name = func_name,
       args = args,
-      placeholder = "__FUNC_" .. function_index .. "__"
+      placeholder = "__FUNC_" .. function_index .. "__",
+      is_json_context = is_json_context,
+      has_quotes = false
     })
     -- Replace with placeholder
     expanded_template = expanded_template:gsub(func_call:gsub("([%(%)%.])", "%%%1"), "__FUNC_" .. function_index .. "__", 1)
@@ -744,7 +796,21 @@ function M.expand_simple_macro(template, row, start_pos, end_pos)
           prompt = label .. ": "
         }, function(choice)
           if choice then
-            func_values[func_idx - 1] = choice
+            -- Handle quotes based on context
+            if func_def.has_escaped_quotes then
+              -- Template had escaped quotes, keep them escaped
+              func_values[func_idx - 1] = '\\"' .. choice .. '\\"'
+            elseif func_def.has_quotes then
+              -- Template had regular quotes, add them back (escaped for JSON if needed)
+              if func_def.is_json_context then
+                func_values[func_idx - 1] = '\\"' .. choice .. '\\"'
+              else
+                func_values[func_idx - 1] = '"' .. choice .. '"'
+              end
+            else
+              -- No quotes in template, return raw value
+              func_values[func_idx - 1] = choice
+            end
             evaluate_next()
           end
         end)
@@ -755,7 +821,21 @@ function M.expand_simple_macro(template, row, start_pos, end_pos)
           default = ""
         }, function(value)
           if value ~= nil then
-            func_values[func_idx - 1] = value
+            -- Handle quotes based on context
+            if func_def.has_escaped_quotes then
+              -- Template had escaped quotes, keep them escaped
+              func_values[func_idx - 1] = '\\"' .. value .. '\\"'
+            elseif func_def.has_quotes then
+              -- Template had regular quotes, add them back (escaped for JSON if needed)
+              if func_def.is_json_context then
+                func_values[func_idx - 1] = '\\"' .. value .. '\\"'
+              else
+                func_values[func_idx - 1] = '"' .. value .. '"'
+              end
+            else
+              -- No quotes in template, return raw value
+              func_values[func_idx - 1] = value
+            end
             evaluate_next()
           end
         end)
@@ -1530,6 +1610,15 @@ WITH WEB trades AS (
 
   -- Expand nested macros
   expansion = expand_nested_macros(expansion)
+
+  -- After expanding nested macros, check if the result has function patterns that need evaluation
+  if expansion:match("[%w_]+%b()") then
+    -- Has function patterns from nested macro expansion, use simple expansion
+    -- Check if we're in JSON context (looking for escaped quotes or BODY context)
+    local is_json_context = expansion:match('\\\"') ~= nil
+    M.expand_simple_macro(expansion, row, start_pos, end_pos, is_json_context)
+    return
+  end
 
   -- Check if expansion has variables that need substitution
   if expansion:match("${[^}]+}") then
