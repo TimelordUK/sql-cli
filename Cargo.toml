@@ -1,6 +1,6 @@
 [package]
 name = "sql-cli"
-version = "1.52.1"
+version = "1.53.0"
 edition = "2021"
 authors = ["TimelordUK <sjames8888@gmail.com>"]
 description = "SQL query tool for CSV/JSON with both interactive TUI and non-interactive CLI modes - perfect for exploration and automation"
@@ -82,6 +82,8 @@ fxhash = "0.2"
 num-bigint = "0.4"
 num-traits = "0.2"
 ahash = "0.8"
+base64 = "0.22"
+hex = "0.4"
 
 [dev-dependencies]
 tempfile = "3.8"

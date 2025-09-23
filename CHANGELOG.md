@@ -5,6 +5,45 @@ All notable changes to SQL CLI will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.53.0] - 2025-09-23
+
+### 🎯 String Utilities & Type Conversions
+
+This release adds essential utility functions for character code operations, type conversions, and encoding/decoding capabilities.
+
+### ✨ New Features
+
+#### **Character Code Functions**
+- **`ASCII(string)`** - Get ASCII/Unicode code point of first character (supports full Unicode)
+- **`ORD(string)`** - Alias for ASCII function
+- **`CHAR(code)`** - Convert Unicode code point to character (supports codes beyond ASCII 0-255)
+- **`UNICODE(string)`** - Get all Unicode code points as comma-separated list
+
+#### **Type Conversion Functions**
+- **`TO_INT(value)`** - Convert string or float to integer (truncates decimals)
+- **`TO_DECIMAL(value)`** - Convert string or integer to decimal/float
+- **`TO_STRING(value)`** - Convert any value to string representation
+
+#### **Encoding/Decoding Functions**
+- **`ENCODE(string, format)`** - Encode string to base64 or hex format
+- **`DECODE(string, format)`** - Decode base64 or hex encoded strings
+
+### 📊 Examples
+```sql
+-- Character codes
+SELECT ASCII('€');  -- Returns 8364
+SELECT CHAR(8364);  -- Returns '€'
+SELECT UNICODE('ABC');  -- Returns '65,66,67'
+
+-- Type conversions
+SELECT TO_INT('123.45');  -- Returns 123
+SELECT TO_DECIMAL('123');  -- Returns 123.0
+
+-- Encoding
+SELECT ENCODE('Hello', 'base64');  -- Returns 'SGVsbG8='
+SELECT DECODE('SGVsbG8=', 'base64');  -- Returns 'Hello'
+```
+
 ## [1.52.0] - 2025-09-21
 
 ### 🔢 Arbitrary Precision Arithmetic & Bit Manipulation

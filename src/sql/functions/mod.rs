@@ -36,6 +36,7 @@ pub mod string_utils;
 pub mod text_processing;
 pub mod trigonometry;
 pub mod type_checking;
+pub mod utility;
 
 // Re-export MethodFunction trait
 pub use string_methods::MethodFunction;
@@ -177,6 +178,7 @@ impl FunctionRegistry {
         registry.register_random_functions();
         registry.register_format_functions();
         registry.register_type_checking_functions();
+        registry.register_utility_functions();
 
         registry
     }
@@ -760,6 +762,24 @@ impl FunctionRegistry {
         self.register(Box::new(IsFloatFunction));
         self.register(Box::new(IsNullFunction));
         self.register(Box::new(IsNotNullFunction));
+    }
+
+    /// Register utility functions
+    fn register_utility_functions(&mut self) {
+        use utility::{
+            AsciiFunction, CharFunction, DecodeFunction, EncodeFunction, OrdFunction,
+            ToDecimalFunction, ToIntFunction, ToStringFunction, UnicodeFunction,
+        };
+
+        self.register(Box::new(AsciiFunction));
+        self.register(Box::new(OrdFunction));
+        self.register(Box::new(CharFunction));
+        self.register(Box::new(ToIntFunction));
+        self.register(Box::new(ToDecimalFunction));
+        self.register(Box::new(ToStringFunction));
+        self.register(Box::new(EncodeFunction));
+        self.register(Box::new(DecodeFunction));
+        self.register(Box::new(UnicodeFunction));
     }
 
     /// Register big integer and bit manipulation functions
