@@ -529,7 +529,431 @@ function M.quick_source_picker(callback)
   end)
 end
 
--- WHERE clause builder
+-- Expand template to string (for nested template expansion)
+function M.expand_template_to_string(template_def, callback)
+  local template = template_def.template
+  local var_defs = template_def.variables
+  local values = {}
+  local var_order = {}
+
+  -- Collect variables in order
+  for var_name, _ in pairs(var_defs) do
+    table.insert(var_order, var_name)
+  end
+  table.sort(var_order)
+
+  local var_index = 1
+
+  local function collect_and_expand()
+    if var_index > #var_order then
+      -- All values collected, perform substitution
+      local result = template:gsub("${([^}]+)}", function(var)
+        return values[var] or "${" .. var .. "}"
+      end)
+      callback(result)
+      return
+    end
+
+    local var_name = var_order[var_index]
+    local var_def = var_defs[var_name]
+    var_index = var_index + 1
+
+    -- First check CONFIG for this variable
+    local file_macros = M.parse_file_macros()
+    if file_macros._CONFIG and file_macros._CONFIG[var_name] then
+      values[var_name] = file_macros._CONFIG[var_name]
+      collect_and_expand()
+      return
+    end
+
+    -- Handle based on variable type
+    if var_def.type == "choice" then
+      -- Get choices from the specified source
+      local choices = {}
+
+      if var_def.source and file_macros[var_def.source] then
+        -- Parse choices from macro
+        for line in file_macros[var_def.source]:gmatch("[^\n]+") do
+          local choice = line:match("^%s*(.-)%s*$")
+          if choice and choice ~= "" and not choice:match("^%-%-") then
+            table.insert(choices, choice)
+          end
+        end
+      end
+
+      if #choices > 0 then
+        vim.ui.select(choices, {
+          prompt = var_def.source or var_name .. ": "
+        }, function(choice)
+          if choice then
+            values[var_name] = choice
+            collect_and_expand()
+          end
+        end)
+      else
+        -- Fallback to text input if no choices found
+        vim.ui.input({
+          prompt = var_name .. ": ",
+          default = var_def.default or ""
+        }, function(value)
+          if value ~= nil then
+            values[var_name] = value
+            collect_and_expand()
+          end
+        end)
+      end
+
+    elseif var_def.type == "date" then
+      -- Handle date with optional format
+      -- Format can be: date:Format Name:format_string
+      -- e.g., date:DateTime:DateTime(YEAR, MONTH, DAY)
+      -- or    date:ISO:YYYY-MM-DD
+      local format_name = var_def.source
+      local format_string = var_def.default
+
+      M.quick_date_picker(function(date)
+        -- Parse the selected date
+        local year, month, day = date:match("(%d+)-(%d+)-(%d+)")
+
+        if format_string and year then
+          -- Apply custom format
+          local formatted = format_string
+          formatted = formatted:gsub("YYYY", year)
+          formatted = formatted:gsub("YY", year:sub(3, 4))
+          formatted = formatted:gsub("MM", string.format("%02d", month))
+          formatted = formatted:gsub("M", tostring(tonumber(month)))
+          formatted = formatted:gsub("DD", string.format("%02d", day))
+          formatted = formatted:gsub("D", tostring(tonumber(day)))
+          formatted = formatted:gsub("YEAR", year)
+          formatted = formatted:gsub("MONTH", tostring(tonumber(month)))
+          formatted = formatted:gsub("DAY", tostring(tonumber(day)))
+          values[var_name] = formatted
+        else
+          -- Default to ISO format
+          values[var_name] = date
+        end
+        collect_and_expand()
+      end)
+
+    elseif var_def.type == "config" then
+      -- Get from CONFIG or use default
+      local config_value = nil
+      if file_macros._CONFIG then
+        config_value = file_macros._CONFIG[var_def.source or var_name]
+      end
+      values[var_name] = config_value or var_def.default or ""
+      collect_and_expand()
+
+    else -- Default to "input" type
+      vim.ui.input({
+        prompt = var_def.source or var_name .. ": ",
+        default = var_def.default or ""
+      }, function(value)
+        if value ~= nil then
+          values[var_name] = value
+          collect_and_expand()
+        end
+      end)
+    end
+  end
+
+  -- Start collection
+  collect_and_expand()
+end
+
+-- Expand simple macro (without function patterns)
+function M.expand_simple_macro(template, row, start_pos, end_pos)
+  -- Find function patterns in the template
+  local functions_to_eval = {}
+  local function_index = 1
+  local expanded_template = template
+
+  -- Pattern to match function calls like SourcePicker(), DateTimePicker(label), Input(label, default)
+  for func_call in template:gmatch("([%w_]+%b())") do
+    local func_name, args = func_call:match("([%w_]+)%((.*)%)")
+    table.insert(functions_to_eval, {
+      pattern = func_call,
+      name = func_name,
+      args = args,
+      placeholder = "__FUNC_" .. function_index .. "__"
+    })
+    -- Replace with placeholder
+    expanded_template = expanded_template:gsub(func_call:gsub("([%(%)%.])", "%%%1"), "__FUNC_" .. function_index .. "__", 1)
+    function_index = function_index + 1
+  end
+
+  -- If no functions found, just replace inline
+  if #functions_to_eval == 0 then
+    M.replace_macro_inline(row, start_pos, end_pos, template)
+    return
+  end
+
+  -- Evaluate functions
+  local func_values = {}
+  local func_idx = 1
+
+  local function evaluate_next()
+    if func_idx > #functions_to_eval then
+      -- All functions evaluated, substitute back
+      local result = expanded_template
+      for i, func_def in ipairs(functions_to_eval) do
+        result = result:gsub(func_def.placeholder, func_values[i] or func_def.pattern)
+      end
+      M.replace_macro_inline(row, start_pos, end_pos, result)
+      return
+    end
+
+    local func_def = functions_to_eval[func_idx]
+    func_idx = func_idx + 1
+
+    -- Parse arguments (simple CSV parsing)
+    local args = {}
+    if func_def.args and func_def.args ~= "" then
+      for arg in func_def.args:gmatch("([^,]+)") do
+        -- Trim whitespace and quotes
+        arg = arg:match("^%s*(.-)%s*$")
+        if arg:match("^['\"](.+)['\"]$") then
+          arg = arg:match("^['\"](.+)['\"]$")
+        end
+        table.insert(args, arg)
+      end
+    end
+
+    -- Handle different function types
+    if func_def.name == "Picker" then
+      -- Generic picker that uses any macro as source
+      local macro_name = args[1]
+      local label = args[2] or macro_name or "Select"
+
+      local file_macros = M.parse_file_macros()
+      local choices = {}
+
+      if macro_name and file_macros[macro_name] then
+        -- Parse choices from the specified macro
+        for line in file_macros[macro_name]:gmatch("[^\n]+") do
+          local choice = line:match("^%s*(.-)%s*$")
+          if choice and choice ~= "" and not choice:match("^%-%-") then
+            table.insert(choices, choice)
+          end
+        end
+      end
+
+      if #choices > 0 then
+        vim.ui.select(choices, {
+          prompt = label .. ": "
+        }, function(choice)
+          if choice then
+            func_values[func_idx - 1] = choice
+            evaluate_next()
+          end
+        end)
+      else
+        -- Fallback to text input if macro not found
+        vim.ui.input({
+          prompt = label .. ": ",
+          default = ""
+        }, function(value)
+          if value ~= nil then
+            func_values[func_idx - 1] = value
+            evaluate_next()
+          end
+        end)
+      end
+
+    elseif func_def.name == "SourcePicker" then
+      -- Kept for backward compatibility - just delegates to Picker
+      local label = args[1] or "Source"
+      M.quick_source_picker(function(source)
+        func_values[func_idx - 1] = source
+        evaluate_next()
+      end)
+
+    elseif func_def.name == "DateTimePicker" then
+      local label = args[1] or "Date"
+      M.quick_date_picker(function(date)
+        local year, month, day = date:match("(%d+)-(%d+)-(%d+)")
+        if year then
+          func_values[func_idx - 1] = string.format("DateTime(%s, %s, %s)", year, tonumber(month), tonumber(day))
+        else
+          func_values[func_idx - 1] = date
+        end
+        evaluate_next()
+      end)
+
+    elseif func_def.name == "DatePicker" then
+      local label = args[1] or "Date"
+      M.quick_date_picker(function(date)
+        func_values[func_idx - 1] = date
+        evaluate_next()
+      end)
+
+    elseif func_def.name == "Input" then
+      local label = args[1] or "Value"
+      local default = args[2] or ""
+      vim.ui.input({
+        prompt = label .. ": ",
+        default = default
+      }, function(value)
+        if value ~= nil then
+          func_values[func_idx - 1] = value
+          evaluate_next()
+        end
+      end)
+
+    elseif func_def.name == "ConfigValue" then
+      local key = args[1]
+      local default = args[2] or ""
+      local file_macros = M.parse_file_macros()
+      local value = nil
+      if file_macros._CONFIG and key then
+        value = file_macros._CONFIG[key]
+      end
+      func_values[func_idx - 1] = value or default
+      evaluate_next()
+
+    else
+      -- Unknown function, keep as-is
+      func_values[func_idx - 1] = func_def.pattern
+      evaluate_next()
+    end
+  end
+
+  evaluate_next()
+end
+
+-- Generic template-based macro expander
+function M.expand_template_macro(template_def, row, start_pos, end_pos)
+  local template = template_def.template
+  local var_defs = template_def.variables
+  local values = {}
+  local var_order = {}
+
+  -- Collect variables in order
+  for var_name, _ in pairs(var_defs) do
+    table.insert(var_order, var_name)
+  end
+  table.sort(var_order)
+
+  local var_index = 1
+
+  local function collect_and_expand()
+    if var_index > #var_order then
+      -- All values collected, perform substitution
+      local result = template:gsub("${([^}]+)}", function(var)
+        return values[var] or "${" .. var .. "}"
+      end)
+      M.replace_macro_inline(row, start_pos, end_pos, result)
+      return
+    end
+
+    local var_name = var_order[var_index]
+    local var_def = var_defs[var_name]
+    var_index = var_index + 1
+
+    -- First check CONFIG for this variable
+    local file_macros = M.parse_file_macros()
+    if file_macros._CONFIG and file_macros._CONFIG[var_name] then
+      values[var_name] = file_macros._CONFIG[var_name]
+      collect_and_expand()
+      return
+    end
+
+    -- Handle based on variable type
+    if var_def.type == "choice" then
+      -- Get choices from the specified source
+      local choices = {}
+
+      if var_def.source and file_macros[var_def.source] then
+        -- Parse choices from macro
+        for line in file_macros[var_def.source]:gmatch("[^\n]+") do
+          local choice = line:match("^%s*(.-)%s*$")
+          if choice and choice ~= "" and not choice:match("^%-%-") then
+            table.insert(choices, choice)
+          end
+        end
+      end
+
+      if #choices > 0 then
+        vim.ui.select(choices, {
+          prompt = var_def.source or var_name .. ": "
+        }, function(choice)
+          if choice then
+            values[var_name] = choice
+            collect_and_expand()
+          end
+        end)
+      else
+        -- Fallback to text input if no choices found
+        vim.ui.input({
+          prompt = var_name .. ": ",
+          default = var_def.default or ""
+        }, function(value)
+          if value ~= nil then
+            values[var_name] = value
+            collect_and_expand()
+          end
+        end)
+      end
+
+    elseif var_def.type == "date" then
+      -- Handle date with optional format
+      -- Format can be: date:Format Name:format_string
+      -- e.g., date:DateTime:DateTime(YEAR, MONTH, DAY)
+      -- or    date:ISO:YYYY-MM-DD
+      local format_name = var_def.source
+      local format_string = var_def.default
+
+      M.quick_date_picker(function(date)
+        -- Parse the selected date
+        local year, month, day = date:match("(%d+)-(%d+)-(%d+)")
+
+        if format_string and year then
+          -- Apply custom format
+          local formatted = format_string
+          formatted = formatted:gsub("YYYY", year)
+          formatted = formatted:gsub("YY", year:sub(3, 4))
+          formatted = formatted:gsub("MM", string.format("%02d", month))
+          formatted = formatted:gsub("M", tostring(tonumber(month)))
+          formatted = formatted:gsub("DD", string.format("%02d", day))
+          formatted = formatted:gsub("D", tostring(tonumber(day)))
+          formatted = formatted:gsub("YEAR", year)
+          formatted = formatted:gsub("MONTH", tostring(tonumber(month)))
+          formatted = formatted:gsub("DAY", tostring(tonumber(day)))
+          values[var_name] = formatted
+        else
+          -- Default to ISO format
+          values[var_name] = date
+        end
+        collect_and_expand()
+      end)
+
+    elseif var_def.type == "config" then
+      -- Get from CONFIG or use default
+      local config_value = nil
+      if file_macros._CONFIG then
+        config_value = file_macros._CONFIG[var_def.source or var_name]
+      end
+      values[var_name] = config_value or var_def.default or ""
+      collect_and_expand()
+
+    else -- Default to "input" type
+      vim.ui.input({
+        prompt = var_def.source or var_name .. ": ",
+        default = var_def.default or ""
+      }, function(value)
+        if value ~= nil then
+          values[var_name] = value
+          collect_and_expand()
+        end
+      end)
+    end
+  end
+
+  -- Start collection
+  collect_and_expand()
+end
+
+-- WHERE clause builder (kept for backward compatibility)
 function M.where_clause_builder(callback)
   local options = {
     "Source and Date",
@@ -834,23 +1258,86 @@ function M.parse_file_macros()
     for line in macros.CONFIG:gmatch("[^\n]+") do
       local key, value = line:match("^%s*([%w_]+)%s*=%s*(.-)%s*$")
       if key and value then
-        -- Check if value contains ${ENV_VAR} and resolve it
-        local env_var_name = value:match("${([^}]+)}")
-        if env_var_name then
-          local env_value = vim.env[env_var_name]
+        -- Resolve any ${ENV_VAR} references in the value
+        local resolved_value = value:gsub("${([^}]+)}", function(env_var_name)
+          local env_value = vim.env[env_var_name] or os.getenv(env_var_name)
           if env_value then
-            -- Replace ${ENV_VAR} with actual environment value
-            config[key] = env_value
+            return env_value
           else
-            -- Keep original value if env var not found
-            config[key] = value
+            -- Keep the original ${ENV_VAR} if not found
+            return "${" .. env_var_name .. "}"
           end
-        else
-          config[key] = value
-        end
+        end)
+        config[key] = resolved_value
       end
     end
     macros._CONFIG = config  -- Store parsed config separately
+  end
+
+  -- Parse macros that have TEMPLATE and VARIABLES structure
+  for macro_name, macro_content in pairs(macros) do
+    -- Skip special macros and non-string content
+    if macro_name ~= "CONFIG" and
+       macro_name ~= "_CONFIG" and
+       not macro_name:match("^_TEMPLATE_") and
+       type(macro_content) == "string" then
+      local lines = vim.split(macro_content, "\n")
+      local template = nil
+      local variables = {}
+      local in_variables = false
+
+      for _, line in ipairs(lines) do
+        if line:match("^TEMPLATE:") then
+          template = line:match("^TEMPLATE:%s*(.+)$")
+        elseif line:match("^VARIABLES:") then
+          in_variables = true
+        elseif in_variables and line:match("^%s+(%w+):") then
+          -- Parse variable definition: VAR_NAME: type:source:default
+          local var_name, rest = line:match("^%s+([%w_]+):%s*(.+)$")
+          if var_name and rest then
+            -- Split only on first two colons to preserve format strings
+            -- Trim whitespace from rest first
+            rest = rest:match("^%s*(.-)%s*$")
+
+            local first_colon = rest:find(":")
+            local var_type = "input"
+            local var_source = nil
+            local var_default = nil
+
+            if first_colon then
+              var_type = rest:sub(1, first_colon - 1):match("^%s*(.-)%s*$")
+              local remaining = rest:sub(first_colon + 1)
+              local second_colon = remaining:find(":")
+
+              if second_colon then
+                var_source = remaining:sub(1, second_colon - 1):match("^%s*(.-)%s*$")
+                var_default = remaining:sub(second_colon + 1):match("^%s*(.-)%s*$")
+              else
+                var_source = remaining:match("^%s*(.-)%s*$")
+              end
+            else
+              var_type = rest
+            end
+
+            variables[var_name] = {
+              type = var_type,
+              source = var_source,
+              default = var_default
+            }
+          end
+        end
+      end
+
+      -- If this macro has a template structure, store it specially
+      if template and next(variables) then
+        -- Debug output
+        -- vim.notify("Template macro " .. macro_name .. ": " .. vim.inspect(variables), vim.log.levels.INFO)
+        macros["_TEMPLATE_" .. macro_name] = {
+          template = template,
+          variables = variables
+        }
+      end
+    end
   end
 
   return macros
@@ -973,6 +1460,21 @@ WITH WEB trades AS (
 
   -- Look for the macro (file macros take precedence)
   local expansion = file_macros[macro_name] or inline_macros[macro_name]
+  local template_def = file_macros["_TEMPLATE_" .. macro_name]
+
+  -- Check if it's a simple macro with function patterns
+  if expansion and type(expansion) == "string" and expansion:match("[%w_]+%b()") then
+    -- Has function patterns, use simple expansion
+    M.expand_simple_macro(expansion, row, start_pos, end_pos)
+    return
+  end
+
+  -- If this is a template-based macro, handle it specially
+  if template_def then
+    -- vim.notify("Expanding template macro: " .. macro_name, vim.log.levels.INFO)
+    M.expand_template_macro(template_def, row, start_pos, end_pos)
+    return
+  end
 
   if not expansion then
     vim.notify("Unknown macro: " .. macro_name .. ". Define it with -- MACRO: " .. macro_name, vim.log.levels.WARN)
@@ -1059,9 +1561,23 @@ WITH WEB trades AS (
       -- First check if CONFIG macro defines a value for this variable
       local file_macros = M.parse_file_macros()
 
-      if file_macros._CONFIG and file_macros._CONFIG[var] then
+      -- Check if CONFIG macro defines a value for this variable
+      -- Also check for special mappings like DEFAULT_COLUMNS -> COLUMNS
+      local config_value = nil
+      if file_macros._CONFIG then
+        config_value = file_macros._CONFIG[var]
+
+        -- Special mapping: DEFAULT_COLUMNS can be used for COLUMNS variable
+        if not config_value and var == "COLUMNS" and file_macros._CONFIG.DEFAULT_COLUMNS then
+          config_value = file_macros._CONFIG.DEFAULT_COLUMNS
+        end
+      end
+
+      if config_value then
         -- Use the config value (already resolved env vars during parsing)
-        values[var] = file_macros._CONFIG[var]
+        values[var] = config_value
+        -- Debug output
+        vim.notify(string.format("Using CONFIG value for %s: %s", var, config_value), vim.log.levels.INFO)
         collect_and_expand()
         return
       end
@@ -1073,15 +1589,12 @@ WITH WEB trades AS (
           collect_and_expand()
         end)
       elseif var == "BASE_URL" then
-        -- Check if CONFIG macro defines BASE_URL
-        local file_macros = M.parse_file_macros()
-        local default_url = "http://localhost:5001"
-        if file_macros._CONFIG and file_macros._CONFIG.BASE_URL then
-          default_url = file_macros._CONFIG.BASE_URL
-        end
+        -- This should not be reached if CONFIG defines BASE_URL
+        -- Add debug to see why we got here
+        vim.notify("BASE_URL not found in CONFIG, prompting user", vim.log.levels.WARN)
         vim.ui.input({
           prompt = "API Base URL: ",
-          default = default_url
+          default = default or "http://localhost:5001"
         }, function(value)
           if value ~= nil then
             values[var] = value
@@ -1130,20 +1643,58 @@ WITH WEB trades AS (
           end
         end)
       elseif var == "WHERE_CLAUSE" or var == "WHERE" then
-        M.where_clause_builder(function(where)
-          values[var] = where
-          collect_and_expand()
-        end)
+        -- Check if there are WHERE template macros available
+        local where_templates = {}
+        for macro_name, _ in pairs(file_macros) do
+          if macro_name:match("^WHERE_") and file_macros["_TEMPLATE_" .. macro_name] then
+            table.insert(where_templates, macro_name)
+          end
+        end
+
+        if #where_templates > 0 then
+          -- Add custom option
+          table.insert(where_templates, "Custom WHERE")
+
+          vim.ui.select(where_templates, {
+            prompt = "Select WHERE template: "
+          }, function(choice)
+            if not choice then return end
+
+            if choice == "Custom WHERE" then
+              vim.ui.input({
+                prompt = "Enter WHERE clause: ",
+                default = default or ""
+              }, function(where)
+                if where ~= nil then
+                  values[var] = where
+                  collect_and_expand()
+                end
+              end)
+            else
+              -- Expand the selected WHERE template
+              local template_def = file_macros["_TEMPLATE_" .. choice]
+              if template_def then
+                -- Recursively collect values for the WHERE template
+                M.expand_template_to_string(template_def, function(expanded_where)
+                  values[var] = expanded_where
+                  collect_and_expand()
+                end)
+              end
+            end
+          end)
+        else
+          -- Fall back to original WHERE builder
+          M.where_clause_builder(function(where)
+            values[var] = where
+            collect_and_expand()
+          end)
+        end
       elseif var == "COLUMNS" then
-        -- Check for defaults from file macros
-        local file_macros = M.parse_file_macros()
+        -- This should not be reached if CONFIG defines DEFAULT_COLUMNS
+        -- Use the default from the template or prompt for columns
         local default_cols = default
         if not default_cols or default_cols == "" then
-          if file_macros._CONFIG and file_macros._CONFIG.DEFAULT_COLUMNS then
-            default_cols = file_macros._CONFIG.DEFAULT_COLUMNS
-          else
-            default_cols = "*"
-          end
+          default_cols = "*"
         end
         vim.ui.input({
           prompt = "Columns to select: ",

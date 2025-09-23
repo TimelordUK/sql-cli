@@ -2018,19 +2018,32 @@ fn analyze_statement(
 
 /// Helper function to find the last occurrence of a token type in the token stream
 fn find_last_token(tokens: &[(usize, usize, Token)], target: &Token) -> Option<usize> {
-    tokens.iter().rposition(|(_, _, t)| t == target).map(|idx| tokens[idx].0)
+    tokens
+        .iter()
+        .rposition(|(_, _, t)| t == target)
+        .map(|idx| tokens[idx].0)
 }
 
 /// Helper function to find the last occurrence of any matching token
-fn find_last_matching_token<F>(tokens: &[(usize, usize, Token)], predicate: F) -> Option<(usize, &Token)>
+fn find_last_matching_token<F>(
+    tokens: &[(usize, usize, Token)],
+    predicate: F,
+) -> Option<(usize, &Token)>
 where
     F: Fn(&Token) -> bool,
 {
-    tokens.iter().rposition(|(_, _, t)| predicate(t)).map(|idx| (tokens[idx].0, &tokens[idx].2))
+    tokens
+        .iter()
+        .rposition(|(_, _, t)| predicate(t))
+        .map(|idx| (tokens[idx].0, &tokens[idx].2))
 }
 
 /// Helper function to check if we're in a specific clause based on tokens
-fn is_in_clause(tokens: &[(usize, usize, Token)], clause_token: Token, exclude_tokens: &[Token]) -> bool {
+fn is_in_clause(
+    tokens: &[(usize, usize, Token)],
+    clause_token: Token,
+    exclude_tokens: &[Token],
+) -> bool {
     // Find the last occurrence of the clause token
     if let Some(clause_pos) = find_last_token(tokens, &clause_token) {
         // Check if any exclude tokens appear after it
@@ -2232,12 +2245,14 @@ fn analyze_partial(query: &str, cursor_pos: usize) -> (CursorContext, Option<Str
     }
 
     // Check if we're after AND/OR using tokens - but only after checking for method calls
-    if let Some((pos, token)) = find_last_matching_token(&tokens, |t| matches!(t, Token::And | Token::Or)) {
+    if let Some((pos, token)) =
+        find_last_matching_token(&tokens, |t| matches!(t, Token::And | Token::Or))
+    {
         // Check if cursor is after the logical operator
         let token_end_pos = if matches!(token, Token::And) {
-            pos + 3  // "AND" is 3 characters
+            pos + 3 // "AND" is 3 characters
         } else {
-            pos + 2  // "OR" is 2 characters
+            pos + 2 // "OR" is 2 characters
         };
 
         if cursor_pos > token_end_pos {
@@ -2268,8 +2283,14 @@ fn analyze_partial(query: &str, cursor_pos: usize) -> (CursorContext, Option<Str
     // Check if we're in ORDER BY clause using tokens
     if let Some(order_pos) = find_last_token(&tokens, &Token::OrderBy) {
         // Check if there's a BY token after ORDER
-        let has_by = tokens.iter().any(|(pos, _, t)| *pos > order_pos && matches!(t, Token::By));
-        if has_by || tokens.last().map_or(false, |(_, _, t)| matches!(t, Token::OrderBy)) {
+        let has_by = tokens
+            .iter()
+            .any(|(pos, _, t)| *pos > order_pos && matches!(t, Token::By));
+        if has_by
+            || tokens
+                .last()
+                .map_or(false, |(_, _, t)| matches!(t, Token::OrderBy))
+        {
             return (CursorContext::OrderByClause, extract_partial_at_end(query));
         }
     }
@@ -2280,12 +2301,18 @@ fn analyze_partial(query: &str, cursor_pos: usize) -> (CursorContext, Option<Str
     }
 
     // Check if we're in FROM clause using tokens
-    if is_in_clause(&tokens, Token::From, &[Token::Where, Token::OrderBy, Token::GroupBy]) {
+    if is_in_clause(
+        &tokens,
+        Token::From,
+        &[Token::Where, Token::OrderBy, Token::GroupBy],
+    ) {
         return (CursorContext::FromClause, extract_partial_at_end(query));
     }
 
     // Check if we're in SELECT clause using tokens
-    if find_last_token(&tokens, &Token::Select).is_some() && find_last_token(&tokens, &Token::From).is_none() {
+    if find_last_token(&tokens, &Token::Select).is_some()
+        && find_last_token(&tokens, &Token::From).is_none()
+    {
         return (CursorContext::SelectClause, extract_partial_at_end(query));
     }
 
