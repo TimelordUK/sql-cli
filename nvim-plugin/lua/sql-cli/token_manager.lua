@@ -70,8 +70,12 @@ function M.fetch_token_from_command(callback)
           M.config.last_refresh = os.time()
           vim.env[M.config.token_var_name] = token
 
+          -- Show token preview (first 30 chars and last 10 chars)
+          local token_preview = token:sub(1, 30) .. "..." .. token:sub(-10)
+
           if M.config.debug then
-            vim.notify("Token refreshed from command (length: " .. #token .. ")", vim.log.levels.INFO)
+            vim.notify(string.format("Token refreshed from command (length: %d)\nPreview: %s\nTime: %s",
+              #token, token_preview, os.date("%H:%M:%S")), vim.log.levels.INFO)
           else
             vim.notify("Token refreshed successfully", vim.log.levels.INFO)
           end
@@ -201,15 +205,19 @@ end
 -- Timer callback for auto-refresh
 function M.timer_callback()
   if M.config.debug then
-    vim.notify("Timer triggered for token refresh", vim.log.levels.INFO)
+    vim.notify(string.format("Timer triggered at %s", os.date("%H:%M:%S")), vim.log.levels.INFO)
   end
 
   if M.needs_refresh() then
     M.fetch_token(function(token)
-      if token and M.config.debug then
-        vim.notify("Timer: Token refreshed (length: " .. #token .. ")", vim.log.levels.INFO)
-      end
+      -- The fetch_token function will show the preview in debug mode
+      -- No need to duplicate here
     end)
+  else
+    if M.config.debug then
+      local time_since = os.time() - M.config.last_refresh
+      vim.notify(string.format("Token still fresh (refreshed %d seconds ago)", time_since), vim.log.levels.INFO)
+    end
   end
 end
 
@@ -273,7 +281,10 @@ end
 function M.refresh_token()
   M.fetch_token(function(token)
     if token then
-      vim.notify("Token: " .. token:sub(1, 20) .. "...", vim.log.levels.INFO)
+      -- Show preview regardless of debug mode for manual refresh
+      local token_preview = token:sub(1, 30) .. "..." .. token:sub(-10)
+      vim.notify(string.format("Manual refresh complete\nToken preview: %s\nLength: %d chars",
+        token_preview, #token), vim.log.levels.INFO)
     end
   end)
 end
@@ -287,7 +298,17 @@ function M.create_commands()
   vim.api.nvim_create_user_command("TokenShow", function()
     local token = M.config.current_token or vim.env[M.config.token_var_name]
     if token then
-      vim.notify("Current token: " .. token:sub(1, 30) .. "...", vim.log.levels.INFO)
+      -- Show more detailed token info
+      local token_preview = token:sub(1, 40) .. "..." .. token:sub(-20)
+      local token_info = string.format(
+        "Current token:\n  Length: %d chars\n  Preview: %s\n  Last refresh: %s\n  ENV[%s]: %s",
+        #token,
+        token_preview,
+        M.config.last_refresh > 0 and os.date("%H:%M:%S", M.config.last_refresh) or "never",
+        M.config.token_var_name,
+        vim.env[M.config.token_var_name] and "Set" or "Not set"
+      )
+      vim.notify(token_info, vim.log.levels.INFO)
     else
       vim.notify("No token available", vim.log.levels.WARN)
     end

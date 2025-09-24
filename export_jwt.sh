@@ -10,7 +10,8 @@ unix_time=$(date +%s)
 # Real JWT would have proper header.payload.signature structure
 header=$(echo -n '{"alg":"HS256","typ":"JWT"}' | base64 | tr -d '\n')
 payload=$(echo -n "{\"sub\":\"test-user\",\"iat\":$unix_time,\"exp\":$(($unix_time + 900)),\"timestamp\":\"$timestamp\"}" | base64 | tr -d '\n')
-signature="test-signature-$(date +%H%M%S)"
+# Include seconds in signature so we can see it change
+signature="test-sig-$(date +%H%M%S)"
 
 # Output ONLY the token to stdout - nothing else
 echo "$header.$payload.$signature"
