@@ -55,6 +55,7 @@ impl HashJoinExecutor {
                         right_col_idx,
                         &left_col_name,
                         &right_col_name,
+                        &join_clause.alias,
                     )
                 } else {
                     self.nested_loop_join_inner(
@@ -63,6 +64,7 @@ impl HashJoinExecutor {
                         left_col_idx,
                         right_col_idx,
                         &join_clause.condition.operator,
+                        &join_clause.alias,
                     )
                 }
             }
@@ -75,6 +77,7 @@ impl HashJoinExecutor {
                         right_col_idx,
                         &left_col_name,
                         &right_col_name,
+                        &join_clause.alias,
                     )
                 } else {
                     self.nested_loop_join_left(
@@ -83,6 +86,7 @@ impl HashJoinExecutor {
                         left_col_idx,
                         right_col_idx,
                         &join_clause.condition.operator,
+                        &join_clause.alias,
                     )
                 }
             }
@@ -96,6 +100,7 @@ impl HashJoinExecutor {
                         left_col_idx,
                         &right_col_name,
                         &left_col_name,
+                        &join_clause.alias,
                     )
                 } else {
                     // Right join is just a left join with tables swapped
@@ -105,6 +110,7 @@ impl HashJoinExecutor {
                         right_col_idx,
                         left_col_idx,
                         &self.reverse_operator(&join_clause.condition.operator),
+                        &join_clause.alias,
                     )
                 }
             }
@@ -207,6 +213,7 @@ impl HashJoinExecutor {
         right_col_idx: usize,
         _left_col_name: &str,
         _right_col_name: &str,
+        join_alias: &Option<String>,
     ) -> Result<DataTable> {
         let start = std::time::Instant::now();
 
@@ -286,15 +293,25 @@ impl HashJoinExecutor {
                 });
             } else {
                 // If there's a name conflict, add with a suffix
+                let (column_name, qualified_name) = if let Some(alias) = join_alias {
+                    // Use the join alias for the column name
+                    (
+                        format!("{}.{}", alias, col.name),
+                        Some(format!("{}.{}", alias, col.name)),
+                    )
+                } else {
+                    // Fall back to _right suffix
+                    (format!("{}_right", col.name), col.qualified_name.clone())
+                };
                 result.add_column(DataColumn {
-                    name: format!("{}_right", col.name),
+                    name: column_name,
                     data_type: col.data_type.clone(),
                     nullable: col.nullable,
                     unique_values: col.unique_values,
                     null_count: col.null_count,
                     metadata: col.metadata.clone(),
-                    qualified_name: col.qualified_name.clone(), // Preserve qualified name
-                    source_table: col.source_table.clone(),     // Preserve source table
+                    qualified_name,
+                    source_table: join_alias.clone().or_else(|| col.source_table.clone()),
                 });
             }
         }
@@ -361,6 +378,7 @@ impl HashJoinExecutor {
         right_col_idx: usize,
         _left_col_name: &str,
         _right_col_name: &str,
+        join_alias: &Option<String>,
     ) -> Result<DataTable> {
         let start = std::time::Instant::now();
 
@@ -413,15 +431,25 @@ impl HashJoinExecutor {
                 });
             } else {
                 // If there's a name conflict, add with a suffix
+                let (column_name, qualified_name) = if let Some(alias) = join_alias {
+                    // Use the join alias for the column name
+                    (
+                        format!("{}.{}", alias, col.name),
+                        Some(format!("{}.{}", alias, col.name)),
+                    )
+                } else {
+                    // Fall back to _right suffix
+                    (format!("{}_right", col.name), col.qualified_name.clone())
+                };
                 result.add_column(DataColumn {
-                    name: format!("{}_right", col.name),
+                    name: column_name,
                     data_type: col.data_type.clone(),
                     nullable: true, // Always nullable for outer join
                     unique_values: col.unique_values,
                     null_count: col.null_count,
                     metadata: col.metadata.clone(),
-                    qualified_name: col.qualified_name.clone(), // Preserve qualified name
-                    source_table: col.source_table.clone(),     // Preserve source table
+                    qualified_name,
+                    source_table: join_alias.clone().or_else(|| col.source_table.clone()),
                 });
             }
         }
@@ -600,6 +628,7 @@ impl HashJoinExecutor {
         left_col_idx: usize,
         right_col_idx: usize,
         operator: &JoinOperator,
+        join_alias: &Option<String>,
     ) -> Result<DataTable> {
         let start = std::time::Instant::now();
 
@@ -645,15 +674,25 @@ impl HashJoinExecutor {
                     source_table: col.source_table.clone(),     // Preserve source table
                 });
             } else {
+                let (column_name, qualified_name) = if let Some(alias) = join_alias {
+                    // Use the join alias for the column name
+                    (
+                        format!("{}.{}", alias, col.name),
+                        Some(format!("{}.{}", alias, col.name)),
+                    )
+                } else {
+                    // Fall back to _right suffix
+                    (format!("{}_right", col.name), col.qualified_name.clone())
+                };
                 result.add_column(DataColumn {
-                    name: format!("{}_right", col.name),
+                    name: column_name,
                     data_type: col.data_type.clone(),
                     nullable: col.nullable,
                     unique_values: col.unique_values,
                     null_count: col.null_count,
                     metadata: col.metadata.clone(),
-                    qualified_name: col.qualified_name.clone(), // Preserve qualified name
-                    source_table: col.source_table.clone(),     // Preserve source table
+                    qualified_name,
+                    source_table: join_alias.clone().or_else(|| col.source_table.clone()),
                 });
             }
         }
@@ -693,6 +732,7 @@ impl HashJoinExecutor {
         left_col_idx: usize,
         right_col_idx: usize,
         operator: &JoinOperator,
+        join_alias: &Option<String>,
     ) -> Result<DataTable> {
         let start = std::time::Instant::now();
 
@@ -738,15 +778,25 @@ impl HashJoinExecutor {
                     source_table: col.source_table.clone(),     // Preserve source table
                 });
             } else {
+                let (column_name, qualified_name) = if let Some(alias) = join_alias {
+                    // Use the join alias for the column name
+                    (
+                        format!("{}.{}", alias, col.name),
+                        Some(format!("{}.{}", alias, col.name)),
+                    )
+                } else {
+                    // Fall back to _right suffix
+                    (format!("{}_right", col.name), col.qualified_name.clone())
+                };
                 result.add_column(DataColumn {
-                    name: format!("{}_right", col.name),
+                    name: column_name,
                     data_type: col.data_type.clone(),
                     nullable: true, // Always nullable for outer join
                     unique_values: col.unique_values,
                     null_count: col.null_count,
                     metadata: col.metadata.clone(),
-                    qualified_name: col.qualified_name.clone(), // Preserve qualified name
-                    source_table: col.source_table.clone(),     // Preserve source table
+                    qualified_name,
+                    source_table: join_alias.clone().or_else(|| col.source_table.clone()),
                 });
             }
         }

@@ -579,7 +579,32 @@ impl QueryEngine {
             if let Some(cte_view) = cte_context.get(table_name) {
                 debug!("QueryEngine: Using CTE '{}' as source table", table_name);
                 // Materialize the CTE view as a table
-                let materialized = self.materialize_view((**cte_view).clone())?;
+                let mut materialized = self.materialize_view((**cte_view).clone())?;
+
+                // Apply alias to qualified column names if present
+                if let Some(ref alias) = statement.from_alias {
+                    debug!(
+                        "QueryEngine: Applying alias '{}' to CTE '{}' qualified column names",
+                        alias, table_name
+                    );
+                    for column in materialized.columns_mut() {
+                        // Replace the CTE name with the alias in qualified names
+                        if let Some(ref qualified_name) = column.qualified_name {
+                            if qualified_name.starts_with(&format!("{}.", table_name)) {
+                                column.qualified_name =
+                                    Some(qualified_name.replace(
+                                        &format!("{}.", table_name),
+                                        &format!("{}.", alias),
+                                    ));
+                            }
+                        }
+                        // Update source table to reflect the alias
+                        if column.source_table.as_ref() == Some(table_name) {
+                            column.source_table = Some(alias.clone());
+                        }
+                    }
+                }
+
                 Arc::new(materialized)
             } else {
                 // Regular table reference - use the provided table
@@ -616,7 +641,28 @@ impl QueryEngine {
                     TableSource::Table(name) => {
                         // Check if it's a CTE reference
                         if let Some(cte_view) = cte_context.get(name) {
-                            let materialized = self.materialize_view((**cte_view).clone())?;
+                            let mut materialized = self.materialize_view((**cte_view).clone())?;
+
+                            // Apply alias to qualified column names if present
+                            if let Some(ref alias) = join_clause.alias {
+                                debug!("QueryEngine: Applying JOIN alias '{}' to CTE '{}' qualified column names", alias, name);
+                                for column in materialized.columns_mut() {
+                                    // Replace the CTE name with the alias in qualified names
+                                    if let Some(ref qualified_name) = column.qualified_name {
+                                        if qualified_name.starts_with(&format!("{}.", name)) {
+                                            column.qualified_name = Some(qualified_name.replace(
+                                                &format!("{}.", name),
+                                                &format!("{}.", alias),
+                                            ));
+                                        }
+                                    }
+                                    // Update source table to reflect the alias
+                                    if column.source_table.as_ref() == Some(name) {
+                                        column.source_table = Some(alias.clone());
+                                    }
+                                }
+                            }
+
                             Arc::new(materialized)
                         } else {
                             // For now, we need the actual table data
