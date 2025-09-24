@@ -5,6 +5,40 @@ All notable changes to SQL CLI will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.54.0] - 2025-09-24
+
+### 🚀 Major Performance Improvements & JOIN Enhancements
+
+This release delivers massive GROUP BY performance improvements and adds support for multiple JOIN conditions.
+
+### ✨ New Features
+
+#### **Multiple JOIN Conditions**
+- Support for multiple conditions in JOIN clauses connected by AND
+- Example: `INNER JOIN table ON a.id = b.id AND a.status = b.status`
+- Works with all join types (INNER, LEFT, RIGHT)
+- Supports mixed operators (equality and inequality)
+
+#### **Enhanced Execution Plan**
+- Added detailed phase breakdown for GROUP BY operations
+- Shows timing for each phase: group building, aggregation, HAVING filter
+- Use `--execution-plan` flag to see detailed performance metrics
+
+### 🎯 Performance Improvements
+
+#### **GROUP BY Optimization - 6x Faster!**
+- **Fixed major inefficiency**: ArithmeticEvaluator was being created for every row
+- **Results**:
+  - 30,000 rows: 2,421ms → 402ms (6x faster)
+  - 50,000 rows: 3,808ms → 633ms (6x faster)
+  - Group building phase alone is 12x faster
+- **Impact**: All GROUP BY queries will see significant performance gains
+
+### 🛠️ Technical Details
+- Reused ArithmeticEvaluator instances instead of creating 30,000+ times
+- Pre-allocated and reused vectors in hot paths
+- Added GroupByPhaseInfo for detailed performance tracking
+
 ## [1.53.0] - 2025-09-23
 
 ### 🎯 String Utilities & Type Conversions

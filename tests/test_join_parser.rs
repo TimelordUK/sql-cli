@@ -18,7 +18,10 @@ fn test_simple_inner_join() {
     assert!(matches!(&join.table, TableSource::Table(name) if name == "orders"));
     assert_eq!(join.condition.conditions.len(), 1);
     assert_eq!(join.condition.conditions[0].left_column, "users.id");
-    assert!(matches!(join.condition.conditions[0].operator, JoinOperator::Equal));
+    assert!(matches!(
+        join.condition.conditions[0].operator,
+        JoinOperator::Equal
+    ));
     assert_eq!(join.condition.conditions[0].right_column, "orders.user_id");
 }
 
@@ -114,7 +117,10 @@ fn test_join_with_table_alias() {
     assert_eq!(stmt.joins[0].alias, Some("o".to_string()));
     assert_eq!(stmt.joins[0].condition.conditions.len(), 1);
     assert_eq!(stmt.joins[0].condition.conditions[0].left_column, "u.id");
-    assert_eq!(stmt.joins[0].condition.conditions[0].right_column, "o.user_id");
+    assert_eq!(
+        stmt.joins[0].condition.conditions[0].right_column,
+        "o.user_id"
+    );
 }
 
 #[test]

@@ -1,6 +1,6 @@
 [package]
 name = "sql-cli"
-version = "1.53.0"
+version = "1.54.0"
 edition = "2021"
 autobins = false
 autoexamples = false

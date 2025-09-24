@@ -3,7 +3,7 @@ use fxhash::{FxHashMap, FxHashSet};
 use std::cmp::min;
 use std::collections::HashMap;
 use std::sync::Arc;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 use tracing::{debug, info};
 
 use crate::config::config::BehaviorConfig;
@@ -12,7 +12,7 @@ use crate::data::arithmetic_evaluator::ArithmeticEvaluator;
 use crate::data::data_view::DataView;
 use crate::data::datatable::{DataColumn, DataRow, DataTable, DataValue};
 use crate::data::evaluation_context::EvaluationContext;
-use crate::data::group_by_expressions::GroupByExpressions;
+use crate::data::group_by_expressions::{GroupByExpressions, GroupByPhaseInfo};
 use crate::data::hash_join::HashJoinExecutor;
 use crate::data::recursive_where_evaluator::RecursiveWhereEvaluator;
 use crate::data::subquery_executor::SubqueryExecutor;
@@ -884,12 +884,13 @@ impl QueryEngine {
                     group_by_exprs,
                     &statement.select_items,
                     statement.having.as_ref(),
+                    plan,
                 )?;
 
                 plan.set_rows_out(view.row_count());
                 plan.add_detail(format!("Output: {} groups", view.row_count()));
                 plan.add_detail(format!(
-                    "Group time: {:.3}ms",
+                    "Overall time: {:.3}ms",
                     group_start.elapsed().as_secs_f64() * 1000.0
                 ));
                 plan.end_step();
@@ -1385,16 +1386,48 @@ impl QueryEngine {
         group_by_exprs: &[SqlExpression],
         select_items: &[SelectItem],
         having: Option<&SqlExpression>,
+        plan: &mut ExecutionPlanBuilder,
     ) -> Result<DataView> {
         // Use the new expression-based GROUP BY implementation
-        self.apply_group_by_expressions(
+        let (result_view, phase_info) = self.apply_group_by_expressions(
             view,
             group_by_exprs,
             select_items,
             having,
             self.case_insensitive,
             self.date_notation.clone(),
-        )
+        )?;
+
+        // Add detailed phase information to the execution plan
+        plan.add_detail(format!("=== GROUP BY Phase Breakdown ==="));
+        plan.add_detail(format!(
+            "Phase 1 - Group Building: {:.3}ms",
+            phase_info.phase2_key_building.as_secs_f64() * 1000.0
+        ));
+        plan.add_detail(format!(
+            "  • Processing {} rows into {} groups",
+            phase_info.total_rows, phase_info.num_groups
+        ));
+        plan.add_detail(format!(
+            "Phase 2 - Aggregation: {:.3}ms",
+            phase_info.phase4_aggregation.as_secs_f64() * 1000.0
+        ));
+        if phase_info.phase4_having_evaluation > Duration::ZERO {
+            plan.add_detail(format!(
+                "Phase 3 - HAVING Filter: {:.3}ms",
+                phase_info.phase4_having_evaluation.as_secs_f64() * 1000.0
+            ));
+            plan.add_detail(format!(
+                "  • Filtered {} groups",
+                phase_info.groups_filtered_by_having
+            ));
+        }
+        plan.add_detail(format!(
+            "Total GROUP BY time: {:.3}ms",
+            phase_info.total_time.as_secs_f64() * 1000.0
+        ));
+
+        Ok(result_view)
     }
 
     /// Estimate the cardinality (number of unique groups) for GROUP BY operations

@@ -4,6 +4,7 @@ use anyhow::{anyhow, Result};
 use fxhash::FxHashMap;
 use std::collections::HashMap;
 use std::sync::Arc;
+use std::time::Duration;
 
 use crate::data::arithmetic_evaluator::ArithmeticEvaluator;
 use crate::data::data_view::DataView;
@@ -12,6 +13,22 @@ use crate::data::query_engine::QueryEngine;
 use crate::sql::aggregates::contains_aggregate;
 use crate::sql::parser::ast::{ColumnRef, SelectItem, SqlExpression};
 use tracing::debug;
+
+/// Detailed phase information for GROUP BY operations
+#[derive(Debug, Clone)]
+pub struct GroupByPhaseInfo {
+    pub total_rows: usize,
+    pub num_groups: usize,
+    pub num_expressions: usize,
+    pub phase1_cardinality_estimation: Duration,
+    pub phase2_key_building: Duration,
+    pub phase2_expression_evaluation: Duration,
+    pub phase3_dataview_creation: Duration,
+    pub phase4_aggregation: Duration,
+    pub phase4_having_evaluation: Duration,
+    pub groups_filtered_by_having: usize,
+    pub total_time: Duration,
+}
 
 /// Key for grouping rows - contains the evaluated expression values
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -35,7 +52,7 @@ pub trait GroupByExpressions {
         having: Option<&SqlExpression>,
         _case_insensitive: bool,
         date_notation: String,
-    ) -> Result<DataView>;
+    ) -> Result<(DataView, GroupByPhaseInfo)>;
 }
 
 impl GroupByExpressions for QueryEngine {
@@ -44,32 +61,68 @@ impl GroupByExpressions for QueryEngine {
         view: DataView,
         group_by_exprs: &[SqlExpression],
     ) -> Result<FxHashMap<GroupKey, DataView>> {
-        // Estimate cardinality for pre-sizing
+        use std::time::Instant;
+        let start = Instant::now();
+
+        // Phase 1: Estimate cardinality for pre-sizing
+        let phase1_start = Instant::now();
         let estimated_groups = self.estimate_group_cardinality(&view, group_by_exprs);
         let mut groups = FxHashMap::with_capacity_and_hasher(estimated_groups, Default::default());
         let mut group_rows: FxHashMap<GroupKey, Vec<usize>> =
             FxHashMap::with_capacity_and_hasher(estimated_groups, Default::default());
+        let phase1_time = phase1_start.elapsed();
+        debug!(
+            "GROUP BY Phase 1 (cardinality estimation): {:?}, estimated {} groups",
+            phase1_time, estimated_groups
+        );
 
-        // Process each visible row
-        for row_idx in view.get_visible_rows().iter().copied() {
+        // Phase 2: Process each visible row and build group keys
+        let phase2_start = Instant::now();
+        let visible_rows = view.get_visible_rows();
+        let total_rows = visible_rows.len();
+        debug!("GROUP BY Phase 2 starting: processing {} rows", total_rows);
+
+        // OPTIMIZATION: Create evaluator once outside the loop!
+        let mut evaluator = ArithmeticEvaluator::new(view.source());
+
+        // OPTIMIZATION: Pre-allocate key_values vector with the right capacity
+        let mut key_values = Vec::with_capacity(group_by_exprs.len());
+
+        for row_idx in visible_rows.iter().copied() {
+            // Clear and reuse the vector instead of allocating new one
+            key_values.clear();
+
             // Evaluate GROUP BY expressions for this row
-            let mut key_values = Vec::new();
             for expr in group_by_exprs {
-                let mut evaluator = ArithmeticEvaluator::new(view.source());
                 let value = evaluator.evaluate(expr, row_idx).unwrap_or(DataValue::Null);
                 key_values.push(value);
             }
 
-            let key = GroupKey(key_values);
+            let key = GroupKey(key_values.clone()); // Need to clone here for the key
             group_rows.entry(key).or_default().push(row_idx);
         }
+        let phase2_time = phase2_start.elapsed();
+        debug!(
+            "GROUP BY Phase 2 (expression evaluation & key building): {:?}, created {} unique keys",
+            phase2_time,
+            group_rows.len()
+        );
 
-        // Create DataViews for each group
+        // Phase 3: Create DataViews for each group
+        let phase3_start = Instant::now();
         for (key, rows) in group_rows {
             let mut group_view = DataView::new(view.source_arc());
             group_view = group_view.with_rows(rows);
             groups.insert(key, group_view);
         }
+        let phase3_time = phase3_start.elapsed();
+        debug!("GROUP BY Phase 3 (DataView creation): {:?}", phase3_time);
+
+        let total_time = start.elapsed();
+        debug!(
+            "GROUP BY Total time: {:?} (P1: {:?}, P2: {:?}, P3: {:?})",
+            total_time, phase1_time, phase2_time, phase3_time
+        );
 
         Ok(groups)
     }
@@ -82,16 +135,23 @@ impl GroupByExpressions for QueryEngine {
         having: Option<&SqlExpression>,
         _case_insensitive: bool,
         date_notation: String,
-    ) -> Result<DataView> {
+    ) -> Result<(DataView, GroupByPhaseInfo)> {
+        use std::time::Instant;
+        let start = Instant::now();
+
         debug!(
-            "apply_group_by_expressions - grouping by {} expressions",
-            group_by_exprs.len()
+            "apply_group_by_expressions - grouping by {} expressions, {} select items",
+            group_by_exprs.len(),
+            select_items.len()
         );
 
-        // Build groups by evaluating expressions for each row
+        // Phase 1: Build groups by evaluating expressions for each row
+        let phase1_start = Instant::now();
         let groups = self.group_by_expressions(view.clone(), group_by_exprs)?;
+        let phase1_time = phase1_start.elapsed();
         debug!(
-            "apply_group_by_expressions - created {} groups",
+            "apply_group_by_expressions Phase 1 (group building): {:?}, created {} groups",
+            phase1_time,
             groups.len()
         );
 
@@ -187,7 +247,13 @@ impl GroupByExpressions for QueryEngine {
             }
         }
 
-        // Process each group
+        // Phase 2: Process each group (aggregate computation)
+        let phase2_start = Instant::now();
+        let mut aggregation_time = std::time::Duration::ZERO;
+        let mut having_time = std::time::Duration::ZERO;
+        let mut groups_processed = 0;
+        let mut groups_filtered = 0;
+
         for (group_key, group_view) in groups {
             let mut row_values = Vec::new();
 
@@ -197,6 +263,7 @@ impl GroupByExpressions for QueryEngine {
             }
 
             // Calculate aggregate values for this group
+            let agg_start = Instant::now();
             for (expr, _col_name) in &aggregate_columns {
                 let group_rows = group_view.get_visible_rows();
                 let mut evaluator = ArithmeticEvaluator::with_date_notation(
@@ -215,8 +282,10 @@ impl GroupByExpressions for QueryEngine {
 
                 row_values.push(value);
             }
+            aggregation_time += agg_start.elapsed();
 
             // Evaluate HAVING clause if present
+            let having_start = Instant::now();
             if let Some(having_expr) = having {
                 // Create a temporary table with one row containing the group values
                 let mut temp_table = DataTable::new("having_eval");
@@ -242,9 +311,14 @@ impl GroupByExpressions for QueryEngine {
 
                 // Skip this group if HAVING condition is not met
                 if !is_truthy(&having_result) {
+                    groups_filtered += 1;
+                    having_time += having_start.elapsed();
                     continue;
                 }
             }
+            having_time += having_start.elapsed();
+
+            groups_processed += 1;
 
             // Add the row to the result table
             result_table
@@ -252,7 +326,39 @@ impl GroupByExpressions for QueryEngine {
                 .map_err(|e| anyhow!("Failed to add grouped row: {}", e))?;
         }
 
-        Ok(DataView::new(Arc::new(result_table)))
+        let phase2_time = phase2_start.elapsed();
+        let total_time = start.elapsed();
+
+        debug!(
+            "apply_group_by_expressions Phase 2 (aggregation): {:?}",
+            phase2_time
+        );
+        debug!("  - Aggregation time: {:?}", aggregation_time);
+        debug!("  - HAVING evaluation time: {:?}", having_time);
+        debug!(
+            "  - Groups processed: {}, filtered by HAVING: {}",
+            groups_processed, groups_filtered
+        );
+        debug!(
+            "apply_group_by_expressions Total time: {:?} (P1: {:?}, P2: {:?})",
+            total_time, phase1_time, phase2_time
+        );
+
+        let phase_info = GroupByPhaseInfo {
+            total_rows: view.row_count(),
+            num_groups: groups_processed,
+            num_expressions: group_by_exprs.len(),
+            phase1_cardinality_estimation: Duration::ZERO, // Not tracked separately in phase1
+            phase2_key_building: phase1_time,              // This is actually the grouping phase
+            phase2_expression_evaluation: Duration::ZERO,  // Included in phase2_key_building
+            phase3_dataview_creation: Duration::ZERO,      // Included in phase1_time
+            phase4_aggregation: aggregation_time,
+            phase4_having_evaluation: having_time,
+            groups_filtered_by_having: groups_filtered,
+            total_time,
+        };
+
+        Ok((DataView::new(Arc::new(result_table)), phase_info))
     }
 }
 
