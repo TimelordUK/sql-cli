@@ -184,6 +184,7 @@
 -- @{DATE:prompt}               - Shows date picker
 -- @{VAR:variable_name}         - Substitutes variable from CONFIG or environment
 -- @{JVAR:variable_name}        - Substitutes variable (JSON escaped with \")
+-- @{MACRO:macro_name}          - Expands another macro (recursive expansion supported)
 
 -- Examples for JSON contexts (inside BODY):
 -- "where": "OrderId = @{JINPUT:Enter Order ID}"          -- Returns: \"value\"
@@ -383,3 +384,47 @@
 --    -- END MACRO
 --
 -- That's it! No Lua changes needed!
+
+-- ============================================
+-- Nested Macro Expansion Example
+-- ============================================
+
+-- Define reusable WHERE clause components:
+-- MACRO: WHERE_DATE_TODAY
+-- TradeDate = DateTime(2025, 9, 24)
+-- END MACRO
+
+-- MACRO: WHERE_SOURCE_BLOOMBERG
+-- Source = "Bloomberg"
+-- END MACRO
+
+-- Combine them into a complex WHERE clause:
+-- MACRO: WHERE_BLOOMBERG_TODAY
+-- @{MACRO:WHERE_SOURCE_BLOOMBERG} and @{MACRO:WHERE_DATE_TODAY}
+-- END MACRO
+
+-- Use in a query with variable substitution:
+-- MACRO: QUERY_BLOOMBERG_TODAY
+-- WITH WEB trades AS (
+--     URL '@{VAR:BASE_URL}/query/trades'
+--     METHOD POST
+--     BODY '{
+--         "select": "*",
+--         "where": "@{MACRO:WHERE_BLOOMBERG_TODAY}"
+--     }'
+--     FORMAT JSON
+--     JSON_PATH 'Result'
+--     HEADERS (
+--         'Authorization': 'Bearer @{VAR:API_TOKEN}',
+--         'Content-Type': 'application/json'
+--     )
+-- )
+-- SELECT * FROM trades
+-- ORDER BY ExecutionTime DESC
+-- END MACRO
+
+-- When you expand @QUERY_BLOOMBERG_TODAY:
+-- 1. @{VAR:BASE_URL} and @{VAR:API_TOKEN} are replaced from CONFIG
+-- 2. @{MACRO:WHERE_BLOOMBERG_TODAY} is expanded
+-- 3. Which recursively expands @{MACRO:WHERE_SOURCE_BLOOMBERG} and @{MACRO:WHERE_DATE_TODAY}
+-- 4. Final result has all macros and variables fully expanded

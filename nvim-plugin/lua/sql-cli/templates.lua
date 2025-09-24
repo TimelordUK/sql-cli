@@ -715,8 +715,16 @@ function M.expand_functions_in_string(text, callback, test_values)
     debug_log("Pass 3: Substituting placeholders")
     local result = M.substitute_placeholders(expanded_text, functions_to_eval, resolved_values)
     debug_log("Pass 3 complete: Final result length: " .. #result)
-    debug_log("Calling callback with result")
-    callback(result)
+
+    -- Check if the result has new @{...} patterns that need expansion (from MACRO expansion)
+    if result:match("@{[^}]+}") then
+      debug_log("Result contains new @{...} patterns, recursively expanding")
+      -- Recursively expand any new patterns
+      M.expand_functions_in_string(result, callback)
+    else
+      debug_log("Calling callback with result")
+      callback(result)
+    end
   end)
   debug_log("expand_functions_in_string setup complete, waiting for async resolution")
 end
@@ -936,6 +944,30 @@ function M.resolve_functions(functions_to_eval, test_values, callback)
         evaluate_next_func()
       else
         resolved_values[func_idx - 1] = "${VAR}"
+        evaluate_next_func()
+      end
+
+    elseif func_def.name == "MACRO" then
+      -- Macro expansion - returns the expanded macro content
+      local macro_name = func_def.arg_list and func_def.arg_list[1]
+      if macro_name then
+        debug_log("Looking up macro: " .. macro_name)
+
+        local file_macros = M.parse_file_macros()
+        local macro_content = file_macros[macro_name]
+
+        if macro_content and type(macro_content) == "string" then
+          debug_log("  Found macro: " .. macro_name .. " (" .. #macro_content .. " chars)")
+          -- The macro content itself might have more @{...} patterns that need expansion
+          -- We'll just return it here and let the next pass handle any nested patterns
+          resolved_values[func_idx - 1] = macro_content
+        else
+          debug_log("  Macro not found: " .. macro_name)
+          resolved_values[func_idx - 1] = "@{MACRO:" .. macro_name .. "}"  -- Keep original if not found
+        end
+        evaluate_next_func()
+      else
+        resolved_values[func_idx - 1] = "@{MACRO}"
         evaluate_next_func()
       end
 
@@ -2147,9 +2179,54 @@ WITH WEB trades AS (
     M.expand_functions_in_string(expansion, function(result)
       debug_log("expand_functions_in_string callback called, result: " .. tostring(result and #result or "nil"))
       if result then
+        -- First check if result has nested macros (@MACRO_NAME patterns)
+        if result:match("@[%w_]+") then
+          debug_log("Result has nested macros, recursively expanding")
+          debug_log("Expanding nested macros...")
+
+          -- Recursively expand nested macros
+          local max_depth = 10
+          local depth = 0
+          local file_macros = M.parse_file_macros()
+
+          while depth < max_depth do
+            local found = false
+            result = result:gsub("@([%w_]+)", function(nested_macro)
+              debug_log("Found nested macro: @" .. nested_macro)
+              local nested_expansion = file_macros[nested_macro]
+              if nested_expansion and type(nested_expansion) == "string" then
+                found = true
+                debug_log("  Expanding @" .. nested_macro)
+                return nested_expansion
+              else
+                debug_log("  Macro @" .. nested_macro .. " not found")
+                return "@" .. nested_macro  -- Keep unchanged if not found
+              end
+            end)
+
+            if not found then
+              break
+            end
+            depth = depth + 1
+          end
+
+          -- After expanding nested macros, check if we have new function patterns
+          if result:match("@{[^}]+}") or result:match("[%w_]+%b()") then
+            debug_log("Nested macros introduced new function patterns, re-expanding")
+            -- Recursively call expand_functions_in_string for the nested patterns
+            M.expand_functions_in_string(result, function(nested_result)
+              if nested_result then
+                M.replace_macro_inline(row, start_pos, end_pos, nested_result)
+              else
+                vim.notify("Nested macro expansion cancelled", vim.log.levels.INFO)
+              end
+            end)
+            return  -- Exit early since we're handling it recursively
+          end
+        end
+
         -- Check if result still has variables that need substitution
         if result:match("${[^}]+}") then
-          vim.notify("Result has variables that need substitution", vim.log.levels.INFO)
           debug_log("Result has variables, performing substitution")
           -- Load CONFIG values
           local file_macros = M.parse_file_macros()
@@ -2157,13 +2234,13 @@ WITH WEB trades AS (
 
           -- Add CONFIG values
           if file_macros._CONFIG then
-            vim.notify("Found CONFIG with " .. vim.tbl_count(file_macros._CONFIG) .. " values", vim.log.levels.INFO)
+            debug_log("Found CONFIG with " .. vim.tbl_count(file_macros._CONFIG) .. " values")
             for k, v in pairs(file_macros._CONFIG) do
               values[k] = v
               debug_log("  CONFIG: " .. k .. " = " .. v)
             end
           else
-            vim.notify("No CONFIG macro found", vim.log.levels.WARN)
+            debug_log("No CONFIG macro found")
           end
 
           -- Also check environment variables
@@ -2180,12 +2257,12 @@ WITH WEB trades AS (
             end
           end
 
-          vim.notify("Substituting with " .. vim.tbl_count(values) .. " values", vim.log.levels.INFO)
+          debug_log("Substituting with " .. vim.tbl_count(values) .. " values")
           result = M.substitute_variables(result, values)
 
           -- Check if substitution worked
           if result:match("${BASE_URL}") then
-            vim.notify("WARNING: BASE_URL still not substituted!", vim.log.levels.WARN)
+            debug_log("WARNING: BASE_URL still not substituted!")
           end
         else
           debug_log("No variables found in result")
