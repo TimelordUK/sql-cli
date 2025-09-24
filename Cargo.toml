@@ -2,6 +2,9 @@
 name = "sql-cli"
 version = "1.53.0"
 edition = "2021"
+autobins = false
+autoexamples = false
+autotests = false  # We'll use a single test harness
 authors = ["TimelordUK <sjames8888@gmail.com>"]
 description = "SQL query tool for CSV/JSON with both interactive TUI and non-interactive CLI modes - perfect for exploration and automation"
 license = "MIT"
@@ -34,13 +37,7 @@ exclude = [
 name = "sql_cli"
 path = "src/lib.rs"
 
-[[bin]]
-name = "sql-cli"
-path = "src/main.rs"
-
-[[bin]]
-name = "sql-cli-chart"
-path = "src/chart_main.rs"
+# Main binary specifications (already defined, removing duplicates)
 
 
 
@@ -89,6 +86,32 @@ hex = "0.4"
 tempfile = "3.8"
 criterion = "0.5"
 
+# Explicitly specify binaries (no auto-discovery)
+[[bin]]
+name = "sql-cli"
+path = "src/main.rs"
+
+[[bin]]
+name = "sql-cli-chart"
+path = "src/chart_main.rs"
+
+[[bin]]
+name = "action_debugger"
+path = "src/bin/action_debugger.rs"
+
+[[bin]]
+name = "action_logger"
+path = "src/bin/action_logger.rs"
+
+[[bin]]
+name = "dataview_debug"
+path = "src/bin/dataview_debug.rs"
+
+# Single test harness containing all tests as modules
+[[test]]
+name = "integration"
+path = "tests/main.rs"
+
 [[bench]]
 name = "where_evaluation"
 harness = false
@@ -98,6 +121,13 @@ opt-level = 0       # No optimization for debugging
 debug = true        # Include debug symbols
 debug-assertions = true
 overflow-checks = true
+
+[profile.test]
+opt-level = 0       # No optimization for fastest build
+debug = 1           # Minimal debug info for faster builds
+lto = false         # Disable LTO for faster linking
+codegen-units = 256 # Maximum parallelism for faster builds
+incremental = true  # Enable incremental compilation
 
 [profile.release]
 opt-level = "z"     # Optimize for size
