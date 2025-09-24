@@ -391,12 +391,18 @@ pub enum JoinOperator {
     GreaterThanOrEqual,
 }
 
-/// Join condition - initially just column equality
+/// Single join condition
+#[derive(Debug, Clone)]
+pub struct SingleJoinCondition {
+    pub left_column: String, // Column from left table (can include table prefix)
+    pub operator: JoinOperator, // Join operator
+    pub right_column: String, // Column from right table (can include table prefix)
+}
+
+/// Join condition - can be multiple conditions connected by AND
 #[derive(Debug, Clone)]
 pub struct JoinCondition {
-    pub left_column: String, // Column from left table (can include table prefix)
-    pub operator: JoinOperator, // Join operator (initially just Equal)
-    pub right_column: String, // Column from right table (can include table prefix)
+    pub conditions: Vec<SingleJoinCondition>, // Multiple conditions connected by AND
 }
 
 /// Join clause structure
@@ -405,5 +411,5 @@ pub struct JoinClause {
     pub join_type: JoinType,
     pub table: TableSource,       // The table being joined
     pub alias: Option<String>,    // Optional alias for the joined table
-    pub condition: JoinCondition, // ON condition
+    pub condition: JoinCondition, // ON condition(s)
 }

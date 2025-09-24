@@ -734,15 +734,22 @@ impl<'a> AstFormatter<'a> {
             write!(result, " {} {}", self.keyword("AS"), alias).unwrap();
         }
 
-        write!(
-            result,
-            " {} {} {} {}",
-            self.keyword("ON"),
-            join.condition.left_column,
-            self.format_join_operator(&join.condition.operator),
-            join.condition.right_column
-        )
-        .unwrap();
+        if !join.condition.conditions.is_empty() {
+            write!(result, " {}", self.keyword("ON")).unwrap();
+            for (i, condition) in join.condition.conditions.iter().enumerate() {
+                if i > 0 {
+                    write!(result, " {}", self.keyword("AND")).unwrap();
+                }
+                write!(
+                    result,
+                    " {} {} {}",
+                    condition.left_column,
+                    self.format_join_operator(&condition.operator),
+                    condition.right_column
+                )
+                .unwrap();
+            }
+        }
     }
 
     fn format_join_operator(&self, op: &JoinOperator) -> String {

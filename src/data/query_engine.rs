@@ -632,8 +632,9 @@ impl QueryEngine {
                 plan.add_detail(format!("Type: {:?}", join_clause.join_type));
                 plan.add_detail(format!("Left table: {} rows", current_table.row_count()));
                 plan.add_detail(format!(
-                    "Executing {:?} JOIN on {}",
-                    join_clause.join_type, join_clause.condition.left_column
+                    "Executing {:?} JOIN on {} condition(s)",
+                    join_clause.join_type,
+                    join_clause.condition.conditions.len()
                 ));
 
                 // Resolve the right table for the join

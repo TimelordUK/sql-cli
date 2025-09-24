@@ -16,9 +16,10 @@ fn test_simple_inner_join() {
     let join = &stmt.joins[0];
     assert_eq!(join.join_type, JoinType::Inner);
     assert!(matches!(&join.table, TableSource::Table(name) if name == "orders"));
-    assert_eq!(join.condition.left_column, "users.id");
-    assert!(matches!(join.condition.operator, JoinOperator::Equal));
-    assert_eq!(join.condition.right_column, "orders.user_id");
+    assert_eq!(join.condition.conditions.len(), 1);
+    assert_eq!(join.condition.conditions[0].left_column, "users.id");
+    assert!(matches!(join.condition.conditions[0].operator, JoinOperator::Equal));
+    assert_eq!(join.condition.conditions[0].right_column, "orders.user_id");
 }
 
 #[test]
@@ -111,8 +112,9 @@ fn test_join_with_table_alias() {
 
     assert_eq!(stmt.from_alias, Some("u".to_string()));
     assert_eq!(stmt.joins[0].alias, Some("o".to_string()));
-    assert_eq!(stmt.joins[0].condition.left_column, "u.id");
-    assert_eq!(stmt.joins[0].condition.right_column, "o.user_id");
+    assert_eq!(stmt.joins[0].condition.conditions.len(), 1);
+    assert_eq!(stmt.joins[0].condition.conditions[0].left_column, "u.id");
+    assert_eq!(stmt.joins[0].condition.conditions[0].right_column, "o.user_id");
 }
 
 #[test]
@@ -185,7 +187,7 @@ fn test_join_with_different_operators() {
     assert!(result.is_ok());
     let stmt = result.unwrap();
     assert!(matches!(
-        stmt.joins[0].condition.operator,
+        stmt.joins[0].condition.conditions[0].operator,
         JoinOperator::GreaterThan
     ));
 
@@ -197,7 +199,7 @@ fn test_join_with_different_operators() {
     assert!(result.is_ok());
     let stmt = result.unwrap();
     assert!(matches!(
-        stmt.joins[0].condition.operator,
+        stmt.joins[0].condition.conditions[0].operator,
         JoinOperator::LessThan
     ));
 
@@ -209,7 +211,7 @@ fn test_join_with_different_operators() {
     assert!(result.is_ok());
     let stmt = result.unwrap();
     assert!(matches!(
-        stmt.joins[0].condition.operator,
+        stmt.joins[0].condition.conditions[0].operator,
         JoinOperator::NotEqual
     ));
 }

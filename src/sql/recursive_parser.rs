@@ -3,9 +3,9 @@
 // Re-exports for backward compatibility - these serve as both imports and re-exports
 pub use super::parser::ast::{
     CTEType, Condition, DataFormat, FrameBound, FrameUnit, HttpMethod, JoinClause, JoinCondition,
-    JoinOperator, JoinType, LogicalOp, OrderByColumn, SelectItem, SelectStatement, SortDirection,
-    SqlExpression, TableFunction, TableSource, WebCTESpec, WhenBranch, WhereClause, WindowFrame,
-    WindowSpec, CTE,
+    JoinOperator, JoinType, LogicalOp, OrderByColumn, SelectItem, SelectStatement,
+    SingleJoinCondition, SortDirection, SqlExpression, TableFunction, TableSource, WebCTESpec,
+    WhenBranch, WhereClause, WindowFrame, WindowSpec, CTE,
 };
 pub use super::parser::legacy::{ParseContext, ParseState, Schema, SqlParser, SqlToken, TableInfo};
 pub use super::parser::lexer::{Lexer, Token};
@@ -1599,12 +1599,8 @@ impl Parser {
 
         // Parse ON condition (required for all joins except CROSS JOIN)
         let condition = if join_type == JoinType::Cross {
-            // CROSS JOIN doesn't have ON condition
-            JoinCondition {
-                left_column: String::new(),
-                operator: JoinOperator::Equal,
-                right_column: String::new(),
-            }
+            // CROSS JOIN doesn't have ON condition - create empty condition
+            JoinCondition { conditions: vec![] }
         } else {
             if !matches!(self.current_token, Token::On) {
                 return Err("Expected ON keyword after JOIN table".to_string());
@@ -1694,6 +1690,21 @@ impl Parser {
     }
 
     fn parse_join_condition(&mut self) -> Result<JoinCondition, String> {
+        let mut conditions = Vec::new();
+
+        // Parse first condition
+        conditions.push(self.parse_single_join_condition()?);
+
+        // Parse additional conditions connected by AND
+        while matches!(self.current_token, Token::And) {
+            self.advance(); // consume AND
+            conditions.push(self.parse_single_join_condition()?);
+        }
+
+        Ok(JoinCondition { conditions })
+    }
+
+    fn parse_single_join_condition(&mut self) -> Result<SingleJoinCondition, String> {
         // Parse left column (can include table prefix)
         let left_column = self.parse_column_reference()?;
 
@@ -1712,7 +1723,7 @@ impl Parser {
         // Parse right column (can include table prefix)
         let right_column = self.parse_column_reference()?;
 
-        Ok(JoinCondition {
+        Ok(SingleJoinCondition {
             left_column,
             operator,
             right_column,
