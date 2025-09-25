@@ -83,7 +83,7 @@ M.defaults = {
     test_cte_new = "<leader>sN",     -- Test CTE in new buffer (N for new)
     cte_analysis = "<leader>sA",     -- Show CTE analysis popup (A for Analysis)
     export_markdown = "<leader>sm", -- Export as Markdown
-    export_tsv = "<leader>st",      -- Export as Tab-separated (Excel)
+    export_tsv = "<leader>sT",      -- Export as Tab-separated (Excel) - capital T to avoid template conflict
     -- Chart visualizations (execute query at cursor and visualize)
     bar_chart_at_cursor = "<leader>sB",     -- Bar chart from query at cursor (capital B)
     pie_chart_at_cursor = nil,     -- Removed - conflicts with preview

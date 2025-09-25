@@ -1,0 +1,88 @@
+# SQL-CLI Template File
+# Templates for trade queries with macro expansion
+
+## Template: FETCH_TRADES
+## Description: Fetch trades from API with flexible WHERE clause
+WITH WEB trades AS (
+    URL '@{VAR:BASE_URL}/query/trades'
+    METHOD POST
+    BODY '{
+        "select": "@{INPUT:Columns (or * for all):*}",
+        "where": "@{MACRO:WHERE_CLAUSE}"
+    }'
+    FORMAT JSON
+    JSON_PATH 'Result'
+    HEADERS (
+        'Authorization': 'Bearer @{VAR:JWT_TOKEN}',
+        'Content-Type': 'application/json'
+    )
+)
+SELECT * FROM trades
+ORDER BY @{PICKER:ORDER_COLUMNS:Order By} DESC
+
+## Template: TRADE_BY_DATE
+## Description: Get trades for specific date range
+WITH WEB trades AS (
+    URL '@{VAR:BASE_URL}/query/trades'
+    METHOD POST
+    BODY '{
+        "select": "*",
+        "where": "TradeDate >= @{DATE:Start Date} and TradeDate <= @{DATE:End Date}"
+    }'
+    FORMAT JSON
+    JSON_PATH 'Result'
+    HEADERS (
+        'Authorization': 'Bearer @{VAR:JWT_TOKEN}',
+        'Content-Type': 'application/json'
+    )
+)
+SELECT * FROM trades
+
+## Template: TRADE_BY_SOURCE
+## Description: Filter trades by source
+WITH WEB trades AS (
+    URL '@{VAR:BASE_URL}/query/trades'
+    METHOD POST
+    BODY '{
+        "select": "*",
+        "where": "Source = @{JPICKER:SOURCES:Select Source}"
+    }'
+    FORMAT JSON
+    JSON_PATH 'Result'
+    HEADERS (
+        'Authorization': 'Bearer @{VAR:JWT_TOKEN}',
+        'Content-Type': 'application/json'
+    )
+)
+SELECT * FROM trades
+WHERE Amount > @{INPUT:Minimum Amount:0}
+
+## Macro: SOURCES
+Bloomberg_FIX_FX
+Bloomberg_FIX_Equity
+Reuters_FX
+Internal_Trade_System
+
+## Macro: ORDER_COLUMNS
+TradeDate
+ExecutionTime
+Amount
+DealId
+PlatformOrderId
+
+## Macro: CONFIG
+BASE_URL = http://localhost:8080
+JWT_TOKEN = @{ENV:JWT_TOKEN}
+
+## Macro: WHERE_CLAUSE
+Source = @{JPICKER:SOURCES:Source} and DealType = @{JPICKER:DEAL_TYPES:Deal Type}
+
+## Macro: DEAL_TYPES
+Swap
+NDF
+NDS
+Option
+Spot
+Forward
+Future
+CFD

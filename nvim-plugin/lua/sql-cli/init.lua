@@ -74,10 +74,11 @@ function M.setup(opts)
   -- Setup window function keymaps
   window_functions.setup_keymaps(M.config)
 
-  -- Setup template system
-  local templates = require('sql-cli.templates')
-  templates.setup(M.config)
-  templates.setup_keymaps()
+  -- Setup new template system
+  local template = require('sql-cli.template')
+  template.setup(M.config.template or {})
+  template.create_commands()
+  template.create_keymaps()
 
   -- Setup token manager
   local token_manager = require('sql-cli.token_manager')
