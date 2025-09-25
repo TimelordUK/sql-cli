@@ -146,6 +146,11 @@ function M.expand(text, options, callback)
           depth = depth + 1,
           debug_output = debug_output
         }, function(expanded_result)
+          -- Handle nil result (e.g., from max depth error)
+          if not expanded_result then
+            callback(nil)
+            return
+          end
           -- Restore escaped patterns only at the top level
           if depth == 0 then
             expanded_result = expanded_result:gsub("__ESCAPED_AT_BRACE__", "@{")

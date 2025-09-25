@@ -23,6 +23,15 @@
 -- TEMPLATES
 -- =====================================
 
+-- Macro: ENRICH_TRADES
+--   select case
+--   when PlatformOrderId.Contains('.') then SUBSTRING(PlatformOrderId, INDEX(PlatformOrderId, '.') + 1, 1)
+--   when PlatformOrderId.Contains('_') then LEFT(INDEX(PlatformOrderId, '_'))
+--   else PlatformOrderId
+--   end as OrderId
+-- , * from web_trades
+-- END MACRO
+
 -- Template: FETCH_TRADES_DYNAMIC
 -- Description: Fetch trades with dynamic WHERE clause
 WITH web_trades AS (
@@ -38,9 +47,12 @@ WITH web_trades AS (
         'Authorization': 'Bearer $$@{VAR:JWT_TOKEN}',
         'Content-Type': 'application/json'
     )
+),enriched_trades as
+(
+@{MACRO:ENRICH_TRADES}
 )
-SELECT * FROM web_trades
-ORDER BY ExecutionTime DESC;
+SELECT * FROM enriched_trades;
+GO
 -- END TEMPLATE
 
 -- Template: FETCH_TRADES_LITERAL
