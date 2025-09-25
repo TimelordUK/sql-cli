@@ -1,10 +1,17 @@
 -- #!
 -- Generator Functions Examples
 -- Demonstrates the use of table-generating functions in SQL queries
+SELECT
+    value as n,
+    POW(2, value) AS pow2,
+    LPAD(TO_BINARY(POW(2, value)), 12, '0') AS bits
+FROM RANGE(0, 10);
+GO
 
--- ============================================================================
--- PRIME NUMBER GENERATION
--- ============================================================================
+SELECT
+    value + 64 as ascii, CHAR(value + 64) AS letter
+FROM RANGE(1, 26);
+go
 
 -- Generate prime numbers up to 30
 SELECT * FROM GENERATE_PRIMES(30);

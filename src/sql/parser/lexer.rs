@@ -97,6 +97,108 @@ pub enum Token {
     Eof,
 }
 
+impl Token {
+    /// Check if a string is a SQL keyword and return corresponding token
+    pub fn from_keyword(s: &str) -> Option<Token> {
+        match s.to_uppercase().as_str() {
+            "SELECT" => Some(Token::Select),
+            "FROM" => Some(Token::From),
+            "WHERE" => Some(Token::Where),
+            "WITH" => Some(Token::With),
+            "AND" => Some(Token::And),
+            "OR" => Some(Token::Or),
+            "IN" => Some(Token::In),
+            "NOT" => Some(Token::Not),
+            "BETWEEN" => Some(Token::Between),
+            "LIKE" => Some(Token::Like),
+            "IS" => Some(Token::Is),
+            "NULL" => Some(Token::Null),
+            "ORDER" => Some(Token::OrderBy),
+            "GROUP" => Some(Token::GroupBy),
+            "HAVING" => Some(Token::Having),
+            "AS" => Some(Token::As),
+            "ASC" => Some(Token::Asc),
+            "DESC" => Some(Token::Desc),
+            "LIMIT" => Some(Token::Limit),
+            "OFFSET" => Some(Token::Offset),
+            "DISTINCT" => Some(Token::Distinct),
+            "CASE" => Some(Token::Case),
+            "WHEN" => Some(Token::When),
+            "THEN" => Some(Token::Then),
+            "ELSE" => Some(Token::Else),
+            "END" => Some(Token::End),
+            "OVER" => Some(Token::Over),
+            "PARTITION" => Some(Token::Partition),
+            "BY" => Some(Token::By),
+            "ROWS" => Some(Token::Rows),
+            "RANGE" => Some(Token::Range),
+            "UNBOUNDED" => Some(Token::Unbounded),
+            "PRECEDING" => Some(Token::Preceding),
+            "FOLLOWING" => Some(Token::Following),
+            "CURRENT" => Some(Token::Current),
+            "ROW" => Some(Token::Row),
+            "UNION" => Some(Token::Union),
+            "INTERSECT" => Some(Token::Intersect),
+            "EXCEPT" => Some(Token::Except),
+            "WEB" => Some(Token::Web),
+            "JOIN" => Some(Token::Join),
+            "INNER" => Some(Token::Inner),
+            "LEFT" => Some(Token::Left),
+            "RIGHT" => Some(Token::Right),
+            "FULL" => Some(Token::Full),
+            "OUTER" => Some(Token::Outer),
+            "ON" => Some(Token::On),
+            "CROSS" => Some(Token::Cross),
+            _ => None,
+        }
+    }
+
+    /// Check if token is a logical operator
+    pub fn is_logical_operator(&self) -> bool {
+        matches!(self, Token::And | Token::Or)
+    }
+
+    /// Check if token is a join type
+    pub fn is_join_type(&self) -> bool {
+        matches!(
+            self,
+            Token::Inner | Token::Left | Token::Right | Token::Full | Token::Cross
+        )
+    }
+
+    /// Check if token ends a clause
+    pub fn is_clause_terminator(&self) -> bool {
+        matches!(
+            self,
+            Token::OrderBy
+                | Token::GroupBy
+                | Token::Having
+                | Token::Limit
+                | Token::Offset
+                | Token::Union
+                | Token::Intersect
+                | Token::Except
+        )
+    }
+
+    /// Get the string representation of a keyword token
+    pub fn as_keyword_str(&self) -> Option<&'static str> {
+        match self {
+            Token::Select => Some("SELECT"),
+            Token::From => Some("FROM"),
+            Token::Where => Some("WHERE"),
+            Token::With => Some("WITH"),
+            Token::And => Some("AND"),
+            Token::Or => Some("OR"),
+            Token::OrderBy => Some("ORDER BY"),
+            Token::GroupBy => Some("GROUP BY"),
+            Token::Having => Some("HAVING"),
+            // Add more as needed
+            _ => None,
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct Lexer {
     input: Vec<char>,

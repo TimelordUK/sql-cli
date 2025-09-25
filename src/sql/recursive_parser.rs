@@ -1879,11 +1879,16 @@ fn analyze_statement(
     }
 
     // First check if we're after AND/OR - this takes precedence
-    if trimmed.to_uppercase().ends_with(" AND")
-        || trimmed.to_uppercase().ends_with(" OR")
-        || trimmed.to_uppercase().ends_with(" AND ")
-        || trimmed.to_uppercase().ends_with(" OR ")
-    {
+    // Helper function to check if string ends with a logical operator
+    let ends_with_logical_op = |s: &str| -> bool {
+        let s_upper = s.to_uppercase();
+        s_upper.ends_with(" AND")
+            || s_upper.ends_with(" OR")
+            || s_upper.ends_with(" AND ")
+            || s_upper.ends_with(" OR ")
+    };
+
+    if ends_with_logical_op(trimmed) {
         // Don't check for method context if we're clearly after a logical operator
     } else {
         // Look for the last dot in the query
@@ -1980,8 +1985,9 @@ fn analyze_statement(
     // Check if we're in WHERE clause
     if let Some(where_clause) = &stmt.where_clause {
         // Check if query ends with AND/OR (with or without trailing space/partial)
-        if trimmed.to_uppercase().ends_with(" AND") || trimmed.to_uppercase().ends_with(" OR") {
-            let op = if trimmed.to_uppercase().ends_with(" AND") {
+        let trimmed_upper = trimmed.to_uppercase();
+        if trimmed_upper.ends_with(" AND") || trimmed_upper.ends_with(" OR") {
+            let op = if trimmed_upper.ends_with(" AND") {
                 LogicalOp::And
             } else {
                 LogicalOp::Or
@@ -1990,7 +1996,8 @@ fn analyze_statement(
         }
 
         // Check if we have AND/OR followed by a partial word
-        if let Some(and_pos) = query.to_uppercase().rfind(" AND ") {
+        let query_upper = query.to_uppercase();
+        if let Some(and_pos) = query_upper.rfind(" AND ") {
             let after_and = safe_slice_from(query, and_pos + 5);
             let partial = extract_partial_at_end(after_and);
             if partial.is_some() {
@@ -1998,7 +2005,7 @@ fn analyze_statement(
             }
         }
 
-        if let Some(or_pos) = query.to_uppercase().rfind(" OR ") {
+        if let Some(or_pos) = query_upper.rfind(" OR ") {
             let after_or = safe_slice_from(query, or_pos + 4);
             let partial = extract_partial_at_end(after_or);
             if partial.is_some() {
@@ -2020,7 +2027,8 @@ fn analyze_statement(
     }
 
     // Check if we're after ORDER BY
-    if query.to_uppercase().ends_with(" ORDER BY ") || query.to_uppercase().ends_with(" ORDER BY") {
+    let query_upper = query.to_uppercase();
+    if query_upper.ends_with(" ORDER BY ") || query_upper.ends_with(" ORDER BY") {
         return (CursorContext::OrderByClause, None);
     }
 
