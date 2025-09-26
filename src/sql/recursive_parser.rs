@@ -154,6 +154,50 @@ impl Parser {
         }
     }
 
+    /// Check if current token is one of the reserved keywords that should stop parsing
+    fn is_reserved_keyword(&self) -> bool {
+        matches!(
+            self.current_token,
+            Token::OrderBy
+                | Token::Having
+                | Token::Limit
+                | Token::Offset
+                | Token::Union
+                | Token::Intersect
+                | Token::Except
+        )
+    }
+
+    /// Check if an identifier string is a reserved keyword (for backward compatibility)
+    fn is_identifier_reserved(id: &str) -> bool {
+        let id_upper = id.to_uppercase();
+        matches!(
+            id_upper.as_str(),
+            "ORDER" | "HAVING" | "LIMIT" | "OFFSET" | "UNION" | "INTERSECT" | "EXCEPT"
+        )
+    }
+
+    /// Check if current token is a comparison operator
+    fn is_comparison_operator(&self) -> bool {
+        matches!(
+            self.current_token,
+            Token::Equal
+                | Token::NotEqual
+                | Token::LessThan
+                | Token::GreaterThan
+                | Token::LessThanOrEqual
+                | Token::GreaterThanOrEqual
+        )
+    }
+
+    /// Get comparison operator string representation (for autocomplete context)
+    const COMPARISON_OPERATORS: [&'static str; 6] = [" > ", " < ", " >= ", " <= ", " = ", " != "];
+
+    /// Check if current token is a logical operator
+    fn is_logical_operator(&self) -> bool {
+        matches!(self.current_token, Token::And | Token::Or)
+    }
+
     fn consume(&mut self, expected: Token) -> Result<(), String> {
         self.trace_token(&format!("Consuming expected {:?}", expected));
         if std::mem::discriminant(&self.current_token) == std::mem::discriminant(&expected) {
@@ -948,7 +992,7 @@ impl Parser {
         } else if let Token::Identifier(s) = &self.current_token {
             // This shouldn't happen if the lexer properly tokenizes ORDER BY
             // But keeping as fallback for compatibility
-            if s.to_uppercase() == "ORDER" {
+            if Self::is_identifier_reserved(s) && s.to_uppercase() == "ORDER" {
                 self.trace_token("Warning: ORDER as identifier instead of OrderBy token");
                 self.advance(); // consume ORDER
                 if matches!(&self.current_token, Token::By) {
@@ -1127,11 +1171,7 @@ impl Parser {
             match &self.current_token {
                 Token::Identifier(id) => {
                     // Check if this is a reserved keyword that should stop identifier parsing
-                    let id_upper = id.to_uppercase();
-                    if matches!(
-                        id_upper.as_str(),
-                        "ORDER" | "HAVING" | "LIMIT" | "OFFSET" | "UNION" | "INTERSECT" | "EXCEPT"
-                    ) {
+                    if Self::is_identifier_reserved(id) {
                         // Stop parsing identifiers if we hit a reserved keyword
                         break;
                     }
@@ -1184,7 +1224,7 @@ impl Parser {
             self.advance(); // consume ORDER BY (as single token)
             order_by = self.parse_order_by_list()?;
         } else if let Token::Identifier(s) = &self.current_token {
-            if s.to_uppercase() == "ORDER" {
+            if Self::is_identifier_reserved(s) && s.to_uppercase() == "ORDER" {
                 // Handle ORDER BY as two tokens
                 self.advance(); // consume ORDER
                 if !matches!(self.current_token, Token::By) {
@@ -1838,8 +1878,7 @@ fn analyze_statement(
     let trimmed = query.trim();
 
     // Check if we're after a comparison operator (e.g., "createdDate > ")
-    let comparison_ops = [" > ", " < ", " >= ", " <= ", " = ", " != "];
-    for op in &comparison_ops {
+    for op in &Parser::COMPARISON_OPERATORS {
         if let Some(op_pos) = query.rfind(op) {
             let before_op = safe_slice_to(query, op_pos);
             let after_op_start = op_pos + op.len();
@@ -1882,10 +1921,7 @@ fn analyze_statement(
     // Helper function to check if string ends with a logical operator
     let ends_with_logical_op = |s: &str| -> bool {
         let s_upper = s.to_uppercase();
-        s_upper.ends_with(" AND")
-            || s_upper.ends_with(" OR")
-            || s_upper.ends_with(" AND ")
-            || s_upper.ends_with(" OR ")
+        s_upper.ends_with(" AND") || s_upper.ends_with(" OR")
     };
 
     if ends_with_logical_op(trimmed) {
@@ -2028,7 +2064,7 @@ fn analyze_statement(
 
     // Check if we're after ORDER BY
     let query_upper = query.to_uppercase();
-    if query_upper.ends_with(" ORDER BY ") || query_upper.ends_with(" ORDER BY") {
+    if query_upper.ends_with(" ORDER BY") {
         return (CursorContext::OrderByClause, None);
     }
 
@@ -2104,8 +2140,7 @@ fn analyze_partial(query: &str, cursor_pos: usize) -> (CursorContext, Option<Str
     }
 
     // Check if we're after a comparison operator (e.g., "createdDate > ")
-    let comparison_ops = [" > ", " < ", " >= ", " <= ", " = ", " != "];
-    for op in &comparison_ops {
+    for op in &Parser::COMPARISON_OPERATORS {
         if let Some(op_pos) = query.rfind(op) {
             let before_op = safe_slice_to(query, op_pos);
             let after_op_start = op_pos + op.len();
