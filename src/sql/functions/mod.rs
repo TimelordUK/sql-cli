@@ -8,6 +8,7 @@ use crate::data::datatable::DataValue;
 pub mod astronomy;
 pub mod base_conversion;
 pub mod bigint;
+pub mod bitwise;
 pub mod case_convert;
 pub mod chemistry;
 pub mod comparison;
@@ -55,6 +56,7 @@ pub enum FunctionCategory {
     Conversion,    // Unit conversion functions
     BigNumber,     // Arbitrary precision arithmetic
     TableFunction, // Table-generating functions
+    Bitwise,       // Bitwise operations and binary visualization
 }
 
 impl fmt::Display for FunctionCategory {
@@ -71,6 +73,7 @@ impl fmt::Display for FunctionCategory {
             FunctionCategory::Conversion => write!(f, "Conversion"),
             FunctionCategory::BigNumber => write!(f, "BigNumber"),
             FunctionCategory::TableFunction => write!(f, "TableFunction"),
+            FunctionCategory::Bitwise => write!(f, "Bitwise"),
         }
     }
 }
@@ -179,6 +182,7 @@ impl FunctionRegistry {
         registry.register_format_functions();
         registry.register_type_checking_functions();
         registry.register_utility_functions();
+        registry.register_bitwise_functions();
 
         registry
     }
@@ -808,6 +812,11 @@ impl FunctionRegistry {
         self.register(Box::new(FromBinaryFunction));
         self.register(Box::new(ToHexFunction));
         self.register(Box::new(FromHexFunction));
+    }
+
+    /// Register bitwise functions (additional bit operations not in bigint)
+    fn register_bitwise_functions(&mut self) {
+        bitwise::register_bitwise_functions(self);
     }
 }
 
