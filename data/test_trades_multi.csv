@@ -1,0 +1,8 @@
+trade_id,instrument,side,quantity,price
+1,AAPL,Buy,100,150.00
+2,AAPL,Sell,100,150.00
+3,AAPL,Buy,50,152.00
+4,GOOGL,Buy,200,2800.00
+5,GOOGL,Sell,200,2800.00
+6,MSFT,Buy,150,380.00
+7,MSFT,Sell,100,380.00
