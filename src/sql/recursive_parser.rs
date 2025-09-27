@@ -378,6 +378,17 @@ impl Parser {
         }
     }
 
+    /// Helper function to check if an identifier is valid (quoted or regular)
+    fn is_valid_identifier(name: &str) -> bool {
+        if name.starts_with('"') && name.ends_with('"') {
+            // Quoted identifier - always valid
+            true
+        } else {
+            // Regular identifier - check if it's alphanumeric or underscore
+            name.chars().all(|c| c.is_alphanumeric() || c == '_')
+        }
+    }
+
     /// Helper function to update parentheses depth tracking
     fn update_paren_depth(&mut self, token: &Token) -> Result<(), String> {
         match token {
@@ -1669,13 +1680,7 @@ fn analyze_statement(
 
                 if let Some(col_name) = col_name {
                     // For quoted identifiers, keep the quotes, for regular identifiers check validity
-                    let is_valid = if col_name.starts_with('"') && col_name.ends_with('"') {
-                        // Quoted identifier - always valid
-                        true
-                    } else {
-                        // Regular identifier - check if it's alphanumeric or underscore
-                        col_name.chars().all(|c| c.is_alphanumeric() || c == '_')
-                    };
+                    let is_valid = Self::is_valid_identifier(col_name);
 
                     if is_valid {
                         return handle_method_call_context(col_name, after_dot);
@@ -1881,13 +1886,7 @@ fn analyze_partial(query: &str, cursor_pos: usize) -> (CursorContext, Option<Str
                 }
 
                 // For quoted identifiers, keep the quotes, for regular identifiers check validity
-                let is_valid = if col_name.starts_with('"') && col_name.ends_with('"') {
-                    // Quoted identifier - always valid
-                    true
-                } else {
-                    // Regular identifier - check if it's alphanumeric or underscore
-                    col_name.chars().all(|c| c.is_alphanumeric() || c == '_')
-                };
+                let is_valid = Self::is_valid_identifier(col_name);
 
                 #[cfg(test)]
                 {
