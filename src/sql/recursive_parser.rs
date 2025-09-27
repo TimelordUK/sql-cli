@@ -760,38 +760,6 @@ impl Parser {
         })
     }
 
-    fn parse_select_list(&mut self) -> Result<Vec<String>, String> {
-        let mut columns = Vec::new();
-
-        if matches!(self.current_token, Token::Star) {
-            columns.push("*".to_string());
-            self.advance();
-        } else {
-            loop {
-                match &self.current_token {
-                    Token::Identifier(col) => {
-                        columns.push(col.clone());
-                        self.advance();
-                    }
-                    Token::QuotedIdentifier(col) => {
-                        // Handle quoted column names like "Customer Id"
-                        columns.push(col.clone());
-                        self.advance();
-                    }
-                    _ => return Err("Expected column name".to_string()),
-                }
-
-                if matches!(self.current_token, Token::Comma) {
-                    self.advance();
-                } else {
-                    break;
-                }
-            }
-        }
-
-        Ok(columns)
-    }
-
     /// Parse SELECT items that support computed expressions with aliases
     fn parse_select_items(&mut self) -> Result<Vec<SelectItem>, String> {
         let mut items = Vec::new();
