@@ -1680,7 +1680,7 @@ fn analyze_statement(
 
                 if let Some(col_name) = col_name {
                     // For quoted identifiers, keep the quotes, for regular identifiers check validity
-                    let is_valid = Self::is_valid_identifier(col_name);
+                    let is_valid = Parser::is_valid_identifier(col_name);
 
                     if is_valid {
                         return handle_method_call_context(col_name, after_dot);
@@ -1886,7 +1886,7 @@ fn analyze_partial(query: &str, cursor_pos: usize) -> (CursorContext, Option<Str
                 }
 
                 // For quoted identifiers, keep the quotes, for regular identifiers check validity
-                let is_valid = Self::is_valid_identifier(col_name);
+                let is_valid = Parser::is_valid_identifier(col_name);
 
                 #[cfg(test)]
                 {
