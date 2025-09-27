@@ -84,7 +84,7 @@ function M.show_history_with_preview(history_items, callback, execute_callback)
     col = col,
     style = 'minimal',
     border = 'rounded',
-    title = ' Query History (Enter: insert, x: execute, /: search, q: quit) ',
+    title = ' Query History (Enter: insert, x: execute, d: delete, /: search, ?: help) ',
     title_pos = 'center',
   })
 
@@ -278,6 +278,7 @@ function M.show_history_with_preview(history_items, callback, execute_callback)
     -- Delete from history
     vim.keymap.set('n', 'd', function()
       if current_line > 0 and current_line <= #history_items then
+        local deleted_item = history_items[current_line]
         table.remove(history_items, current_line)
         table.remove(display_lines, current_line)
 
@@ -285,10 +286,25 @@ function M.show_history_with_preview(history_items, callback, execute_callback)
         vim.api.nvim_buf_set_lines(list_buf, 0, -1, false, display_lines)
         vim.api.nvim_buf_set_option(list_buf, 'modifiable', false)
 
+        -- Save the updated history
+        local query_history = require('sql-cli.query_history')
+        query_history.save_history()
+
+        -- Show confirmation
+        vim.notify("Deleted query from history", vim.log.levels.INFO)
+
         if current_line > #history_items and current_line > 1 then
           current_line = current_line - 1
         end
-        update_preview()
+
+        -- Update preview or close if no items left
+        if #history_items == 0 then
+          vim.notify("No more queries in history", vim.log.levels.INFO)
+          vim.api.nvim_win_close(preview_win, true)
+          vim.api.nvim_win_close(list_win, true)
+        else
+          update_preview()
+        end
       end
     end, { buffer = list_buf })
 
