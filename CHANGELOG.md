@@ -5,6 +5,42 @@ All notable changes to SQL CLI will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.55.0] - 2025-09-27
+
+### 🎉 Windows Nvim Export Support & Performance Documentation
+
+This release brings full Windows compatibility for the Nvim plugin's export features and showcases impressive performance benchmarks.
+
+### ✨ New Features
+
+#### **Windows Export Compatibility**
+- Fixed TSV/CSV export clipboard handling on Windows (proper CRLF line endings)
+- Browser HTML export now works on Windows (using rundll32 url.dll)
+- Direct sql-cli calls for clean exports without table formatting artifacts
+- Proper temp file handling for Windows (%TEMP% directory)
+- Clear notifications showing export source and success status
+
+#### **Performance Documentation**
+- Added comprehensive PERFORMANCE.md with detailed benchmarks
+- 100K row benchmarks added to test suite
+- Results show:
+  - Simple SELECT: 8ms at 100K rows
+  - JOINs: Under 40ms for all types
+  - GROUP BY: 433ms-2.49s (improved from 12s!)
+  - Window functions: ~1.2s at 100K rows
+
+### 🐛 Bug Fixes
+- Fixed nil 'lines' error in table_nav.lua when using \se export
+- Fixed export buffer detection (now checks output buffer correctly)
+- HTML export now fetches data directly from sql-cli with proper CSV parsing
+- Browser export on Windows no longer opens terminal window
+
+### 🛠️ Technical Improvements
+- Refactored export.lua to call sql-cli directly for clean data
+- Added proper CSV parsing for quoted fields with commas
+- Improved error handling and debug messages for exports
+- Export functions now work immediately after \sx query execution
+
 ## [1.54.0] - 2025-09-24
 
 ### 🚀 Major Performance Improvements & JOIN Enhancements
