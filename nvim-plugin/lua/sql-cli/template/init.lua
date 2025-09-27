@@ -36,6 +36,42 @@ function M.setup(opts)
   engine.setup(M.config)
 end
 
+-- List all available templates (for debugging)
+function M.list_templates()
+  local all_templates = {}
+
+  for _, dir in ipairs(M.config.template_dirs) do
+    local expanded_dir = vim.fn.expand(dir)
+    if vim.fn.isdirectory(expanded_dir) == 1 then
+      vim.notify("Scanning: " .. expanded_dir, vim.log.levels.INFO)
+
+      for _, ext in ipairs(M.config.extensions or {".sql", ".sqlt"}) do
+        local pattern = expanded_dir .. "*" .. ext
+        local found = vim.fn.glob(pattern, false, true)
+
+        for _, file in ipairs(found) do
+          vim.notify("  Found file: " .. file, vim.log.levels.INFO)
+          local content = M.read_file(file)
+          if content then
+            local data = loader.parse_content(content)
+            if data.templates then
+              for name, template in pairs(data.templates) do
+                all_templates[name] = file
+                vim.notify("    Template: " .. name, vim.log.levels.INFO)
+              end
+            end
+          end
+        end
+      end
+    else
+      vim.notify("Not found: " .. expanded_dir, vim.log.levels.WARN)
+    end
+  end
+
+  vim.notify("Total templates found: " .. vim.tbl_count(all_templates), vim.log.levels.INFO)
+  return all_templates
+end
+
 -- Expand macro at cursor position
 function M.expand_at_cursor()
   local line = vim.api.nvim_get_current_line()
@@ -77,6 +113,12 @@ function M.expand_at_cursor()
   local all_templates = {}
   for _, dir in ipairs(M.config.template_dirs) do
     local expanded_dir = vim.fn.expand(dir)
+
+    -- Debug logging
+    if M.config.debug then
+      vim.notify("Checking template dir: " .. expanded_dir, vim.log.levels.INFO)
+    end
+
     if vim.fn.isdirectory(expanded_dir) == 1 then
       for _, ext in ipairs(M.config.extensions or {".sql", ".sqlt"}) do
         local pattern = expanded_dir .. "*" .. ext
@@ -112,8 +154,24 @@ function M.expand_at_cursor()
       macro_content = "@{TEMPLATE:" .. raw_name .. "}"
       vim.notify("Expanding template: " .. raw_name, vim.log.levels.INFO)
     elseif not file_macros[raw_name] then
-      -- Not a macro or template
-      vim.notify("Unknown macro/template: " .. raw_name .. ". Define with -- MACRO: or -- Template:", vim.log.levels.WARN)
+      -- Not a macro or template - show helpful info
+      local template_count = vim.tbl_count(all_templates)
+      local macro_count = vim.tbl_count(file_macros)
+
+      -- List available templates
+      local available = {}
+      for name, _ in pairs(all_templates) do
+        table.insert(available, name)
+      end
+
+      local msg = string.format("Unknown macro/template: %s\nFound %d templates, %d macros",
+                                raw_name, template_count, macro_count)
+      if #available > 0 then
+        msg = msg .. "\nAvailable templates: " .. table.concat(available, ", ")
+      end
+      msg = msg .. "\nTip: Ensure you're in the sql-cli directory or templates/ exists"
+
+      vim.notify(msg, vim.log.levels.WARN)
       return
     end
   end

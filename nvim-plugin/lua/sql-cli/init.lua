@@ -298,6 +298,39 @@ function M.setup_keymaps()
     end, { desc = "Save results to CSV", silent = true })
   end
 
+  -- Parameter management keymaps
+  if keymaps.cycle_param_next then
+    vim.keymap.set("n", keymaps.cycle_param_next, function()
+      require('sql-cli.params').cycle_parameter("next")
+    end, { desc = "Next parameter value", silent = true })
+  end
+
+  if keymaps.cycle_param_prev then
+    vim.keymap.set("n", keymaps.cycle_param_prev, function()
+      require('sql-cli.params').cycle_parameter("prev")
+    end, { desc = "Previous parameter value", silent = true })
+  end
+
+  if keymaps.save_param_set then
+    vim.keymap.set("n", keymaps.save_param_set, function()
+      require('sql-cli.params').save_parameter_set()
+    end, { desc = "Save parameter set", silent = true })
+  end
+
+  -- Query history
+  if keymaps.query_history then
+    vim.keymap.set("n", keymaps.query_history, function()
+      require('sql-cli.query_history').show_history_picker(function(query)
+        -- Insert query into current buffer
+        local lines = vim.split(query, '\n')
+        local row, _ = unpack(vim.api.nvim_win_get_cursor(0))
+        vim.api.nvim_buf_set_lines(0, row - 1, row - 1, false, lines)
+        -- Move cursor to end of inserted text
+        vim.api.nvim_win_set_cursor(0, {row + #lines - 1, #lines[#lines] - 1})
+      end)
+    end, { desc = "Recall query from history", silent = true })
+  end
+
   if keymaps.results_to_buffer then
     vim.keymap.set("n", keymaps.results_to_buffer, function()
       results.results_to_buffer(M.state)

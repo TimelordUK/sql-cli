@@ -7,7 +7,7 @@ local table_nav = require('sql-cli.table_nav')
 local M = {}
 
 -- Execute query from buffer or provided string
-function M.execute_query(query, config, state)
+function M.execute_query(query, config, state, skip_params)
   -- Get query from buffer if not provided
   if not query or query == "" then
     local bufnr = vim.api.nvim_get_current_buf()
@@ -45,15 +45,119 @@ function M.execute_query(query, config, state)
     end
   end
 
+  -- Check for parameters and resolve them unless skipped
+  if not skip_params then
+    local params = require('sql-cli.params')
+    local extracted = params.extract_parameters(query)
+
+    if #extracted > 0 then
+      -- Query has parameters, resolve them
+      params.resolve_parameters(query, function(resolved_query)
+        if resolved_query then
+          -- Trim the resolved query
+          resolved_query = resolved_query:gsub("^%s+", ""):gsub("%s+$", "")
+
+          -- Show confirmation dialog with resolved query
+          local lines = vim.split(resolved_query, '\n')
+
+          -- Create a preview buffer
+          local buf = vim.api.nvim_create_buf(false, true)
+          vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
+          vim.api.nvim_buf_set_option(buf, 'filetype', 'sql')
+
+          -- Calculate window size
+          local width = math.min(80, math.max(40, vim.o.columns - 20))
+          local height = math.min(30, math.max(10, #lines + 4))
+
+          -- Create floating window
+          local win = vim.api.nvim_open_win(buf, true, {
+            relative = 'editor',
+            width = width,
+            height = height,
+            col = math.floor((vim.o.columns - width) / 2),
+            row = math.floor((vim.o.lines - height) / 2),
+            style = 'minimal',
+            border = 'rounded',
+            title = ' Resolved Query - Press ENTER to execute, ESC to cancel ',
+            title_pos = 'center'
+          })
+
+          -- Set up keymaps for the preview window
+          local function close_and_execute()
+            vim.api.nvim_win_close(win, true)
+            -- Save the resolved query
+            state:set_last_query(resolved_query)
+            -- Add to history for recall
+            require('sql-cli.query_history').add_to_history(resolved_query)
+            -- Execute with parameters resolved
+            M.run_command(resolved_query, false, config, state)
+          end
+
+          local function close_and_cancel()
+            vim.api.nvim_win_close(win, true)
+            vim.notify("Query execution cancelled", vim.log.levels.INFO)
+          end
+
+          -- Key mappings for the floating window
+          vim.api.nvim_buf_set_keymap(buf, 'n', '<CR>', '', {
+            callback = close_and_execute,
+            noremap = true,
+            silent = true
+          })
+
+          vim.api.nvim_buf_set_keymap(buf, 'n', '<Esc>', '', {
+            callback = close_and_cancel,
+            noremap = true,
+            silent = true
+          })
+
+          vim.api.nvim_buf_set_keymap(buf, 'n', 'q', '', {
+            callback = close_and_cancel,
+            noremap = true,
+            silent = true
+          })
+
+          -- Add yank functionality
+          vim.api.nvim_buf_set_keymap(buf, 'n', 'y', '', {
+            callback = function()
+              vim.fn.setreg('+', resolved_query)
+              vim.fn.setreg('"', resolved_query)
+              vim.notify("Query yanked to clipboard", vim.log.levels.INFO)
+            end,
+            noremap = true,
+            silent = true
+          })
+
+          -- Add a status line at the top
+          vim.api.nvim_buf_set_lines(buf, 0, 0, false, {
+            "-- Parameters resolved successfully",
+            "-- Press ENTER to execute, ESC/q to cancel, y to yank",
+            "-- " .. string.rep("-", width - 6),
+            ""
+          })
+
+          -- Now make it read-only
+          vim.api.nvim_buf_set_option(buf, 'modifiable', false)
+        else
+          vim.notify("Parameter resolution cancelled", vim.log.levels.INFO)
+        end
+      end)
+      return
+    end
+  end
+
   -- Save the query
   state:set_last_query(query)
+
+  -- Add to history (for queries without parameters)
+  require('sql-cli.query_history').add_to_history(query)
 
   -- Execute
   M.run_command(query, false, config, state)
 end
 
 -- Execute query with execution plan
-function M.execute_query_with_plan(query, config, state)
+function M.execute_query_with_plan(query, config, state, skip_params)
   -- Get query from buffer if not provided
   if not query or query == "" then
     local bufnr = vim.api.nvim_get_current_buf()
@@ -88,6 +192,98 @@ function M.execute_query_with_plan(query, config, state)
           config.load_schema_callback()
         end
       end
+    end
+  end
+
+  -- Check for parameters and resolve them unless skipped
+  if not skip_params then
+    local params = require('sql-cli.params')
+    local extracted = params.extract_parameters(query)
+
+    if #extracted > 0 then
+      -- Query has parameters, resolve them
+      params.resolve_parameters(query, function(resolved_query)
+        if resolved_query then
+          -- Trim the resolved query
+          resolved_query = resolved_query:gsub("^%s+", ""):gsub("%s+$", "")
+
+          -- Show same preview dialog as execute_query
+          local lines = vim.split(resolved_query, '\n')
+          local buf = vim.api.nvim_create_buf(false, true)
+          vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
+          vim.api.nvim_buf_set_option(buf, 'filetype', 'sql')
+
+          local width = math.min(80, math.max(40, vim.o.columns - 20))
+          local height = math.min(30, math.max(10, #lines + 4))
+
+          local win = vim.api.nvim_open_win(buf, true, {
+            relative = 'editor',
+            width = width,
+            height = height,
+            col = math.floor((vim.o.columns - width) / 2),
+            row = math.floor((vim.o.lines - height) / 2),
+            style = 'minimal',
+            border = 'rounded',
+            title = ' Resolved Query - Press ENTER to execute, ESC to cancel ',
+            title_pos = 'center'
+          })
+
+          local function close_and_execute()
+            vim.api.nvim_win_close(win, true)
+            state:set_last_query(resolved_query)
+            -- Add to history for recall
+            require('sql-cli.query_history').add_to_history(resolved_query)
+            M.run_command(resolved_query, true, config, state)
+          end
+
+          local function close_and_cancel()
+            vim.api.nvim_win_close(win, true)
+            vim.notify("Query execution cancelled", vim.log.levels.INFO)
+          end
+
+          vim.api.nvim_buf_set_keymap(buf, 'n', '<CR>', '', {
+            callback = close_and_execute,
+            noremap = true,
+            silent = true
+          })
+
+          vim.api.nvim_buf_set_keymap(buf, 'n', '<Esc>', '', {
+            callback = close_and_cancel,
+            noremap = true,
+            silent = true
+          })
+
+          vim.api.nvim_buf_set_keymap(buf, 'n', 'q', '', {
+            callback = close_and_cancel,
+            noremap = true,
+            silent = true
+          })
+
+          -- Add yank functionality
+          vim.api.nvim_buf_set_keymap(buf, 'n', 'y', '', {
+            callback = function()
+              vim.fn.setreg('+', resolved_query)
+              vim.fn.setreg('"', resolved_query)
+              vim.notify("Query yanked to clipboard", vim.log.levels.INFO)
+            end,
+            noremap = true,
+            silent = true
+          })
+
+          vim.api.nvim_buf_set_lines(buf, 0, 0, false, {
+            "-- Parameters resolved successfully",
+            "-- Press ENTER to execute with plan, ESC/q to cancel, y to yank",
+            "-- " .. string.rep("-", width - 6),
+            ""
+          })
+
+          -- Now make it read-only
+          vim.api.nvim_buf_set_option(buf, 'modifiable', false)
+        else
+          vim.notify("Parameter resolution cancelled", vim.log.levels.INFO)
+        end
+      end)
+      return
     end
   end
 
@@ -533,6 +729,97 @@ function M.run_command(query, show_plan, config, state)
   if job_id <= 0 then
     vim.notify("Failed to start SQL CLI", vim.log.levels.ERROR)
   end
+end
+
+-- Execute query from history
+function M.execute_from_history(config, state)
+  local history = require('sql-cli.query_history')
+
+  history.show_history_picker(function(query)
+    if query then
+      -- Trim the query
+      query = query:gsub("^%s+", ""):gsub("%s+$", "")
+
+      -- Show preview dialog before executing
+      local lines = vim.split(query, '\n')
+
+      -- Create a preview buffer
+      local buf = vim.api.nvim_create_buf(false, true)
+      vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
+      vim.api.nvim_buf_set_option(buf, 'filetype', 'sql')
+
+      -- Calculate window size
+      local width = math.min(80, math.max(40, vim.o.columns - 20))
+      local height = math.min(30, math.max(10, #lines + 4))
+
+      -- Create floating window
+      local win = vim.api.nvim_open_win(buf, true, {
+        relative = 'editor',
+        width = width,
+        height = height,
+        col = math.floor((vim.o.columns - width) / 2),
+        row = math.floor((vim.o.lines - height) / 2),
+        style = 'minimal',
+        border = 'rounded',
+        title = ' Query from History - Press ENTER to execute, ESC to cancel ',
+        title_pos = 'center'
+      })
+
+      -- Set up keymaps
+      local function close_and_execute()
+        vim.api.nvim_win_close(win, true)
+        state:set_last_query(query)
+        -- Move to front of history
+        history.add_to_history(query)
+        M.run_command(query, false, config, state)
+      end
+
+      local function close_and_cancel()
+        vim.api.nvim_win_close(win, true)
+        vim.notify("Query execution cancelled", vim.log.levels.INFO)
+      end
+
+      vim.api.nvim_buf_set_keymap(buf, 'n', '<CR>', '', {
+        callback = close_and_execute,
+        noremap = true,
+        silent = true
+      })
+
+      vim.api.nvim_buf_set_keymap(buf, 'n', '<Esc>', '', {
+        callback = close_and_cancel,
+        noremap = true,
+        silent = true
+      })
+
+      vim.api.nvim_buf_set_keymap(buf, 'n', 'q', '', {
+        callback = close_and_cancel,
+        noremap = true,
+        silent = true
+      })
+
+      -- Add yank functionality
+      vim.api.nvim_buf_set_keymap(buf, 'n', 'y', '', {
+        callback = function()
+          vim.fn.setreg('+', query)
+          vim.fn.setreg('"', query)
+          vim.notify("Query yanked to clipboard", vim.log.levels.INFO)
+        end,
+        noremap = true,
+        silent = true
+      })
+
+      -- Add status line at the top
+      vim.api.nvim_buf_set_lines(buf, 0, 0, false, {
+        "-- Query from history",
+        "-- Press ENTER to execute, ESC/q to cancel, y to yank",
+        "-- " .. string.rep("-", width - 6),
+        ""
+      })
+
+      -- Now make it read-only
+      vim.api.nvim_buf_set_option(buf, 'modifiable', false)
+    end
+  end)
 end
 
 return M

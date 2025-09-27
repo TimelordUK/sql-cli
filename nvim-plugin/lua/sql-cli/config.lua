@@ -90,6 +90,12 @@ M.defaults = {
     histogram_at_cursor = "<leader>sH",     -- Histogram from query at cursor (capital H)
     scatter_at_cursor = nil,       -- Removed - conflicts with selection
     sparkline_at_cursor = "<leader>sl",     -- Sparkline from query at cursor (lowercase l for line)
+    -- Parameter management
+    cycle_param_next = "<leader>spn",    -- Next parameter value (p for param, n for next)
+    cycle_param_prev = "<leader>spp",    -- Previous parameter value (p for param, p for prev)
+    save_param_set = "<leader>sps",      -- Save parameter set (p for param, s for save)
+    -- Query history
+    query_history = "<leader>sQ",        -- Query history recall (capital Q for query)
   },
 
   -- Output window settings
