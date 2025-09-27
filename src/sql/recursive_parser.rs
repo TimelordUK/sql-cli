@@ -408,6 +408,28 @@ impl Parser {
         Ok(ctes)
     }
 
+    /// Helper function to parse an optional table alias (with or without AS keyword)
+    fn parse_optional_alias(&mut self) -> Result<Option<String>, String> {
+        if matches!(self.current_token, Token::As) {
+            self.advance();
+            match &self.current_token {
+                Token::Identifier(name) => {
+                    let alias = name.clone();
+                    self.advance();
+                    Ok(Some(alias))
+                }
+                _ => Err("Expected alias name after AS".to_string()),
+            }
+        } else if let Token::Identifier(name) = &self.current_token {
+            // AS is optional for table aliases
+            let alias = name.clone();
+            self.advance();
+            Ok(Some(alias))
+        } else {
+            Ok(None)
+        }
+    }
+
     fn parse_select_statement(&mut self) -> Result<SelectStatement, String> {
         self.trace_enter("parse_select_statement");
         let result = self.parse_select_statement_inner()?;
@@ -576,24 +598,7 @@ impl Parser {
                         self.advance();
 
                         // Check for optional alias
-                        let alias = if matches!(self.current_token, Token::As) {
-                            self.advance();
-                            match &self.current_token {
-                                Token::Identifier(name) => {
-                                    let alias = name.clone();
-                                    self.advance();
-                                    Some(alias)
-                                }
-                                _ => return Err("Expected alias name after AS".to_string()),
-                            }
-                        } else if let Token::Identifier(name) = &self.current_token {
-                            // AS is optional for table aliases
-                            let alias = name.clone();
-                            self.advance();
-                            Some(alias)
-                        } else {
-                            None
-                        };
+                        let alias = self.parse_optional_alias()?;
 
                         (Some(table_name), None, None, alias)
                     }
@@ -646,24 +651,7 @@ impl Parser {
                             self.advance();
 
                             // Check for optional alias
-                            let alias = if matches!(self.current_token, Token::As) {
-                                self.advance();
-                                match &self.current_token {
-                                    Token::Identifier(name) => {
-                                        let alias = name.clone();
-                                        self.advance();
-                                        Some(alias)
-                                    }
-                                    _ => return Err("Expected alias name after AS".to_string()),
-                                }
-                            } else if let Token::Identifier(name) = &self.current_token {
-                                // AS is optional for table aliases
-                                let alias = name.clone();
-                                self.advance();
-                                Some(alias)
-                            } else {
-                                None
-                            };
+                            let alias = self.parse_optional_alias()?;
 
                             (Some(table_name), None, None, alias)
                         }
@@ -673,24 +661,7 @@ impl Parser {
                             self.advance();
 
                             // Check for optional alias
-                            let alias = if matches!(self.current_token, Token::As) {
-                                self.advance();
-                                match &self.current_token {
-                                    Token::Identifier(name) => {
-                                        let alias = name.clone();
-                                        self.advance();
-                                        Some(alias)
-                                    }
-                                    _ => return Err("Expected alias name after AS".to_string()),
-                                }
-                            } else if let Token::Identifier(name) = &self.current_token {
-                                // AS is optional for table aliases
-                                let alias = name.clone();
-                                self.advance();
-                                Some(alias)
-                            } else {
-                                None
-                            };
+                            let alias = self.parse_optional_alias()?;
 
                             (Some(table_name), None, None, alias)
                         }
