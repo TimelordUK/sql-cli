@@ -1,0 +1,36 @@
+[
+  {
+    "header": {
+      "MsgType": "D",
+      "SenderCompID": "BLOOMBERG",
+      "TargetCompID": "CLIENTX",
+      "SendingTime": "20240115-10:30:45.123"
+    },
+    "body": {
+      "Symbol": "CDX.NA.IG.38",
+      "SecurityType": "CDS",
+      "Side": "1",
+      "OrderQty": 10000000,
+      "Price": 0.0055,
+      "Currency": "USD",
+      "FpmlData": "<?xml version=\"1.0\" encoding=\"UTF-8\"?><trade xmlns=\"http://www.fpml.org/FpML-5/confirmation\" xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\"><tradeHeader><partyTradeIdentifier><partyReference href=\"party1\"/><tradeId>CDX-2024-001</tradeId></partyTradeIdentifier><tradeDate>2024-01-15</tradeDate></tradeHeader><product><creditDefaultSwap><generalTerms><effectiveDate><unadjustedDate>2024-01-20</unadjustedDate></effectiveDate><scheduledTerminationDate><unadjustedDate>2029-01-20</unadjustedDate></scheduledTerminationDate><referenceInformation><referenceEntity><entityName>CDX NA IG Series 38</entityName></referenceEntity></referenceInformation></generalTerms><feeLeg><periodicPayment><fixedAmountCalculation><fixedRate>0.0055</fixedRate><dayCountFraction>ACT/360</dayCountFraction></fixedAmountCalculation></periodicPayment></feeLeg><protectionTerms><creditEvents><bankruptcy>true</bankruptcy><failureToPay>true</failureToPay><restructuring><restructuringType>ModR</restructuringType></restructuring></creditEvents></protectionTerms></creditDefaultSwap></product></trade>"
+    }
+  },
+  {
+    "header": {
+      "MsgType": "D",
+      "SenderCompID": "BLOOMBERG",
+      "TargetCompID": "CLIENTY",
+      "SendingTime": "20240115-11:15:22.456"
+    },
+    "body": {
+      "Symbol": "TSLA 5Y CDS",
+      "SecurityType": "CDS",
+      "Side": "2",
+      "OrderQty": 5000000,
+      "Price": 0.0125,
+      "Currency": "USD",
+      "FpmlData": "<?xml version=\"1.0\" encoding=\"UTF-8\"?><trade xmlns=\"http://www.fpml.org/FpML-5/confirmation\"><tradeHeader><partyTradeIdentifier><partyReference href=\"party1\"/><tradeId>TSLA-CDS-2024-002</tradeId></partyTradeIdentifier><tradeDate>2024-01-15</tradeDate></tradeHeader><product><creditDefaultSwap><generalTerms><effectiveDate><unadjustedDate>2024-01-17</unadjustedDate></effectiveDate><scheduledTerminationDate><unadjustedDate>2029-01-17</unadjustedDate></scheduledTerminationDate><referenceInformation><referenceEntity><entityName>Tesla Inc</entityName><entityId>459200</entityId></referenceEntity><referenceObligation><bond><instrumentId>US88160RAA</instrumentId></bond></referenceObligation></referenceInformation></generalTerms><feeLeg><periodicPayment><paymentFrequency><periodMultiplier>3</periodMultiplier><period>M</period></paymentFrequency><fixedAmountCalculation><fixedRate>0.0125</fixedRate><dayCountFraction>ACT/360</dayCountFraction></fixedAmountCalculation></periodicPayment></feeLeg><protectionTerms><creditEvents><bankruptcy>true</bankruptcy><failureToPay>true</failureToPay><restructuring><restructuringType>CR</restructuringType></restructuring></creditEvents><notionalAmount><currency>USD</currency><amount>5000000</amount></notionalAmount></protectionTerms></creditDefaultSwap></product></trade>"
+    }
+  }
+]
