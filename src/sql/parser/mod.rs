@@ -9,6 +9,7 @@ pub mod expressions;
 pub mod formatter;
 pub mod legacy;
 pub mod lexer;
+pub mod web_cte_parser;
 
 // Re-export commonly used types for convenience
 pub use ast::{

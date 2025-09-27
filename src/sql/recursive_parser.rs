@@ -39,9 +39,12 @@ use super::parser::expressions::ExpressionParser;
 use crate::sql::functions::{FunctionCategory, FunctionRegistry};
 use crate::sql::generators::GeneratorRegistry;
 use std::sync::Arc;
+
+// Import Web CTE parser
+use super::parser::web_cte_parser::WebCteParser;
 pub struct Parser {
     lexer: Lexer,
-    current_token: Token,
+    pub current_token: Token,    // Made public for web_cte_parser access
     in_method_args: bool,        // Track if we're parsing method arguments
     columns: Vec<String>,        // Known column names for context-aware parsing
     paren_depth: i32,            // Track parentheses nesting depth
@@ -198,7 +201,7 @@ impl Parser {
         matches!(self.current_token, Token::And | Token::Or)
     }
 
-    fn consume(&mut self, expected: Token) -> Result<(), String> {
+    pub fn consume(&mut self, expected: Token) -> Result<(), String> {
         self.trace_token(&format!("Consuming expected {:?}", expected));
         if std::mem::discriminant(&self.current_token) == std::mem::discriminant(&expected) {
             // Track parentheses depth
@@ -243,7 +246,7 @@ impl Parser {
         }
     }
 
-    fn advance(&mut self) {
+    pub fn advance(&mut self) {
         // Track parentheses depth when advancing
         match &self.current_token {
             Token::LeftParen => self.paren_depth += 1,
@@ -336,8 +339,8 @@ impl Parser {
             let cte_type = if is_web {
                 // Expect opening parenthesis for WEB CTE
                 self.consume(Token::LeftParen)?;
-                // Parse WEB CTE specification
-                let web_spec = self.parse_web_cte_spec()?;
+                // Parse WEB CTE specification using dedicated parser
+                let web_spec = WebCteParser::parse(self)?;
                 // Consume closing parenthesis for WEB CTE
                 self.consume(Token::RightParen)?;
                 CTEType::Web(web_spec)
@@ -388,246 +391,6 @@ impl Parser {
         Ok(main_query)
     }
 
-    fn parse_web_cte_spec(&mut self) -> Result<WebCTESpec, String> {
-        // Expect URL keyword
-        if let Token::Identifier(id) = &self.current_token {
-            if id.to_uppercase() != "URL" {
-                return Err("Expected URL keyword in WEB CTE".to_string());
-            }
-        } else {
-            return Err("Expected URL keyword in WEB CTE".to_string());
-        }
-        self.advance();
-
-        // Parse URL string
-        let url = match &self.current_token {
-            Token::StringLiteral(url) => url.clone(),
-            _ => return Err("Expected URL string after URL keyword".to_string()),
-        };
-        self.advance();
-
-        // Parse optional clauses
-        let mut format = None;
-        let mut headers = Vec::new();
-        let mut cache_seconds = None;
-        let mut method = None;
-        let mut body = None;
-        let mut json_path = None;
-        let mut form_files = Vec::new();
-        let mut form_fields = Vec::new();
-
-        // Parse optional clauses until we hit the closing parenthesis
-        while !matches!(self.current_token, Token::RightParen)
-            && !matches!(self.current_token, Token::Eof)
-        {
-            if let Token::Identifier(id) = &self.current_token {
-                match id.to_uppercase().as_str() {
-                    "FORMAT" => {
-                        self.advance();
-                        format = Some(self.parse_data_format()?);
-                    }
-                    "CACHE" => {
-                        self.advance();
-                        cache_seconds = Some(self.parse_cache_duration()?);
-                    }
-                    "HEADERS" => {
-                        self.advance();
-                        headers = self.parse_headers()?;
-                    }
-                    "METHOD" => {
-                        self.advance();
-                        method = Some(self.parse_http_method()?);
-                    }
-                    "BODY" => {
-                        self.advance();
-                        body = Some(self.parse_body()?);
-                    }
-                    "JSON_PATH" => {
-                        self.advance();
-                        json_path = Some(self.parse_json_path()?);
-                    }
-                    "FORM_FILE" => {
-                        self.advance();
-                        // Parse field name
-                        let field_name = match &self.current_token {
-                            Token::StringLiteral(name) => name.clone(),
-                            _ => {
-                                return Err("Expected field name string after FORM_FILE".to_string())
-                            }
-                        };
-                        self.advance();
-                        // Parse file path
-                        let file_path = match &self.current_token {
-                            Token::StringLiteral(path) => path.clone(),
-                            _ => {
-                                return Err("Expected file path string after field name".to_string())
-                            }
-                        };
-                        self.advance();
-                        form_files.push((field_name, file_path));
-                    }
-                    "FORM_FIELD" => {
-                        self.advance();
-                        // Parse field name
-                        let field_name = match &self.current_token {
-                            Token::StringLiteral(name) => name.clone(),
-                            _ => {
-                                return Err(
-                                    "Expected field name string after FORM_FIELD".to_string()
-                                )
-                            }
-                        };
-                        self.advance();
-                        // Parse field value
-                        let value = match &self.current_token {
-                            Token::StringLiteral(val) => val.clone(),
-                            _ => {
-                                return Err(
-                                    "Expected field value string after field name".to_string()
-                                )
-                            }
-                        };
-                        self.advance();
-                        form_fields.push((field_name, value));
-                    }
-                    _ => {
-                        return Err(format!(
-                            "Unexpected keyword '{}' in WEB CTE specification",
-                            id
-                        ));
-                    }
-                }
-            } else {
-                break;
-            }
-        }
-
-        Ok(WebCTESpec {
-            url,
-            format,
-            headers,
-            cache_seconds,
-            method,
-            body,
-            json_path,
-            form_files,
-            form_fields,
-        })
-    }
-
-    fn parse_data_format(&mut self) -> Result<DataFormat, String> {
-        if let Token::Identifier(id) = &self.current_token {
-            let format = match id.to_uppercase().as_str() {
-                "CSV" => DataFormat::CSV,
-                "JSON" => DataFormat::JSON,
-                "AUTO" => DataFormat::Auto,
-                _ => return Err(format!("Unknown data format: {}", id)),
-            };
-            self.advance();
-            Ok(format)
-        } else {
-            Err("Expected data format (CSV, JSON, or AUTO)".to_string())
-        }
-    }
-
-    fn parse_cache_duration(&mut self) -> Result<u64, String> {
-        match &self.current_token {
-            Token::NumberLiteral(n) => {
-                let duration = n
-                    .parse::<u64>()
-                    .map_err(|_| format!("Invalid cache duration: {}", n))?;
-                self.advance();
-                Ok(duration)
-            }
-            _ => Err("Expected number for cache duration".to_string()),
-        }
-    }
-
-    fn parse_http_method(&mut self) -> Result<HttpMethod, String> {
-        if let Token::Identifier(id) = &self.current_token {
-            let method = match id.to_uppercase().as_str() {
-                "GET" => HttpMethod::GET,
-                "POST" => HttpMethod::POST,
-                "PUT" => HttpMethod::PUT,
-                "DELETE" => HttpMethod::DELETE,
-                "PATCH" => HttpMethod::PATCH,
-                _ => return Err(format!("Unknown HTTP method: {}", id)),
-            };
-            self.advance();
-            Ok(method)
-        } else {
-            Err("Expected HTTP method (GET, POST, PUT, DELETE, PATCH)".to_string())
-        }
-    }
-
-    fn parse_body(&mut self) -> Result<String, String> {
-        match &self.current_token {
-            Token::StringLiteral(body) => {
-                let body = body.clone();
-                self.advance();
-                Ok(body)
-            }
-            _ => Err("Expected string literal for BODY clause".to_string()),
-        }
-    }
-
-    fn parse_json_path(&mut self) -> Result<String, String> {
-        match &self.current_token {
-            Token::StringLiteral(path) => {
-                let path = path.clone();
-                self.advance();
-                Ok(path)
-            }
-            _ => Err("Expected string literal for JSON_PATH clause".to_string()),
-        }
-    }
-
-    fn parse_headers(&mut self) -> Result<Vec<(String, String)>, String> {
-        self.consume(Token::LeftParen)?;
-
-        let mut headers = Vec::new();
-
-        loop {
-            // Parse header name
-            let key = match &self.current_token {
-                Token::Identifier(id) => id.clone(),
-                Token::StringLiteral(s) => s.clone(),
-                _ => return Err("Expected header name".to_string()),
-            };
-            self.advance();
-
-            // Expect : (colon) for header key-value separator
-            if !matches!(self.current_token, Token::Colon) {
-                // For backwards compatibility, also accept =
-                if matches!(self.current_token, Token::Equal) {
-                    self.advance();
-                } else {
-                    return Err("Expected ':' or '=' after header name".to_string());
-                }
-            } else {
-                self.advance(); // consume the colon
-            }
-
-            // Parse header value
-            let value = match &self.current_token {
-                Token::StringLiteral(s) => s.clone(),
-                _ => return Err("Expected header value as string".to_string()),
-            };
-            self.advance();
-
-            headers.push((key, value));
-
-            // Check for more headers
-            if !matches!(self.current_token, Token::Comma) {
-                break;
-            }
-            self.advance();
-        }
-
-        self.consume(Token::RightParen)?;
-        Ok(headers)
-    }
-
     fn parse_with_clause_inner(&mut self) -> Result<SelectStatement, String> {
         self.consume(Token::With)?;
 
@@ -667,8 +430,8 @@ impl Parser {
             let cte_type = if is_web {
                 // Expect opening parenthesis for WEB CTE
                 self.consume(Token::LeftParen)?;
-                // Parse WEB CTE specification
-                let web_spec = self.parse_web_cte_spec()?;
+                // Parse WEB CTE specification using dedicated parser
+                let web_spec = WebCteParser::parse(self)?;
                 // Consume closing parenthesis for WEB CTE
                 self.consume(Token::RightParen)?;
                 CTEType::Web(web_spec)
