@@ -171,6 +171,11 @@ function M.show_history_with_preview(history_items, callback, execute_callback)
 
   -- Function to update window titles based on focus
   local function update_window_titles()
+    -- Check if windows are still valid before updating
+    if not vim.api.nvim_win_is_valid(list_win) or not vim.api.nvim_win_is_valid(preview_win) then
+      return
+    end
+
     if focused_window == "list" then
       vim.api.nvim_win_set_config(list_win, {
         title = ' Query History [FOCUSED] (Space: switch to preview) ',
@@ -192,12 +197,20 @@ function M.show_history_with_preview(history_items, callback, execute_callback)
   local function setup_keymaps()
     -- Switch focus between list and preview
     vim.keymap.set('n', '<Space>', function()
+      -- Validate windows before switching
+      if not vim.api.nvim_win_is_valid(list_win) or not vim.api.nvim_win_is_valid(preview_win) then
+        vim.notify("Window no longer valid", vim.log.levels.WARN)
+        return
+      end
+
       if focused_window == "list" then
         focused_window = "preview"
         vim.api.nvim_set_current_win(preview_win)
         -- Enable normal vim navigation in preview
-        vim.api.nvim_buf_set_option(preview_buf, 'modifiable', false)
-        vim.api.nvim_buf_set_option(preview_buf, 'readonly', true)
+        if vim.api.nvim_buf_is_valid(preview_buf) then
+          vim.api.nvim_buf_set_option(preview_buf, 'modifiable', false)
+          vim.api.nvim_buf_set_option(preview_buf, 'readonly', true)
+        end
       else
         focused_window = "list"
         vim.api.nvim_set_current_win(list_win)
@@ -207,6 +220,10 @@ function M.show_history_with_preview(history_items, callback, execute_callback)
 
     -- Preview buffer keymaps
     vim.keymap.set('n', '<Space>', function()
+      -- Validate windows before switching
+      if not vim.api.nvim_win_is_valid(list_win) or not vim.api.nvim_win_is_valid(preview_win) then
+        return
+      end
       focused_window = "list"
       vim.api.nvim_set_current_win(list_win)
       update_window_titles()
@@ -214,11 +231,19 @@ function M.show_history_with_preview(history_items, callback, execute_callback)
 
     -- Allow quitting from preview buffer
     vim.keymap.set('n', 'q', function()
-      vim.api.nvim_win_close(preview_win, true)
-      vim.api.nvim_win_close(list_win, true)
+      if vim.api.nvim_win_is_valid(preview_win) then
+        vim.api.nvim_win_close(preview_win, true)
+      end
+      if vim.api.nvim_win_is_valid(list_win) then
+        vim.api.nvim_win_close(list_win, true)
+      end
     end, { buffer = preview_buf })
 
     vim.keymap.set('n', '<Esc>', function()
+      -- Validate windows before switching
+      if not vim.api.nvim_win_is_valid(list_win) or not vim.api.nvim_win_is_valid(preview_win) then
+        return
+      end
       focused_window = "list"
       vim.api.nvim_set_current_win(list_win)
       update_window_titles()
@@ -410,17 +435,21 @@ function M.show_history_with_preview(history_items, callback, execute_callback)
 
   setup_keymaps()
 
-  -- Auto-close on buffer leave
-  vim.api.nvim_create_autocmd("BufLeave", {
-    buffer = list_buf,
-    once = true,
+  -- Auto-close on window leave (not buffer leave since we switch between buffers)
+  vim.api.nvim_create_autocmd("WinLeave", {
     callback = function()
-      if vim.api.nvim_win_is_valid(preview_win) then
-        vim.api.nvim_win_close(preview_win, true)
-      end
-      if vim.api.nvim_win_is_valid(list_win) then
-        vim.api.nvim_win_close(list_win, true)
-      end
+      -- Only close if we're leaving both windows entirely
+      vim.defer_fn(function()
+        local current_win = vim.api.nvim_get_current_win()
+        if current_win ~= list_win and current_win ~= preview_win then
+          if vim.api.nvim_win_is_valid(preview_win) then
+            vim.api.nvim_win_close(preview_win, true)
+          end
+          if vim.api.nvim_win_is_valid(list_win) then
+            vim.api.nvim_win_close(list_win, true)
+          end
+        end
+      end, 50)  -- Small delay to ensure window switch is complete
     end
   })
 end
