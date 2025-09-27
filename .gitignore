@@ -2,10 +2,10 @@
 target/
 Cargo.lock
 
-# C#
-# Only ignore bin/ and obj/ at root level, not in subdirectories like src/bin/
-/bin/
-/obj/
+# C#/.NET
+# Build output
+**/bin/
+**/obj/
 *.user
 *.suo
 *.cache
@@ -20,9 +20,54 @@ Cargo.lock
 *.DotSettings.user
 *.ncrunchsolution
 *.ncrunchproject
-# Only ignore .NET Debug/Release folders at specific paths
-TradeApi*/**/[Dd]ebug/
-TradeApi*/**/[Rr]elease/
+
+# .NET specific
+*.dll.config
+*.cache
+*.ilk
+*.meta
+*.obj
+*.iobj
+*.pch
+*.ipdb
+*.pgc
+*.pgd
+*.rsp
+*.sbr
+*.tlb
+*.tli
+*.tlh
+*.tmp
+*.tmp_proj
+*.vspscc
+*.vssscc
+.builds
+*.pidb
+*.svclog
+*.scc
+
+# NuGet
+*.nupkg
+**/packages/*
+!**/packages/build/
+*.nuget.props
+*.nuget.targets
+
+# .NET Core
+project.lock.json
+project.fragment.lock.json
+artifacts/
+**/Properties/launchSettings.json
+
+# Proxy server specific
+proxy/json-selector/JsonSelector/bin/
+proxy/json-selector/JsonSelector/obj/
+proxy/json-selector/**/bin/
+proxy/json-selector/**/obj/
+proxy/**/*.user
+proxy/**/result.csv
+.proxy_server.pid
+proxy_server.log
 
 # IDE
 .idea/
@@ -70,3 +115,11 @@ test_state_comparison
 test_results.txt
 tests/__pycache__/
 __pycache__/
+
+# Temporary test files
+custom_result.csv
+deep_nested.csv
+nested_result.csv
+test_custom_selector.sh
+test_file_upload.sql
+test_selector_sql.sql
