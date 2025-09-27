@@ -304,17 +304,7 @@ impl Parser {
         main_query.ctes = ctes;
 
         // Check for balanced parentheses at the end of parsing
-        if self.paren_depth > 0 {
-            return Err(format!(
-                "Unclosed parenthesis - missing {} closing parenthes{}",
-                self.paren_depth,
-                if self.paren_depth == 1 { "is" } else { "es" }
-            ));
-        } else if self.paren_depth < 0 {
-            return Err(
-                "Extra closing parenthesis found - no matching opening parenthesis".to_string(),
-            );
-        }
+        self.check_balanced_parentheses()?;
 
         Ok(main_query)
     }
@@ -430,22 +420,27 @@ impl Parser {
         }
     }
 
+    /// Helper function to check for balanced parentheses at the end of parsing
+    fn check_balanced_parentheses(&self) -> Result<(), String> {
+        if self.paren_depth > 0 {
+            Err(format!(
+                "Unclosed parenthesis - missing {} closing parenthes{}",
+                self.paren_depth,
+                if self.paren_depth == 1 { "is" } else { "es" }
+            ))
+        } else if self.paren_depth < 0 {
+            Err("Extra closing parenthesis found - no matching opening parenthesis".to_string())
+        } else {
+            Ok(())
+        }
+    }
+
     fn parse_select_statement(&mut self) -> Result<SelectStatement, String> {
         self.trace_enter("parse_select_statement");
         let result = self.parse_select_statement_inner()?;
 
         // Check for balanced parentheses at the end of parsing
-        if self.paren_depth > 0 {
-            return Err(format!(
-                "Unclosed parenthesis - missing {} closing parenthes{}",
-                self.paren_depth,
-                if self.paren_depth == 1 { "is" } else { "es" }
-            ));
-        } else if self.paren_depth < 0 {
-            return Err(
-                "Extra closing parenthesis found - no matching opening parenthesis".to_string(),
-            );
-        }
+        self.check_balanced_parentheses()?;
 
         Ok(result)
     }
