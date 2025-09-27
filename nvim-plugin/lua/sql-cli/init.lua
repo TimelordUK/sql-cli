@@ -340,34 +340,13 @@ function M.setup_keymaps()
             -- Resolve parameters first
             params.resolve_parameters(query, function(resolved_query)
               if resolved_query then
-                -- Create a temporary buffer for the query
-                local temp_buf = vim.api.nvim_create_buf(false, true)
-                vim.api.nvim_buf_set_lines(temp_buf, 0, -1, false, vim.split(resolved_query, '\n'))
-
-                -- Execute using the executor
-                executor.execute_buffer(temp_buf, M.config, M.state)
-
-                -- Clean up temp buffer after a delay
-                vim.defer_fn(function()
-                  if vim.api.nvim_buf_is_valid(temp_buf) then
-                    vim.api.nvim_buf_delete(temp_buf, {force = true})
-                  end
-                end, 100)
+                -- Execute the resolved query
+                executor.execute_query(resolved_query, M.config, M.state, true)  -- skip_params = true since already resolved
               end
             end)
           else
             -- No parameters, execute directly
-            local temp_buf = vim.api.nvim_create_buf(false, true)
-            vim.api.nvim_buf_set_lines(temp_buf, 0, -1, false, vim.split(query, '\n'))
-
-            executor.execute_buffer(temp_buf, M.config, M.state)
-
-            -- Clean up temp buffer after a delay
-            vim.defer_fn(function()
-              if vim.api.nvim_buf_is_valid(temp_buf) then
-                vim.api.nvim_buf_delete(temp_buf, {force = true})
-              end
-            end, 100)
+            executor.execute_query(query, M.config, M.state, false)
           end
         end
       )
