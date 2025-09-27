@@ -9,7 +9,7 @@
 **Think `less` for CSV files, but with SQL superpowers:**
 - **🎯 Two Modes**: Interactive TUI for exploration, non-interactive for scripting & automation
 - **📁 Point & Query**: Drop any CSV/JSON file and immediately start querying  
-- **⚡ Lightning Fast**: In-memory engine handles 100K+ rows with sub-second response
+- **⚡ Lightning Fast**: In-memory engine - 8ms SELECT on 100K rows ([benchmarks](PERFORMANCE.md))
 - **🎮 Vim-Inspired**: Modal editing, `hjkl` navigation, powerful keyboard shortcuts
 - **🧠 Smart Completion**: Context-aware SQL completion with fuzzy matching
 - **🔍 Advanced Filtering**: Regex, fuzzy search, complex WHERE clauses
@@ -626,10 +626,13 @@ JOIN api_prices a ON l.product_id = a.id;
 - **Error Recovery**: Helpful suggestions for column name typos
 
 ### ⚡ **Performance Features**
-- **In-Memory Processing**: 100K+ rows with sub-second response times
-- **Smart Caching**: Query results cached for instant re-filtering  
-- **Optimized Evaluation**: Efficient column operations and expression parsing
-- **Streaming Support**: Large dataset handling without memory bloat
+- **Blazing Fast**: 8ms SELECT queries on 100K rows - [See benchmarks](PERFORMANCE.md)
+- **In-Memory Processing**: Eliminates I/O overhead for datasets up to 100K rows
+- **Sub-Second Operations**: Most queries complete in under 1 second even at 100K rows
+- **Optimized JOINs**: All JOIN types execute in under 40ms at 100K rows
+- **Efficient Aggregations**: GROUP BY operations 10x faster than earlier versions
+- **Smart Caching**: Query results cached for instant re-filtering
+- **See [PERFORMANCE.md](PERFORMANCE.md) for detailed benchmarks**
 
 ## 🖥️ Vim-Inspired Terminal UI
 
