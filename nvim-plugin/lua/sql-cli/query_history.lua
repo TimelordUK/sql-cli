@@ -153,9 +153,9 @@ function M.show_history_picker_simple(callback)
 end
 
 -- Show history picker with enhanced UI and preview
-function M.show_history_picker(callback)
+function M.show_history_picker(callback, execute_callback)
   local ui = require('sql-cli.query_history_ui')
-  ui.show_history_with_preview(history.queries, callback)
+  ui.show_history_with_preview(history.queries, callback, execute_callback)
 end
 
 -- Get recent queries (for quick access)

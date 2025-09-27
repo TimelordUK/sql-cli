@@ -320,14 +320,57 @@ function M.setup_keymaps()
   -- Query history
   if keymaps.query_history then
     vim.keymap.set("n", keymaps.query_history, function()
-      require('sql-cli.query_history').show_history_picker(function(query)
-        -- Insert query into current buffer
-        local lines = vim.split(query, '\n')
-        local row, _ = unpack(vim.api.nvim_win_get_cursor(0))
-        vim.api.nvim_buf_set_lines(0, row - 1, row - 1, false, lines)
-        -- Move cursor to end of inserted text
-        vim.api.nvim_win_set_cursor(0, {row + #lines - 1, #lines[#lines] - 1})
-      end)
+      local executor = require('sql-cli.executor')
+      local params = require('sql-cli.params')
+
+      require('sql-cli.query_history').show_history_picker(
+        -- Insert callback
+        function(query)
+          -- Insert query into current buffer
+          local lines = vim.split(query, '\n')
+          local row, _ = unpack(vim.api.nvim_win_get_cursor(0))
+          vim.api.nvim_buf_set_lines(0, row - 1, row - 1, false, lines)
+          -- Move cursor to end of inserted text
+          vim.api.nvim_win_set_cursor(0, {row + #lines - 1, #lines[#lines] - 1})
+        end,
+        -- Execute callback
+        function(query)
+          -- Check if query has parameters
+          if query:match("{{[^}]+}}") then
+            -- Resolve parameters first
+            params.resolve_parameters(query, function(resolved_query)
+              if resolved_query then
+                -- Create a temporary buffer for the query
+                local temp_buf = vim.api.nvim_create_buf(false, true)
+                vim.api.nvim_buf_set_lines(temp_buf, 0, -1, false, vim.split(resolved_query, '\n'))
+
+                -- Execute using the executor
+                executor.execute_buffer(temp_buf, M.config, M.state)
+
+                -- Clean up temp buffer after a delay
+                vim.defer_fn(function()
+                  if vim.api.nvim_buf_is_valid(temp_buf) then
+                    vim.api.nvim_buf_delete(temp_buf, {force = true})
+                  end
+                end, 100)
+              end
+            end)
+          else
+            -- No parameters, execute directly
+            local temp_buf = vim.api.nvim_create_buf(false, true)
+            vim.api.nvim_buf_set_lines(temp_buf, 0, -1, false, vim.split(query, '\n'))
+
+            executor.execute_buffer(temp_buf, M.config, M.state)
+
+            -- Clean up temp buffer after a delay
+            vim.defer_fn(function()
+              if vim.api.nvim_buf_is_valid(temp_buf) then
+                vim.api.nvim_buf_delete(temp_buf, {force = true})
+              end
+            end, 100)
+          end
+        end
+      )
     end, { desc = "Recall query from history", silent = true })
   end
 

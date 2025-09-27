@@ -4,7 +4,7 @@
 local M = {}
 
 -- Create a floating window with preview
-function M.show_history_with_preview(history_items, callback)
+function M.show_history_with_preview(history_items, callback, execute_callback)
   if #history_items == 0 then
     vim.notify("No query history available", vim.log.levels.INFO)
     return
@@ -84,7 +84,7 @@ function M.show_history_with_preview(history_items, callback)
     col = col,
     style = 'minimal',
     border = 'rounded',
-    title = ' Query History (↑↓ navigate, Enter select, / search, q quit) ',
+    title = ' Query History (Enter: insert, x: execute, /: search, q: quit) ',
     title_pos = 'center',
   })
 
@@ -200,13 +200,33 @@ function M.show_history_with_preview(history_items, callback)
       update_preview()
     end, { buffer = list_buf })
 
-    -- Selection
+    -- Selection (insert into buffer)
     vim.keymap.set('n', '<CR>', function()
       local selected = history_items[current_line]
       vim.api.nvim_win_close(preview_win, true)
       vim.api.nvim_win_close(list_win, true)
       if selected and callback then
         callback(selected.query)
+      end
+    end, { buffer = list_buf })
+
+    -- Execute directly
+    vim.keymap.set('n', 'x', function()
+      local selected = history_items[current_line]
+      vim.api.nvim_win_close(preview_win, true)
+      vim.api.nvim_win_close(list_win, true)
+      if selected and execute_callback then
+        execute_callback(selected.query)
+      end
+    end, { buffer = list_buf })
+
+    -- Execute directly (alternative binding)
+    vim.keymap.set('n', 'X', function()
+      local selected = history_items[current_line]
+      vim.api.nvim_win_close(preview_win, true)
+      vim.api.nvim_win_close(list_win, true)
+      if selected and execute_callback then
+        execute_callback(selected.query)
       end
     end, { buffer = list_buf })
 
@@ -262,6 +282,36 @@ function M.show_history_with_preview(history_items, callback)
         end
         update_preview()
       end
+    end, { buffer = list_buf })
+
+    -- Help
+    vim.keymap.set('n', '?', function()
+      local help_text = {
+        "Query History Keybindings:",
+        "",
+        "Navigation:",
+        "  j/↓     - Next query",
+        "  k/↑     - Previous query",
+        "  Ctrl-f  - Page down",
+        "  Ctrl-b  - Page up",
+        "",
+        "Actions:",
+        "  Enter   - Insert query into buffer",
+        "  x/X     - Execute query immediately",
+        "  y       - Yank/copy query",
+        "  d       - Delete from history",
+        "",
+        "Search:",
+        "  /       - Search/filter queries",
+        "  Esc     - Clear search",
+        "",
+        "Other:",
+        "  ?       - Show this help",
+        "  q       - Quit",
+        "",
+        "Press any key to continue..."
+      }
+      vim.notify(table.concat(help_text, '\n'), vim.log.levels.INFO)
     end, { buffer = list_buf })
   end
 
