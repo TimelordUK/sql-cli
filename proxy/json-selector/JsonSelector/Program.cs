@@ -22,10 +22,42 @@ builder.Services.ConfigureHttpJsonOptions(options =>
     options.SerializerOptions.WriteIndented = true;
 });
 
+// Add Swagger/OpenAPI support
+builder.Services.AddEndpointsApiExplorer();
+builder.Services.AddSwaggerGen(options =>
+{
+    options.SwaggerDoc("v1", new Microsoft.OpenApi.Models.OpenApiInfo
+    {
+        Title = "JSON Selector API",
+        Version = "v1",
+        Description = "Transform hierarchical JSON data into tabular CSV format using selector syntax",
+        Contact = new Microsoft.OpenApi.Models.OpenApiContact
+        {
+            Name = "JSON Selector Service"
+        }
+    });
+
+    // Include XML comments if available
+    var xmlFile = $"{System.Reflection.Assembly.GetExecutingAssembly().GetName().Name}.xml";
+    var xmlPath = Path.Combine(AppContext.BaseDirectory, xmlFile);
+    if (File.Exists(xmlPath))
+    {
+        options.IncludeXmlComments(xmlPath);
+    }
+});
+
 var app = builder.Build();
 
 // Configure the HTTP request pipeline.
 app.UseCors("AllowAll");
+
+// Enable Swagger UI
+app.UseSwagger();
+app.UseSwaggerUI(options =>
+{
+    options.SwaggerEndpoint("/swagger/v1/swagger.json", "JSON Selector API V1");
+    options.RoutePrefix = "swagger"; // Swagger UI at /swagger
+});
 
 app.UseRouting();
 
@@ -37,6 +69,11 @@ app.MapGet("/", () => new
     service = "JSON Selector Service",
     version = "1.0",
     description = "Transform hierarchical JSON into tabular data",
+    documentation = new
+    {
+        swagger_ui = "/swagger",
+        api_definition = "/swagger/v1/swagger.json"
+    },
     endpoints = new[]
     {
         new { path = "/api/query/upload", method = "POST", description = "Simple query with file upload" },

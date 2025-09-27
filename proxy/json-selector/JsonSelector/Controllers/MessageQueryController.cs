@@ -20,9 +20,15 @@ namespace JsonSelector.Controllers
         /// <summary>
         /// Query messages with type-specific selectors via file upload
         /// </summary>
+        /// <param name="file">JSON file containing messages</param>
+        /// <param name="query">JSON string with query parameters</param>
+        /// <returns>CSV formatted results</returns>
         [HttpPost("upload")]
+        [Consumes("multipart/form-data")]
+        [ProducesResponseType(StatusCodes.Status200OK)]
+        [ProducesResponseType(StatusCodes.Status400BadRequest)]
         public async Task<IActionResult> QueryMessagesWithUpload(
-            [FromForm] IFormFile file,
+            IFormFile file,
             [FromForm] string query)
         {
             if (file == null || file.Length == 0)
@@ -68,8 +74,13 @@ namespace JsonSelector.Controllers
         /// <summary>
         /// Query with example FIX configuration
         /// </summary>
+        /// <param name="file">JSON file containing FIX messages</param>
+        /// <returns>CSV formatted results</returns>
         [HttpPost("example/fix")]
-        public async Task<IActionResult> QueryFixExample([FromForm] IFormFile file)
+        [Consumes("multipart/form-data")]
+        [ProducesResponseType(StatusCodes.Status200OK)]
+        [ProducesResponseType(StatusCodes.Status400BadRequest)]
+        public async Task<IActionResult> QueryFixExample(IFormFile file)
         {
             if (file == null || file.Length == 0)
                 return BadRequest("No file uploaded");

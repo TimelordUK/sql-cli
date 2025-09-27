@@ -13,16 +13,36 @@ using JsonSelector.Services;
 
 namespace JsonSelector.Controllers
 {
+    /// <summary>
+    /// Controller for querying JSON data and transforming it to CSV format
+    /// </summary>
     [ApiController]
     [Route("api/[controller]")]
+    [Produces("text/csv")]
     public class QueryController : ControllerBase
     {
         /// <summary>
-        /// Query JSON data with file upload
+        /// Query JSON data with file upload and transform to CSV
         /// </summary>
+        /// <param name="file">JSON file to query</param>
+        /// <param name="query">Query request containing selectors</param>
+        /// <returns>CSV formatted results</returns>
+        /// <remarks>
+        /// Sample request:
+        ///
+        ///     POST /api/query/upload
+        ///     Content-Type: multipart/form-data
+        ///
+        ///     file: [JSON file]
+        ///     query: { "selectors": ["field1", "nested.field2", "array[0].value"] }
+        ///
+        /// </remarks>
         [HttpPost("upload")]
+        [Consumes("multipart/form-data")]
+        [ProducesResponseType(StatusCodes.Status200OK)]
+        [ProducesResponseType(StatusCodes.Status400BadRequest)]
         public async Task<IActionResult> QueryWithUpload(
-            [FromForm] IFormFile file,
+            IFormFile file,
             [FromForm] string query)
         {
             if (file == null || file.Length == 0)
@@ -92,9 +112,28 @@ namespace JsonSelector.Controllers
         }
 
         /// <summary>
-        /// Query JSON data directly (for testing)
+        /// Query JSON data directly from request body
         /// </summary>
+        /// <param name="request">Request containing both JSON data and query</param>
+        /// <returns>CSV formatted results or JSON response</returns>
+        /// <remarks>
+        /// Sample request:
+        ///
+        ///     POST /api/query/direct
+        ///     Content-Type: application/json
+        ///
+        ///     {
+        ///       "data": { "field1": "value1", "nested": { "field2": "value2" } },
+        ///       "query": {
+        ///         "selectors": ["field1", "nested.field2"],
+        ///         "outputFormat": "csv"
+        ///       }
+        ///     }
+        ///
+        /// </remarks>
         [HttpPost("direct")]
+        [ProducesResponseType(StatusCodes.Status200OK)]
+        [ProducesResponseType(StatusCodes.Status400BadRequest)]
         public IActionResult QueryDirect([FromBody] DirectQueryRequest request)
         {
             try
@@ -259,9 +298,19 @@ namespace JsonSelector.Controllers
         }
     }
 
+    /// <summary>
+    /// Request model for direct JSON querying
+    /// </summary>
     public class DirectQueryRequest
     {
+        /// <summary>
+        /// JSON data to query (can be object or array)
+        /// </summary>
         public JToken Data { get; set; }
+
+        /// <summary>
+        /// Query parameters including selectors
+        /// </summary>
         public QueryRequest Query { get; set; }
     }
 }
