@@ -1585,6 +1585,31 @@ pub fn tokenize_query(query: &str) -> Vec<String> {
 }
 
 #[must_use]
+/// Helper function to handle method call context after validation
+fn handle_method_call_context(col_name: &str, after_dot: &str) -> (CursorContext, Option<String>) {
+    // Check if there's a partial method name after the dot
+    let partial_method = if after_dot.is_empty() {
+        None
+    } else if after_dot.chars().all(|c| c.is_alphanumeric() || c == '_') {
+        Some(after_dot.to_string())
+    } else {
+        None
+    };
+
+    // For AfterColumn context, strip quotes if present for consistency
+    let col_name_for_context =
+        if col_name.starts_with('"') && col_name.ends_with('"') && col_name.len() > 2 {
+            col_name[1..col_name.len() - 1].to_string()
+        } else {
+            col_name.to_string()
+        };
+
+    (
+        CursorContext::AfterColumn(col_name_for_context),
+        partial_method,
+    )
+}
+
 /// Helper function to check if we're after a comparison operator
 fn check_after_comparison_operator(query: &str) -> Option<(CursorContext, Option<String>)> {
     for op in &Parser::COMPARISON_OPERATORS {
@@ -1712,30 +1737,7 @@ fn analyze_statement(
                     };
 
                     if is_valid {
-                        // We're in a method call context
-                        // Check if there's a partial method name after the dot
-                        let partial_method = if after_dot.is_empty() {
-                            None
-                        } else if after_dot.chars().all(|c| c.is_alphanumeric() || c == '_') {
-                            Some(after_dot.to_string())
-                        } else {
-                            None
-                        };
-
-                        // For AfterColumn context, strip quotes if present for consistency
-                        let col_name_for_context = if col_name.starts_with('"')
-                            && col_name.ends_with('"')
-                            && col_name.len() > 2
-                        {
-                            col_name[1..col_name.len() - 1].to_string()
-                        } else {
-                            col_name.to_string()
-                        };
-
-                        return (
-                            CursorContext::AfterColumn(col_name_for_context),
-                            partial_method,
-                        );
+                        return handle_method_call_context(col_name, after_dot);
                     }
                 }
             }
@@ -1971,30 +1973,7 @@ fn analyze_partial(query: &str, cursor_pos: usize) -> (CursorContext, Option<Str
                 }
 
                 if is_valid {
-                    // We're in a method call context
-                    // Check if there's a partial method name after the dot
-                    let partial_method = if after_dot.is_empty() {
-                        None
-                    } else if after_dot.chars().all(|c| c.is_alphanumeric() || c == '_') {
-                        Some(after_dot.to_string())
-                    } else {
-                        None
-                    };
-
-                    // For AfterColumn context, strip quotes if present for consistency
-                    let col_name_for_context = if col_name.starts_with('"')
-                        && col_name.ends_with('"')
-                        && col_name.len() > 2
-                    {
-                        col_name[1..col_name.len() - 1].to_string()
-                    } else {
-                        col_name.to_string()
-                    };
-
-                    return (
-                        CursorContext::AfterColumn(col_name_for_context),
-                        partial_method,
-                    );
+                    return handle_method_call_context(col_name, after_dot);
                 }
             }
         }
