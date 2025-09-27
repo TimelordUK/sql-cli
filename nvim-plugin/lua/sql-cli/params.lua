@@ -115,11 +115,9 @@ end
 function M.extract_parameters(text)
   local params = {}
 
-  -- Match {{PARAM_NAME}} or ${PARAM_NAME}
+  -- Only match {{PARAM_NAME}} for prompting
+  -- ${PARAM_NAME} is left for environment variable resolution
   for param in text:gmatch("{{([%w_]+)}}") do
-    params[param] = true
-  end
-  for param in text:gmatch("${([%w_]+)}") do
     params[param] = true
   end
 
@@ -300,6 +298,7 @@ function M.resolve_parameters(text, callback)
       -- All resolved, replace in text
       local result = text
       for param, value in pairs(resolved) do
+        -- Only replace {{}} patterns, leave ${} patterns untouched
         -- Check if parameter is inside JSON (within quotes)
         -- Look for patterns like "{{PARAM}}" which indicate JSON context
         local json_pattern = '"{{' .. param .. '}}"'
@@ -351,7 +350,8 @@ function M.cycle_parameter(direction)
   local start_pos, end_pos = nil, nil
   local pattern_type = nil
 
-  -- Check both patterns
+  -- Only check {{}} patterns for cycling
+  -- ${} patterns are environment variables and shouldn't be cycled
   for match_start, name, match_end in line:gmatch("(){{([%w_]+)}}()") do
     if match_start <= col + 1 and match_end > col + 1 then
       param_name = name
@@ -359,18 +359,6 @@ function M.cycle_parameter(direction)
       end_pos = match_end
       pattern_type = "{{}}"
       break
-    end
-  end
-
-  if not param_name then
-    for match_start, name, match_end in line:gmatch("()${([%w_]+)}()") do
-      if match_start <= col + 1 and match_end > col + 1 then
-        param_name = name
-        start_pos = match_start
-        end_pos = match_end
-        pattern_type = "${}"
-        break
-      end
     end
   end
 
