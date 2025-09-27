@@ -1585,15 +1585,8 @@ pub fn tokenize_query(query: &str) -> Vec<String> {
 }
 
 #[must_use]
-fn analyze_statement(
-    stmt: &SelectStatement,
-    query: &str,
-    _cursor_pos: usize,
-) -> (CursorContext, Option<String>) {
-    // First check for method call context (e.g., "columnName." or "columnName.Con")
-    let trimmed = query.trim();
-
-    // Check if we're after a comparison operator (e.g., "createdDate > ")
+/// Helper function to check if we're after a comparison operator
+fn check_after_comparison_operator(query: &str) -> Option<(CursorContext, Option<String>)> {
     for op in &Parser::COMPARISON_OPERATORS {
         if let Some(op_pos) = query.rfind(op) {
             let before_op = safe_slice_to(query, op_pos);
@@ -1620,17 +1613,32 @@ fn analyze_statement(
                         } else {
                             Some(after_op_trimmed.to_string())
                         };
-                        return (
+                        return Some((
                             CursorContext::AfterComparisonOp(
                                 col_name.to_string(),
                                 op.trim().to_string(),
                             ),
                             partial,
-                        );
+                        ));
                     }
                 }
             }
         }
+    }
+    None
+}
+
+fn analyze_statement(
+    stmt: &SelectStatement,
+    query: &str,
+    _cursor_pos: usize,
+) -> (CursorContext, Option<String>) {
+    // First check for method call context (e.g., "columnName." or "columnName.Con")
+    let trimmed = query.trim();
+
+    // Check if we're after a comparison operator (e.g., "createdDate > ")
+    if let Some(result) = check_after_comparison_operator(query) {
+        return result;
     }
 
     // First check if we're after AND/OR - this takes precedence
@@ -1856,43 +1864,8 @@ fn analyze_partial(query: &str, cursor_pos: usize) -> (CursorContext, Option<Str
     }
 
     // Check if we're after a comparison operator (e.g., "createdDate > ")
-    for op in &Parser::COMPARISON_OPERATORS {
-        if let Some(op_pos) = query.rfind(op) {
-            let before_op = safe_slice_to(query, op_pos);
-            let after_op_start = op_pos + op.len();
-            let after_op = if after_op_start < query.len() {
-                &query[after_op_start..]
-            } else {
-                ""
-            };
-
-            // Check if we have a column name before the operator
-            if let Some(col_name) = before_op.split_whitespace().last() {
-                if col_name.chars().all(|c| c.is_alphanumeric() || c == '_') {
-                    // Check if we're at or near the end of the query (allowing for some whitespace)
-                    let after_op_trimmed = after_op.trim();
-                    if after_op_trimmed.is_empty()
-                        || (after_op_trimmed
-                            .chars()
-                            .all(|c| c.is_alphanumeric() || c == '_')
-                            && !after_op_trimmed.contains('('))
-                    {
-                        let partial = if after_op_trimmed.is_empty() {
-                            None
-                        } else {
-                            Some(after_op_trimmed.to_string())
-                        };
-                        return (
-                            CursorContext::AfterComparisonOp(
-                                col_name.to_string(),
-                                op.trim().to_string(),
-                            ),
-                            partial,
-                        );
-                    }
-                }
-            }
-        }
+    if let Some(result) = check_after_comparison_operator(query) {
+        return result;
     }
 
     // Look for the last dot in the query (method call context) - check this FIRST
