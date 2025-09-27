@@ -101,13 +101,17 @@ function M.yank_as_html(bufnr, table_info, open_browser)
     table.insert(full_html, '</html>')
 
     -- Write to temp file and open in browser
-    -- Use a more predictable location for WSL
+    -- Use a more predictable location for WSL and Windows
     local temp_file
     if vim.fn.has('wsl') == 1 then
       -- Save to Windows temp directory for easy access
       temp_file = '/mnt/c/temp/sql_export_' .. os.date('%Y%m%d_%H%M%S') .. '.html'
       -- Ensure directory exists
       vim.fn.system('mkdir -p /mnt/c/temp')
+    elseif vim.fn.has('win32') == 1 then
+      -- Use Windows temp directory
+      local temp_dir = vim.fn.expand('$TEMP')
+      temp_file = temp_dir .. '\\sql_export_' .. os.date('%Y%m%d_%H%M%S') .. '.html'
     else
       temp_file = os.tmpname() .. '.html'
     end
@@ -127,7 +131,19 @@ function M.yank_as_html(bufnr, table_info, open_browser)
       end
 
       if open_cmd then
-        vim.fn.system(string.format('%s "%s"', open_cmd, temp_file))
+        -- Windows 'start' command needs special handling
+        if vim.fn.has('win32') == 1 then
+          -- On Windows, use rundll32 to open URL in default browser
+          -- This is more reliable than start command
+          local windows_path = temp_file:gsub('/', '\\')
+          local file_url = 'file:///' .. windows_path:gsub('\\', '/')
+          vim.fn.system(string.format('rundll32 url.dll,FileProtocolHandler "%s"', file_url))
+
+          -- Also notify user with the file path in case browser doesn't open
+          vim.notify(string.format("HTML saved to: %s", windows_path), vim.log.levels.INFO)
+        else
+          vim.fn.system(string.format('%s "%s"', open_cmd, temp_file))
+        end
 
         -- For WSL users, provide Windows path
         if vim.fn.has('wsl') == 1 then

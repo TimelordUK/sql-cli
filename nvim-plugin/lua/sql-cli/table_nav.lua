@@ -320,6 +320,9 @@ function M.init_navigation(bufnr, window)
     end
   end
 
+  -- Get buffer lines for fallback parsing or debug output
+  local lines = vim.api.nvim_buf_get_lines(bufnr, 0, -1, false)
+
   if current_registry_table then
     -- Convert registry format to nav_state format
     nav_state.table_info = {
@@ -333,7 +336,6 @@ function M.init_navigation(bufnr, window)
     }
   else
     -- Fallback to old behavior if no table found at cursor
-    local lines = vim.api.nvim_buf_get_lines(bufnr, 0, -1, false)
     nav_state.table_info = parse_table_structure(lines)
   end
 
