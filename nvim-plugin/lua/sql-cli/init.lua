@@ -450,23 +450,34 @@ function M.setup_keymaps()
           export.yank_as_tsv(bufnr, table_info)
         end
       else
-        -- Try to activate table nav temporarily
-        local success = table_nav_module.init_navigation(bufnr)
-        if success then
-          local table_info = table_nav_module.get_table_info()
+        -- First check if this is the output buffer
+        local output_bufnr = M.state:get_output_buf()
+        local target_bufnr = bufnr
+
+        -- If we're not in the output buffer, switch to it if it exists
+        if output_bufnr and output_bufnr ~= bufnr and vim.api.nvim_buf_is_valid(output_bufnr) then
+          target_bufnr = output_bufnr
+        end
+
+        -- Try to activate table nav temporarily on the target buffer
+        table_nav_module.init_navigation(target_bufnr)
+        local table_info = table_nav_module.get_table_info()
+
+        -- Check if we found a table
+        if table_info and table_info.data_start then
           if format_type == "menu" then
-            export.show_export_menu(bufnr, table_info)
+            export.show_export_menu(target_bufnr, table_info)
           elseif format_type == "browser" then
-            export.yank_as_html(bufnr, table_info, true)
+            export.yank_as_html(target_bufnr, table_info, true)
           elseif format_type == "markdown" then
-            export.yank_as_markdown(bufnr, table_info)
+            export.yank_as_markdown(target_bufnr, table_info)
           elseif format_type == "tsv" then
-            export.yank_as_tsv(bufnr, table_info)
+            export.yank_as_tsv(target_bufnr, table_info)
           end
           -- Disable nav after export
           table_nav_module.disable_navigation()
         else
-          vim.notify("No table found in buffer. Run a query first (\\sx)", vim.log.levels.WARN)
+          vim.notify("No table found. Run a query first (\\sx) or ensure you're in the output buffer", vim.log.levels.WARN)
         end
       end
     end

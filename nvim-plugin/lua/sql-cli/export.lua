@@ -56,7 +56,59 @@ end
 
 -- Export to HTML table (works great in Outlook/Teams)
 function M.yank_as_html(bufnr, table_info, open_browser)
-  local data = get_table_data(bufnr, table_info)
+  -- Try to get clean data from sql-cli first
+  local csv_str = M.get_clean_export_data("csv")
+  local data = { headers = {}, rows = {} }
+
+  if csv_str then
+    -- Parse CSV to get structured data (handle quoted fields properly)
+    local function parse_csv_line(line)
+      local fields = {}
+      local field = ""
+      local in_quotes = false
+
+      for i = 1, #line do
+        local c = line:sub(i, i)
+        if c == '"' then
+          if in_quotes and line:sub(i+1, i+1) == '"' then
+            -- Escaped quote
+            field = field .. '"'
+            i = i + 1
+          else
+            in_quotes = not in_quotes
+          end
+        elseif c == ',' and not in_quotes then
+          table.insert(fields, field)
+          field = ""
+        else
+          field = field .. c
+        end
+      end
+      -- Add last field
+      table.insert(fields, field)
+      return fields
+    end
+
+    local lines = vim.split(csv_str, '\n', { plain = true })
+
+    -- First line is headers
+    if #lines > 0 then
+      data.headers = parse_csv_line(lines[1])
+    end
+
+    -- Remaining lines are data
+    for i = 2, #lines do
+      if lines[i] and lines[i] ~= "" then
+        local row = parse_csv_line(lines[i])
+        if #row > 0 then
+          table.insert(data.rows, row)
+        end
+      end
+    end
+  else
+    -- Fallback to parsing from buffer
+    data = get_table_data(bufnr, table_info)
+  end
 
   -- Create full HTML document for browser viewing
   local full_html = {
