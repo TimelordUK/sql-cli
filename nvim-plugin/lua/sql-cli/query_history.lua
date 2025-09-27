@@ -79,15 +79,31 @@ function M.add_to_history(query)
     end
   end
 
-  -- Create preview (first non-comment line or first 80 chars)
+  -- Create preview (first meaningful SQL line)
   local preview = ""
   for line in query:gmatch("[^\n]+") do
-    if not line:match("^%s*%-%-") and line:match("%S") then
-      preview = line:gsub("^%s+", ""):sub(1, 80)
-      if #line > 80 then
-        preview = preview .. "..."
+    local trimmed = line:gsub("^%s+", ""):gsub("%s+$", "")
+    -- Skip comments and empty lines
+    if not trimmed:match("^%-%-") and trimmed ~= "" then
+      -- Get the first significant SQL keyword
+      if trimmed:upper():match("^WITH%s+WEB") or
+         trimmed:upper():match("^SELECT") or
+         trimmed:upper():match("^INSERT") or
+         trimmed:upper():match("^UPDATE") or
+         trimmed:upper():match("^DELETE") or
+         trimmed:upper():match("^WITH%s") then
+        preview = trimmed:sub(1, 100)
+        if #trimmed > 100 then
+          preview = preview .. "..."
+        end
+        break
+      elseif preview == "" then
+        -- If no SQL keyword found yet, use first non-comment line
+        preview = trimmed:sub(1, 100)
+        if #trimmed > 100 then
+          preview = preview .. "..."
+        end
       end
-      break
     end
   end
 
@@ -107,8 +123,8 @@ function M.add_to_history(query)
   -- M.save_history()  -- Uncomment when ready for persistence
 end
 
--- Show history picker
-function M.show_history_picker(callback)
+-- Show history picker (simple version)
+function M.show_history_picker_simple(callback)
   if #history.queries == 0 then
     vim.notify("No query history available", vim.log.levels.INFO)
     return
@@ -134,6 +150,12 @@ function M.show_history_picker(callback)
       callback(item.query)
     end
   end)
+end
+
+-- Show history picker with enhanced UI and preview
+function M.show_history_picker(callback)
+  local ui = require('sql-cli.query_history_ui')
+  ui.show_history_with_preview(history.queries, callback)
 end
 
 -- Get recent queries (for quick access)
