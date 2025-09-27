@@ -185,24 +185,110 @@ end
 
 -- Export to Tab-Separated Values (perfect for Excel)
 function M.yank_as_tsv(bufnr, table_info)
-  local data = get_table_data(bufnr, table_info)
+  -- Get clean TSV data by running query with TSV output
+  local tsv_str = M.get_clean_export_data("tsv")
 
-  local tsv = {}
+  if tsv_str then
+    vim.fn.setreg('+', tsv_str)
+    vim.fn.setreg('"', tsv_str)
 
-  -- Header row
-  table.insert(tsv, table.concat(data.headers, "\t"))
+    -- Count rows for notification
+    local row_count = select(2, tsv_str:gsub('\n', '\n'))
+    vim.notify(string.format("Yanked %d rows as TSV (paste into Excel)", row_count), vim.log.levels.INFO)
+    return tsv_str
+  else
+    -- Fallback to old method if new one fails
+    local data = get_table_data(bufnr, table_info)
+    local tsv = {}
 
-  -- Data rows
-  for _, row in ipairs(data.rows) do
-    table.insert(tsv, table.concat(row, "\t"))
+    -- Header row
+    table.insert(tsv, table.concat(data.headers, "\t"))
+
+    -- Data rows
+    for _, row in ipairs(data.rows) do
+      table.insert(tsv, table.concat(row, "\t"))
+    end
+
+    local tsv_str_fallback = table.concat(tsv, '\n')
+    vim.fn.setreg('+', tsv_str_fallback)
+    vim.fn.setreg('"', tsv_str_fallback)
+
+    vim.notify(string.format("Yanked %d rows as TSV (paste into Excel)", #data.rows), vim.log.levels.INFO)
+    return tsv_str_fallback
+  end
+end
+
+-- Get clean export data by re-running query with specific output format
+function M.get_clean_export_data(format)
+  -- Get the state and config from the main module
+  local ok, sql_cli = pcall(require, 'sql-cli')
+  if not ok then
+    return nil
   end
 
-  local tsv_str = table.concat(tsv, '\n')
-  vim.fn.setreg('+', tsv_str)
-  vim.fn.setreg('"', tsv_str)
+  local state = sql_cli.state
+  local config = sql_cli.config
 
-  vim.notify(string.format("Yanked %d rows as TSV (paste into Excel)", #data.rows), vim.log.levels.INFO)
-  return tsv_str
+  if not state or not config then
+    return nil
+  end
+
+  -- Get the last query
+  local query = state:get_last_query()
+  if not query or query == "" then
+    return nil
+  end
+
+  -- Build command with specific output format
+  local utils = require('sql-cli.utils')
+  local command_path, err = utils.get_command_path(config.command)
+  if not command_path then
+    return nil
+  end
+
+  local cmd_parts = { command_path }
+
+  -- Add data file if set
+  local data_file = state:get_data_file()
+  if data_file then
+    table.insert(cmd_parts, vim.fn.shellescape(data_file))
+  end
+
+  -- Add query
+  local is_script = query:match("%sGO%s") or query:match("^GO%s") or query:match("%sGO$")
+  local is_multiline = query:find("\n") ~= nil
+
+  if is_script or is_multiline then
+    -- Save to temp file for script execution or multi-line queries
+    local temp_file = vim.fn.tempname() .. ".sql"
+    local file = io.open(temp_file, "w")
+    if not file then
+      return nil
+    end
+    file:write(query)
+    file:close()
+
+    table.insert(cmd_parts, "-f")
+    table.insert(cmd_parts, vim.fn.shellescape(temp_file))
+  else
+    -- Direct single-line query
+    table.insert(cmd_parts, "-q")
+    table.insert(cmd_parts, vim.fn.shellescape(query))
+  end
+
+  -- Add output format
+  table.insert(cmd_parts, "-o")
+  table.insert(cmd_parts, format)
+
+  -- Run command and capture output
+  local cmd = table.concat(cmd_parts, " ")
+  local output = vim.fn.system(cmd)
+
+  if vim.v.shell_error ~= 0 then
+    return nil
+  end
+
+  return output
 end
 
 -- Export to SQL INSERT statements
@@ -309,40 +395,53 @@ end
 
 -- Export to CSV (proper escaping)
 function M.yank_as_csv(bufnr, table_info)
-  local data = get_table_data(bufnr, table_info)
+  -- Get clean CSV data by running query with CSV output
+  local csv_str = M.get_clean_export_data("csv")
 
-  local csv = {}
+  if csv_str then
+    vim.fn.setreg('+', csv_str)
+    vim.fn.setreg('"', csv_str)
 
-  -- Helper to escape CSV values
-  local function escape_csv(value)
-    if value:match('[,"\n]') then
-      return '"' .. value:gsub('"', '""') .. '"'
+    -- Count rows for notification
+    local row_count = select(2, csv_str:gsub('\n', '\n'))
+    vim.notify(string.format("Yanked %d rows as CSV", row_count), vim.log.levels.INFO)
+    return csv_str
+  else
+    -- Fallback to old method if new one fails
+    local data = get_table_data(bufnr, table_info)
+    local csv = {}
+
+    -- Helper to escape CSV values
+    local function escape_csv(value)
+      if value:match('[,"\n]') then
+        return '"' .. value:gsub('"', '""') .. '"'
+      end
+      return value
     end
-    return value
-  end
 
-  -- Header row
-  local headers = {}
-  for _, h in ipairs(data.headers) do
-    table.insert(headers, escape_csv(h))
-  end
-  table.insert(csv, table.concat(headers, ","))
-
-  -- Data rows
-  for _, row in ipairs(data.rows) do
-    local values = {}
-    for _, v in ipairs(row) do
-      table.insert(values, escape_csv(v))
+    -- Header row
+    local headers = {}
+    for _, h in ipairs(data.headers) do
+      table.insert(headers, escape_csv(h))
     end
-    table.insert(csv, table.concat(values, ","))
+    table.insert(csv, table.concat(headers, ","))
+
+    -- Data rows
+    for _, row in ipairs(data.rows) do
+      local values = {}
+      for _, v in ipairs(row) do
+        table.insert(values, escape_csv(v))
+      end
+      table.insert(csv, table.concat(values, ","))
+    end
+
+    local csv_str_fallback = table.concat(csv, '\n')
+    vim.fn.setreg('+', csv_str_fallback)
+    vim.fn.setreg('"', csv_str_fallback)
+
+    vim.notify(string.format("Yanked %d rows as CSV", #data.rows), vim.log.levels.INFO)
+    return csv_str_fallback
   end
-
-  local csv_str = table.concat(csv, '\n')
-  vim.fn.setreg('+', csv_str)
-  vim.fn.setreg('"', csv_str)
-
-  vim.notify(string.format("Yanked %d rows as CSV", #data.rows), vim.log.levels.INFO)
-  return csv_str
 end
 
 -- Show export menu
