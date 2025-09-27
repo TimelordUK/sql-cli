@@ -420,6 +420,25 @@ impl Parser {
         }
     }
 
+    /// Helper function to parse comma-separated argument list
+    fn parse_argument_list(&mut self) -> Result<Vec<SqlExpression>, String> {
+        let mut args = Vec::new();
+
+        if !matches!(self.current_token, Token::RightParen) {
+            loop {
+                args.push(self.parse_expression()?);
+
+                if matches!(self.current_token, Token::Comma) {
+                    self.advance();
+                } else {
+                    break;
+                }
+            }
+        }
+
+        Ok(args)
+    }
+
     /// Helper function to check for balanced parentheses at the end of parsing
     fn check_balanced_parentheses(&self) -> Result<(), String> {
         if self.paren_depth > 0 {
@@ -543,20 +562,7 @@ impl Parser {
 
                         // Parse arguments
                         self.consume(Token::LeftParen)?;
-                        let mut args = Vec::new();
-
-                        if !matches!(self.current_token, Token::RightParen) {
-                            loop {
-                                args.push(self.parse_expression()?);
-
-                                if matches!(self.current_token, Token::Comma) {
-                                    self.advance();
-                                } else {
-                                    break;
-                                }
-                            }
-                        }
-
+                        let args = self.parse_argument_list()?;
                         self.consume(Token::RightParen)?;
 
                         // Optional alias
@@ -1187,22 +1193,10 @@ impl Parser {
 
     // Keep the old implementation temporarily for reference (will be removed)
     fn parse_method_args(&mut self) -> Result<Vec<SqlExpression>, String> {
-        let mut args = Vec::new();
-
         // Set flag to indicate we're parsing method arguments
         self.in_method_args = true;
 
-        if !matches!(self.current_token, Token::RightParen) {
-            loop {
-                args.push(self.parse_expression()?);
-
-                if matches!(self.current_token, Token::Comma) {
-                    self.advance();
-                } else {
-                    break;
-                }
-            }
-        }
+        let args = self.parse_argument_list()?;
 
         // Clear the flag
         self.in_method_args = false;
