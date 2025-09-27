@@ -1200,30 +1200,6 @@ impl Parser {
         Ok(expressions)
     }
 
-    fn get_binary_op(&self) -> Option<String> {
-        match &self.current_token {
-            Token::Equal => Some("=".to_string()),
-            Token::NotEqual => Some("!=".to_string()),
-            Token::LessThan => Some("<".to_string()),
-            Token::GreaterThan => Some(">".to_string()),
-            Token::LessThanOrEqual => Some("<=".to_string()),
-            Token::GreaterThanOrEqual => Some(">=".to_string()),
-            Token::Like => Some("LIKE".to_string()),
-            _ => None,
-        }
-    }
-
-    fn get_arithmetic_op(&self) -> Option<String> {
-        match &self.current_token {
-            Token::Plus => Some("+".to_string()),
-            Token::Minus => Some("-".to_string()),
-            Token::Star => Some("*".to_string()), // Multiplication (context-sensitive)
-            Token::Divide => Some("/".to_string()),
-            Token::Modulo => Some("%".to_string()),
-            _ => None,
-        }
-    }
-
     #[must_use]
     pub fn get_position(&self) -> usize {
         self.lexer.get_position()
