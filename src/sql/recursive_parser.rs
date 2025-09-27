@@ -169,26 +169,8 @@ impl Parser {
         )
     }
 
-    /// Check if current token is a comparison operator
-    fn is_comparison_operator(&self) -> bool {
-        matches!(
-            self.current_token,
-            Token::Equal
-                | Token::NotEqual
-                | Token::LessThan
-                | Token::GreaterThan
-                | Token::LessThanOrEqual
-                | Token::GreaterThanOrEqual
-        )
-    }
-
     /// Get comparison operator string representation (for autocomplete context)
     const COMPARISON_OPERATORS: [&'static str; 6] = [" > ", " < ", " >= ", " <= ", " = ", " != "];
-
-    /// Check if current token is a logical operator
-    fn is_logical_operator(&self) -> bool {
-        matches!(self.current_token, Token::And | Token::Or)
-    }
 
     pub fn consume(&mut self, expected: Token) -> Result<(), String> {
         self.trace_token(&format!("Consuming expected {:?}", expected));
