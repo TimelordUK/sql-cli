@@ -84,7 +84,7 @@ function M.show_history_with_preview(history_items, callback, execute_callback)
     col = col,
     style = 'minimal',
     border = 'rounded',
-    title = ' Query History (Enter: insert, x: execute, d: delete, /: search, ?: help) ',
+    title = ' Query History [FOCUSED] (Space: switch to preview) ',
     title_pos = 'center',
   })
 
@@ -105,6 +105,7 @@ function M.show_history_with_preview(history_items, callback, execute_callback)
   local current_line = 1
   local search_mode = false
   local search_term = ""
+  local focused_window = "list"  -- Track which window has focus
 
   -- Function to update preview
   local function update_preview()
@@ -168,31 +169,92 @@ function M.show_history_with_preview(history_items, callback, execute_callback)
   -- Initial preview
   update_preview()
 
+  -- Function to update window titles based on focus
+  local function update_window_titles()
+    if focused_window == "list" then
+      vim.api.nvim_win_set_config(list_win, {
+        title = ' Query History [FOCUSED] (Space: switch to preview) ',
+      })
+      vim.api.nvim_win_set_config(preview_win, {
+        title = ' Preview (Space to focus) ',
+      })
+    else
+      vim.api.nvim_win_set_config(list_win, {
+        title = ' Query History (Space to focus) ',
+      })
+      vim.api.nvim_win_set_config(preview_win, {
+        title = ' Preview [FOCUSED] (j/k: scroll, Space: back to list) ',
+      })
+    end
+  end
+
   -- Set up keymaps
   local function setup_keymaps()
-    -- Navigation
+    -- Switch focus between list and preview
+    vim.keymap.set('n', '<Space>', function()
+      if focused_window == "list" then
+        focused_window = "preview"
+        vim.api.nvim_set_current_win(preview_win)
+        -- Enable normal vim navigation in preview
+        vim.api.nvim_buf_set_option(preview_buf, 'modifiable', false)
+        vim.api.nvim_buf_set_option(preview_buf, 'readonly', true)
+      else
+        focused_window = "list"
+        vim.api.nvim_set_current_win(list_win)
+      end
+      update_window_titles()
+    end, { buffer = list_buf })
+
+    -- Preview buffer keymaps
+    vim.keymap.set('n', '<Space>', function()
+      focused_window = "list"
+      vim.api.nvim_set_current_win(list_win)
+      update_window_titles()
+    end, { buffer = preview_buf })
+
+    -- Allow quitting from preview buffer
+    vim.keymap.set('n', 'q', function()
+      vim.api.nvim_win_close(preview_win, true)
+      vim.api.nvim_win_close(list_win, true)
+    end, { buffer = preview_buf })
+
+    vim.keymap.set('n', '<Esc>', function()
+      focused_window = "list"
+      vim.api.nvim_set_current_win(list_win)
+      update_window_titles()
+    end, { buffer = preview_buf })
+
+    -- Navigation (only in list mode)
     vim.keymap.set('n', 'j', function()
-      current_line = math.min(current_line + 1, #history_items)
-      vim.api.nvim_win_set_cursor(list_win, {current_line, 0})
-      update_preview()
+      if focused_window == "list" then
+        current_line = math.min(current_line + 1, #history_items)
+        vim.api.nvim_win_set_cursor(list_win, {current_line, 0})
+        update_preview()
+      end
     end, { buffer = list_buf })
 
     vim.keymap.set('n', 'k', function()
-      current_line = math.max(current_line - 1, 1)
-      vim.api.nvim_win_set_cursor(list_win, {current_line, 0})
-      update_preview()
+      if focused_window == "list" then
+        current_line = math.max(current_line - 1, 1)
+        vim.api.nvim_win_set_cursor(list_win, {current_line, 0})
+        update_preview()
+      end
     end, { buffer = list_buf })
 
     vim.keymap.set('n', '<Down>', function()
-      current_line = math.min(current_line + 1, #history_items)
-      vim.api.nvim_win_set_cursor(list_win, {current_line, 0})
-      update_preview()
+      if focused_window == "list" then
+        current_line = math.min(current_line + 1, #history_items)
+        vim.api.nvim_win_set_cursor(list_win, {current_line, 0})
+        update_preview()
+      end
     end, { buffer = list_buf })
 
     vim.keymap.set('n', '<Up>', function()
-      current_line = math.max(current_line - 1, 1)
-      vim.api.nvim_win_set_cursor(list_win, {current_line, 0})
-      update_preview()
+      if focused_window == "list" then
+        current_line = math.max(current_line - 1, 1)
+        vim.api.nvim_win_set_cursor(list_win, {current_line, 0})
+        update_preview()
+      end
     end, { buffer = list_buf })
 
     -- Page navigation
@@ -314,10 +376,17 @@ function M.show_history_with_preview(history_items, callback, execute_callback)
         "Query History Keybindings:",
         "",
         "Navigation:",
-        "  j/↓     - Next query",
-        "  k/↑     - Previous query",
+        "  j/↓     - Next query (in list mode)",
+        "  k/↑     - Previous query (in list mode)",
         "  Ctrl-f  - Page down",
         "  Ctrl-b  - Page up",
+        "  Space   - Toggle focus between list and preview",
+        "",
+        "Preview Mode:",
+        "  Space   - Switch focus to preview pane",
+        "  j/k     - Scroll down/up in preview",
+        "  gg/G    - Go to top/bottom of preview",
+        "  Ctrl-d/u- Page down/up in preview",
         "",
         "Actions:",
         "  Enter   - Insert query into buffer",
@@ -327,7 +396,7 @@ function M.show_history_with_preview(history_items, callback, execute_callback)
         "",
         "Search:",
         "  /       - Search/filter queries",
-        "  Esc     - Clear search",
+        "  Esc     - Clear search or return to list",
         "",
         "Other:",
         "  ?       - Show this help",
