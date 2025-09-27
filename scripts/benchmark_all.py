@@ -32,7 +32,7 @@ class BenchmarkSuite:
     def __init__(self, sql_cli_path='./target/release/sql-cli'):
         self.sql_cli = sql_cli_path
         self.results = {}
-        self.test_sizes = [1000, 5000, 10000, 20000, 50000]
+        self.test_sizes = [1000, 5000, 10000, 20000, 50000, 100000]
 
     def generate_test_data(self, num_rows: int, filename: str):
         """Generate test CSV data with specified number of rows"""
