@@ -1,0 +1,137 @@
+[
+  {
+    "header": {
+      "MsgType": "8",
+      "MsgSeqNum": 2001,
+      "SendingTime": "20240115-10:00:00.000"
+    },
+    "body": {
+      "ClOrdID": "ORD-COMPLEX-001",
+      "Symbol": "AAPL",
+      "Side": "1",
+      "ExecType": "F",
+      "LastQty": 1000,
+      "LastPx": 175.50,
+      "Instrument": {
+        "Symbol": "AAPL",
+        "SecurityType": "CS",
+        "SecurityIds": {
+          "ISIN": "US0378331005",
+          "CUSIP": "037833100",
+          "SEDOL": "2046251",
+          "RIC": "AAPL.O"
+        },
+        "Issuer": "Apple Inc.",
+        "SecurityDesc": "Apple Inc. Common Stock",
+        "Exchange": "NASDAQ"
+      },
+      "OrderDetails": {
+        "TimeInForce": "0",
+        "OrderCapacity": "A",
+        "TradingSession": {
+          "SessionID": "REG",
+          "SessionSubID": "NORMAL",
+          "TradingHours": {
+            "OpenTime": "09:30:00",
+            "CloseTime": "16:00:00"
+          }
+        }
+      }
+    },
+    "Parties": [
+      {"PartyID": "TRADER123", "PartyRole": 11, "PartyIDSource": "D"}
+    ]
+  },
+  {
+    "header": {
+      "MsgType": "J",
+      "MsgSeqNum": 2002,
+      "SendingTime": "20240115-10:01:00.000"
+    },
+    "body": {
+      "AllocID": "ALLOC-COMPLEX-001",
+      "Symbol": "MSFT",
+      "Side": "2",
+      "Quantity": 2000,
+      "AvgPx": 405.25,
+      "Instrument": {
+        "Symbol": "MSFT",
+        "SecurityType": "CS",
+        "SecurityIds": {
+          "ISIN": "US5949181045",
+          "CUSIP": "594918104",
+          "SEDOL": "2588173",
+          "RIC": "MSFT.O"
+        },
+        "Issuer": "Microsoft Corporation",
+        "SecurityDesc": "Microsoft Corp Common Stock",
+        "Exchange": "NASDAQ"
+      },
+      "SettlementDetails": {
+        "SettlDate": "20240117",
+        "SettlType": "2",
+        "SettlLocation": {
+          "Country": "US",
+          "DepositoryCode": "DTC",
+          "SubAccount": "12345"
+        }
+      }
+    },
+    "AllocGrp": [
+      {
+        "AllocAccount": "FUND-X",
+        "AllocQty": 1000,
+        "AllocSettlCurrency": "USD",
+        "AllocCommission": {
+          "Commission": 10.50,
+          "CommType": "3",
+          "CommCurrency": "USD"
+        }
+      }
+    ]
+  },
+  {
+    "header": {
+      "MsgType": "8",
+      "MsgSeqNum": 2003,
+      "SendingTime": "20240115-10:02:00.000"
+    },
+    "body": {
+      "ClOrdID": "ORD-COMPLEX-002",
+      "Symbol": "GOOGL",
+      "Side": "1",
+      "ExecType": "F",
+      "LastQty": 500,
+      "LastPx": 140.75,
+      "Instrument": {
+        "Symbol": "GOOGL",
+        "SecurityType": "CS",
+        "SecurityIds": {
+          "ISIN": "US02079K3059",
+          "CUSIP": "02079K305",
+          "SEDOL": "BYVY8G2",
+          "RIC": "GOOGL.O"
+        },
+        "Issuer": "Alphabet Inc.",
+        "SecurityDesc": "Alphabet Inc Class A Common Stock",
+        "Exchange": "NASDAQ",
+        "MarketData": {
+          "LastTrade": {
+            "Price": 140.75,
+            "Time": "10:01:59",
+            "Volume": 1000
+          },
+          "BidAsk": {
+            "Bid": 140.70,
+            "Ask": 140.80,
+            "BidSize": 500,
+            "AskSize": 300
+          }
+        }
+      }
+    },
+    "Parties": [
+      {"PartyID": "TRADER456", "PartyRole": 11, "PartyIDSource": "D"}
+    ]
+  }
+]

@@ -270,6 +270,88 @@ impl<'a> AstFormatter<'a> {
                     web_str.push_str(&format!(" {} {}", self.keyword("CACHE"), cache));
                 }
 
+                // Add FORM_FILE entries if specified
+                for (field_name, file_path) in &web_spec.form_files {
+                    web_str.push_str(&format!(
+                        "\n{}{} '{}' '{}'",
+                        "    ".repeat(indent_level + 1),
+                        self.keyword("FORM_FILE"),
+                        field_name,
+                        file_path
+                    ));
+                }
+
+                // Add FORM_FIELD entries if specified
+                for (field_name, value) in &web_spec.form_fields {
+                    // Check if the value looks like JSON (starts with { or [)
+                    let trimmed_value = value.trim();
+                    if (trimmed_value.starts_with('{') && trimmed_value.ends_with('}'))
+                        || (trimmed_value.starts_with('[') && trimmed_value.ends_with(']'))
+                    {
+                        // Try to prettify JSON
+                        match serde_json::from_str::<serde_json::Value>(trimmed_value) {
+                            Ok(json_val) => {
+                                // Pretty print JSON with 2-space indentation
+                                match serde_json::to_string_pretty(&json_val) {
+                                    Ok(pretty_json) => {
+                                        // Add proper indentation for each line
+                                        let base_indent = "    ".repeat(indent_level + 1);
+                                        let json_lines: Vec<String> = pretty_json
+                                            .lines()
+                                            .enumerate()
+                                            .map(|(i, line)| {
+                                                if i == 0 {
+                                                    line.to_string()
+                                                } else {
+                                                    format!("{}{}", base_indent, line)
+                                                }
+                                            })
+                                            .collect();
+                                        let formatted_json = json_lines.join("\n");
+
+                                        web_str.push_str(&format!(
+                                            "\n{}{} '{}' '{}'\n",
+                                            base_indent,
+                                            self.keyword("FORM_FIELD"),
+                                            field_name,
+                                            formatted_json
+                                        ));
+                                    }
+                                    Err(_) => {
+                                        // Fall back to original if pretty print fails
+                                        web_str.push_str(&format!(
+                                            "\n{}{} '{}' '{}'",
+                                            "    ".repeat(indent_level + 1),
+                                            self.keyword("FORM_FIELD"),
+                                            field_name,
+                                            value
+                                        ));
+                                    }
+                                }
+                            }
+                            Err(_) => {
+                                // Not valid JSON, use as-is
+                                web_str.push_str(&format!(
+                                    "\n{}{} '{}' '{}'",
+                                    "    ".repeat(indent_level + 1),
+                                    self.keyword("FORM_FIELD"),
+                                    field_name,
+                                    value
+                                ));
+                            }
+                        }
+                    } else {
+                        // Not JSON, use as-is
+                        web_str.push_str(&format!(
+                            "\n{}{} '{}' '{}'",
+                            "    ".repeat(indent_level + 1),
+                            self.keyword("FORM_FIELD"),
+                            field_name,
+                            value
+                        ));
+                    }
+                }
+
                 // Add HEADERS if specified
                 if !web_spec.headers.is_empty() {
                     web_str.push_str(&format!(" {} (", self.keyword("HEADERS")));

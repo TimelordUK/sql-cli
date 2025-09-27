@@ -333,12 +333,14 @@ pub enum CTEType {
 #[derive(Debug, Clone)]
 pub struct WebCTESpec {
     pub url: String,
-    pub format: Option<DataFormat>,     // CSV, JSON, or auto-detect
-    pub headers: Vec<(String, String)>, // HTTP headers
-    pub cache_seconds: Option<u64>,     // Cache duration
-    pub method: Option<HttpMethod>,     // HTTP method (GET, POST, etc.)
-    pub body: Option<String>,           // Request body for POST/PUT
-    pub json_path: Option<String>,      // JSON path to extract (e.g., "Result" for {Result: [...]})
+    pub format: Option<DataFormat>,        // CSV, JSON, or auto-detect
+    pub headers: Vec<(String, String)>,    // HTTP headers
+    pub cache_seconds: Option<u64>,        // Cache duration
+    pub method: Option<HttpMethod>,        // HTTP method (GET, POST, etc.)
+    pub body: Option<String>,              // Request body for POST/PUT
+    pub json_path: Option<String>, // JSON path to extract (e.g., "Result" for {Result: [...]})
+    pub form_files: Vec<(String, String)>, // Multipart form files: (field_name, file_path)
+    pub form_fields: Vec<(String, String)>, // Multipart form fields: (field_name, value)
 }
 
 /// HTTP methods for WEB CTEs

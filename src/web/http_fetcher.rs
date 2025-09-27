@@ -52,8 +52,34 @@ impl WebDataFetcher {
             request = request.header(key, resolved_value);
         }
 
-        // Add body if provided (typically for POST/PUT/PATCH)
-        if let Some(body) = &spec.body {
+        // Handle multipart form data if form_files are specified
+        if !spec.form_files.is_empty() || !spec.form_fields.is_empty() {
+            let mut form = reqwest::blocking::multipart::Form::new();
+
+            // Add files
+            for (field_name, file_path) in &spec.form_files {
+                let resolved_path = self.resolve_env_var(file_path)?;
+                let file = std::fs::File::open(&resolved_path)
+                    .with_context(|| format!("Failed to open file: {}", resolved_path))?;
+                let file_name = std::path::Path::new(&resolved_path)
+                    .file_name()
+                    .and_then(|n| n.to_str())
+                    .unwrap_or("file")
+                    .to_string();
+                let part = reqwest::blocking::multipart::Part::reader(file).file_name(file_name);
+                form = form.part(field_name.clone(), part);
+            }
+
+            // Add regular form fields
+            for (field_name, value) in &spec.form_fields {
+                let resolved_value = self.resolve_env_var(value)?;
+                form = form.text(field_name.clone(), resolved_value);
+            }
+
+            request = request.multipart(form);
+        }
+        // Add body if provided (typically for POST/PUT/PATCH) - only if not using multipart
+        else if let Some(body) = &spec.body {
             let resolved_body = self.resolve_env_var(body)?;
             request = request.body(resolved_body);
             // Set Content-Type to JSON if not already set and body looks like JSON

@@ -39,6 +39,9 @@ skip_examples["trade_reconciliation_final.sql"]=1  # Needs data file check
 skip_examples["web_cte_advanced.sql"]=1
 skip_examples["trade_queries_master.sql"]=1
 skip_examples["macro_templates_guide.sql"]=1
+skip_examples["web_cte_file_upload.sql"]=1
+skip_examples["fix_message_analysis.sql"]=1
+skip_examples["fix_messages_with_selectors.sql"]=1
 
 failed=0
 passed=0

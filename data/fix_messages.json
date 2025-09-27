@@ -1,0 +1,183 @@
+[
+  {
+    "header": {
+      "MsgType": "8",
+      "MsgSeqNum": 1001,
+      "SendingTime": "20240115-09:30:15.123",
+      "SenderCompID": "BROKER1",
+      "TargetCompID": "CLIENT1"
+    },
+    "body": {
+      "ClOrdID": "ORD-2024-001",
+      "OrderID": "EX001",
+      "Symbol": "AAPL",
+      "Side": "1",
+      "ExecType": "F",
+      "OrdStatus": "2",
+      "LastQty": 1000,
+      "LastPx": 175.50,
+      "CumQty": 1000,
+      "AvgPx": 175.50,
+      "ExecID": "EXEC-001",
+      "TransactTime": "20240115-09:30:15"
+    },
+    "Parties": [
+      {"PartyID": "TRADER123", "PartyIDSource": "D", "PartyRole": 11},
+      {"PartyID": "ACC-98765", "PartyIDSource": "D", "PartyRole": 1},
+      {"PartyID": "BROKER-XYZ", "PartyIDSource": "D", "PartyRole": 35}
+    ],
+    "AllocGrp": [
+      {"AllocAccount": "FUND-A", "AllocQty": 400, "AllocPrice": 175.50},
+      {"AllocAccount": "FUND-B", "AllocQty": 300, "AllocPrice": 175.50},
+      {"AllocAccount": "FUND-C", "AllocQty": 300, "AllocPrice": 175.50}
+    ]
+  },
+  {
+    "header": {
+      "MsgType": "J",
+      "MsgSeqNum": 1002,
+      "SendingTime": "20240115-09:31:00.456",
+      "SenderCompID": "BROKER1",
+      "TargetCompID": "CLIENT1"
+    },
+    "body": {
+      "AllocID": "ALLOC-2024-001",
+      "AllocTransType": "0",
+      "AllocType": 1,
+      "Symbol": "MSFT",
+      "Side": "2",
+      "Quantity": 2000,
+      "AvgPx": 405.25,
+      "TradeDate": "20240115",
+      "SettlDate": "20240117",
+      "AllocStatus": 0
+    },
+    "OrdAllocGrp": [
+      {"ClOrdID": "ORD-2024-002", "OrderID": "EX002", "OrderQty": 1200},
+      {"ClOrdID": "ORD-2024-003", "OrderID": "EX003", "OrderQty": 800}
+    ],
+    "AllocGrp": [
+      {"AllocAccount": "FUND-X", "AllocQty": 1000, "AllocSettlCurrAmt": 405250},
+      {"AllocAccount": "FUND-Y", "AllocQty": 500, "AllocSettlCurrAmt": 202625},
+      {"AllocAccount": "FUND-Z", "AllocQty": 500, "AllocSettlCurrAmt": 202625}
+    ]
+  },
+  {
+    "header": {
+      "MsgType": "8",
+      "MsgSeqNum": 1003,
+      "SendingTime": "20240115-09:32:30.789",
+      "SenderCompID": "BROKER1",
+      "TargetCompID": "CLIENT2"
+    },
+    "body": {
+      "ClOrdID": "ORD-2024-004",
+      "OrderID": "EX004",
+      "Symbol": "GOOGL",
+      "Side": "1",
+      "ExecType": "F",
+      "OrdStatus": "2",
+      "LastQty": 500,
+      "LastPx": 140.75,
+      "CumQty": 500,
+      "AvgPx": 140.75,
+      "ExecID": "EXEC-002",
+      "TransactTime": "20240115-09:32:30"
+    },
+    "Parties": [
+      {"PartyID": "TRADER456", "PartyIDSource": "D", "PartyRole": 11},
+      {"PartyID": "ACC-12345", "PartyIDSource": "D", "PartyRole": 1}
+    ],
+    "AllocGrp": [
+      {"AllocAccount": "FUND-D", "AllocQty": 250, "AllocPrice": 140.75},
+      {"AllocAccount": "FUND-E", "AllocQty": 250, "AllocPrice": 140.75}
+    ]
+  },
+  {
+    "header": {
+      "MsgType": "8",
+      "MsgSeqNum": 1004,
+      "SendingTime": "20240115-09:33:45.012",
+      "SenderCompID": "BROKER1",
+      "TargetCompID": "CLIENT3"
+    },
+    "body": {
+      "ClOrdID": "ORD-2024-005",
+      "OrderID": "EX005",
+      "Symbol": "TSLA",
+      "Side": "2",
+      "ExecType": "0",
+      "OrdStatus": "0",
+      "OrderQty": 750,
+      "Price": 240.00,
+      "ExecID": "EXEC-003",
+      "TransactTime": "20240115-09:33:45"
+    },
+    "Parties": [
+      {"PartyID": "TRADER789", "PartyIDSource": "D", "PartyRole": 11},
+      {"PartyID": "ACC-55555", "PartyIDSource": "D", "PartyRole": 1}
+    ]
+  },
+  {
+    "header": {
+      "MsgType": "J",
+      "MsgSeqNum": 1005,
+      "SendingTime": "20240115-09:35:00.345",
+      "SenderCompID": "BROKER1",
+      "TargetCompID": "CLIENT4"
+    },
+    "body": {
+      "AllocID": "ALLOC-2024-002",
+      "AllocTransType": "0",
+      "AllocType": 1,
+      "Symbol": "NVDA",
+      "Side": "1",
+      "Quantity": 1500,
+      "AvgPx": 720.50,
+      "TradeDate": "20240115",
+      "SettlDate": "20240117",
+      "AllocStatus": 0
+    },
+    "OrdAllocGrp": [
+      {"ClOrdID": "ORD-2024-006", "OrderID": "EX006", "OrderQty": 1500}
+    ],
+    "AllocGrp": [
+      {"AllocAccount": "FUND-M", "AllocQty": 500, "AllocSettlCurrAmt": 360250},
+      {"AllocAccount": "FUND-N", "AllocQty": 500, "AllocSettlCurrAmt": 360250},
+      {"AllocAccount": "FUND-O", "AllocQty": 500, "AllocSettlCurrAmt": 360250}
+    ]
+  },
+  {
+    "header": {
+      "MsgType": "8",
+      "MsgSeqNum": 1006,
+      "SendingTime": "20240115-09:36:15.567",
+      "SenderCompID": "BROKER2",
+      "TargetCompID": "CLIENT5"
+    },
+    "body": {
+      "ClOrdID": "ORD-2024-007",
+      "OrderID": "EX007",
+      "Symbol": "AMZN",
+      "Side": "1",
+      "ExecType": "F",
+      "OrdStatus": "2",
+      "LastQty": 2000,
+      "LastPx": 155.25,
+      "CumQty": 2000,
+      "AvgPx": 155.25,
+      "ExecID": "EXEC-004",
+      "TransactTime": "20240115-09:36:15"
+    },
+    "Parties": [
+      {"PartyID": "TRADER999", "PartyIDSource": "D", "PartyRole": 11},
+      {"PartyID": "ACC-77777", "PartyIDSource": "D", "PartyRole": 1},
+      {"PartyID": "BROKER-ABC", "PartyIDSource": "D", "PartyRole": 35}
+    ],
+    "AllocGrp": [
+      {"AllocAccount": "FUND-P", "AllocQty": 800, "AllocPrice": 155.25},
+      {"AllocAccount": "FUND-Q", "AllocQty": 700, "AllocPrice": 155.25},
+      {"AllocAccount": "FUND-R", "AllocQty": 500, "AllocPrice": 155.25}
+    ]
+  }
+]

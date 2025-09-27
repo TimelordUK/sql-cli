@@ -1,0 +1,327 @@
+[
+  {
+    "header": {
+      "MsgType": "8",
+      "MsgSeqNum": 1001,
+      "SendingTime": "20240115-09:30:15.123",
+      "SenderCompID": "BROKER1",
+      "TargetCompID": "CLIENT1"
+    },
+    "body": {
+      "ClOrdID": "ORD20240115_001",
+      "OrigClOrdID": null,
+      "ExecID": "EXEC_001_001",
+      "OrderID": "EX001",
+      "Symbol": "EURUSD",
+      "SecurityID": "EUR/USD",
+      "Side": "1",
+      "OrderQty": 1000000,
+      "OrdType": "1",
+      "Price": 1.0925,
+      "LastQty": 500000,
+      "LastPx": 1.0926,
+      "CumQty": 500000,
+      "AvgPx": 1.0926,
+      "OrdStatus": "1",
+      "ExecType": "F",
+      "LeavesQty": 500000,
+      "TransactTime": "20240115-09:30:15",
+      "TradeDate": "20240115",
+      "Commission": 25.50,
+      "CommType": "3",
+      "NetMoney": 546300.00
+    },
+    "Parties": [
+      {
+        "PartyID": "TRADER_JD",
+        "PartyIDSource": "D",
+        "PartyRole": 11,
+        "PartySubIDs": [
+          {
+            "PartySubID": "DESK_FX",
+            "PartySubIDType": 1
+          }
+        ]
+      },
+      {
+        "PartyID": "ACC_HEDGE_001",
+        "PartyIDSource": "1",
+        "PartyRole": 1
+      },
+      {
+        "PartyID": "BROKER1_NY",
+        "PartyIDSource": "D",
+        "PartyRole": 35
+      }
+    ],
+    "AllocGrp": [
+      {
+        "AllocAccount": "FUND_ALPHA",
+        "AllocQty": 300000,
+        "AllocAvgPx": 1.0926,
+        "AllocNetMoney": 327780.00
+      },
+      {
+        "AllocAccount": "FUND_BETA",
+        "AllocQty": 200000,
+        "AllocAvgPx": 1.0926,
+        "AllocNetMoney": 218520.00
+      }
+    ]
+  },
+  {
+    "header": {
+      "MsgType": "8",
+      "MsgSeqNum": 1002,
+      "SendingTime": "20240115-09:31:20.456",
+      "SenderCompID": "BROKER1",
+      "TargetCompID": "CLIENT1"
+    },
+    "body": {
+      "ClOrdID": "ORD20240115_001",
+      "OrigClOrdID": null,
+      "ExecID": "EXEC_001_002",
+      "OrderID": "EX001",
+      "Symbol": "EURUSD",
+      "SecurityID": "EUR/USD",
+      "Side": "1",
+      "OrderQty": 1000000,
+      "OrdType": "1",
+      "Price": 1.0925,
+      "LastQty": 500000,
+      "LastPx": 1.0927,
+      "CumQty": 1000000,
+      "AvgPx": 1.09265,
+      "OrdStatus": "2",
+      "ExecType": "F",
+      "LeavesQty": 0,
+      "TransactTime": "20240115-09:31:20",
+      "TradeDate": "20240115",
+      "Commission": 25.50,
+      "CommType": "3",
+      "NetMoney": 546350.00
+    },
+    "Parties": [
+      {
+        "PartyID": "TRADER_JD",
+        "PartyIDSource": "D",
+        "PartyRole": 11,
+        "PartySubIDs": [
+          {
+            "PartySubID": "DESK_FX",
+            "PartySubIDType": 1
+          }
+        ]
+      },
+      {
+        "PartyID": "ACC_HEDGE_001",
+        "PartyIDSource": "1",
+        "PartyRole": 1
+      },
+      {
+        "PartyID": "BROKER1_NY",
+        "PartyIDSource": "D",
+        "PartyRole": 35
+      }
+    ],
+    "AllocGrp": [
+      {
+        "AllocAccount": "FUND_ALPHA",
+        "AllocQty": 300000,
+        "AllocAvgPx": 1.0927,
+        "AllocNetMoney": 327810.00
+      },
+      {
+        "AllocAccount": "FUND_BETA",
+        "AllocQty": 200000,
+        "AllocAvgPx": 1.0927,
+        "AllocNetMoney": 218540.00
+      }
+    ]
+  },
+  {
+    "header": {
+      "MsgType": "8",
+      "MsgSeqNum": 1003,
+      "SendingTime": "20240115-09:45:00.789",
+      "SenderCompID": "BROKER1",
+      "TargetCompID": "CLIENT1"
+    },
+    "body": {
+      "ClOrdID": "ORD20240115_002",
+      "OrigClOrdID": null,
+      "ExecID": "EXEC_002_001",
+      "OrderID": "EX002",
+      "Symbol": "GBPUSD",
+      "SecurityID": "GBP/USD",
+      "Side": "2",
+      "OrderQty": 750000,
+      "OrdType": "2",
+      "Price": null,
+      "LastQty": 750000,
+      "LastPx": 1.2715,
+      "CumQty": 750000,
+      "AvgPx": 1.2715,
+      "OrdStatus": "2",
+      "ExecType": "F",
+      "LeavesQty": 0,
+      "TransactTime": "20240115-09:45:00",
+      "TradeDate": "20240115",
+      "Commission": 30.00,
+      "CommType": "3",
+      "NetMoney": 953625.00
+    },
+    "Parties": [
+      {
+        "PartyID": "TRADER_SM",
+        "PartyIDSource": "D",
+        "PartyRole": 11
+      },
+      {
+        "PartyID": "ACC_PROP_002",
+        "PartyIDSource": "1",
+        "PartyRole": 1
+      },
+      {
+        "PartyID": "BROKER1_LON",
+        "PartyIDSource": "D",
+        "PartyRole": 35
+      }
+    ],
+    "AllocGrp": [
+      {
+        "AllocAccount": "PROP_TRADING",
+        "AllocQty": 750000,
+        "AllocAvgPx": 1.2715,
+        "AllocNetMoney": 953625.00
+      }
+    ]
+  },
+  {
+    "header": {
+      "MsgType": "8",
+      "MsgSeqNum": 1004,
+      "SendingTime": "20240115-10:15:30.234",
+      "SenderCompID": "BROKER1",
+      "TargetCompID": "CLIENT1"
+    },
+    "body": {
+      "ClOrdID": "ORD20240115_003",
+      "OrigClOrdID": null,
+      "ExecID": "EXEC_003_001",
+      "OrderID": "EX003",
+      "Symbol": "USDJPY",
+      "SecurityID": "USD/JPY",
+      "Side": "1",
+      "OrderQty": 2000000,
+      "OrdType": "1",
+      "Price": 148.50,
+      "LastQty": 1000000,
+      "LastPx": 148.52,
+      "CumQty": 1000000,
+      "AvgPx": 148.52,
+      "OrdStatus": "1",
+      "ExecType": "F",
+      "LeavesQty": 1000000,
+      "TransactTime": "20240115-10:15:30",
+      "TradeDate": "20240115",
+      "Commission": 40.00,
+      "CommType": "3",
+      "NetMoney": 148520000
+    },
+    "Parties": [
+      {
+        "PartyID": "TRADER_AK",
+        "PartyIDSource": "D",
+        "PartyRole": 11,
+        "PartySubIDs": [
+          {
+            "PartySubID": "DESK_ASIA",
+            "PartySubIDType": 1
+          }
+        ]
+      },
+      {
+        "PartyID": "ACC_CLIENT_003",
+        "PartyIDSource": "1",
+        "PartyRole": 1
+      },
+      {
+        "PartyID": "BROKER1_TOK",
+        "PartyIDSource": "D",
+        "PartyRole": 35
+      },
+      {
+        "PartyID": "CLEARER_JP",
+        "PartyIDSource": "D",
+        "PartyRole": 4
+      }
+    ],
+    "AllocGrp": [
+      {
+        "AllocAccount": "CLIENT_PENSION_A",
+        "AllocQty": 600000,
+        "AllocAvgPx": 148.52,
+        "AllocNetMoney": 89112000
+      },
+      {
+        "AllocAccount": "CLIENT_PENSION_B",
+        "AllocQty": 400000,
+        "AllocAvgPx": 148.52,
+        "AllocNetMoney": 59408000
+      }
+    ]
+  },
+  {
+    "header": {
+      "MsgType": "J",
+      "MsgSeqNum": 1005,
+      "SendingTime": "20240115-10:30:00.567",
+      "SenderCompID": "BROKER1",
+      "TargetCompID": "CLIENT1"
+    },
+    "body": {
+      "AllocID": "ALLOC_001",
+      "AllocTransType": "0",
+      "AllocType": 1,
+      "RefAllocID": null,
+      "AllocLinkID": "LINK_001",
+      "BookingType": 0,
+      "Side": "1",
+      "Symbol": "EURUSD",
+      "SecurityID": "EUR/USD",
+      "Quantity": 1000000,
+      "AvgPx": 1.09265,
+      "TradeDate": "20240115",
+      "TransactTime": "20240115-10:30:00"
+    },
+    "OrdAllocGrp": [
+      {
+        "ClOrdID": "ORD20240115_001",
+        "OrderID": "EX001",
+        "OrderQty": 1000000,
+        "OrderAvgPx": 1.09265
+      }
+    ],
+    "AllocGrp": [
+      {
+        "AllocAccount": "FUND_ALPHA",
+        "AllocAcctIDSource": 1,
+        "AllocQty": 600000,
+        "AllocAvgPx": 1.09265,
+        "AllocNetMoney": 655590.00,
+        "AllocSettlCurrAmt": 655590.00,
+        "AllocSettlCurr": "USD"
+      },
+      {
+        "AllocAccount": "FUND_BETA",
+        "AllocQty": 400000,
+        "AllocAcctIDSource": 1,
+        "AllocAvgPx": 1.09265,
+        "AllocNetMoney": 437060.00,
+        "AllocSettlCurrAmt": 437060.00,
+        "AllocSettlCurr": "USD"
+      }
+    ]
+  }
+]

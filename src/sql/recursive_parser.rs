@@ -413,6 +413,8 @@ impl Parser {
         let mut method = None;
         let mut body = None;
         let mut json_path = None;
+        let mut form_files = Vec::new();
+        let mut form_fields = Vec::new();
 
         // Parse optional clauses until we hit the closing parenthesis
         while !matches!(self.current_token, Token::RightParen)
@@ -444,6 +446,50 @@ impl Parser {
                         self.advance();
                         json_path = Some(self.parse_json_path()?);
                     }
+                    "FORM_FILE" => {
+                        self.advance();
+                        // Parse field name
+                        let field_name = match &self.current_token {
+                            Token::StringLiteral(name) => name.clone(),
+                            _ => {
+                                return Err("Expected field name string after FORM_FILE".to_string())
+                            }
+                        };
+                        self.advance();
+                        // Parse file path
+                        let file_path = match &self.current_token {
+                            Token::StringLiteral(path) => path.clone(),
+                            _ => {
+                                return Err("Expected file path string after field name".to_string())
+                            }
+                        };
+                        self.advance();
+                        form_files.push((field_name, file_path));
+                    }
+                    "FORM_FIELD" => {
+                        self.advance();
+                        // Parse field name
+                        let field_name = match &self.current_token {
+                            Token::StringLiteral(name) => name.clone(),
+                            _ => {
+                                return Err(
+                                    "Expected field name string after FORM_FIELD".to_string()
+                                )
+                            }
+                        };
+                        self.advance();
+                        // Parse field value
+                        let value = match &self.current_token {
+                            Token::StringLiteral(val) => val.clone(),
+                            _ => {
+                                return Err(
+                                    "Expected field value string after field name".to_string()
+                                )
+                            }
+                        };
+                        self.advance();
+                        form_fields.push((field_name, value));
+                    }
                     _ => {
                         return Err(format!(
                             "Unexpected keyword '{}' in WEB CTE specification",
@@ -464,6 +510,8 @@ impl Parser {
             method,
             body,
             json_path,
+            form_files,
+            form_fields,
         })
     }
 

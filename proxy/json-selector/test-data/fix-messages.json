@@ -1,0 +1,122 @@
+[
+  {
+    "header": {
+      "MsgType": "8",
+      "MsgSeqNum": 1001,
+      "SendingTime": "20240115-09:30:15.123"
+    },
+    "body": {
+      "ClOrdID": "ORD-2024-001",
+      "Symbol": "AAPL",
+      "Side": "1",
+      "ExecType": "F",
+      "LastQty": 1000,
+      "LastPx": 175.50,
+      "Quantity": 1000,
+      "AvgPx": 175.50,
+      "ExecID": "EXEC-001"
+    },
+    "Parties": [
+      {"PartyID": "TRADER123", "PartyRole": 11},
+      {"PartyID": "ACC-98765", "PartyRole": 1},
+      {"PartyID": "BROKER-XYZ", "PartyRole": 35}
+    ],
+    "AllocGrp": [
+      {"AllocAccount": "FUND-A", "AllocQty": 400},
+      {"AllocAccount": "FUND-B", "AllocQty": 300},
+      {"AllocAccount": "FUND-C", "AllocQty": 300}
+    ]
+  },
+  {
+    "header": {
+      "MsgType": "J",
+      "MsgSeqNum": 1002,
+      "SendingTime": "20240115-09:31:00.456"
+    },
+    "body": {
+      "AllocID": "ALLOC-2024-001",
+      "Symbol": "MSFT",
+      "Side": "2",
+      "Quantity": 2000,
+      "AvgPx": 405.25,
+      "AllocTransType": "0"
+    },
+    "OrdAllocGrp": [
+      {"ClOrdID": "ORD-2024-002", "OrderQty": 1200},
+      {"ClOrdID": "ORD-2024-003", "OrderQty": 800}
+    ],
+    "AllocGrp": [
+      {"AllocAccount": "FUND-X", "AllocQty": 1000},
+      {"AllocAccount": "FUND-Y", "AllocQty": 500},
+      {"AllocAccount": "FUND-Z", "AllocQty": 500}
+    ]
+  },
+  {
+    "header": {
+      "MsgType": "8",
+      "MsgSeqNum": 1003,
+      "SendingTime": "20240115-09:32:30.789"
+    },
+    "body": {
+      "ClOrdID": "ORD-2024-004",
+      "Symbol": "GOOGL",
+      "Side": "1",
+      "ExecType": "F",
+      "LastQty": 500,
+      "LastPx": 140.75,
+      "Quantity": 500,
+      "AvgPx": 140.75,
+      "ExecID": "EXEC-002"
+    },
+    "Parties": [
+      {"PartyID": "TRADER456", "PartyRole": 11},
+      {"PartyID": "ACC-12345", "PartyRole": 1}
+    ],
+    "AllocGrp": [
+      {"AllocAccount": "FUND-D", "AllocQty": 250},
+      {"AllocAccount": "FUND-E", "AllocQty": 250}
+    ]
+  },
+  {
+    "header": {
+      "MsgType": "8",
+      "MsgSeqNum": 1004,
+      "SendingTime": "20240115-09:33:45.012"
+    },
+    "body": {
+      "ClOrdID": "ORD-2024-005",
+      "Symbol": "TSLA",
+      "Side": "2",
+      "ExecType": "0",
+      "Quantity": 750,
+      "OrdStatus": "0"
+    },
+    "Parties": [
+      {"PartyID": "TRADER789", "PartyRole": 11},
+      {"PartyID": "ACC-55555", "PartyRole": 1}
+    ]
+  },
+  {
+    "header": {
+      "MsgType": "J",
+      "MsgSeqNum": 1005,
+      "SendingTime": "20240115-09:35:00.345"
+    },
+    "body": {
+      "AllocID": "ALLOC-2024-002",
+      "Symbol": "NVDA",
+      "Side": "1",
+      "Quantity": 1500,
+      "AvgPx": 720.50,
+      "AllocTransType": "0"
+    },
+    "OrdAllocGrp": [
+      {"ClOrdID": "ORD-2024-006", "OrderQty": 1500}
+    ],
+    "AllocGrp": [
+      {"AllocAccount": "FUND-M", "AllocQty": 500},
+      {"AllocAccount": "FUND-N", "AllocQty": 500},
+      {"AllocAccount": "FUND-O", "AllocQty": 500}
+    ]
+  }
+]
