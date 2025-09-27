@@ -64,6 +64,26 @@ function M.add_to_history(query)
     return
   end
 
+  -- Trim leading and trailing empty lines
+  local lines = vim.split(query, '\n')
+
+  -- Remove leading empty lines
+  while #lines > 0 and lines[1]:match("^%s*$") do
+    table.remove(lines, 1)
+  end
+
+  -- Remove trailing empty lines
+  while #lines > 0 and lines[#lines]:match("^%s*$") do
+    table.remove(lines)
+  end
+
+  -- Reconstruct the trimmed query
+  query = table.concat(lines, '\n')
+
+  if query == "" then
+    return
+  end
+
   -- Calculate checksum
   local checksum = calculate_checksum(query)
 

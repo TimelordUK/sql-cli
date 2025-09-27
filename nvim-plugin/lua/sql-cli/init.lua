@@ -328,6 +328,15 @@ function M.setup_keymaps()
         function(query)
           -- Insert query into current buffer
           local lines = vim.split(query, '\n')
+
+          -- Trim leading/trailing empty lines for cleaner insertion
+          while #lines > 0 and lines[1]:match("^%s*$") do
+            table.remove(lines, 1)
+          end
+          while #lines > 0 and lines[#lines]:match("^%s*$") do
+            table.remove(lines)
+          end
+
           local row, _ = unpack(vim.api.nvim_win_get_cursor(0))
           vim.api.nvim_buf_set_lines(0, row - 1, row - 1, false, lines)
           -- Move cursor to end of inserted text

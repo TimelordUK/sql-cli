@@ -112,6 +112,14 @@ function M.show_history_with_preview(history_items, callback, execute_callback)
       local item = history_items[current_line]
       local preview_lines = vim.split(item.query, '\n')
 
+      -- Additional trimming for display (in case older entries have whitespace)
+      while #preview_lines > 0 and preview_lines[1]:match("^%s*$") do
+        table.remove(preview_lines, 1)
+      end
+      while #preview_lines > 0 and preview_lines[#preview_lines]:match("^%s*$") do
+        table.remove(preview_lines)
+      end
+
       vim.api.nvim_buf_set_option(preview_buf, 'modifiable', true)
       vim.api.nvim_buf_set_lines(preview_buf, 0, -1, false, preview_lines)
       vim.api.nvim_buf_set_option(preview_buf, 'modifiable', false)
