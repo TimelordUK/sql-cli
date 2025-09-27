@@ -12,23 +12,25 @@
 --   URL: https://api.example.com/trades
 --   AUTH_TOKEN: demo-token-123
 
+-- Usage: Place cursor on @WEB_QUERY and press \ste
+--        Then press \sx to execute with parameter prompts
+
 WITH WEB trades_data AS (
-    URL 'https://api.trading.com/trades'
+    URL 'http://localhost:5001/trades'
     METHOD POST
     HEADERS (
-        "Authorization": "Bearer ",
-        "Content-Type": "application/json"
+        'Authorization': 'Bearer ',
+        'Content-Type': 'application/json'
     )
     BODY '{
         "Select": "Source,PlatformOrderId,BloomberTicker,SignedQuantity,BuySell,Price",
-        "Where": "Source = \"{{SOURCE}}\" AND TradeDate = DateTime({{DATE}})"
+        "Where": "Source = \"Bloomberg\" AND TradeDate = DateTime(2025-09-27)"
     }'
     FORMAT JSON
     JSON_PATH 'Result'
 )
 SELECT *
 FROM trades_data;
-GO
 
 
 -- Step 2: After expansion, you'll have a query with {{SOURCE}}, {{DATE}}, {{STATUS}} parameters
