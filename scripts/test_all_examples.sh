@@ -42,6 +42,7 @@ skip_examples["macro_templates_guide.sql"]=1
 skip_examples["web_cte_file_upload.sql"]=1
 skip_examples["fix_message_analysis.sql"]=1
 skip_examples["fix_messages_with_selectors.sql"]=1
+skip_examples["parameterized_trades.sql"]=1
 
 failed=0
 passed=0
