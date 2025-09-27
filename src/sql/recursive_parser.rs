@@ -1585,6 +1585,28 @@ pub fn tokenize_query(query: &str) -> Vec<String> {
 }
 
 #[must_use]
+/// Helper function to find the start of a quoted string searching backwards
+fn find_quote_start(bytes: &[u8], mut pos: usize) -> Option<usize> {
+    // Skip the closing quote and search backwards
+    if pos > 0 {
+        pos -= 1;
+        while pos > 0 {
+            if bytes[pos] == b'"' {
+                // Check if it's not an escaped quote
+                if pos == 0 || bytes[pos - 1] != b'\\' {
+                    return Some(pos);
+                }
+            }
+            pos -= 1;
+        }
+        // Check position 0 separately
+        if bytes[0] == b'"' {
+            return Some(0);
+        }
+    }
+    None
+}
+
 /// Helper function to handle method call context after validation
 fn handle_method_call_context(col_name: &str, after_dot: &str) -> (CursorContext, Option<String>) {
     // Check if there's a partial method name after the dot
@@ -1694,29 +1716,9 @@ fn analyze_statement(
                 let col_name = if before_dot.ends_with('"') {
                     // Handle quoted identifier - search backwards for matching opening quote
                     let bytes = before_dot.as_bytes();
-                    let mut pos = before_dot.len() - 1; // Position of closing quote
-                    let mut found_start = None;
+                    let pos = before_dot.len() - 1; // Position of closing quote
 
-                    // Skip the closing quote and search backwards
-                    if pos > 0 {
-                        pos -= 1;
-                        while pos > 0 {
-                            if bytes[pos] == b'"' {
-                                // Check if it's not an escaped quote
-                                if pos == 0 || bytes[pos - 1] != b'\\' {
-                                    found_start = Some(pos);
-                                    break;
-                                }
-                            }
-                            pos -= 1;
-                        }
-                        // Check position 0 separately
-                        if found_start.is_none() && bytes[0] == b'"' {
-                            found_start = Some(0);
-                        }
-                    }
-
-                    found_start.map(|start| safe_slice_from(before_dot, start))
+                    find_quote_start(bytes, pos).map(|start| safe_slice_from(before_dot, start))
                 } else {
                     // Regular identifier - get the last word, handling parentheses
                     // Strip all leading parentheses
@@ -1901,24 +1903,7 @@ fn analyze_partial(query: &str, cursor_pos: usize) -> (CursorContext, Option<Str
                     }
                 }
 
-                // Skip the closing quote and search backwards
-                if pos > 0 {
-                    pos -= 1;
-                    while pos > 0 {
-                        if bytes[pos] == b'"' {
-                            // Check if it's not an escaped quote
-                            if pos == 0 || bytes[pos - 1] != b'\\' {
-                                found_start = Some(pos);
-                                break;
-                            }
-                        }
-                        pos -= 1;
-                    }
-                    // Check position 0 separately
-                    if found_start.is_none() && bytes[0] == b'"' {
-                        found_start = Some(0);
-                    }
-                }
+                found_start = find_quote_start(bytes, pos);
 
                 if let Some(start) = found_start {
                     // Extract the full quoted identifier including quotes
