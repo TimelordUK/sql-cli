@@ -176,20 +176,7 @@ impl Parser {
         self.trace_token(&format!("Consuming expected {:?}", expected));
         if std::mem::discriminant(&self.current_token) == std::mem::discriminant(&expected) {
             // Track parentheses depth
-            match &expected {
-                Token::LeftParen => self.paren_depth += 1,
-                Token::RightParen => {
-                    self.paren_depth -= 1;
-                    // Check for extra closing parenthesis
-                    if self.paren_depth < 0 {
-                        return Err(
-                            "Unexpected closing parenthesis - no matching opening parenthesis"
-                                .to_string(),
-                        );
-                    }
-                }
-                _ => {}
-            }
+            self.update_paren_depth(&expected)?;
 
             self.current_token = self.lexer.next_token();
             Ok(())
@@ -389,6 +376,25 @@ impl Parser {
         } else {
             Ok(None)
         }
+    }
+
+    /// Helper function to update parentheses depth tracking
+    fn update_paren_depth(&mut self, token: &Token) -> Result<(), String> {
+        match token {
+            Token::LeftParen => self.paren_depth += 1,
+            Token::RightParen => {
+                self.paren_depth -= 1;
+                // Check for extra closing parenthesis
+                if self.paren_depth < 0 {
+                    return Err(
+                        "Unexpected closing parenthesis - no matching opening parenthesis"
+                            .to_string(),
+                    );
+                }
+            }
+            _ => {}
+        }
+        Ok(())
     }
 
     /// Helper function to parse comma-separated argument list
@@ -2114,19 +2120,7 @@ impl ExpressionParser for Parser {
     fn consume(&mut self, expected: Token) -> Result<(), String> {
         // Call the main consume method to avoid recursion
         if std::mem::discriminant(&self.current_token) == std::mem::discriminant(&expected) {
-            match &expected {
-                Token::LeftParen => self.paren_depth += 1,
-                Token::RightParen => {
-                    self.paren_depth -= 1;
-                    if self.paren_depth < 0 {
-                        return Err(
-                            "Unexpected closing parenthesis - no matching opening parenthesis"
-                                .to_string(),
-                        );
-                    }
-                }
-                _ => {}
-            }
+            self.update_paren_depth(&expected)?;
             self.current_token = self.lexer.next_token();
             Ok(())
         } else {
