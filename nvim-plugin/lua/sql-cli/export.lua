@@ -194,7 +194,7 @@ function M.yank_as_tsv(bufnr, table_info)
 
     -- Count rows for notification
     local row_count = select(2, tsv_str:gsub('\n', '\n'))
-    vim.notify(string.format("Yanked %d rows as TSV (paste into Excel)", row_count), vim.log.levels.INFO)
+    vim.notify(string.format("✓ Fetched clean TSV from sql-cli: %d rows yanked (paste into Excel)", row_count), vim.log.levels.INFO)
     return tsv_str
   else
     -- Fallback to old method if new one fails
@@ -213,7 +213,7 @@ function M.yank_as_tsv(bufnr, table_info)
     vim.fn.setreg('+', tsv_str_fallback)
     vim.fn.setreg('"', tsv_str_fallback)
 
-    vim.notify(string.format("Yanked %d rows as TSV (paste into Excel)", #data.rows), vim.log.levels.INFO)
+    vim.notify(string.format("⚠ Fallback: Yanked %d rows as TSV from display (may contain artifacts)", #data.rows), vim.log.levels.WARN)
     return tsv_str_fallback
   end
 end
@@ -282,11 +282,27 @@ function M.get_clean_export_data(format)
 
   -- Run command and capture output
   local cmd = table.concat(cmd_parts, " ")
+
+  -- Debug option to show command
+  if vim.g.sql_cli_debug_export then
+    vim.notify(string.format("Export command: %s", cmd), vim.log.levels.DEBUG)
+  end
+
   local output = vim.fn.system(cmd)
 
   if vim.v.shell_error ~= 0 then
+    if vim.g.sql_cli_debug_export then
+      vim.notify(string.format("Export failed: %s", vim.v.shell_error), vim.log.levels.ERROR)
+    end
     return nil
   end
+
+  -- Remove the timing line at the end (e.g., "# Query completed: 4 rows in 27.877807ms")
+  -- This appears in stderr but sometimes gets mixed into output
+  output = output:gsub("#%s*Query%s+completed:.-\n?$", "")
+
+  -- Also remove any trailing whitespace
+  output = output:gsub("%s+$", "")
 
   return output
 end
@@ -404,7 +420,7 @@ function M.yank_as_csv(bufnr, table_info)
 
     -- Count rows for notification
     local row_count = select(2, csv_str:gsub('\n', '\n'))
-    vim.notify(string.format("Yanked %d rows as CSV", row_count), vim.log.levels.INFO)
+    vim.notify(string.format("✓ Fetched clean CSV from sql-cli: %d rows yanked", row_count), vim.log.levels.INFO)
     return csv_str
   else
     -- Fallback to old method if new one fails
@@ -439,7 +455,7 @@ function M.yank_as_csv(bufnr, table_info)
     vim.fn.setreg('+', csv_str_fallback)
     vim.fn.setreg('"', csv_str_fallback)
 
-    vim.notify(string.format("Yanked %d rows as CSV", #data.rows), vim.log.levels.INFO)
+    vim.notify(string.format("⚠ Fallback: Yanked %d rows as CSV from display (may contain artifacts)", #data.rows), vim.log.levels.WARN)
     return csv_str_fallback
   end
 end
