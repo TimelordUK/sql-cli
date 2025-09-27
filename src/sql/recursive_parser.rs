@@ -158,20 +158,9 @@ impl Parser {
     }
 
     /// Check if current token is one of the reserved keywords that should stop parsing
-    fn is_reserved_keyword(&self) -> bool {
-        matches!(
-            self.current_token,
-            Token::OrderBy
-                | Token::Having
-                | Token::Limit
-                | Token::Offset
-                | Token::Union
-                | Token::Intersect
-                | Token::Except
-        )
-    }
-
     /// Check if an identifier string is a reserved keyword (for backward compatibility)
+    /// This is used when the lexer hasn't properly tokenized keywords and they come through
+    /// as Token::Identifier instead of their proper token types
     fn is_identifier_reserved(id: &str) -> bool {
         let id_upper = id.to_uppercase();
         matches!(
