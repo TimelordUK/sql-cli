@@ -36,6 +36,9 @@ function M.setup(opts)
   -- Initialize state
   M.state = state.new()
 
+  -- Initialize query history with config
+  require('sql-cli.query_history').init(M.config)
+
   -- Add UI callbacks to config
   M.config.ui_callbacks = {
     create_output_window = function()
@@ -360,6 +363,28 @@ function M.setup_keymaps()
         end
       )
     end, { desc = "Recall query from history", silent = true })
+  end
+
+  -- Export query history
+  if keymaps.export_history then
+    vim.keymap.set("n", keymaps.export_history, function()
+      require('sql-cli.query_history').export_history()
+    end, { desc = "Export query history to JSON", silent = true })
+  end
+
+  -- Import query history
+  if keymaps.import_history then
+    vim.keymap.set("n", keymaps.import_history, function()
+      -- Ask whether to merge or replace
+      vim.ui.select({'Replace existing history', 'Merge with existing history'}, {
+        prompt = 'Import mode:',
+      }, function(choice)
+        if choice then
+          local merge = choice:match('Merge') ~= nil
+          require('sql-cli.query_history').import_history(nil, merge)
+        end
+      end)
+    end, { desc = "Import query history from JSON", silent = true })
   end
 
   if keymaps.results_to_buffer then

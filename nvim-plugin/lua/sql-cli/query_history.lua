@@ -9,6 +9,9 @@ local history = {
   max_size = 100,  -- Maximum number of queries to keep
 }
 
+-- Configuration (will be set by init function)
+local config = nil
+
 -- Calculate checksum for deduplication
 local function calculate_checksum(query)
   -- Simple checksum using vim's sha256 if available
@@ -140,7 +143,10 @@ function M.add_to_history(query)
     table.remove(history.queries)
   end
 
-  -- M.save_history()  -- Uncomment when ready for persistence
+  -- Save if auto-save is enabled
+  if config and config.query_history and config.query_history.auto_save then
+    M.save_history()
+  end
 end
 
 -- Show history picker (simple version)
@@ -206,7 +212,9 @@ end
 -- Clear history
 function M.clear_history()
   history.queries = {}
-  -- M.save_history()  -- Uncomment when ready for persistence
+  if config and config.query_history and config.query_history.auto_save then
+    M.save_history()
+  end
   vim.notify("Query history cleared", vim.log.levels.INFO)
 end
 
@@ -215,7 +223,114 @@ function M.get_history_size()
   return #history.queries
 end
 
--- Initialize (load history if persistence is enabled)
--- M.load_history()  -- Uncomment when ready for persistence
+-- Export history to a specific file
+function M.export_history(filepath)
+  if not filepath then
+    -- Prompt for file path
+    vim.ui.input({ prompt = 'Export to file: ', default = vim.fn.expand('~/sql_history.json') }, function(input)
+      if input then
+        M.export_history(input)
+      end
+    end)
+    return
+  end
+
+  -- Expand the path
+  filepath = vim.fn.expand(filepath)
+
+  local ok, json = pcall(vim.json.encode, history)
+  if ok then
+    vim.fn.writefile(vim.split(json, '\n'), filepath)
+    vim.notify("Exported " .. #history.queries .. " queries to " .. filepath, vim.log.levels.INFO)
+  else
+    vim.notify("Failed to export history: " .. tostring(json), vim.log.levels.ERROR)
+  end
+end
+
+-- Import history from a specific file
+function M.import_history(filepath, merge)
+  if not filepath then
+    -- Prompt for file path
+    vim.ui.input({ prompt = 'Import from file: ', default = vim.fn.expand('~/sql_history.json') }, function(input)
+      if input then
+        M.import_history(input, false)
+      end
+    end)
+    return
+  end
+
+  -- Expand the path
+  filepath = vim.fn.expand(filepath)
+
+  if vim.fn.filereadable(filepath) == 0 then
+    vim.notify("File not found: " .. filepath, vim.log.levels.ERROR)
+    return
+  end
+
+  local content = vim.fn.readfile(filepath)
+  if #content > 0 then
+    local ok, data = pcall(vim.json.decode, table.concat(content, '\n'))
+    if ok and data and data.queries then
+      if merge then
+        -- Merge with existing history
+        local existing_checksums = {}
+        for _, item in ipairs(history.queries) do
+          existing_checksums[item.checksum] = true
+        end
+
+        local added = 0
+        for _, item in ipairs(data.queries) do
+          if not existing_checksums[item.checksum] then
+            table.insert(history.queries, item)
+            added = added + 1
+          end
+        end
+
+        -- Sort by timestamp (newest first)
+        table.sort(history.queries, function(a, b)
+          return a.timestamp > b.timestamp
+        end)
+
+        -- Limit size
+        while #history.queries > history.max_size do
+          table.remove(history.queries)
+        end
+
+        vim.notify("Imported " .. added .. " new queries (merged)", vim.log.levels.INFO)
+      else
+        -- Replace existing history
+        history = data
+        vim.notify("Imported " .. #data.queries .. " queries (replaced)", vim.log.levels.INFO)
+      end
+
+      -- Save the updated history
+      if config and config.query_history and config.query_history.auto_save then
+        M.save_history()
+      end
+    else
+      vim.notify("Invalid history file format", vim.log.levels.ERROR)
+    end
+  end
+end
+
+-- Initialize with configuration
+function M.init(user_config)
+  config = user_config
+
+  -- Set max size from config
+  if config and config.query_history and config.query_history.max_items then
+    history.max_size = config.query_history.max_items
+  end
+
+  -- Load history if persistence is enabled
+  if config and config.query_history and config.query_history.persist then
+    M.load_history()
+  end
+end
+
+-- Get current configuration
+function M.get_config()
+  return config
+end
 
 return M

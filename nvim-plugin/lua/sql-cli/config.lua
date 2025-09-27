@@ -96,6 +96,8 @@ M.defaults = {
     save_param_set = "<leader>sps",      -- Save parameter set (p for param, s for save)
     -- Query history
     query_history = "<leader>sQ",        -- Query history recall (capital Q for query)
+    export_history = "<leader>se",       -- Export query history (lowercase e for export)
+    import_history = "<leader>si",       -- Import query history (lowercase i for import)
   },
 
   -- Output window settings
@@ -104,6 +106,13 @@ M.defaults = {
     clear_on_run = true,   -- Clear output before each run
     wrap = false,          -- Line wrap in output
     number = false,        -- Show line numbers in output
+  },
+
+  -- Query history settings
+  query_history = {
+    persist = true,        -- Automatically save/load history
+    max_items = 100,       -- Maximum number of queries to keep
+    auto_save = true,      -- Save after each new query
   },
 
   -- Debug settings (usually false)
