@@ -84,7 +84,7 @@ function M.show_history_with_preview(history_items, callback, execute_callback)
     col = col,
     style = 'minimal',
     border = 'rounded',
-    title = ' Query History [FOCUSED] (Space: switch to preview) ',
+    title = ' Query History [FOCUSED] (Enter: insert, x: execute, d: delete, Space: preview) ',
     title_pos = 'center',
   })
 
@@ -173,17 +173,17 @@ function M.show_history_with_preview(history_items, callback, execute_callback)
   local function update_window_titles()
     if focused_window == "list" then
       vim.api.nvim_win_set_config(list_win, {
-        title = ' Query History [FOCUSED] (Space: switch to preview) ',
+        title = ' Query History [FOCUSED] (Enter: insert, x: execute, d: delete, Space: preview) ',
       })
       vim.api.nvim_win_set_config(preview_win, {
-        title = ' Preview (Space to focus) ',
+        title = ' Preview ',
       })
     else
       vim.api.nvim_win_set_config(list_win, {
-        title = ' Query History (Space to focus) ',
+        title = ' Query History (Enter/x/d/y) ',
       })
       vim.api.nvim_win_set_config(preview_win, {
-        title = ' Preview [FOCUSED] (j/k: scroll, Space: back to list) ',
+        title = ' Preview [FOCUSED] (j/k: scroll, Space: back to list, q: quit) ',
       })
     end
   end
