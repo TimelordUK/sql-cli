@@ -297,7 +297,41 @@ impl Parser {
 
     fn parse_with_clause(&mut self) -> Result<SelectStatement, String> {
         self.consume(Token::With)?;
+        let ctes = self.parse_cte_list()?;
 
+        // Parse the main SELECT statement - use inner version since we're already tracking parens
+        let mut main_query = self.parse_select_statement_inner()?;
+        main_query.ctes = ctes;
+
+        // Check for balanced parentheses at the end of parsing
+        if self.paren_depth > 0 {
+            return Err(format!(
+                "Unclosed parenthesis - missing {} closing parenthes{}",
+                self.paren_depth,
+                if self.paren_depth == 1 { "is" } else { "es" }
+            ));
+        } else if self.paren_depth < 0 {
+            return Err(
+                "Extra closing parenthesis found - no matching opening parenthesis".to_string(),
+            );
+        }
+
+        Ok(main_query)
+    }
+
+    fn parse_with_clause_inner(&mut self) -> Result<SelectStatement, String> {
+        self.consume(Token::With)?;
+        let ctes = self.parse_cte_list()?;
+
+        // Parse the main SELECT statement (without parenthesis checking for subqueries)
+        let mut main_query = self.parse_select_statement_inner()?;
+        main_query.ctes = ctes;
+
+        Ok(main_query)
+    }
+
+    // Helper function to parse CTE list - eliminates duplication
+    fn parse_cte_list(&mut self) -> Result<Vec<CTE>, String> {
         let mut ctes = Vec::new();
 
         // Parse CTEs
@@ -371,102 +405,7 @@ impl Parser {
             self.advance();
         }
 
-        // Parse the main SELECT statement - use inner version since we're already tracking parens
-        let mut main_query = self.parse_select_statement_inner()?;
-        main_query.ctes = ctes;
-
-        // Check for balanced parentheses at the end of parsing
-        if self.paren_depth > 0 {
-            return Err(format!(
-                "Unclosed parenthesis - missing {} closing parenthes{}",
-                self.paren_depth,
-                if self.paren_depth == 1 { "is" } else { "es" }
-            ));
-        } else if self.paren_depth < 0 {
-            return Err(
-                "Extra closing parenthesis found - no matching opening parenthesis".to_string(),
-            );
-        }
-
-        Ok(main_query)
-    }
-
-    fn parse_with_clause_inner(&mut self) -> Result<SelectStatement, String> {
-        self.consume(Token::With)?;
-
-        let mut ctes = Vec::new();
-
-        // Parse CTEs
-        loop {
-            // Check for WEB keyword for each CTE (can be different for each one)
-            let is_web = if matches!(&self.current_token, Token::Web) {
-                self.trace_token("Found WEB keyword for CTE");
-                self.advance();
-                true
-            } else {
-                false
-            };
-
-            // Parse CTE name
-            let name = match &self.current_token {
-                Token::Identifier(name) => name.clone(),
-                _ => return Err("Expected CTE name after WITH or comma".to_string()),
-            };
-            self.advance();
-
-            // Optional column list: WITH t(col1, col2) AS ...
-            let column_list = if matches!(self.current_token, Token::LeftParen) {
-                self.advance();
-                let cols = self.parse_identifier_list()?;
-                self.consume(Token::RightParen)?;
-                Some(cols)
-            } else {
-                None
-            };
-
-            // Expect AS
-            self.consume(Token::As)?;
-
-            let cte_type = if is_web {
-                // Expect opening parenthesis for WEB CTE
-                self.consume(Token::LeftParen)?;
-                // Parse WEB CTE specification using dedicated parser
-                let web_spec = WebCteParser::parse(self)?;
-                // Consume closing parenthesis for WEB CTE
-                self.consume(Token::RightParen)?;
-                CTEType::Web(web_spec)
-            } else {
-                // For standard CTEs, push depth BEFORE consuming opening paren
-                // This ensures the paren is counted in the inner context
-                self.push_paren_depth();
-                // Now consume opening parenthesis
-                self.consume(Token::LeftParen)?;
-                let query = self.parse_select_statement_inner()?;
-                // Expect closing parenthesis while still in CTE context
-                self.consume(Token::RightParen)?;
-                // Now pop to restore outer depth after consuming both parens
-                self.pop_paren_depth();
-                CTEType::Standard(query)
-            };
-
-            ctes.push(CTE {
-                name,
-                column_list,
-                cte_type,
-            });
-
-            // Check for more CTEs
-            if !matches!(self.current_token, Token::Comma) {
-                break;
-            }
-            self.advance();
-        }
-
-        // Parse the main SELECT statement (without parenthesis checking for subqueries)
-        let mut main_query = self.parse_select_statement_inner()?;
-        main_query.ctes = ctes;
-
-        Ok(main_query)
+        Ok(ctes)
     }
 
     fn parse_select_statement(&mut self) -> Result<SelectStatement, String> {
