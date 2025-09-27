@@ -11,10 +11,24 @@ local function get_table_data(bufnr, table_info)
     rows = {}
   }
 
+  -- Debug output
+  if not table_info then
+    vim.notify("Error: table_info is nil", vim.log.levels.ERROR)
+    return data
+  end
+
+  if not table_info.header_row then
+    vim.notify("Warning: table_info.header_row is nil", vim.log.levels.WARN)
+  end
+
+  if not table_info.column_positions or #table_info.column_positions == 0 then
+    vim.notify("Warning: No column positions found", vim.log.levels.WARN)
+  end
+
   -- Extract headers
-  if table_info.header_row then
+  if table_info.header_row and lines[table_info.header_row] then
     local header_line = lines[table_info.header_row]
-    for _, col_pos in ipairs(table_info.column_positions) do
+    for _, col_pos in ipairs(table_info.column_positions or {}) do
       local col_text = header_line:sub(col_pos.start, col_pos.stop)
       col_text = col_text:gsub("^%s*", ""):gsub("%s*$", "")
       table.insert(data.headers, col_text)
@@ -115,10 +129,32 @@ function M.yank_as_html(bufnr, table_info, open_browser)
     else
       temp_file = os.tmpname() .. '.html'
     end
-    local file = io.open(temp_file, 'w')
+
+    -- Debug: Show where we're trying to write
+    if vim.fn.has('win32') == 1 then
+      vim.notify(string.format("Writing HTML to: %s", temp_file), vim.log.levels.INFO)
+    end
+
+    local file, err = io.open(temp_file, 'w')
     if file then
       file:write(table.concat(full_html, '\n'))
       file:close()
+
+      -- Verify file was written
+      if vim.fn.has('win32') == 1 then
+        local file_exists = vim.fn.filereadable(temp_file) == 1
+        if file_exists then
+          vim.notify(string.format("HTML file written successfully: %s", temp_file), vim.log.levels.INFO)
+        else
+          vim.notify(string.format("Warning: File may not have been written: %s", temp_file), vim.log.levels.WARN)
+        end
+      end
+    else
+      vim.notify(string.format("Error writing HTML file: %s - %s", temp_file, err or "unknown error"), vim.log.levels.ERROR)
+      return
+    end
+
+    if file then
 
       -- Open in default browser (cross-platform)
       local open_cmd
@@ -205,11 +241,16 @@ function M.yank_as_tsv(bufnr, table_info)
   local tsv_str = M.get_clean_export_data("tsv")
 
   if tsv_str then
+    -- Convert line endings for Windows clipboard
+    if vim.fn.has('win32') == 1 then
+      tsv_str = tsv_str:gsub('\n', '\r\n')
+    end
+
     vim.fn.setreg('+', tsv_str)
     vim.fn.setreg('"', tsv_str)
 
     -- Count rows for notification
-    local row_count = select(2, tsv_str:gsub('\n', '\n'))
+    local row_count = select(2, tsv_str:gsub('\r?\n', '\n'))
     vim.notify(string.format("✓ Fetched clean TSV from sql-cli: %d rows yanked (paste into Excel)", row_count), vim.log.levels.INFO)
     return tsv_str
   else
@@ -226,6 +267,12 @@ function M.yank_as_tsv(bufnr, table_info)
     end
 
     local tsv_str_fallback = table.concat(tsv, '\n')
+
+    -- Convert line endings for Windows clipboard
+    if vim.fn.has('win32') == 1 then
+      tsv_str_fallback = tsv_str_fallback:gsub('\n', '\r\n')
+    end
+
     vim.fn.setreg('+', tsv_str_fallback)
     vim.fn.setreg('"', tsv_str_fallback)
 
@@ -431,6 +478,11 @@ function M.yank_as_csv(bufnr, table_info)
   local csv_str = M.get_clean_export_data("csv")
 
   if csv_str then
+    -- Convert line endings for Windows clipboard
+    if vim.fn.has('win32') == 1 then
+      csv_str = csv_str:gsub('\n', '\r\n')
+    end
+
     vim.fn.setreg('+', csv_str)
     vim.fn.setreg('"', csv_str)
 
@@ -468,6 +520,12 @@ function M.yank_as_csv(bufnr, table_info)
     end
 
     local csv_str_fallback = table.concat(csv, '\n')
+
+    -- Convert line endings for Windows clipboard
+    if vim.fn.has('win32') == 1 then
+      csv_str_fallback = csv_str_fallback:gsub('\n', '\r\n')
+    end
+
     vim.fn.setreg('+', csv_str_fallback)
     vim.fn.setreg('"', csv_str_fallback)
 
