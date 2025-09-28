@@ -2,35 +2,35 @@
 -- Add this to your Windows nvim config at:
 -- C:\Users\YOUR_USERNAME\AppData\Local\nvim\lua\plugins\sql-cli.lua
 
--- Option 1: Using $HOME environment variable (works in PowerShell)
+-- Option 1: Using -Command to bypass execution policy (RECOMMENDED)
 multi_token_manager.setup({
   JWT_TOKEN = {
-    -- Use $HOME which PowerShell understands
-    command = 'powershell.exe -NoProfile -File "$HOME\\dev\\sql-cli\\ExportJwt.ps1"',
+    -- Use -Command with & operator to bypass execution policy
+    command = 'powershell.exe -NoProfile -Command "& $HOME\\dev\\sql-cli\\ExportJwt.ps1"',
     refresh_interval = 20,  -- 20 seconds for testing
     auto_refresh = true,
     debug = true,
   },
   JWT_TOKEN_PROD = {
-    command = 'powershell.exe -NoProfile -File "$HOME\\dev\\sql-cli\\ExportJwtProd.ps1"',
+    command = 'powershell.exe -NoProfile -Command "& $HOME\\dev\\sql-cli\\ExportJwtProd.ps1"',
     refresh_interval = 840,  -- 14 minutes
     auto_refresh = true,
     debug = false,
   },
 })
 
--- Option 2: Using full paths
+-- Option 2: Using full paths with -Command
 -- Replace YOUR_USERNAME with your actual Windows username
 --[[
 multi_token_manager.setup({
   JWT_TOKEN = {
-    command = 'powershell.exe -NoProfile -File "C:\\Users\\YOUR_USERNAME\\dev\\sql-cli\\ExportJwt.ps1"',
+    command = 'powershell.exe -NoProfile -Command "& C:\\Users\\YOUR_USERNAME\\dev\\sql-cli\\ExportJwt.ps1"',
     refresh_interval = 20,
     auto_refresh = true,
     debug = true,
   },
   JWT_TOKEN_PROD = {
-    command = 'powershell.exe -NoProfile -File "C:\\Users\\YOUR_USERNAME\\dev\\sql-cli\\ExportJwtProd.ps1"',
+    command = 'powershell.exe -NoProfile -Command "& C:\\Users\\YOUR_USERNAME\\dev\\sql-cli\\ExportJwtProd.ps1"',
     refresh_interval = 840,
     auto_refresh = true,
     debug = false,
@@ -57,23 +57,28 @@ multi_token_manager.setup({
 })
 --]]
 
--- Option 4: Using environment variables
+-- Option 4: Using ExecutionPolicy Bypass flag
 --[[
--- First set environment variables in Windows:
--- $env:TOKEN_SCRIPT_DIR = "C:\Users\YOUR_USERNAME\dev\sql-cli"
--- Then use them in the config:
 multi_token_manager.setup({
   JWT_TOKEN = {
-    command = 'powershell.exe -NoProfile -Command "& $env:TOKEN_SCRIPT_DIR\\ExportJwt.ps1"',
+    -- Use -ExecutionPolicy Bypass to allow script execution
+    command = 'powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$HOME\\dev\\sql-cli\\ExportJwt.ps1"',
     refresh_interval = 20,
     auto_refresh = true,
     debug = true,
   },
   JWT_TOKEN_PROD = {
-    command = 'powershell.exe -NoProfile -Command "& $env:TOKEN_SCRIPT_DIR\\ExportJwtProd.ps1"',
+    command = 'powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$HOME\\dev\\sql-cli\\ExportJwtProd.ps1"',
     refresh_interval = 840,
     auto_refresh = true,
     debug = false,
   },
 })
 --]]
+
+-- TROUBLESHOOTING EXECUTION POLICY ISSUES:
+-- If you get "running scripts is disabled on this system" error, try:
+-- 1. Use -Command with & operator (Option 1 above) - RECOMMENDED
+-- 2. Use -ExecutionPolicy Bypass flag (Option 4 above)
+-- 3. Change system execution policy (run as admin): Set-ExecutionPolicy RemoteSigned
+-- 4. Use a batch file wrapper instead of PowerShell script
