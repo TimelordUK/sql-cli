@@ -38,13 +38,13 @@ function M.setup(configs)
       debug = config.debug or false,
     }, config)
 
-    -- Start auto-refresh if enabled
+    -- Start auto-refresh if enabled (skip initial refresh as we'll do it once for all)
     if M.tokens[token_name].auto_refresh then
-      M.start_timer(token_name)
+      M.start_timer(token_name, true)  -- true = skip initial refresh
     end
   end
 
-  -- Initial fetch for all tokens
+  -- Initial fetch for all tokens (this happens once on startup)
   M.refresh_all()
 end
 
@@ -264,7 +264,7 @@ function M.extract_from_json(json, path)
 end
 
 -- Start auto-refresh timer for a token
-function M.start_timer(token_name)
+function M.start_timer(token_name, skip_initial_refresh)
   local token_config = M.tokens[token_name]
   if not token_config then return end
 
@@ -273,8 +273,10 @@ function M.start_timer(token_name)
     vim.fn.timer_stop(token_config.timer)
   end
 
-  -- Initial refresh
-  M.refresh_token(token_name)
+  -- Initial refresh (unless skipped, e.g., during setup)
+  if not skip_initial_refresh then
+    M.refresh_token(token_name)
+  end
 
   -- Setup periodic refresh
   local interval_ms = token_config.refresh_interval * 1000
