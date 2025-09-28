@@ -1,5 +1,6 @@
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::fs;
 use std::path::PathBuf;
 
@@ -11,6 +12,8 @@ pub struct Config {
     pub keybindings: KeybindingConfig,
     pub behavior: BehaviorConfig,
     pub theme: ThemeConfig,
+    pub redis_cache: RedisCacheConfig,
+    pub web: WebConfig,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -136,6 +139,32 @@ pub struct CellSelectionStyle {
     pub corner_chars: String, // e.g., "┌┐└┘" or "╭╮╰╯" for rounded
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
+pub struct RedisCacheConfig {
+    /// Whether cache is enabled (can be overridden by SQL_CLI_CACHE env var)
+    pub enabled: bool,
+
+    /// Redis URL (can be overridden by SQL_CLI_REDIS_URL env var)
+    pub redis_url: String,
+
+    /// Default cache duration in seconds when CACHE is specified without duration
+    pub default_duration: u64,
+
+    /// Cache durations by URL pattern (glob patterns supported)
+    pub duration_rules: HashMap<String, u64>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
+pub struct WebConfig {
+    /// Default timeout for web requests in seconds
+    pub timeout: u64,
+
+    /// Maximum response size in MB
+    pub max_response_size: usize,
+}
+
 impl Default for DisplayConfig {
     fn default() -> Self {
         Self {
@@ -238,6 +267,62 @@ impl Default for CellSelectionStyle {
     }
 }
 
+impl Default for RedisCacheConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            redis_url: "redis://127.0.0.1:6379".to_string(),
+            default_duration: 600, // 10 minutes default
+            duration_rules: HashMap::new(),
+        }
+    }
+}
+
+impl Default for WebConfig {
+    fn default() -> Self {
+        Self {
+            timeout: 30,
+            max_response_size: 100,
+        }
+    }
+}
+
+/// Simple glob pattern matching
+fn glob_match(pattern: &str, text: &str) -> bool {
+    // Very simple glob matching for * wildcard
+    if pattern.contains('*') {
+        let parts: Vec<&str> = pattern.split('*').collect();
+        if parts.is_empty() {
+            return true;
+        }
+
+        let mut pos = 0;
+        for (i, part) in parts.iter().enumerate() {
+            if part.is_empty() {
+                continue;
+            }
+
+            // First part must match at beginning
+            if i == 0 && !text.starts_with(part) {
+                return false;
+            }
+            // Last part must match at end
+            else if i == parts.len() - 1 && !text.ends_with(part) {
+                return false;
+            }
+            // Middle parts must be found
+            else if let Some(idx) = text[pos..].find(part) {
+                pos += idx + part.len();
+            } else {
+                return false;
+            }
+        }
+        true
+    } else {
+        text.contains(pattern)
+    }
+}
+
 impl Config {
     /// Generate debug info string for display
     #[must_use]
@@ -313,6 +398,27 @@ impl Config {
             self.theme.cell_selection_style.mode
         ));
 
+        // Redis cache configuration
+        info.push_str("\n[redis_cache]\n");
+        info.push_str(&format!("  enabled = {}\n", self.redis_cache.enabled));
+        info.push_str(&format!("  redis_url = {}\n", self.redis_cache.redis_url));
+        info.push_str(&format!(
+            "  default_duration = {}s\n",
+            self.redis_cache.default_duration
+        ));
+        info.push_str(&format!(
+            "  duration_rules = {} patterns\n",
+            self.redis_cache.duration_rules.len()
+        ));
+
+        // Web configuration
+        info.push_str("\n[web]\n");
+        info.push_str(&format!("  timeout = {}s\n", self.web.timeout));
+        info.push_str(&format!(
+            "  max_response_size = {} MB\n",
+            self.web.max_response_size
+        ));
+
         info.push_str("==========================================\n");
         info
     }
@@ -325,7 +431,7 @@ impl Config {
             // Create default config if it doesn't exist
             let default_config = Self::default();
             default_config.save()?;
-            return Ok(default_config);
+            return Ok(default_config.with_env_overrides());
         }
 
         let contents = fs::read_to_string(&config_path)?;
@@ -337,7 +443,43 @@ impl Config {
             config.display.icons = IconConfig::simple();
         }
 
-        Ok(config)
+        Ok(config.with_env_overrides())
+    }
+
+    /// Apply environment variable overrides
+    fn with_env_overrides(mut self) -> Self {
+        // Override cache enabled from env
+        if let Ok(val) = std::env::var("SQL_CLI_CACHE") {
+            self.redis_cache.enabled =
+                val.eq_ignore_ascii_case("true") || val.eq_ignore_ascii_case("yes") || val == "1";
+        }
+
+        // Override Redis URL from env
+        if let Ok(url) = std::env::var("SQL_CLI_REDIS_URL") {
+            self.redis_cache.redis_url = url;
+        }
+
+        // Override default cache duration from env
+        if let Ok(duration) = std::env::var("SQL_CLI_CACHE_DEFAULT_DURATION") {
+            if let Ok(seconds) = duration.parse::<u64>() {
+                self.redis_cache.default_duration = seconds;
+            }
+        }
+
+        self
+    }
+
+    /// Get cache duration for a URL, checking rules first then falling back to default
+    pub fn get_cache_duration(&self, url: &str) -> u64 {
+        // Check if any rule matches the URL
+        for (pattern, duration) in &self.redis_cache.duration_rules {
+            if url.contains(pattern) || glob_match(pattern, url) {
+                return *duration;
+            }
+        }
+
+        // Fall back to default
+        self.redis_cache.default_duration
     }
 
     /// Save config to the default location
@@ -464,6 +606,51 @@ background = "cyan"
 # Text styling
 bold = true
 underline = true
+
+[redis_cache]
+# Enable Redis cache (can be overridden by SQL_CLI_CACHE env var)
+enabled = false
+
+# Redis connection URL (can be overridden by SQL_CLI_REDIS_URL env var)
+redis_url = "redis://127.0.0.1:6379"
+
+# Default cache duration in seconds when CACHE is specified without a value
+# or when no CACHE directive is present in the query
+default_duration = 600  # 10 minutes
+
+# Cache duration rules based on URL patterns
+# Pattern matching uses simple glob syntax (* for wildcards)
+# These override the default_duration for matching URLs
+[redis_cache.duration_rules]
+# Production APIs - cache for 1 hour
+"*.bloomberg.com/*" = 3600
+"*prod*" = 3600
+"*production*" = 3600
+
+# Staging/UAT - cache for 5 minutes
+"*staging*" = 300
+"*uat*" = 300
+
+# Historical data endpoints - cache for 24 hours
+"*/historical/*" = 86400
+"*/archive/*" = 86400
+"*/trades/20*" = 43200  # Yesterday's trades - 12 hours
+
+# Real-time/volatile data - short cache
+"*/realtime/*" = 60
+"*/live/*" = 30
+"*/prices/*" = 120
+
+# Specific endpoints
+"api.barclays.com/trades" = 7200  # 2 hours for Barclays trades
+"api.jpmorgan.com/fx" = 1800      # 30 minutes for JPM FX
+
+[web]
+# Default timeout for web requests in seconds
+timeout = 30
+
+# Maximum response size in MB
+max_response_size = 100
 "#
         .to_string()
     }

@@ -1,10 +1,9 @@
 # SQL-CLI Configuration File
-# Copy this file to one of these locations:
+# Copy this file to:
 #   ~/.config/sql-cli/config.toml  (Linux/Mac)
-#   ~/.sql-cli.toml                (Home directory)
-#   ./sql-cli.toml                 (Current directory)
+#   %APPDATA%\sql-cli\config.toml  (Windows)
 
-[cache]
+[redis_cache]
 # Enable Redis cache (can be overridden by SQL_CLI_CACHE env var)
 enabled = false
 
@@ -18,7 +17,7 @@ default_duration = 600  # 10 minutes
 # Cache duration rules based on URL patterns
 # Pattern matching uses simple glob syntax (* for wildcards)
 # These override the default_duration for matching URLs
-[cache.duration_rules]
+[redis_cache.duration_rules]
 # Production APIs - cache for 1 hour
 "*.bloomberg.com/*" = 3600
 "*prod*" = 3600
