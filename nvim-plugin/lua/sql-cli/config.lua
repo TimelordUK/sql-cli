@@ -26,6 +26,13 @@ M.defaults = {
     tabs = false,         -- Use tabs instead of spaces
   },
 
+  -- Redis cache settings
+  cache = {
+    enabled = false,       -- Enable Redis cache (set true to use cache)
+    redis_url = nil,      -- Custom Redis URL (nil = use default localhost:6379)
+    show_notifications = true, -- Show cache hit/miss notifications
+  },
+
   -- Auto-detect features
   auto_detect = {
     csv_files = true,      -- Auto-detect when editing CSV files

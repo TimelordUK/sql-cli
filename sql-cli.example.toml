@@ -1,0 +1,50 @@
+# SQL-CLI Configuration File
+# Copy this file to one of these locations:
+#   ~/.config/sql-cli/config.toml  (Linux/Mac)
+#   ~/.sql-cli.toml                (Home directory)
+#   ./sql-cli.toml                 (Current directory)
+
+[cache]
+# Enable Redis cache (can be overridden by SQL_CLI_CACHE env var)
+enabled = false
+
+# Redis connection URL (can be overridden by SQL_CLI_REDIS_URL env var)
+redis_url = "redis://127.0.0.1:6379"
+
+# Default cache duration in seconds when CACHE is specified without a value
+# or when no CACHE directive is present in the query
+default_duration = 600  # 10 minutes
+
+# Cache duration rules based on URL patterns
+# Pattern matching uses simple glob syntax (* for wildcards)
+# These override the default_duration for matching URLs
+[cache.duration_rules]
+# Production APIs - cache for 1 hour
+"*.bloomberg.com/*" = 3600
+"*prod*" = 3600
+"*production*" = 3600
+
+# Staging/UAT - cache for 5 minutes
+"*staging*" = 300
+"*uat*" = 300
+
+# Historical data endpoints - cache for 24 hours
+"*/historical/*" = 86400
+"*/archive/*" = 86400
+"*/trades/20*" = 43200  # Yesterday's trades - 12 hours
+
+# Real-time/volatile data - short cache
+"*/realtime/*" = 60
+"*/live/*" = 30
+"*/prices/*" = 120
+
+# Specific endpoints
+"api.barclays.com/trades" = 7200  # 2 hours for Barclays trades
+"api.jpmorgan.com/fx" = 1800      # 30 minutes for JPM FX
+
+[web]
+# Default timeout for web requests in seconds
+timeout = 30
+
+# Maximum response size in MB
+max_response_size = 100

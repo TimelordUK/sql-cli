@@ -587,9 +587,20 @@ function M.run_command(query, show_plan, config, state)
   local output_lines = {}
   local csv_lines = {}  -- Store CSV format results
 
+  -- Prepare environment with cache settings if configured
+  local env = nil
+  if config.cache and config.cache.enabled then
+    env = vim.fn.environ()
+    env["SQL_CLI_CACHE"] = "true"
+    if config.cache.redis_url then
+      env["SQL_CLI_REDIS_URL"] = config.cache.redis_url
+    end
+  end
+
   local job_id = vim.fn.jobstart(cmd, {
     stdout_buffered = true,
     stderr_buffered = true,
+    env = env,  -- Pass environment if cache is enabled
     on_stdout = function(_, data)
       if data then
         for _, line in ipairs(data) do
@@ -614,8 +625,28 @@ function M.run_command(query, show_plan, config, state)
       if data then
         for _, line in ipairs(data) do
           if line ~= "" then
+            -- Check for cache status messages
+            if line:match("Cache HIT") then
+              -- Highlight cache hits
+              table.insert(output_lines, "✅ " .. line)
+              -- Also notify for immediate visibility
+              vim.schedule(function()
+                vim.notify("🚀 " .. line, vim.log.levels.INFO)
+              end)
+            elseif line:match("Cache MISS") then
+              -- Highlight cache misses
+              table.insert(output_lines, "⚠️  " .. line)
+              vim.schedule(function()
+                vim.notify("🔍 " .. line, vim.log.levels.INFO)
+              end)
+            elseif line:match("Cached .* for %d+ seconds") then
+              -- Show when data is cached
+              table.insert(output_lines, "💾 " .. line)
+              vim.schedule(function()
+                vim.notify("💾 " .. line, vim.log.levels.INFO)
+              end)
             -- Check if it's actually an error or just info
-            if line:match("^#") or line:match("Query completed:") or line:match("rows in") then
+            elseif line:match("^#") or line:match("Query completed:") or line:match("rows in") then
               -- This is informational output (like "# Query completed: 10 rows in 906.909µs")
               table.insert(output_lines, line)
             elseif line:match("^Error:") or line:match("^ERROR:") or line:match("failed") then
