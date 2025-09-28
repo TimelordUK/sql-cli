@@ -108,10 +108,24 @@ function M.fetch_token_from_command(token_name, callback)
 
           -- Show success notification
           local preview = token:sub(1, 20) .. "..." .. token:sub(-10)
+          local msg = string.format("🔑 %s refreshed", token_name)
+
+          -- Show in status line temporarily
+          vim.api.nvim_echo({{msg, "WarningMsg"}}, false, {})
+
+          -- Also show as notification
           vim.notify(
             string.format("%s refreshed: %s", token_name, preview),
             vim.log.levels.INFO
           )
+
+          -- Optional: Update statusline if custom statusline is configured
+          vim.g.sql_cli_last_token_refresh = {
+            token = token_name,
+            time = os.date("%H:%M:%S"),
+            timestamp = os.time(),
+            success = true
+          }
 
           if callback then callback(token) end
         else
@@ -181,10 +195,24 @@ function M.fetch_token_from_endpoint(token_name, callback)
 
             -- Show success notification
             local preview = token:sub(1, 20) .. "..." .. token:sub(-10)
+            local msg = string.format("🔑 %s refreshed", token_name)
+
+            -- Show in status line temporarily
+            vim.api.nvim_echo({{msg, "WarningMsg"}}, false, {})
+
+            -- Also show as notification
             vim.notify(
               string.format("%s refreshed: %s", token_name, preview),
               vim.log.levels.INFO
             )
+
+            -- Update statusline global
+            vim.g.sql_cli_last_token_refresh = {
+              token = token_name,
+              time = os.date("%H:%M:%S"),
+              timestamp = os.time(),
+              success = true
+            }
 
             if callback then callback(token) end
           else
@@ -359,6 +387,54 @@ function M.show_status()
     title = ' Token Status ',
     title_pos = 'center'
   })
+end
+
+-- Get statusline component
+function M.statusline()
+  local last = vim.g.sql_cli_last_token_refresh
+  if not last then
+    return ""
+  end
+
+  -- Show for 5 seconds after refresh
+  local elapsed = os.time() - (last.timestamp or 0)
+  if elapsed > 5 then
+    return ""
+  end
+
+  if last.success then
+    return string.format("%%#DiagnosticOk# 🔑 %s %%*", last.token)
+  else
+    return string.format("%%#DiagnosticError# ⚠ %s failed %%*", last.token)
+  end
+end
+
+-- Get status for lualine or other statusline plugins
+function M.get_status()
+  local status_parts = {}
+
+  for token_name, token_config in pairs(M.tokens) do
+    if token_config.current_token then
+      local age = os.time() - token_config.last_refresh
+      local remaining = token_config.refresh_interval - age
+
+      if remaining < 60 then
+        -- Token expiring soon - show warning
+        table.insert(status_parts, string.format("⚠ %s:%ds", token_name, remaining))
+      elseif age < 5 then
+        -- Just refreshed
+        table.insert(status_parts, string.format("✓ %s", token_name))
+      end
+    else
+      -- Token not available
+      table.insert(status_parts, string.format("✗ %s", token_name))
+    end
+  end
+
+  if #status_parts > 0 then
+    return "🔑 " .. table.concat(status_parts, " ")
+  end
+  return ""
 end
 
 -- Create user commands
