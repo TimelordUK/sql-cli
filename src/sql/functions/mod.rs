@@ -9,6 +9,7 @@ pub mod astronomy;
 pub mod base_conversion;
 pub mod bigint;
 pub mod bitwise;
+pub mod bitwise_string;
 pub mod case_convert;
 pub mod chemistry;
 pub mod comparison;
@@ -817,6 +818,19 @@ impl FunctionRegistry {
     /// Register bitwise functions (additional bit operations not in bigint)
     fn register_bitwise_functions(&mut self) {
         bitwise::register_bitwise_functions(self);
+
+        // Register string-based bitwise operations
+        self.register(Box::new(bitwise_string::BitAndStr));
+        self.register(Box::new(bitwise_string::BitOrStr));
+        self.register(Box::new(bitwise_string::BitXorStr));
+        self.register(Box::new(bitwise_string::BitNotStr));
+        self.register(Box::new(bitwise_string::BitFlip));
+        self.register(Box::new(bitwise_string::BitCount));
+        self.register(Box::new(bitwise_string::BitRotateLeft));
+        self.register(Box::new(bitwise_string::BitRotateRight));
+        self.register(Box::new(bitwise_string::BitShiftLeft));
+        self.register(Box::new(bitwise_string::BitShiftRight));
+        self.register(Box::new(bitwise_string::HammingDistance));
     }
 }
 
