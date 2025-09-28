@@ -75,8 +75,8 @@ function M.fetch_token_from_command(token_name, callback)
     return
   end
 
-  -- Expand ~ to home directory
-  local command = token_config.command:gsub("^~", vim.env.HOME or "")
+  -- Expand ~ to home directory using vim.fn.expand for better cross-platform support
+  local command = vim.fn.expand(token_config.command)
 
   if token_config.debug then
     vim.notify("Running command for " .. token_name .. ": " .. command, vim.log.levels.INFO)
