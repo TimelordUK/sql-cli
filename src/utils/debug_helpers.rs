@@ -35,6 +35,7 @@ macro_rules! debug_log {
     };
 }
 
+#[allow(unused_variables)]
 pub fn debug_breakpoint(label: &str) {
     #[cfg(debug_assertions)]
     {

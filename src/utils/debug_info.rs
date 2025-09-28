@@ -18,7 +18,7 @@ impl DebugInfo {
         input_text: &str,
         cursor_pos: usize,
         visual_cursor: usize,
-        api_url: &str,
+        _api_url: &str,
     ) -> String {
         let mut debug_info = String::new();
 

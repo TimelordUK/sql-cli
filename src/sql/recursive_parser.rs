@@ -1813,8 +1813,7 @@ fn analyze_partial(query: &str, cursor_pos: usize) -> (CursorContext, Option<Str
             let col_name = if before_dot.ends_with('"') {
                 // Handle quoted identifier - search backwards for matching opening quote
                 let bytes = before_dot.as_bytes();
-                let mut pos = before_dot.len() - 1; // Position of closing quote
-                let mut found_start = None;
+                let pos = before_dot.len() - 1; // Position of closing quote
 
                 #[cfg(test)]
                 {
@@ -1823,7 +1822,7 @@ fn analyze_partial(query: &str, cursor_pos: usize) -> (CursorContext, Option<Str
                     }
                 }
 
-                found_start = find_quote_start(bytes, pos);
+                let found_start = find_quote_start(bytes, pos);
 
                 if let Some(start) = found_start {
                     // Extract the full quoted identifier including quotes

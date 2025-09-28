@@ -1,8 +1,8 @@
 use crate::data::datatable::DataValue;
 use crate::sql::functions::{ArgCount, FunctionCategory, FunctionSignature, SqlFunction};
 use anyhow::{anyhow, Result};
-use num_bigint::{BigInt, BigUint};
-use num_traits::{FromPrimitive, One, Signed, ToPrimitive, Zero};
+use num_bigint::BigInt;
+use num_traits::{One, Signed, Zero};
 
 /// BIGINT - Convert to arbitrary precision integer
 pub struct BigIntFunction;

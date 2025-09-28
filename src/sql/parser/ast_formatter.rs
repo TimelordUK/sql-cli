@@ -407,7 +407,7 @@ impl<'a> AstFormatter<'a> {
         }
 
         // Count non-star items for formatting decision
-        let non_star_count = items
+        let _non_star_count = items
             .iter()
             .filter(|i| !matches!(i, SelectItem::Star))
             .count();

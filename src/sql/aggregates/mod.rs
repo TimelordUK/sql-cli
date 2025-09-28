@@ -549,10 +549,9 @@ impl AggregateRegistry {
             RankFunction, SumsFunction,
         };
         use functions::{
-            AvgFunction, CountFunction, CountStarFunction, MaxFunction, MedianFunction,
-            MinFunction, ModeFunction, PercentileFunction, StdDevFunction, StdDevPopFunction,
-            StdDevSampFunction, StringAggFunction, VarPopFunction, VarSampFunction,
-            VarianceFunction,
+            AvgFunction, MaxFunction, MedianFunction, MinFunction, ModeFunction,
+            PercentileFunction, StdDevFunction, StdDevPopFunction, StdDevSampFunction,
+            StringAggFunction, VarPopFunction, VarSampFunction, VarianceFunction,
         };
 
         let functions: Vec<Box<dyn AggregateFunction>> = vec![

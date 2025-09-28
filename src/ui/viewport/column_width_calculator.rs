@@ -206,7 +206,6 @@ impl ColumnWidthCalculator {
 
             // Track actual data width
             let mut max_data_width = 0u16;
-            let mut data_samples = 0u32;
 
             // Sample visible rows (limit sampling for performance)
             let sample_size = 100.min(viewport_rows.len());
@@ -227,7 +226,6 @@ impl ColumnWidthCalculator {
                         let cell_str = row.values[col_idx].to_string();
                         let cell_width = cell_str.len() as u16;
                         max_data_width = max_data_width.max(cell_width);
-                        data_samples += 1;
                     }
                 }
             }

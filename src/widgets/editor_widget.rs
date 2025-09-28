@@ -64,7 +64,7 @@ impl EditorWidget {
         &mut self,
         key: KeyEvent,
         key_dispatcher: &KeyDispatcher,
-        buffer: &mut dyn BufferAPI,
+        _buffer: &mut dyn BufferAPI,
     ) -> Result<EditorAction> {
         // Log the key event
         trace!(target: "input", "Key: {:?} Modifiers: {:?}", key.code, key.modifiers);

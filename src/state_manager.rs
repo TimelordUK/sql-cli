@@ -151,7 +151,7 @@ impl StateManager {
         if let Some(pattern) = &context.fuzzy_filter_pattern {
             buffer.set_fuzzy_filter_pattern(pattern.clone());
         }
-        if let Some(pattern) = &context.column_search_pattern {
+        if let Some(_pattern) = &context.column_search_pattern {
             // Column search migrated to AppStateContainer
             // buffer.set_column_search_pattern(pattern.clone());
         }

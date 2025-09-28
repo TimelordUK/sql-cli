@@ -106,7 +106,7 @@ impl CellRenderer {
     }
 
     /// Render value with full border
-    fn render_with_border(&self, value: &str, width: usize) -> String {
+    fn render_with_border(&self, value: &str, _width: usize) -> String {
         let chars = match self.style_config.border_style.as_str() {
             "double" => ('═', '║', '╔', '╗', '╚', '╝'),
             "rounded" => ('─', '│', '╭', '╮', '╰', '╯'),
@@ -120,7 +120,7 @@ impl CellRenderer {
     }
 
     /// Render value with just corner markers
-    fn render_with_corners(&self, value: &str, width: usize) -> String {
+    fn render_with_corners(&self, value: &str, _width: usize) -> String {
         let corners: Vec<char> = self.style_config.corner_chars.chars().collect();
         if corners.len() >= 4 {
             // Add subtle corner markers inline
@@ -172,7 +172,7 @@ impl CellRenderer {
 
 /// Helper to create bordered cell for special rendering
 #[must_use]
-pub fn create_bordered_cell<'a>(content: &str, border_style: &str) -> Block<'a> {
+pub fn create_bordered_cell<'a>(_content: &str, border_style: &str) -> Block<'a> {
     let block = Block::default().borders(Borders::ALL);
 
     match border_style {

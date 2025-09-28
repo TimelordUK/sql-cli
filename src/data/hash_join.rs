@@ -154,7 +154,7 @@ impl HashJoinExecutor {
         // Try to find the left column in left table, then right table
         let left_col_idx = if let Ok(idx) = self.find_column_index(left_table, left_col_name) {
             idx
-        } else if let Ok(idx) = self.find_column_index(right_table, left_col_name) {
+        } else if let Ok(_idx) = self.find_column_index(right_table, left_col_name) {
             // The "left" column in the condition is actually from the right table
             // This means we need to swap the comparison
             return Err(anyhow!(
@@ -172,7 +172,7 @@ impl HashJoinExecutor {
         // Try to find the right column in right table, then left table
         let right_col_idx = if let Ok(idx) = self.find_column_index(right_table, right_col_name) {
             idx
-        } else if let Ok(idx) = self.find_column_index(left_table, right_col_name) {
+        } else if let Ok(_idx) = self.find_column_index(left_table, right_col_name) {
             // The "right" column in the condition is actually from the left table
             // This means we need to swap the comparison
             return Err(anyhow!(

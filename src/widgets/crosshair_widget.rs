@@ -82,7 +82,7 @@ impl CrosshairWidget {
     /// This should be called AFTER rendering the table
     pub fn render_overlay(
         &self,
-        f: &mut Frame,
+        _f: &mut Frame,
         table_area: Rect,
         viewport_row_offset: usize,
         viewport_col_offset: usize,
@@ -127,7 +127,7 @@ impl CrosshairWidget {
 
         // Draw the crosshair cell
         let cell_width = col_widths[relative_col];
-        let cell_rect = Rect {
+        let _cell_rect = Rect {
             x,
             y,
             width: cell_width,

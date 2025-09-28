@@ -1,7 +1,7 @@
 use crate::api_client::QueryResponse;
 use crate::data::data_provider::DataProvider;
 use crate::data::type_inference::{InferredType, TypeInference};
-use serde::de::{EnumAccess, VariantAccess, Visitor};
+use serde::de::{VariantAccess, Visitor};
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 use std::collections::HashMap;

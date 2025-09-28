@@ -548,6 +548,7 @@ pub fn format_sql_with_preserved_parens(query: &str, cols_per_line: usize) -> Ve
     lines
 }
 
+#[allow(unused_assignments)]
 fn format_where_clause_with_parens(where_text: &str) -> Vec<String> {
     let mut lines = Vec::new();
     let mut current = String::from("WHERE ");

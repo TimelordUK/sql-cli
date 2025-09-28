@@ -1370,7 +1370,7 @@ fn handle_banding_generation(args: &[String]) -> io::Result<()> {
 }
 
 fn handle_case_generation(args: &[String]) -> io::Result<()> {
-    use refactoring::banding::{CaseGenerator, CaseStyle};
+    use refactoring::banding::CaseGenerator;
 
     // Find file argument position
     let case_pos = args

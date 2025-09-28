@@ -234,7 +234,7 @@ impl ViewportManager {
         }
 
         // Use the existing smart column adjustment logic
-        let terminal_width = self.terminal_width.saturating_sub(4); // Account for borders
+        let _terminal_width = self.terminal_width.saturating_sub(4); // Account for borders
         if self.set_current_column(clamped_col) {
             debug!(target: "viewport_manager", 
                    "Crosshair column set to: {} with viewport adjustment", clamped_col);
@@ -549,7 +549,7 @@ impl ViewportManager {
         // Get the actual visible column count (after hiding)
         let display_columns = dataview.get_display_columns();
         let visible_col_count = display_columns.len();
-        let total_col_count = dataview.source().column_count(); // Total DataTable columns for width array
+        let _total_col_count = dataview.source().column_count(); // Total DataTable columns for width array
         let total_rows = dataview.row_count();
 
         // Initialize viewport in visual coordinate space
@@ -1049,7 +1049,7 @@ impl ViewportManager {
         }
 
         let pinned = self.dataview.get_pinned_columns();
-        let pinned_count = pinned.len();
+        let _pinned_count = pinned.len();
 
         // Calculate how much width is used by pinned columns
         let mut pinned_width = 0u16;

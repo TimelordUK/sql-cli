@@ -96,8 +96,8 @@ impl CommandEditor {
     fn handle_input(
         &mut self,
         key: KeyEvent,
-        state_container: &mut AppStateContainer,
-        shadow_state: &RefCell<crate::ui::state::shadow_state::ShadowStateManager>,
+        _state_container: &mut AppStateContainer,
+        _shadow_state: &RefCell<crate::ui::state::shadow_state::ShadowStateManager>,
     ) -> Result<bool> {
         debug!(
             "CommandEditor::handle_input - key: {:?}, current text: '{}', cursor: {}",
@@ -5920,7 +5920,7 @@ impl EnhancedTuiApp {
     }
 
     /// Add data source display to status spans
-    fn add_data_source_display(&self, spans: &mut Vec<Span>) {
+    fn add_data_source_display(&self, _spans: &mut Vec<Span>) {
         // Skip showing data source in status line since tab bar shows file names
         // This avoids redundancy like "[trades.csv] [1/2] trades.csv"
     }

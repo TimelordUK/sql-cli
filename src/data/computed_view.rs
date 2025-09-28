@@ -1,5 +1,4 @@
 use crate::data::datatable::{DataTable, DataValue};
-use crate::sql::parser::ast::ColumnRef;
 use crate::sql::recursive_parser::SqlExpression;
 use std::sync::Arc;
 
@@ -176,6 +175,7 @@ impl ComputedDataView {
 mod tests {
     use super::*;
     use crate::data::datatable::{DataColumn, DataRow};
+    use crate::sql::parser::ast::ColumnRef;
 
     fn create_test_table() -> Arc<DataTable> {
         let mut table = DataTable::new("test");

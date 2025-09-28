@@ -237,7 +237,7 @@ impl VimSearchManager {
         let match_to_navigate = if let VimSearchState::Navigating {
             matches,
             current_index,
-            pattern,
+            pattern: _,
         } = &mut self.state
         {
             if matches.is_empty() {

@@ -50,7 +50,7 @@ pub struct OrderedPartition {
 
 impl OrderedPartition {
     /// Create a new ordered partition from row indices
-    fn new(mut rows: Vec<usize>) -> Self {
+    fn new(rows: Vec<usize>) -> Self {
         // Build position lookup
         let row_positions: HashMap<usize, usize> = rows
             .iter()

@@ -31,7 +31,7 @@ pub trait WindowFunction: Send + Sync {
         context: &WindowContext,
         row_index: usize,
         args: &[SqlExpression],
-        evaluator: &mut dyn ExpressionEvaluator,
+        _evaluator: &mut dyn ExpressionEvaluator,
     ) -> Result<DataValue>;
 
     /// Optional: Transform/expand the window specification
@@ -39,14 +39,14 @@ pub trait WindowFunction: Send + Sync {
     fn transform_window_spec(
         &self,
         base_spec: &WindowSpec,
-        args: &[SqlExpression],
+        _args: &[SqlExpression],
     ) -> Result<WindowSpec> {
         // Default: use the base spec unchanged
         Ok(base_spec.clone())
     }
 
     /// Validate arguments at parse time
-    fn validate_args(&self, args: &[SqlExpression]) -> Result<()> {
+    fn validate_args(&self, _args: &[SqlExpression]) -> Result<()> {
         Ok(())
     }
 }
@@ -136,7 +136,7 @@ impl WindowFunction for MovingAvgFunction {
         context: &WindowContext,
         row_index: usize,
         args: &[SqlExpression],
-        evaluator: &mut dyn ExpressionEvaluator,
+        _evaluator: &mut dyn ExpressionEvaluator,
     ) -> Result<DataValue> {
         // Extract column name
         let column = match &args[0] {
@@ -211,7 +211,7 @@ impl WindowFunction for RollingStddevFunction {
         context: &WindowContext,
         row_index: usize,
         args: &[SqlExpression],
-        evaluator: &mut dyn ExpressionEvaluator,
+        _evaluator: &mut dyn ExpressionEvaluator,
     ) -> Result<DataValue> {
         let column = match &args[0] {
             SqlExpression::Column(col) => col,
@@ -287,7 +287,7 @@ impl WindowFunction for CumulativeSumFunction {
         context: &WindowContext,
         row_index: usize,
         args: &[SqlExpression],
-        evaluator: &mut dyn ExpressionEvaluator,
+        _evaluator: &mut dyn ExpressionEvaluator,
     ) -> Result<DataValue> {
         let column = match &args[0] {
             SqlExpression::Column(col) => col,
@@ -302,7 +302,7 @@ impl WindowFunction for CumulativeSumFunction {
     fn transform_window_spec(
         &self,
         base_spec: &WindowSpec,
-        args: &[SqlExpression],
+        _args: &[SqlExpression],
     ) -> Result<WindowSpec> {
         use crate::sql::parser::ast::{FrameBound, FrameUnit, WindowFrame};
 
@@ -348,7 +348,7 @@ impl WindowFunction for CumulativeAvgFunction {
         context: &WindowContext,
         row_index: usize,
         args: &[SqlExpression],
-        evaluator: &mut dyn ExpressionEvaluator,
+        _evaluator: &mut dyn ExpressionEvaluator,
     ) -> Result<DataValue> {
         let column = match &args[0] {
             SqlExpression::Column(col) => col,
@@ -363,7 +363,7 @@ impl WindowFunction for CumulativeAvgFunction {
     fn transform_window_spec(
         &self,
         base_spec: &WindowSpec,
-        args: &[SqlExpression],
+        _args: &[SqlExpression],
     ) -> Result<WindowSpec> {
         use crate::sql::parser::ast::{FrameBound, FrameUnit, WindowFrame};
 
@@ -409,7 +409,7 @@ impl WindowFunction for ZScoreFunction {
         context: &WindowContext,
         row_index: usize,
         args: &[SqlExpression],
-        evaluator: &mut dyn ExpressionEvaluator,
+        _evaluator: &mut dyn ExpressionEvaluator,
     ) -> Result<DataValue> {
         let column = match &args[0] {
             SqlExpression::Column(col) => col,

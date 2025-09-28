@@ -227,7 +227,7 @@ impl QueryRewriter {
     }
 
     /// Attempt to automatically rewrite a query
-    pub fn rewrite(&self, stmt: &SelectStatement) -> Option<SelectStatement> {
+    pub fn rewrite(&self, _stmt: &SelectStatement) -> Option<SelectStatement> {
         // This would implement actual rewriting logic
         // For now, we just analyze and suggest
         None

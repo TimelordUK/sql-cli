@@ -313,7 +313,7 @@ impl Lexer {
 
     fn read_number(&mut self) -> String {
         let mut result = String::new();
-        let mut has_e = false;
+        let has_e = false;
 
         // Read the main number part (including decimal point)
         while let Some(ch) = self.current_char {
@@ -324,7 +324,7 @@ impl Lexer {
                 // Handle scientific notation
                 result.push(ch);
                 self.advance();
-                has_e = true;
+                let _ = has_e; // We don't allow multiple 'e' characters, so break after this
 
                 // Check for optional sign after 'e'
                 if let Some(sign) = self.current_char {

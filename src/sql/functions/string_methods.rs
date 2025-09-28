@@ -1132,13 +1132,11 @@ impl SqlFunction for SubstringBeforeFunction {
 
         // Find the nth occurrence
         let mut count = 0;
-        let mut last_pos = 0;
         for (i, _) in string.match_indices(delimiter) {
             count += 1;
             if count == occurrence {
                 return Ok(DataValue::String(string[..i].to_string()));
             }
-            last_pos = i;
         }
 
         // If we didn't find enough occurrences, return empty string

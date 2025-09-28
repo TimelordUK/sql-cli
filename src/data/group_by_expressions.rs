@@ -2,7 +2,6 @@
 
 use anyhow::{anyhow, Result};
 use fxhash::FxHashMap;
-use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -11,7 +10,7 @@ use crate::data::data_view::DataView;
 use crate::data::datatable::{DataColumn, DataRow, DataTable, DataValue};
 use crate::data::query_engine::QueryEngine;
 use crate::sql::aggregates::contains_aggregate;
-use crate::sql::parser::ast::{ColumnRef, SelectItem, SqlExpression};
+use crate::sql::parser::ast::{SelectItem, SqlExpression};
 use tracing::debug;
 
 /// Detailed phase information for GROUP BY operations
