@@ -12,6 +12,9 @@ use crate::data::datatable::DataTable;
 use crate::data::stream_loader::{load_csv_from_reader, load_json_from_reader};
 use crate::sql::parser::ast::{DataFormat, HttpMethod, WebCTESpec};
 
+#[cfg(feature = "redis-cache")]
+use crate::redis_cache_module::RedisCache;
+
 /// Fetches data from a URL and converts it to a DataTable
 pub struct WebDataFetcher {
     client: reqwest::blocking::Client,
@@ -29,12 +32,55 @@ impl WebDataFetcher {
 
     /// Fetch data from a WEB CTE specification (supports http://, https://, and file:// URLs)
     pub fn fetch(&self, spec: &WebCTESpec, table_name: &str) -> Result<DataTable> {
-        info!("Fetching data from URL: {}", spec.url);
-
-        // Check if this is a file:// URL
+        // Check if this is a file:// URL (no caching for local files)
         if spec.url.starts_with("file://") {
             return self.fetch_file(spec, table_name);
         }
+
+        // Generate cache key
+        #[cfg(feature = "redis-cache")]
+        let cache_key = {
+            let method = format!("{:?}", spec.method.as_ref().unwrap_or(&HttpMethod::GET));
+            RedisCache::generate_key(
+                &spec.url,
+                Some(&method),
+                &spec.headers,
+                spec.body.as_deref(),
+            )
+        };
+
+        // Try cache first
+        #[cfg(feature = "redis-cache")]
+        {
+            let mut cache = RedisCache::new();
+            if cache.is_enabled() {
+                if let Some(cached_bytes) = cache.get(&cache_key) {
+                    // Try to deserialize from cached parquet
+                    match DataTable::from_parquet_bytes(&cached_bytes) {
+                        Ok(table) => {
+                            eprintln!(
+                                "Cache HIT for {} (key: {}...)",
+                                table_name,
+                                &cache_key[0..32.min(cache_key.len())]
+                            );
+                            return Ok(table);
+                        }
+                        Err(e) => {
+                            debug!("Failed to deserialize cached data: {}", e);
+                            // Continue to fetch from network
+                        }
+                    }
+                } else {
+                    eprintln!(
+                        "Cache MISS for {} (key: {}...)",
+                        table_name,
+                        &cache_key[0..32.min(cache_key.len())]
+                    );
+                }
+            }
+        }
+
+        info!("Fetching data from URL: {}", spec.url);
 
         // Regular HTTP/HTTPS handling
         // Build request based on method
@@ -123,8 +169,8 @@ impl WebDataFetcher {
 
         info!("Using format: {:?} for {}", format, spec.url);
 
-        // If JSON_PATH is specified and format is JSON, extract the nested data first
-        if let Some(json_path) = &spec.json_path {
+        // Parse the data based on format
+        let result = if let Some(json_path) = &spec.json_path {
             if matches!(format, DataFormat::JSON | DataFormat::Auto) {
                 // Parse JSON and extract the path
                 let json_value: serde_json::Value = serde_json::from_slice(&bytes)
@@ -142,18 +188,54 @@ impl WebDataFetcher {
                 };
 
                 let extracted_bytes = serde_json::to_vec(&array_value)?;
-                return self.parse_data(
+                self.parse_data(
                     extracted_bytes,
                     DataFormat::JSON,
                     table_name,
                     "web",
                     &spec.url,
-                );
+                )?
+            } else {
+                self.parse_data(bytes.to_vec(), format, table_name, "web", &spec.url)?
+            }
+        } else {
+            self.parse_data(bytes.to_vec(), format, table_name, "web", &spec.url)?
+        };
+
+        // Cache the result if caching is enabled
+        #[cfg(feature = "redis-cache")]
+        {
+            let mut cache = RedisCache::new();
+            if cache.is_enabled() {
+                // Determine TTL based on spec or smart defaults
+                let ttl = spec.cache_seconds.unwrap_or_else(|| {
+                    // Smart defaults based on URL and body
+                    if spec.url.contains("prod") {
+                        3600 // 1 hour for production
+                    } else if spec.url.contains("staging") {
+                        300 // 5 minutes for staging
+                    } else {
+                        600 // 10 minutes default
+                    }
+                });
+
+                // Serialize to parquet and cache
+                match result.to_parquet_bytes() {
+                    Ok(parquet_bytes) => {
+                        if let Err(e) = cache.set(&cache_key, &parquet_bytes, ttl) {
+                            debug!("Failed to cache result: {}", e);
+                        } else {
+                            eprintln!("Cached {} for {} seconds", table_name, ttl);
+                        }
+                    }
+                    Err(e) => {
+                        debug!("Failed to serialize to parquet: {}", e);
+                    }
+                }
             }
         }
 
-        // Parse based on format without JSON path extraction
-        self.parse_data(bytes.to_vec(), format, table_name, "web", &spec.url)
+        Ok(result)
     }
 
     /// Fetch data from a file:// URL

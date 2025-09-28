@@ -1,6 +1,7 @@
 use crate::api_client::QueryResponse;
 use crate::data::data_provider::DataProvider;
 use crate::data::type_inference::{InferredType, TypeInference};
+use serde::de::{EnumAccess, VariantAccess, Visitor};
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 use std::collections::HashMap;
@@ -166,6 +167,121 @@ impl std::hash::Hash for DataValue {
     }
 }
 
+// Custom Serialize implementation for DataValue to handle Arc<String>
+impl Serialize for DataValue {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        match self {
+            DataValue::String(s) => {
+                serializer.serialize_newtype_variant("DataValue", 0, "String", s)
+            }
+            DataValue::InternedString(arc_s) => {
+                // Serialize the Arc<String> as just the String content
+                serializer.serialize_newtype_variant(
+                    "DataValue",
+                    1,
+                    "InternedString",
+                    arc_s.as_ref(),
+                )
+            }
+            DataValue::Integer(i) => {
+                serializer.serialize_newtype_variant("DataValue", 2, "Integer", i)
+            }
+            DataValue::Float(f) => serializer.serialize_newtype_variant("DataValue", 3, "Float", f),
+            DataValue::Boolean(b) => {
+                serializer.serialize_newtype_variant("DataValue", 4, "Boolean", b)
+            }
+            DataValue::DateTime(dt) => {
+                serializer.serialize_newtype_variant("DataValue", 5, "DateTime", dt)
+            }
+            DataValue::Null => serializer.serialize_unit_variant("DataValue", 6, "Null"),
+        }
+    }
+}
+
+// Custom Deserialize implementation for DataValue to handle Arc<String>
+impl<'de> Deserialize<'de> for DataValue {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        #[derive(Deserialize)]
+        #[serde(field_identifier, rename_all = "PascalCase")]
+        enum Field {
+            String,
+            InternedString,
+            Integer,
+            Float,
+            Boolean,
+            DateTime,
+            Null,
+        }
+
+        struct DataValueVisitor;
+
+        impl<'de> Visitor<'de> for DataValueVisitor {
+            type Value = DataValue;
+
+            fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+                formatter.write_str("enum DataValue")
+            }
+
+            fn visit_enum<A>(self, data: A) -> Result<Self::Value, A::Error>
+            where
+                A: serde::de::EnumAccess<'de>,
+            {
+                let (field, variant) = data.variant()?;
+                match field {
+                    Field::String => {
+                        let s: String = variant.newtype_variant()?;
+                        Ok(DataValue::String(s))
+                    }
+                    Field::InternedString => {
+                        let s: String = variant.newtype_variant()?;
+                        Ok(DataValue::InternedString(Arc::new(s)))
+                    }
+                    Field::Integer => {
+                        let i: i64 = variant.newtype_variant()?;
+                        Ok(DataValue::Integer(i))
+                    }
+                    Field::Float => {
+                        let f: f64 = variant.newtype_variant()?;
+                        Ok(DataValue::Float(f))
+                    }
+                    Field::Boolean => {
+                        let b: bool = variant.newtype_variant()?;
+                        Ok(DataValue::Boolean(b))
+                    }
+                    Field::DateTime => {
+                        let dt: String = variant.newtype_variant()?;
+                        Ok(DataValue::DateTime(dt))
+                    }
+                    Field::Null => {
+                        variant.unit_variant()?;
+                        Ok(DataValue::Null)
+                    }
+                }
+            }
+        }
+
+        deserializer.deserialize_enum(
+            "DataValue",
+            &[
+                "String",
+                "InternedString",
+                "Integer",
+                "Float",
+                "Boolean",
+                "DateTime",
+                "Null",
+            ],
+            DataValueVisitor,
+        )
+    }
+}
+
 // Custom Eq implementation for DataValue
 impl Eq for DataValue {}
 
@@ -251,7 +367,7 @@ impl fmt::Display for DataValue {
 }
 
 /// A row of data in the table
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DataRow {
     pub values: Vec<DataValue>,
 }
@@ -283,7 +399,7 @@ impl DataRow {
 }
 
 /// The main `DataTable` structure
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DataTable {
     pub name: String,
     pub columns: Vec<DataColumn>,
@@ -906,6 +1022,20 @@ impl DataTable {
         }
 
         size
+    }
+
+    /// Serialize DataTable to bytes for caching (using MessagePack for now, can be upgraded to Parquet)
+    pub fn to_parquet_bytes(&self) -> Result<Vec<u8>, String> {
+        // For now, use MessagePack which is binary-safe and fast
+        // Later we can upgrade to actual Parquet format
+        rmp_serde::to_vec(self).map_err(|e| format!("Failed to serialize DataTable: {}", e))
+    }
+
+    /// Deserialize DataTable from cached bytes
+    pub fn from_parquet_bytes(bytes: &[u8]) -> Result<Self, String> {
+        // For now, use MessagePack
+        // Later we can upgrade to actual Parquet format
+        rmp_serde::from_slice(bytes).map_err(|e| format!("Failed to deserialize DataTable: {}", e))
     }
 }
 
