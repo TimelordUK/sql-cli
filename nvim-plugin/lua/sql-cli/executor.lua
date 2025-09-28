@@ -585,6 +585,7 @@ function M.run_command(query, show_plan, config, state)
 
   -- Run command asynchronously
   local output_lines = {}
+  local cache_messages = {}  -- Collect cache messages separately
   local csv_lines = {}  -- Store CSV format results
 
   -- Prepare environment with cache settings if configured
@@ -628,20 +629,20 @@ function M.run_command(query, show_plan, config, state)
             -- Check for cache status messages
             if line:match("Cache HIT") then
               -- Highlight cache hits
-              table.insert(output_lines, "✅ " .. line)
+              table.insert(cache_messages, "✅ " .. line)
               -- Also notify for immediate visibility
               vim.schedule(function()
                 vim.notify("🚀 " .. line, vim.log.levels.INFO)
               end)
             elseif line:match("Cache MISS") then
               -- Highlight cache misses
-              table.insert(output_lines, "⚠️  " .. line)
+              table.insert(cache_messages, "⚠️  " .. line)
               vim.schedule(function()
                 vim.notify("🔍 " .. line, vim.log.levels.INFO)
               end)
             elseif line:match("Cached .* for %d+ seconds") then
               -- Show when data is cached
-              table.insert(output_lines, "💾 " .. line)
+              table.insert(cache_messages, "💾 " .. line)
               vim.schedule(function()
                 vim.notify("💾 " .. line, vim.log.levels.INFO)
               end)
@@ -662,12 +663,24 @@ function M.run_command(query, show_plan, config, state)
     end,
     on_exit = function(_, exit_code)
       vim.schedule(function()
-        -- Append output
+        -- Combine cache messages and output, with cache messages at the top
+        local final_output = {}
+
+        -- Add cache messages first (if any)
+        if #cache_messages > 0 then
+          vim.list_extend(final_output, cache_messages)
+          table.insert(final_output, "")  -- Add blank line separator
+        end
+
+        -- Add the actual query output
+        vim.list_extend(final_output, output_lines)
+
+        -- Append combined output
         if output_buf then
           -- Ensure buffer is modifiable before writing
           vim.bo[output_buf].modifiable = true
           vim.bo[output_buf].readonly = false
-          vim.api.nvim_buf_set_lines(output_buf, -1, -1, false, output_lines)
+          vim.api.nvim_buf_set_lines(output_buf, -1, -1, false, final_output)
         end
 
         -- Store results for saving (prefer CSV format if available)
