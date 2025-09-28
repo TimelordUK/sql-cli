@@ -47,3 +47,47 @@ timeout = 30
 
 # Maximum response size in MB
 max_response_size = 100
+
+# ============================================================================
+# TOKEN MANAGEMENT
+# ============================================================================
+[tokens]
+# Auto-refresh tokens before they expire
+auto_refresh = false
+
+# Default token lifetime in seconds (1 hour)
+default_lifetime = 3600
+
+# Token definitions with refresh commands
+# Each token variable (e.g., ${JWT_TOKEN}) needs a command that outputs the token
+
+[tokens.tokens.JWT_TOKEN]
+description = "UAT environment JWT token"
+# Command that outputs token to stdout
+refresh_command = "~/.config/sql-cli/get_uat_token.sh"
+lifetime = 3600  # 1 hour
+
+[tokens.tokens.JWT_TOKEN_PROD]
+description = "Production environment JWT token"
+refresh_command = "~/.config/sql-cli/get_prod_token.sh"
+lifetime = 7200  # 2 hours
+
+# More examples:
+
+# Azure CLI token
+# [tokens.tokens.AZURE_TOKEN]
+# description = "Azure access token"
+# refresh_command = "az account get-access-token --resource https://api.example.com --query accessToken -o tsv"
+# lifetime = 3600
+
+# OAuth2 client credentials flow
+# [tokens.tokens.OAUTH_TOKEN]
+# description = "OAuth2 bearer token"
+# refresh_command = "curl -s -X POST https://auth.example.com/oauth/token -d 'client_id=xxx&client_secret=yyy&grant_type=client_credentials' | jq -r .access_token"
+# lifetime = 3600
+
+# Custom script that handles all auth logic
+# [tokens.tokens.CUSTOM_TOKEN]
+# description = "Custom auth token"
+# refresh_command = "/opt/bin/get-auth-token --env=prod --format=raw"
+# lifetime = 1800

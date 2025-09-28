@@ -14,6 +14,7 @@ pub struct Config {
     pub theme: ThemeConfig,
     pub redis_cache: RedisCacheConfig,
     pub web: WebConfig,
+    pub tokens: TokenConfig,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -165,6 +166,37 @@ pub struct WebConfig {
     pub max_response_size: usize,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
+pub struct TokenConfig {
+    /// Token definitions with their refresh commands
+    /// Key: Token variable name (e.g., "JWT_TOKEN", "JWT_TOKEN_PROD")
+    /// Value: TokenDefinition with refresh command
+    pub tokens: HashMap<String, TokenDefinition>,
+
+    /// Auto-refresh tokens before they expire (if expiry is known)
+    pub auto_refresh: bool,
+
+    /// Default token lifetime in seconds (if not specified per token)
+    pub default_lifetime: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TokenDefinition {
+    /// Command to run to get/refresh this token
+    pub refresh_command: String,
+
+    /// Optional description
+    pub description: Option<String>,
+
+    /// Token lifetime in seconds (overrides default)
+    pub lifetime: Option<u64>,
+
+    /// Last refresh timestamp (managed by the system)
+    #[serde(skip_serializing, skip_deserializing)]
+    pub last_refreshed: Option<std::time::SystemTime>,
+}
+
 impl Default for DisplayConfig {
     fn default() -> Self {
         Self {
@@ -283,6 +315,16 @@ impl Default for WebConfig {
         Self {
             timeout: 30,
             max_response_size: 100,
+        }
+    }
+}
+
+impl Default for TokenConfig {
+    fn default() -> Self {
+        Self {
+            tokens: HashMap::new(),
+            auto_refresh: false,
+            default_lifetime: 3600, // 1 hour default
         }
     }
 }
@@ -418,6 +460,21 @@ impl Config {
             "  max_response_size = {} MB\n",
             self.web.max_response_size
         ));
+
+        // Token configuration
+        info.push_str("\n[tokens]\n");
+        info.push_str(&format!("  auto_refresh = {}\n", self.tokens.auto_refresh));
+        info.push_str(&format!(
+            "  default_lifetime = {}s\n",
+            self.tokens.default_lifetime
+        ));
+        info.push_str(&format!(
+            "  configured_tokens = {} tokens\n",
+            self.tokens.tokens.len()
+        ));
+        for (name, _) in &self.tokens.tokens {
+            info.push_str(&format!("    - {}\n", name));
+        }
 
         info.push_str("==========================================\n");
         info
@@ -651,6 +708,31 @@ timeout = 30
 
 # Maximum response size in MB
 max_response_size = 100
+
+[tokens]
+# Auto-refresh tokens before they expire
+auto_refresh = false
+
+# Default token lifetime in seconds (1 hour)
+default_lifetime = 3600
+
+# Token definitions with their refresh commands
+# Each token needs a refresh_command that outputs the token to stdout
+[tokens.tokens.JWT_TOKEN]
+description = "UAT environment JWT token"
+refresh_command = "~/.config/sql-cli/get_uat_token.sh"
+lifetime = 3600  # 1 hour
+
+[tokens.tokens.JWT_TOKEN_PROD]
+description = "Production environment JWT token"
+refresh_command = "~/.config/sql-cli/get_prod_token.sh"
+lifetime = 7200  # 2 hours
+
+# Example: Azure CLI token
+# [tokens.tokens.AZURE_TOKEN]
+# description = "Azure access token"
+# refresh_command = "az account get-access-token --resource https://api.example.com --query accessToken -o tsv"
+# lifetime = 3600
 "#
         .to_string()
     }
