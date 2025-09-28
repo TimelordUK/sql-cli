@@ -16,40 +16,29 @@ return
       })
 
       -- Token Manager Configuration
-      local token_manager = require('sql-cli.token_manager')
-      token_manager.setup({
-         -- Use the test shell script for now (Linux/Mac)
-         -- token_command = vim.fn.expand("~/dev/sql-cli/export_jwt.sh"),
+      -- local token_manager = require('sql-cli.token_manager')
+      local multi_token_manager = require('sql-cli.multi_token_manager')
 
-         -- For PowerShell Core (cross-platform pwsh):
-         -- token_command = "pwsh -NoProfile -NonInteractive -ExecutionPolicy Bypass -File " .. vim.fn.expand("~/dev/sql-cli/ExportJwt.ps1"),
-
-         -- For Windows PowerShell 5.1:
-         token_command = "powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File " .. vim.fn.expand("~/dev/sql-cli/ExportJwt.ps1"),
-
-         -- For production script that fetches real tokens:
-         -- token_command = "pwsh -NoProfile -NonInteractive -ExecutionPolicy Bypass -File C:\\Scripts\\GetAuthToken.ps1",
-
-         -- Enable auto-refresh
+      multi_token_manager.setup({
+      JWT_TOKEN = {
+        command = "powershell.exe -NoProfile -ExecutionPolicy Bypass -File $HOME\\dev\\sql-cli\\ExportJwt.ps1",
+        -- refresh_interval = 840,  -- 14 minutes
+         refresh_interval = 20,  -- 20 seconds for testing
          auto_refresh = true,
-
-         -- Test with shorter interval (10 seconds for testing, change to 840 for production)
-         refresh_interval = 600,  -- seconds
-
-         -- Environment variable name
-         token_var_name = "JWT_TOKEN",
-
-         -- Enable debug to see timer activity (disable for normal use)
-         debug = true,
-      })
-
+         debug = true,  -- Enable debug output to see what's happening
+      },
+      JWT_TOKEN_PROD = {
+        command = "powershell.exe -NoProfile -ExecutionPolicy Bypass -File $HOME\\dev\\sql-cli\\ExportJwtProd.ps1",
+        refresh_interval = 840,
+        auto_refresh = true,
+        debug = false,  -- Less verbose for prod token
+      },
+     })
       -- Create token manager commands
-      token_manager.create_commands()
+     multi_token_manager.create_commands()
 
-      -- Notify that token manager is configured
-      vim.notify("SQL-CLI Token Manager configured with 10-second test interval", vim.log.levels.INFO)
-      vim.notify("Commands: :TokenConfig, :TokenRefresh, :TokenShow, :TokenDebug", vim.log.levels.INFO)
+      -- Notify that multi-token manager is configured
+     vim.notify("SQL-CLI Multi-Token Manager configured (JWT_TOKEN @ 20s, JWT_TOKEN_PROD @ 840s)", vim.log.levels.INFO)
+     vim.notify("Commands: :TokenStatus, :TokenRefreshAll, :TokenRefresh [name]", vim.log.levels.INFO)
    end,
 }
-
-
