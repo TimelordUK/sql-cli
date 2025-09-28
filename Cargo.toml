@@ -81,6 +81,7 @@ num-traits = "0.2"
 ahash = "0.8"
 base64 = "0.22"
 hex = "0.4"
+figlet-rs = "0.1"
 
 [dev-dependencies]
 tempfile = "3.8"

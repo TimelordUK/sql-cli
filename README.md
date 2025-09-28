@@ -1,3 +1,5 @@
+![Description](docs/images/screenshot-20250928-094517.png)
+
 # SQL CLI - Powerful CSV/JSON Query Tool with Interactive TUI & CLI Modes
 
 **A vim-inspired SQL query tool for CSV and JSON files. Features both an interactive terminal UI for data exploration and a non-interactive CLI mode for scripting and automation.**

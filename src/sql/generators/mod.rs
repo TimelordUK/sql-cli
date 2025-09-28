@@ -2,6 +2,7 @@ use crate::data::datatable::{DataColumn, DataRow, DataTable, DataValue};
 use anyhow::Result;
 use std::sync::Arc;
 
+pub mod ascii_art;
 pub mod literal_generators;
 pub mod math_generators;
 pub mod prime_generators;
@@ -43,6 +44,7 @@ impl GeneratorRegistry {
     }
 
     fn register_default_generators(&mut self) {
+        use ascii_art::{AsciiArt, Banner, BigText};
         use literal_generators::{Array, Values};
         use math_generators::{Collatz, Factorials, PascalTriangle, Squares, TriangularNumbers};
         use prime_generators::{Fibonacci, GeneratePrimes, PrimeFactors};
@@ -81,6 +83,11 @@ impl GeneratorRegistry {
         self.register(Box::new(RandomIntegers));
         self.register(Box::new(RandomFloats));
         self.register(Box::new(GenerateUUIDs));
+
+        // ASCII Art generators
+        self.register(Box::new(AsciiArt));
+        self.register(Box::new(BigText));
+        self.register(Box::new(Banner));
     }
 
     pub fn register(&mut self, generator: Box<dyn TableGenerator>) {
@@ -108,6 +115,7 @@ impl GeneratorRegistry {
         let mut math_gens = Vec::new();
         let mut random_gens = Vec::new();
         let mut utility_gens = Vec::new();
+        let mut ascii_gens = Vec::new();
 
         for (name, gen) in &self.generators {
             let entry = format!("  {} - {}", name, gen.description());
@@ -116,6 +124,8 @@ impl GeneratorRegistry {
                 sequence_gens.push(entry);
             } else if name == "SPLIT" || name == "TOKENIZE" || name == "CHARS" || name == "LINES" {
                 string_gens.push(entry);
+            } else if name == "ASCII_ART" || name == "BIG_TEXT" || name == "BANNER" {
+                ascii_gens.push(entry);
             } else if name.starts_with("RANDOM_") {
                 random_gens.push(entry);
             } else if name == "GENERATE_UUID" {
@@ -156,6 +166,15 @@ impl GeneratorRegistry {
             random_gens.sort();
             output.push_str("Random Generators:\n");
             for entry in random_gens {
+                output.push_str(&format!("{}\n", entry));
+            }
+            output.push('\n');
+        }
+
+        if !ascii_gens.is_empty() {
+            ascii_gens.sort();
+            output.push_str("ASCII Art Generators:\n");
+            for entry in ascii_gens {
                 output.push_str(&format!("{}\n", entry));
             }
             output.push('\n');
@@ -202,6 +221,8 @@ impl GeneratorRegistry {
                 "RANDOM_INT" => help.push_str("10, 1, 100, 42"),
                 "RANDOM_FLOAT" => help.push_str("10, 0, 1, 42"),
                 "GENERATE_UUID" => help.push_str("5"),
+                "ASCII_ART" | "BIG_TEXT" => help.push_str("'SQL-CLI'"),
+                "BANNER" => help.push_str("'HELLO', '*'"),
                 _ => help.push_str("..."),
             }
             help.push_str(");\n");
