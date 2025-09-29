@@ -34,6 +34,21 @@ function M.create_output_window(config, state)
     pcall(function()
       vim.api.nvim_buf_set_name(output_buf, "[SQL CLI Output]")
     end)
+
+    -- Setup buffer-local keymaps for fuzzy filtering
+    local opts = { buffer = output_buf, noremap = true, silent = true }
+
+    -- <C-f> to open fuzzy filter
+    vim.keymap.set('n', '<C-f>', function()
+      local fuzzy = require('sql-cli.fuzzy_filter')
+      fuzzy.open_fuzzy_finder(output_buf)
+    end, vim.tbl_extend("force", opts, { desc = "Open fuzzy filter for results" }))
+
+    -- <C-r> to reset filter
+    vim.keymap.set('n', '<C-r>', function()
+      local fuzzy = require('sql-cli.fuzzy_filter')
+      fuzzy.reset_filter(output_buf)
+    end, vim.tbl_extend("force", opts, { desc = "Reset result filter" }))
   end
 
   vim.api.nvim_win_set_buf(0, output_buf)

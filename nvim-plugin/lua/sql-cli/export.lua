@@ -289,6 +289,36 @@ end
 
 -- Export to Tab-Separated Values (perfect for Excel)
 function M.yank_as_tsv(bufnr, table_info)
+  -- Check if fuzzy filter is active and has filtered data
+  local fuzzy = require('sql-cli.fuzzy_filter')
+  local filtered_data = fuzzy.get_filtered_rows()
+
+  if filtered_data then
+    -- Export filtered data
+    local tsv = {}
+
+    -- Header row
+    table.insert(tsv, table.concat(filtered_data.headers, "\t"))
+
+    -- Data rows
+    for _, row in ipairs(filtered_data.rows) do
+      table.insert(tsv, table.concat(row, "\t"))
+    end
+
+    local tsv_str = table.concat(tsv, '\n')
+
+    -- Convert line endings for Windows clipboard
+    if vim.fn.has('win32') == 1 then
+      tsv_str = tsv_str:gsub('\n', '\r\n')
+    end
+
+    vim.fn.setreg('+', tsv_str)
+    vim.fn.setreg('"', tsv_str)
+
+    vim.notify(string.format("✅ Yanked %d filtered rows as TSV (ready for Excel)", #filtered_data.rows), vim.log.levels.INFO)
+    return tsv_str
+  end
+
   -- Get clean TSV data by running query with TSV output
   local tsv_str = M.get_clean_export_data("tsv")
 
@@ -526,6 +556,54 @@ end
 
 -- Export to CSV (proper escaping)
 function M.yank_as_csv(bufnr, table_info)
+  -- Check if fuzzy filter is active and has filtered data
+  local fuzzy = require('sql-cli.fuzzy_filter')
+  local filtered_data = fuzzy.get_filtered_rows()
+
+  if filtered_data then
+    -- Export filtered data as CSV
+    local csv = {}
+
+    -- Header row
+    local header_csv = {}
+    for _, h in ipairs(filtered_data.headers) do
+      -- Quote if contains comma, quote, or newline
+      if h:match('[,"\n\r]') then
+        table.insert(header_csv, '"' .. h:gsub('"', '""') .. '"')
+      else
+        table.insert(header_csv, h)
+      end
+    end
+    table.insert(csv, table.concat(header_csv, ","))
+
+    -- Data rows
+    for _, row in ipairs(filtered_data.rows) do
+      local row_csv = {}
+      for _, cell in ipairs(row) do
+        -- Quote if contains comma, quote, or newline
+        if cell:match('[,"\n\r]') then
+          table.insert(row_csv, '"' .. cell:gsub('"', '""') .. '"')
+        else
+          table.insert(row_csv, cell)
+        end
+      end
+      table.insert(csv, table.concat(row_csv, ","))
+    end
+
+    local csv_str = table.concat(csv, '\n')
+
+    -- Convert line endings for Windows clipboard
+    if vim.fn.has('win32') == 1 then
+      csv_str = csv_str:gsub('\n', '\r\n')
+    end
+
+    vim.fn.setreg('+', csv_str)
+    vim.fn.setreg('"', csv_str)
+
+    vim.notify(string.format("✅ Yanked %d filtered rows as CSV", #filtered_data.rows), vim.log.levels.INFO)
+    return csv_str
+  end
+
   -- Get clean CSV data by running query with CSV output
   local csv_str = M.get_clean_export_data("csv")
 

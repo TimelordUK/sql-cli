@@ -206,6 +206,17 @@ function M.create_commands()
       vim.notify("No table found in buffer", vim.log.levels.WARN)
     end
   end, { desc = "Export table in various formats" })
+
+  -- Fuzzy filter commands
+  vim.api.nvim_create_user_command("SqlCliFuzzyFilter", function()
+    local fuzzy = require('sql-cli.fuzzy_filter')
+    fuzzy.open_fuzzy_finder()
+  end, { desc = "Open fuzzy finder for result filtering" })
+
+  vim.api.nvim_create_user_command("SqlCliResetFilter", function()
+    local fuzzy = require('sql-cli.fuzzy_filter')
+    fuzzy.reset_filter()
+  end, { desc = "Reset result filter" })
 end
 
 -- Setup keymaps
