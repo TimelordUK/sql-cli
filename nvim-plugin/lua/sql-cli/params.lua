@@ -237,14 +237,38 @@ function M.pick_parameter_value(param_name, callback)
     is_custom = true
   })
 
+  -- If no items to select from, go straight to custom input
+  if #items == 0 then
+    vim.ui.input({
+      prompt = string.format("Enter value for {{%s}}: ", param_name),
+      default = ""
+    }, function(value)
+      if value then
+        add_to_history(param_name, value)
+        callback(value)
+      else
+        callback(nil)
+      end
+    end)
+    return
+  end
+
   -- Create picker
   vim.ui.select(items, {
     prompt = string.format("Select value for {{%s}}:", param_name),
     format_item = function(item)
       return item.display
     end
-  }, function(item)
+  }, function(item, idx)
+    -- Debug: Log what we got back
+    if not item and idx then
+      -- Sometimes vim.ui.select returns index but not the item
+      item = items[idx]
+    end
+
     if not item then
+      -- If cancelled or no selection, show a more informative message
+      vim.notify(string.format("No value selected for {{%s}}", param_name), vim.log.levels.WARN)
       callback(nil)
       return
     end
@@ -298,13 +322,18 @@ function M.resolve_parameters(text, callback)
       -- All resolved, replace in text
       local result = text
       for param, value in pairs(resolved) do
-        -- Only replace {{}} patterns, leave ${} patterns untouched
+        -- Only replace {{}} patterns, leave ${} patterns untouched for env var resolution
         -- Check if parameter is inside JSON (within quotes)
-        -- Look for patterns like "{{PARAM}}" which indicate JSON context
+        -- Look for patterns like "{{PARAM}}" or \"{{PARAM}}\" which indicate JSON context
         local json_pattern = '"{{' .. param .. '}}"'
+        local json_pattern_escaped = '\\"{{' .. param .. '}}\\"'
         local json_pattern_alt = "'{{" .. param .. "}}'"
 
-        if result:find(json_pattern, 1, true) then
+        if result:find(json_pattern_escaped, 1, true) then
+          -- Replace with escaped value for JSON (already escaped quotes)
+          local escaped_value = value:gsub('\\', '\\\\'):gsub('"', '\\"')
+          result = result:gsub('\\"{{' .. param .. '}}\\"', '\\"' .. escaped_value .. '\\"')
+        elseif result:find(json_pattern, 1, true) then
           -- Replace with escaped value for JSON
           local escaped_value = value:gsub('\\', '\\\\'):gsub('"', '\\"')
           result = result:gsub('"{{' .. param .. '}}"', '"' .. escaped_value .. '"')
@@ -313,9 +342,9 @@ function M.resolve_parameters(text, callback)
           local escaped_value = value:gsub('\\', '\\\\'):gsub("'", "\\'")
           result = result:gsub("'{{" .. param .. "}}'", "'" .. escaped_value .. "'")
         else
-          -- Regular replacement
+          -- Regular replacement (not in JSON context)
           result = result:gsub("{{" .. param .. "}}", value)
-          result = result:gsub("${" .. param .. "}", value)
+          -- Note: We don't replace ${} patterns - those are for environment variables
         end
       end
       callback(result)
