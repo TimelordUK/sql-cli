@@ -1,6 +1,5 @@
 use anyhow::{anyhow, Result};
 use fxhash::FxHashSet;
-use sha2::{Digest, Sha256};
 use std::cmp::min;
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -288,12 +287,6 @@ impl QueryEngine {
         let mut plan_builder = ExecutionPlanBuilder::new();
         let start_time = Instant::now();
 
-        // Compute a hash of the full query for cache key uniqueness
-        let mut hasher = Sha256::new();
-        hasher.update(sql.as_bytes());
-        let query_hash = format!("{:x}", hasher.finalize());
-        let query_context = &query_hash[0..16]; // Use first 16 chars of hash
-
         // Parse the SQL query
         plan_builder.begin_step(StepType::Parse, "Parse SQL query".to_string());
         plan_builder.add_detail(format!("Query: {}", sql));
@@ -381,9 +374,8 @@ impl QueryEngine {
                         use crate::web::http_fetcher::WebDataFetcher;
 
                         let fetcher = WebDataFetcher::new()?;
-                        // Pass query context (hash) to prevent cache collisions
-                        let mut data_table =
-                            fetcher.fetch(web_spec, &cte.name, Some(query_context))?;
+                        // Pass None for query context - each WEB CTE is independent
+                        let mut data_table = fetcher.fetch(web_spec, &cte.name, None)?;
 
                         // Enrich columns with qualified names for proper scoping
                         for column in data_table.columns_mut() {

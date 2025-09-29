@@ -31,23 +31,23 @@ impl WebDataFetcher {
     }
 
     /// Fetch data from a WEB CTE specification (supports http://, https://, and file:// URLs)
-    /// The query_context parameter should be a unique identifier for the query (e.g., hash of the full SQL)
+    /// Each WEB CTE is cached independently based only on its own properties
     pub fn fetch(
         &self,
         spec: &WebCTESpec,
         table_name: &str,
-        query_context: Option<&str>,
+        _query_context: Option<&str>,  // Kept for API compatibility but not used for caching
     ) -> Result<DataTable> {
         // Check if this is a file:// URL (no caching for local files)
         if spec.url.starts_with("file://") {
             return self.fetch_file(spec, table_name);
         }
 
-        // Generate cache key from ALL Web CTE spec fields to ensure uniqueness
+        // Generate cache key from ALL Web CTE spec fields
+        // Each WEB CTE is independent - cache key depends only on the CTE itself
         #[cfg(feature = "redis-cache")]
         let cache_key = {
             let method = format!("{:?}", spec.method.as_ref().unwrap_or(&HttpMethod::GET));
-            let context_str = query_context.unwrap_or("default");
 
             // Use the full cache key generation with all WebCTESpec fields
             RedisCache::generate_key_full(
@@ -56,7 +56,7 @@ impl WebDataFetcher {
                 Some(&method),
                 &spec.headers,
                 spec.body.as_deref(),
-                context_str,               // Query context for additional uniqueness
+                "",                        // Empty context - not used for independent caching
                 spec.json_path.as_deref(), // JSON extraction path
                 &spec.form_files,          // Multipart form files
                 &spec.form_fields,         // Multipart form fields

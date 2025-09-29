@@ -127,18 +127,17 @@ impl RedisCache {
         method: Option<&str>,
         headers: &[(String, String)],
         body: Option<&str>,
-        query_context: &str,
+        _query_context: &str,  // Kept for API compatibility but not used
         json_path: Option<&str>,
         form_files: &[(String, String)],
         form_fields: &[(String, String)],
     ) -> String {
         let mut hasher = Sha256::new();
 
-        // Hash the query context first (most important for preventing collisions)
-        hasher.update(query_context.as_bytes());
-        hasher.update(b":::"); // Separator
+        // NOTE: We do NOT include query_context - each WEB CTE should be
+        // independent and cache based only on its own properties
 
-        // Hash the CTE name
+        // Hash the CTE name first
         hasher.update(table_name.as_bytes());
         hasher.update(b":::"); // Separator
 
