@@ -244,7 +244,54 @@ impl<'a> AstFormatter<'a> {
 
                 // Add BODY if specified
                 if let Some(body) = &web_spec.body {
-                    web_str.push_str(&format!(" {} '{}'", self.keyword("BODY"), body));
+                    // Check if the body looks like JSON (starts with { or [)
+                    let trimmed_body = body.trim();
+                    if (trimmed_body.starts_with('{') && trimmed_body.ends_with('}'))
+                        || (trimmed_body.starts_with('[') && trimmed_body.ends_with(']'))
+                    {
+                        // Try to prettify JSON
+                        match serde_json::from_str::<serde_json::Value>(trimmed_body) {
+                            Ok(json_val) => {
+                                // Pretty print JSON with 2-space indentation
+                                match serde_json::to_string_pretty(&json_val) {
+                                    Ok(pretty_json) => {
+                                        // Add proper indentation for each line
+                                        let base_indent = "    ".repeat(indent_level + 1);
+                                        let json_lines: Vec<String> = pretty_json
+                                            .lines()
+                                            .enumerate()
+                                            .map(|(i, line)| {
+                                                if i == 0 {
+                                                    line.to_string()
+                                                } else {
+                                                    format!("{}{}", base_indent, line)
+                                                }
+                                            })
+                                            .collect();
+                                        let formatted_json = json_lines.join("\n");
+
+                                        web_str.push_str(&format!(
+                                            " {} '{}'\n{}",
+                                            self.keyword("BODY"),
+                                            formatted_json,
+                                            base_indent
+                                        ));
+                                    }
+                                    Err(_) => {
+                                        // Fall back to original if pretty print fails
+                                        web_str.push_str(&format!(" {} '{}'", self.keyword("BODY"), body));
+                                    }
+                                }
+                            }
+                            Err(_) => {
+                                // Not valid JSON, use as-is
+                                web_str.push_str(&format!(" {} '{}'", self.keyword("BODY"), body));
+                            }
+                        }
+                    } else {
+                        // Not JSON, use as-is
+                        web_str.push_str(&format!(" {} '{}'", self.keyword("BODY"), body));
+                    }
                 }
 
                 // Add FORMAT if specified
