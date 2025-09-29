@@ -237,13 +237,17 @@ function M.pick_parameter_value(param_name, callback)
     is_custom = true
   })
 
-  -- If no items to select from, go straight to custom input
-  if #items == 0 then
+  -- If only one item and it's the custom input option, go straight to input
+  if #items == 1 and items[1].is_custom then
     vim.ui.input({
-      prompt = string.format("Enter value for {{%s}}: ", param_name),
-      default = ""
+      prompt = string.format("Enter value for %s: ", param_name),
+      default = param_data.last_used[param_name] or ""
     }, function(value)
-      if value then
+      -- Debug logging
+      vim.notify(string.format("Direct input received: '%s' (type: %s)", tostring(value), type(value)), vim.log.levels.DEBUG)
+
+      -- Accept any non-nil value, including empty string
+      if value ~= nil then
         add_to_history(param_name, value)
         callback(value)
       else
@@ -255,21 +259,42 @@ function M.pick_parameter_value(param_name, callback)
 
   -- Create picker
   vim.ui.select(items, {
-    prompt = string.format("Select value for {{%s}}:", param_name),
+    prompt = string.format("Select value for %s:", param_name),
     format_item = function(item)
       return item.display
     end
   }, function(item, idx)
-    -- Debug: Log what we got back
-    if not item and idx then
-      -- Sometimes vim.ui.select returns index but not the item
+    -- Handle different return patterns from vim.ui.select
+    if item == nil and idx == nil then
+      -- User cancelled (pressed ESC)
+      vim.notify(string.format("Parameter selection cancelled for %s", param_name), vim.log.levels.WARN)
+      callback(nil)
+      return
+    end
+
+    -- Some UI plugins return index instead of item
+    if not item and idx and idx > 0 and idx <= #items then
       item = items[idx]
     end
 
     if not item then
-      -- If cancelled or no selection, show a more informative message
-      vim.notify(string.format("No value selected for {{%s}}", param_name), vim.log.levels.WARN)
-      callback(nil)
+      -- Still no item, maybe pressed Enter on nothing
+      -- Default to custom input
+      vim.ui.input({
+        prompt = string.format("Enter value for %s: ", param_name),
+        default = param_data.last_used[param_name] or ""
+      }, function(value)
+        -- Debug logging
+        vim.notify(string.format("Input received: '%s' (type: %s)", tostring(value), type(value)), vim.log.levels.DEBUG)
+
+        -- Accept any non-nil value, including empty string
+        if value ~= nil then
+          add_to_history(param_name, value)
+          callback(value)
+        else
+          callback(nil)
+        end
+      end)
       return
     end
 
@@ -277,10 +302,14 @@ function M.pick_parameter_value(param_name, callback)
       -- Prompt for custom value
       local default = param_data.last_used[param_name] or ""
       vim.ui.input({
-        prompt = string.format("Enter value for {{%s}}: ", param_name),
+        prompt = string.format("Enter value for %s: ", param_name),
         default = default
       }, function(value)
-        if value then
+        -- Debug logging
+        vim.notify(string.format("Custom input received: '%s' (type: %s)", tostring(value), type(value)), vim.log.levels.DEBUG)
+
+        -- Accept any non-nil value, including empty string
+        if value ~= nil then
           add_to_history(param_name, value)
           callback(value)
         else
@@ -353,11 +382,12 @@ function M.resolve_parameters(text, callback)
 
     local param = table.remove(remaining, 1)
     M.pick_parameter_value(param, function(value)
-      if value then
+      if value ~= nil then
+        -- Accept any non-nil value, including empty string
         resolved[param] = value
         resolve_next()
       else
-        -- Cancelled
+        -- Cancelled (user pressed ESC or closed dialog)
         callback(nil)
       end
     end)
