@@ -97,6 +97,8 @@ function M.fetch_token_from_command(token_name, callback)
     on_exit = function(_, exit_code)
       if exit_code == 0 and #output > 0 then
         local token = table.concat(output, "")
+        -- Trim whitespace from token (newlines, spaces, etc.)
+        token = token:match("^%s*(.-)%s*$")
 
         if token and token ~= "" then
           -- Update token state
