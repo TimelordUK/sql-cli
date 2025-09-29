@@ -148,6 +148,24 @@ All refactoring operations are grouped under `\sr`:
 | `\srwk` | Add RANK functions |
 | `\srwv` | Add FIRST/LAST VALUE |
 
+## Result Filtering
+
+When viewing SQL results in the output buffer:
+
+| Keybinding | Description |
+|------------|-------------|
+| `\sz` | Open fuzzy filter (zoom/search through results) |
+| `/` | Open fuzzy filter (alternative - natural search key) |
+| `\sZ` | Reset filter (zoom out - show all results again) |
+
+### In Filter Window:
+| Keybinding | Description |
+|------------|-------------|
+| `<Esc>` | Close filter and restore original results |
+| `<Enter>` | Apply filter and close window |
+| `<C-l>` | Clear filter input |
+| `<C-1>` to `<C-9>` | Filter specific column only |
+
 ## Table Navigation Mode
 
 When in table navigation mode (activated with `\sn`):
