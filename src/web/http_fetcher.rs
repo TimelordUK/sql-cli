@@ -36,7 +36,7 @@ impl WebDataFetcher {
         &self,
         spec: &WebCTESpec,
         table_name: &str,
-        _query_context: Option<&str>,  // Kept for API compatibility but not used for caching
+        _query_context: Option<&str>, // Kept for API compatibility but not used for caching
     ) -> Result<DataTable> {
         // Check if this is a file:// URL (no caching for local files)
         if spec.url.starts_with("file://") {

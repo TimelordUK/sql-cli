@@ -127,7 +127,7 @@ impl RedisCache {
         method: Option<&str>,
         headers: &[(String, String)],
         body: Option<&str>,
-        _query_context: &str,  // Kept for API compatibility but not used
+        _query_context: &str, // Kept for API compatibility but not used
         json_path: Option<&str>,
         form_files: &[(String, String)],
         form_fields: &[(String, String)],
