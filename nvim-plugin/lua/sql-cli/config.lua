@@ -105,6 +105,9 @@ M.defaults = {
     query_history = "<leader>sQ",        -- Query history recall (capital Q for query)
     export_history = "<leader>se",       -- Export query history (lowercase e for export)
     import_history = "<leader>si",       -- Import query history (lowercase i for import)
+    -- Column statistics
+    sum_column = "<leader>sS",           -- Sum/statistics for column at cursor (capital S for Sum)
+    show_totals = nil,                   -- Show totals row (disabled by default, use command)
   },
 
   -- Output window settings

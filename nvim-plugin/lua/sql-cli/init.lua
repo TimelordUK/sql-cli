@@ -217,6 +217,17 @@ function M.create_commands()
     local fuzzy = require('sql-cli.fuzzy_filter')
     fuzzy.reset_filter()
   end, { desc = "Reset result filter" })
+
+  -- Column sum commands
+  vim.api.nvim_create_user_command("SqlCliSumColumn", function()
+    local column_sum = require('sql-cli.column_sum')
+    column_sum.sum_column_at_cursor()
+  end, { desc = "Calculate sum/statistics for column at cursor" })
+
+  vim.api.nvim_create_user_command("SqlCliShowTotals", function()
+    local column_sum = require('sql-cli.column_sum')
+    column_sum.show_all_totals()
+  end, { desc = "Add totals row to table" })
 end
 
 -- Setup keymaps
@@ -634,6 +645,21 @@ function M.setup_keymaps()
     vim.keymap.set("n", keymaps.sparkline_at_cursor, function()
       visualize.sparkline_at_cursor()
     end, { desc = "Sparkline from query at cursor", silent = true })
+  end
+
+  -- Column sum/statistics
+  if keymaps.sum_column then
+    vim.keymap.set("n", keymaps.sum_column, function()
+      local column_sum = require('sql-cli.column_sum')
+      column_sum.sum_column_at_cursor()
+    end, { desc = "Sum/statistics for column at cursor", silent = true })
+  end
+
+  if keymaps.show_totals then
+    vim.keymap.set("n", keymaps.show_totals, function()
+      local column_sum = require('sql-cli.column_sum')
+      column_sum.show_all_totals()
+    end, { desc = "Add totals row to table", silent = true })
   end
 end
 
