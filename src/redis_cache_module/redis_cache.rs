@@ -86,21 +86,70 @@ impl RedisCache {
         }
     }
 
-    /// Generate a cache key from Web CTE components
+    /// Generate a cache key from Web CTE components (legacy - kept for compatibility)
     pub fn generate_key(
+        table_name: &str, // CTE name to prevent collisions
         url: &str,
         method: Option<&str>,
         headers: &[(String, String)],
         body: Option<&str>,
     ) -> String {
+        // Call the new method with empty context for backward compatibility
+        Self::generate_key_with_context(table_name, url, method, headers, body, "")
+    }
+
+    /// Generate a cache key from Web CTE components with query context
+    pub fn generate_key_with_context(
+        table_name: &str, // CTE name
+        url: &str,
+        method: Option<&str>,
+        headers: &[(String, String)],
+        body: Option<&str>,
+        query_context: &str, // Hash or unique identifier of the full query
+    ) -> String {
+        Self::generate_key_full(
+            table_name,
+            url,
+            method,
+            headers,
+            body,
+            query_context,
+            None, // json_path
+            &[],  // form_files
+            &[],  // form_fields
+        )
+    }
+
+    /// Generate a complete cache key from all Web CTE components
+    pub fn generate_key_full(
+        table_name: &str,
+        url: &str,
+        method: Option<&str>,
+        headers: &[(String, String)],
+        body: Option<&str>,
+        query_context: &str,
+        json_path: Option<&str>,
+        form_files: &[(String, String)],
+        form_fields: &[(String, String)],
+    ) -> String {
         let mut hasher = Sha256::new();
+
+        // Hash the query context first (most important for preventing collisions)
+        hasher.update(query_context.as_bytes());
+        hasher.update(b":::"); // Separator
+
+        // Hash the CTE name
+        hasher.update(table_name.as_bytes());
+        hasher.update(b":::"); // Separator
 
         // Hash URL
         hasher.update(url.as_bytes());
+        hasher.update(b":::");
 
         // Hash method
         if let Some(method) = method {
             hasher.update(method.as_bytes());
+            hasher.update(b":::");
         }
 
         // Hash headers (sorted for consistency)
@@ -108,15 +157,52 @@ impl RedisCache {
         sorted_headers.sort_by(|a, b| a.0.cmp(&b.0));
         for (key, value) in sorted_headers {
             hasher.update(key.as_bytes());
+            hasher.update(b":");
             hasher.update(value.as_bytes());
+            hasher.update(b";");
         }
 
         // Hash body
         if let Some(body) = body {
+            hasher.update(b"body:");
             hasher.update(body.as_bytes());
+            hasher.update(b":::");
         }
 
-        format!("sql-cli:web:{:x}", hasher.finalize())
+        // Hash json_path
+        if let Some(path) = json_path {
+            hasher.update(b"json_path:");
+            hasher.update(path.as_bytes());
+            hasher.update(b":::");
+        }
+
+        // Hash form_files (sorted for consistency)
+        if !form_files.is_empty() {
+            let mut sorted_files = form_files.to_vec();
+            sorted_files.sort_by(|a, b| a.0.cmp(&b.0));
+            for (field, path) in sorted_files {
+                hasher.update(b"file:");
+                hasher.update(field.as_bytes());
+                hasher.update(b"=");
+                hasher.update(path.as_bytes());
+                hasher.update(b";");
+            }
+        }
+
+        // Hash form_fields (sorted for consistency)
+        if !form_fields.is_empty() {
+            let mut sorted_fields = form_fields.to_vec();
+            sorted_fields.sort_by(|a, b| a.0.cmp(&b.0));
+            for (field, value) in sorted_fields {
+                hasher.update(b"field:");
+                hasher.update(field.as_bytes());
+                hasher.update(b"=");
+                hasher.update(value.as_bytes());
+                hasher.update(b";");
+            }
+        }
+
+        format!("sql-cli:web:{}:{:x}", table_name, hasher.finalize())
     }
 
     /// Check if cache is enabled

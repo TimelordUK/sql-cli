@@ -31,21 +31,35 @@ impl WebDataFetcher {
     }
 
     /// Fetch data from a WEB CTE specification (supports http://, https://, and file:// URLs)
-    pub fn fetch(&self, spec: &WebCTESpec, table_name: &str) -> Result<DataTable> {
+    /// The query_context parameter should be a unique identifier for the query (e.g., hash of the full SQL)
+    pub fn fetch(
+        &self,
+        spec: &WebCTESpec,
+        table_name: &str,
+        query_context: Option<&str>,
+    ) -> Result<DataTable> {
         // Check if this is a file:// URL (no caching for local files)
         if spec.url.starts_with("file://") {
             return self.fetch_file(spec, table_name);
         }
 
-        // Generate cache key
+        // Generate cache key from ALL Web CTE spec fields to ensure uniqueness
         #[cfg(feature = "redis-cache")]
         let cache_key = {
             let method = format!("{:?}", spec.method.as_ref().unwrap_or(&HttpMethod::GET));
-            RedisCache::generate_key(
+            let context_str = query_context.unwrap_or("default");
+
+            // Use the full cache key generation with all WebCTESpec fields
+            RedisCache::generate_key_full(
+                table_name, // CTE name
                 &spec.url,
                 Some(&method),
                 &spec.headers,
                 spec.body.as_deref(),
+                context_str,               // Query context for additional uniqueness
+                spec.json_path.as_deref(), // JSON extraction path
+                &spec.form_files,          // Multipart form files
+                &spec.form_fields,         // Multipart form fields
             )
         };
 
@@ -61,7 +75,7 @@ impl WebDataFetcher {
                             eprintln!(
                                 "Cache HIT for {} (key: {}...)",
                                 table_name,
-                                &cache_key[0..32.min(cache_key.len())]
+                                &cache_key[0..48.min(cache_key.len())]
                             );
                             return Ok(table);
                         }
@@ -74,7 +88,7 @@ impl WebDataFetcher {
                     eprintln!(
                         "Cache MISS for {} (key: {}...)",
                         table_name,
-                        &cache_key[0..32.min(cache_key.len())]
+                        &cache_key[0..48.min(cache_key.len())]
                     );
                 }
             }

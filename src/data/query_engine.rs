@@ -1,5 +1,6 @@
 use anyhow::{anyhow, Result};
 use fxhash::FxHashSet;
+use sha2::{Digest, Sha256};
 use std::cmp::min;
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -186,7 +187,8 @@ impl QueryEngine {
                     use crate::web::http_fetcher::WebDataFetcher;
 
                     let fetcher = WebDataFetcher::new()?;
-                    let mut data_table = fetcher.fetch(web_spec, &cte.name)?;
+                    // Pass None for query context (no full SQL available in these contexts)
+                    let mut data_table = fetcher.fetch(web_spec, &cte.name, None)?;
 
                     // Enrich columns with qualified names for proper scoping
                     for column in data_table.columns_mut() {
@@ -252,7 +254,8 @@ impl QueryEngine {
                     use crate::web::http_fetcher::WebDataFetcher;
 
                     let fetcher = WebDataFetcher::new()?;
-                    let mut data_table = fetcher.fetch(web_spec, &cte.name)?;
+                    // Pass None for query context (no full SQL available in these contexts)
+                    let mut data_table = fetcher.fetch(web_spec, &cte.name, None)?;
 
                     // Enrich columns with qualified names for proper scoping
                     for column in data_table.columns_mut() {
@@ -284,6 +287,12 @@ impl QueryEngine {
     ) -> Result<(DataView, ExecutionPlan)> {
         let mut plan_builder = ExecutionPlanBuilder::new();
         let start_time = Instant::now();
+
+        // Compute a hash of the full query for cache key uniqueness
+        let mut hasher = Sha256::new();
+        hasher.update(sql.as_bytes());
+        let query_hash = format!("{:x}", hasher.finalize());
+        let query_context = &query_hash[0..16]; // Use first 16 chars of hash
 
         // Parse the SQL query
         plan_builder.begin_step(StepType::Parse, "Parse SQL query".to_string());
@@ -372,7 +381,9 @@ impl QueryEngine {
                         use crate::web::http_fetcher::WebDataFetcher;
 
                         let fetcher = WebDataFetcher::new()?;
-                        let mut data_table = fetcher.fetch(web_spec, &cte.name)?;
+                        // Pass query context (hash) to prevent cache collisions
+                        let mut data_table =
+                            fetcher.fetch(web_spec, &cte.name, Some(query_context))?;
 
                         // Enrich columns with qualified names for proper scoping
                         for column in data_table.columns_mut() {
