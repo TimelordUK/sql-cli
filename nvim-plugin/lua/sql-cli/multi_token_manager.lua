@@ -96,9 +96,14 @@ function M.fetch_token_from_command(token_name, callback)
     end,
     on_exit = function(_, exit_code)
       if exit_code == 0 and #output > 0 then
-        local token = table.concat(output, "")
-        -- Trim whitespace from token (newlines, spaces, etc.)
-        token = token:match("^%s*(.-)%s*$")
+        -- Get the token from stdout (should be just the token, nothing else)
+        local token = nil
+        for _, line in ipairs(output) do
+          if line and line ~= "" then
+            token = line:match("^%s*(.-)%s*$")  -- Trim whitespace
+            break  -- Take first non-empty line
+          end
+        end
 
         if token and token ~= "" then
           -- Update token state
