@@ -6,6 +6,21 @@ local table_nav = require('sql-cli.table_nav')
 
 local M = {}
 
+-- Helper function to expand environment variables in text
+local function expand_env_variables(text)
+  -- Replace ${VAR_NAME} patterns with environment variable values
+  local expanded = text:gsub('%${([%w_]+)}', function(var)
+    local value = vim.env[var]
+    if value then
+      return value
+    else
+      -- Keep the original placeholder if no env var found
+      return '${' .. var .. '}'
+    end
+  end)
+  return expanded
+end
+
 -- Execute query from buffer or provided string
 function M.execute_query(query, config, state, skip_params)
   -- Get query from buffer if not provided
@@ -85,6 +100,8 @@ function M.execute_query(query, config, state, skip_params)
           -- Set up keymaps for the preview window
           local function close_and_execute()
             vim.api.nvim_win_close(win, true)
+            -- Expand environment variables (for tokens like ${JWT_TOKEN})
+            resolved_query = expand_env_variables(resolved_query)
             -- Save the resolved query
             state:set_last_query(resolved_query)
             -- Add to history for recall
@@ -145,6 +162,9 @@ function M.execute_query(query, config, state, skip_params)
       return
     end
   end
+
+  -- Expand environment variables (for tokens like ${JWT_TOKEN})
+  query = expand_env_variables(query)
 
   -- Save the query
   state:set_last_query(query)
@@ -230,6 +250,8 @@ function M.execute_query_with_plan(query, config, state, skip_params)
 
           local function close_and_execute()
             vim.api.nvim_win_close(win, true)
+            -- Expand environment variables (for tokens like ${JWT_TOKEN})
+            resolved_query = expand_env_variables(resolved_query)
             state:set_last_query(resolved_query)
             -- Add to history for recall
             require('sql-cli.query_history').add_to_history(resolved_query)
@@ -286,6 +308,9 @@ function M.execute_query_with_plan(query, config, state, skip_params)
       return
     end
   end
+
+  -- Expand environment variables (for tokens like ${JWT_TOKEN})
+  query = expand_env_variables(query)
 
   -- Save the query
   state:set_last_query(query)
@@ -409,6 +434,10 @@ end
 
 -- Execute query at cursor with execution plan
 function M.execute_at_cursor_with_plan(config, state)
+  -- Save current window and cursor position to restore later
+  local original_win = vim.api.nvim_get_current_win()
+  local original_cursor = vim.api.nvim_win_get_cursor(original_win)
+
   local bufnr = vim.api.nvim_get_current_buf()
   local cursor_line = vim.fn.line('.')
   local lines = vim.api.nvim_buf_get_lines(bufnr, 0, -1, false)
@@ -556,6 +585,12 @@ function M.run_command(query, show_plan, config, state)
   -- Clear output if configured
   local output_buf = state:get_output_buf()
   if config.output.clear_on_run and output_buf then
+    -- Clear table navigation state if active on this buffer
+    local table_nav = require('sql-cli.table_nav')
+    if table_nav.is_active() then
+      table_nav.clear_navigation()
+    end
+
     -- Make buffer modifiable to clear it (table_nav may have made it readonly)
     vim.bo[output_buf].modifiable = true
     vim.bo[output_buf].readonly = false
@@ -703,13 +738,20 @@ function M.run_command(query, show_plan, config, state)
           vim.api.nvim_buf_set_lines(output_buf, -1, -1, false, footer)
         end
 
-        -- Focus output window if configured
+        -- Always scroll output window to top to show new results
         local output_win = state:get_output_win()
+        if output_win and vim.api.nvim_win_is_valid(output_win) then
+          -- Move cursor to the top to show results from beginning
+          vim.api.nvim_win_set_cursor(output_win, {1, 0})
+          -- Ensure we're scrolled to the top
+          vim.api.nvim_win_call(output_win, function()
+            vim.cmd('normal! zt')
+          end)
+        end
+
+        -- Focus output window if configured
         if config.output.focus_on_run and ui_callbacks.is_output_window_valid and ui_callbacks.is_output_window_valid() and output_win then
           vim.api.nvim_set_current_win(output_win)
-          -- Move cursor to end
-          local line_count = vim.api.nvim_buf_line_count(output_buf)
-          vim.api.nvim_win_set_cursor(output_win, {line_count, 0})
 
           -- Restore original window and cursor position if saved
           if state.original_win and vim.api.nvim_win_is_valid(state.original_win) then
@@ -741,10 +783,21 @@ function M.run_command(query, show_plan, config, state)
               if config.table_navigation and config.table_navigation.enabled_by_default then
                 local lines = vim.api.nvim_buf_get_lines(output_buf, 0, -1, false)
                 if #lines > 5 then -- Make sure we have some content
+                  -- Clear any existing navigation state before re-initializing
+                  if table_nav.is_active() then
+                    table_nav.clear_navigation()
+                  end
+
                   -- Pass the output window to init_navigation
-                  local output_win = state:get_output_win()
-                  if table_nav.init_navigation(output_buf, output_win) then
+                  local nav_output_win = state:get_output_win()
+                  if table_nav.init_navigation(output_buf, nav_output_win) then
                     table_nav.setup_keymaps(output_buf, config)
+
+                    -- Scroll to top to show table header
+                    if nav_output_win and vim.api.nvim_win_is_valid(nav_output_win) then
+                      vim.api.nvim_win_set_cursor(nav_output_win, {1, 0})
+                    end
+
                     local nav_keys = config.table_navigation and config.table_navigation.hijack_hjkl == false and "arrow keys" or "h/j/k/l"
                     vim.notify("Table navigation enabled (" .. nav_keys .. " to move, yy to yank, <leader>sn to toggle)", vim.log.levels.INFO)
                   else
