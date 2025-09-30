@@ -113,9 +113,10 @@ function M.test_cte_at_cursor(config, state)
   end
 
   vim.notify(string.format("Testing CTE: %s (CTE #%d of %d)", target_cte.name, target_index, result.total), vim.log.levels.INFO)
+  vim.notify(string.format("Target position for query generation: %d", target_index), vim.log.levels.INFO)
 
   -- Generate test query
-  local test_query = M.generate_simple_test_query(query_lines, target_cte, result.ctes)
+  local test_query = M.generate_simple_test_query(query_lines, target_cte, result.ctes, target_index)
 
   -- Show the query in a modal for confirmation
   M.show_query_confirmation_modal(test_query, function(action)
@@ -152,19 +153,20 @@ function M.test_cte_at_cursor(config, state)
 end
 
 -- Generate a simple test query for a CTE
-function M.generate_simple_test_query(query_lines, target_cte, all_ctes)
+function M.generate_simple_test_query(query_lines, target_cte, all_ctes, target_position)
   -- Build test query by including all CTEs up to and including the target
   local test_lines = {}
   local with_found = false
   local paren_depth = 0
   local current_cte_idx = 0
 
-  -- Find which position our target CTE is in (1-based)
-  local target_position = nil
-  for idx, cte in ipairs(all_ctes) do
-    if cte.name == target_cte.name then
-      target_position = idx
-      break
+  -- If target_position not provided, find it from the CTE name
+  if not target_position then
+    for idx, cte in ipairs(all_ctes) do
+      if cte.name == target_cte.name then
+        target_position = idx
+        break
+      end
     end
   end
 
@@ -173,7 +175,7 @@ function M.generate_simple_test_query(query_lines, target_cte, all_ctes)
     return ""
   end
 
-  vim.notify(string.format("Building query for CTE '%s' at position %d", target_cte.name, target_position), vim.log.levels.DEBUG)
+  vim.notify(string.format("Building query for CTE '%s' at position %d", target_cte.name, target_position), vim.log.levels.INFO)
 
   -- Simple approach: Include everything from WITH up to and including target CTE
   for i, line in ipairs(query_lines) do
@@ -201,7 +203,7 @@ function M.generate_simple_test_query(query_lines, target_cte, all_ctes)
       local cte_name = line:match("^%s*([%w_]+)%s+AS%s*%(")
       if cte_name then
         current_cte_idx = current_cte_idx + 1
-        vim.notify(string.format("Found CTE %d: %s", current_cte_idx, cte_name), vim.log.levels.DEBUG)
+        vim.notify(string.format("Found CTE %d: %s (target=%d)", current_cte_idx, cte_name, target_position), vim.log.levels.INFO)
 
         -- If we've gone past our target, don't include this line
         if current_cte_idx > target_position then
@@ -209,7 +211,7 @@ function M.generate_simple_test_query(query_lines, target_cte, all_ctes)
           if #test_lines > 0 then
             test_lines[#test_lines] = test_lines[#test_lines]:gsub(",%s*$", "")
           end
-          vim.notify(string.format("Stopping - past target CTE"), vim.log.levels.DEBUG)
+          vim.notify(string.format("Stopping - CTE %d > target %d", current_cte_idx, target_position), vim.log.levels.INFO)
           break
         end
       end
@@ -229,7 +231,7 @@ function M.generate_simple_test_query(query_lines, target_cte, all_ctes)
       if current_cte_idx == target_position and paren_depth == 0 and line:match("%)") then
         -- Remove trailing comma if present
         test_lines[#test_lines] = test_lines[#test_lines]:gsub(",%s*$", "")
-        vim.notify(string.format("Target CTE complete at line %d", i), vim.log.levels.DEBUG)
+        vim.notify(string.format("Target CTE %d complete at line %d (paren_depth=%d)", current_cte_idx, i, paren_depth), vim.log.levels.INFO)
         break
       end
 
