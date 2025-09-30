@@ -551,9 +551,18 @@ function M.move_right()
     M.init_navigation(bufnr, win)
   end
 
-  if nav_state.table_info and nav_state.current_col < #nav_state.table_info.column_positions then
-    nav_state.current_col = nav_state.current_col + 1
-    M.highlight_current_cell()
+  if nav_state.table_info and nav_state.table_info.column_positions then
+    local max_col = #nav_state.table_info.column_positions
+    if nav_state.current_col < max_col then
+      nav_state.current_col = nav_state.current_col + 1
+      M.highlight_current_cell()
+    else
+      -- Debug: at boundary
+      vim.notify(string.format("At last column (%d of %d). Columns: %s",
+        nav_state.current_col, max_col,
+        table.concat(nav_state.table_info.columns or {}, ", ")),
+        vim.log.levels.DEBUG)
+    end
   end
 end
 
@@ -727,6 +736,63 @@ function M.yank_column_as_json()
   vim.notify("Yanked column '" .. col_name .. "' as JSON array (" .. #values .. " values)", vim.log.levels.INFO)
 end
 
+-- Show diagnostic information about current table
+function M.show_table_diagnostic()
+  if not nav_state.table_info then
+    vim.notify("No table navigation active", vim.log.levels.WARN)
+    return
+  end
+
+  local info = nav_state.table_info
+  local lines = {}
+
+  table.insert(lines, "=== Table Navigation Diagnostic ===")
+  table.insert(lines, "")
+  table.insert(lines, "Position: Row " .. nav_state.current_row .. ", Col " .. nav_state.current_col)
+  table.insert(lines, "")
+  table.insert(lines, "Table Structure:")
+  table.insert(lines, "  Header row: " .. tostring(info.header_row))
+  table.insert(lines, "  Separator row: " .. tostring(info.separator_row))
+  table.insert(lines, "  Data start: " .. tostring(info.data_start))
+  table.insert(lines, "  Data end: " .. tostring(info.data_end))
+  table.insert(lines, "  Total rows: " .. tostring(info.data_end and info.data_start and (info.data_end - info.data_start + 1) or 0))
+  table.insert(lines, "  Style: " .. tostring(info.style))
+  table.insert(lines, "")
+  table.insert(lines, "Columns detected: " .. #info.column_positions)
+  table.insert(lines, "")
+
+  for i, col_name in ipairs(info.columns) do
+    local pos = info.column_positions[i]
+    local marker = (i == nav_state.current_col) and " <-- CURRENT" or ""
+    table.insert(lines, string.format("  %2d. %-30s (chars %d-%d)%s",
+      i, col_name, pos.start, pos.stop, marker))
+  end
+
+  -- Create floating window with diagnostic info
+  local buf = vim.api.nvim_create_buf(false, true)
+  vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
+
+  local width = 80
+  local height = math.min(#lines + 2, vim.o.lines - 10)
+  local row = math.floor((vim.o.lines - height) / 2)
+  local col = math.floor((vim.o.columns - width) / 2)
+
+  local win = vim.api.nvim_open_win(buf, true, {
+    relative = "editor",
+    width = width,
+    height = height,
+    row = row,
+    col = col,
+    style = "minimal",
+    border = "rounded",
+    title = " Table Diagnostic ",
+    title_pos = "center",
+  })
+
+  vim.api.nvim_buf_set_keymap(buf, "n", "q", ":close<CR>", { noremap = true, silent = true })
+  vim.api.nvim_buf_set_keymap(buf, "n", "<Esc>", ":close<CR>", { noremap = true, silent = true })
+end
+
 -- Get current cell info (for statusline)
 function M.get_cell_info()
   if not nav_state.table_info or not nav_state.table_info.data_start then
@@ -834,6 +900,9 @@ function M.setup_keymaps(bufnr, config)
 
   -- Yank column as JSON array (for WEB CTE bodies)
   vim.keymap.set("n", "<leader>sYj", M.yank_column_as_json, opts)
+
+  -- Diagnostic command to show table info
+  vim.keymap.set("n", "<leader>sd", M.show_table_diagnostic, opts)
 
   -- Export operations with \s prefix
   vim.keymap.set("n", "<leader>se", function()
