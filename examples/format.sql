@@ -1,22 +1,10 @@
--- Example: Testing SQL formatter with WEB CTE and JSON pretty-printing
--- This file demonstrates how the formatter handles compact JSON in FORM_FIELD values
+-- Example: Testing SQL formatter - UNFORMATTED VERSION
+-- Test these cases in nvim to verify formatting works correctly:
+-- 1. JSON pretty-printing with $JSON$ delimiters
+-- 2. Window function ROWS BETWEEN frame preservation
+-- 3. Complex nested JSON in FORM_FIELD
 
-WITH
-    WEB fix_custom AS (
-        URL 'http://localhost:5050/api/messagequery/upload' METHOD POST FORMAT CSV
-        FORM_FILE 'file' 'data/fix_messages.json'
-       FORM_FIELD 'query' '{"MessageTypeField":"header.MsgType","MessageTypes":{"8":{"Select":{"msg_type":"header.MsgType","price":"body.LastPx","quantity":"body.LastQty","side":"body.Side","symbol":"body.Symbol","trader":"Parties[PartyRole=11].PartyID"},"Where":{"body.ExecType":"F"}},"J":{"Select":{"msg_type":"header.MsgType","price":"body.AvgPx","quantity":"body.Quantity","side":"body.Side","symbol":"body.Symbol","trader":"null"}}},"OutputColumns":["msg_type","symbol","side","quantity","price","trader"],"OutputFormat":"csv"}'
-    )
-SELECT
-    msg_type,
-    CASE
-        WHEN msg_type = '8' THEN 'Execution'
-        WHEN msg_type = 'J' THEN 'Allocation'
-    END AS message_type,
-    symbol,
-    quantity,
-    price,
-    trader
-FROM fix_custom
-WHERE quantity > 500
-ORDER BY price DESC;
+-- Test Case 1: Compact JSON body (should expand with $JSON$ delimiters)
+WITH WEB api_data AS (URL 'https://api.example.com/data' METHOD POST FORMAT JSON BODY $JSON${"query":{"filters":[{"field":"status","operator":"==","value":"active"},{"field":"price","operator":">","value":100}],"selectors":["$.data[?(@.active==true)]","$.items[*].value"],"sort":{"by":"date","order":"desc"}},"pagination":{"limit":100,"offset":0}}$JSON$),
+WEB fix_custom AS (URL 'http://localhost:5050/api/messagequery/upload' METHOD POST FORMAT CSV FORM_FILE 'file' 'data/fix_messages.json' FORM_FIELD 'query' $JSON${"MessageTypeField":"header.MsgType","MessageTypes":{"8":{"Select":{"msg_type":"header.MsgType","price":"body.LastPx","quantity":"body.LastQty","side":"body.Side","symbol":"body.Symbol","trader":"Parties[PartyRole=11].PartyID"},"Where":{"body.ExecType":"F"}},"J":{"Select":{"msg_type":"header.MsgType","price":"body.AvgPx","quantity":"body.Quantity","side":"body.Side","symbol":"body.Symbol","trader":"null"}}},"OutputColumns":["msg_type","symbol","side","quantity","price","trader"],"OutputFormat":"csv"}$JSON$)
+SELECT msg_type,symbol,quantity,price,trader,MIN(price) OVER (PARTITION BY symbol ORDER BY price ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) as min_price_to_row,MAX(price) OVER (PARTITION BY symbol ORDER BY price ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) as max_price_to_row,AVG(price) OVER (PARTITION BY symbol ORDER BY price ROWS BETWEEN 3 PRECEDING AND CURRENT ROW) as rolling_avg_4,SUM(quantity) OVER (ORDER BY price ROWS BETWEEN 6 PRECEDING AND CURRENT ROW) as moving_sum_7,COUNT(*) OVER (PARTITION BY msg_type ORDER BY price RANGE BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) as running_count,FIRST_VALUE(price) OVER (PARTITION BY symbol ORDER BY price ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING) as first_price,LAST_VALUE(price) OVER (PARTITION BY symbol ORDER BY price ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING) as last_price,AVG(quantity) OVER (ORDER BY price ROWS BETWEEN 2 PRECEDING AND 2 FOLLOWING) as centered_avg_5,ROW_NUMBER() OVER (PARTITION BY msg_type ORDER BY price DESC) as price_rank,RANK() OVER (ORDER BY quantity DESC) as quantity_rank,CASE WHEN msg_type='8' THEN 'Execution' WHEN msg_type='J' THEN 'Allocation' ELSE 'Other' END AS message_type FROM fix_custom WHERE quantity>500 ORDER BY price DESC,quantity DESC LIMIT 100;

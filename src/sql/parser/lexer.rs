@@ -68,6 +68,7 @@ pub enum Token {
     Identifier(String),
     QuotedIdentifier(String), // For "Customer Id" style identifiers
     StringLiteral(String),
+    JsonBlock(String), // For $JSON$...$ JSON$ delimited blocks
     NumberLiteral(String),
     Star,
 
@@ -225,6 +226,46 @@ impl Lexer {
 
     fn peek(&self, offset: usize) -> Option<char> {
         self.input.get(self.position + offset).copied()
+    }
+
+    /// Peek ahead n characters and return as a string
+    fn peek_string(&self, n: usize) -> String {
+        let mut result = String::new();
+        for i in 0..n {
+            if let Some(ch) = self.input.get(self.position + i) {
+                result.push(*ch);
+            } else {
+                break;
+            }
+        }
+        result
+    }
+
+    /// Read a JSON block delimited by $JSON$...$JSON$
+    /// Consumes the opening delimiter and reads until closing $JSON$
+    fn read_json_block(&mut self) -> String {
+        let mut result = String::new();
+
+        // Skip opening $JSON$
+        for _ in 0..6 {
+            self.advance();
+        }
+
+        // Read until we find closing $JSON$
+        while let Some(ch) = self.current_char {
+            // Check if we're at the closing delimiter
+            if ch == '$' && self.peek_string(6) == "$JSON$" {
+                // Skip closing $JSON$
+                for _ in 0..6 {
+                    self.advance();
+                }
+                break;
+            }
+            result.push(ch);
+            self.advance();
+        }
+
+        result
     }
 
     fn skip_whitespace(&mut self) {
@@ -440,6 +481,18 @@ impl Lexer {
                 // Double quotes = identifier
                 let ident_val = self.read_string();
                 Token::QuotedIdentifier(ident_val)
+            }
+            Some('$') => {
+                // Check if this is $JSON$ delimiter
+                if self.peek_string(6) == "$JSON$" {
+                    let json_content = self.read_json_block();
+                    Token::JsonBlock(json_content)
+                } else {
+                    // Not a JSON block, could be part of identifier or parameter
+                    // For now, treat as identifier start
+                    let ident = self.read_identifier();
+                    Token::Identifier(ident)
+                }
             }
             Some('\'') => {
                 // Single quotes = string literal

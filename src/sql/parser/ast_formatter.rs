@@ -255,31 +255,50 @@ impl<'a> AstFormatter<'a> {
                                 // Pretty print JSON with 2-space indentation
                                 match serde_json::to_string_pretty(&json_val) {
                                     Ok(pretty_json) => {
-                                        // Add proper indentation for each line
-                                        let base_indent = "    ".repeat(indent_level + 1);
-                                        let json_lines: Vec<String> = pretty_json
-                                            .lines()
-                                            .enumerate()
-                                            .map(|(i, line)| {
-                                                if i == 0 {
-                                                    line.to_string()
-                                                } else {
-                                                    format!("{}{}", base_indent, line)
-                                                }
-                                            })
-                                            .collect();
-                                        let formatted_json = json_lines.join("\n");
+                                        // Check if JSON is complex (multiline or has special chars)
+                                        let is_complex = pretty_json.lines().count() > 1
+                                            || pretty_json.contains('"')
+                                            || pretty_json.contains('\\');
 
-                                        web_str.push_str(&format!(
-                                            " {} '{}'\n{}",
-                                            self.keyword("BODY"),
-                                            formatted_json,
-                                            base_indent
-                                        ));
+                                        if is_complex {
+                                            // Use $JSON$ delimiters for complex JSON
+                                            let base_indent = "    ".repeat(indent_level + 1);
+                                            let json_lines: Vec<String> = pretty_json
+                                                .lines()
+                                                .enumerate()
+                                                .map(|(i, line)| {
+                                                    if i == 0 {
+                                                        line.to_string()
+                                                    } else {
+                                                        format!("{}{}", base_indent, line)
+                                                    }
+                                                })
+                                                .collect();
+                                            let formatted_json = json_lines.join("\n");
+
+                                            web_str.push_str(&format!(
+                                                " {} $JSON${}\n{}$JSON$\n{}",
+                                                self.keyword("BODY"),
+                                                formatted_json,
+                                                base_indent,
+                                                base_indent
+                                            ));
+                                        } else {
+                                            // Simple JSON, use regular single quotes
+                                            web_str.push_str(&format!(
+                                                " {} '{}'",
+                                                self.keyword("BODY"),
+                                                pretty_json
+                                            ));
+                                        }
                                     }
                                     Err(_) => {
                                         // Fall back to original if pretty print fails
-                                        web_str.push_str(&format!(" {} '{}'", self.keyword("BODY"), body));
+                                        web_str.push_str(&format!(
+                                            " {} '{}'",
+                                            self.keyword("BODY"),
+                                            body
+                                        ));
                                     }
                                 }
                             }
@@ -798,6 +817,37 @@ impl<'a> AstFormatter<'a> {
                     }
                 }
 
+                // Add window frame specification if present
+                if let Some(frame) = &window_spec.frame {
+                    // Add space before frame specification
+                    if !window_spec.partition_by.is_empty() || !window_spec.order_by.is_empty() {
+                        result.push(' ');
+                    }
+
+                    // Format frame unit (ROWS or RANGE)
+                    match frame.unit {
+                        FrameUnit::Rows => result.push_str(&self.keyword("ROWS")),
+                        FrameUnit::Range => result.push_str(&self.keyword("RANGE")),
+                    }
+
+                    result.push(' ');
+
+                    // Format frame bounds
+                    if let Some(end) = &frame.end {
+                        // BETWEEN start AND end
+                        result.push_str(&self.keyword("BETWEEN"));
+                        result.push(' ');
+                        result.push_str(&self.format_frame_bound(&frame.start));
+                        result.push(' ');
+                        result.push_str(&self.keyword("AND"));
+                        result.push(' ');
+                        result.push_str(&self.format_frame_bound(end));
+                    } else {
+                        // Just a single bound (uncommon but valid)
+                        result.push_str(&self.format_frame_bound(&frame.start));
+                    }
+                }
+
                 result.push(')');
                 result
             }
@@ -833,6 +883,16 @@ impl<'a> AstFormatter<'a> {
             }
         } else if let Some(condition) = where_clause.conditions.first() {
             write!(result, " {}", self.format_expression(&condition.expr)).unwrap();
+        }
+    }
+
+    fn format_frame_bound(&self, bound: &FrameBound) -> String {
+        match bound {
+            FrameBound::UnboundedPreceding => self.keyword("UNBOUNDED PRECEDING"),
+            FrameBound::CurrentRow => self.keyword("CURRENT ROW"),
+            FrameBound::UnboundedFollowing => self.keyword("UNBOUNDED FOLLOWING"),
+            FrameBound::Preceding(n) => format!("{} {}", n, self.keyword("PRECEDING")),
+            FrameBound::Following(n) => format!("{} {}", n, self.keyword("FOLLOWING")),
         }
     }
 

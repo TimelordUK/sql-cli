@@ -208,6 +208,7 @@ impl TextNavigator {
             Token::Identifier(s) => s,
             Token::QuotedIdentifier(s) => s,
             Token::StringLiteral(s) => s,
+            Token::JsonBlock(s) => s,
             Token::NumberLiteral(s) => s,
             Token::Star => "*",
             Token::Comma => ",",

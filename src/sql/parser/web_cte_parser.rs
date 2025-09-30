@@ -164,12 +164,12 @@ impl<'a> WebCteParser<'a> {
 
     fn parse_body(parser: &mut crate::sql::recursive_parser::Parser) -> Result<String, String> {
         match &parser.current_token {
-            Token::StringLiteral(body) => {
+            Token::StringLiteral(body) | Token::JsonBlock(body) => {
                 let body = body.clone();
                 parser.advance();
                 Ok(body)
             }
-            _ => Err("Expected string literal for BODY clause".to_string()),
+            _ => Err("Expected string literal or $JSON$ block for BODY clause".to_string()),
         }
     }
 
@@ -211,15 +211,19 @@ impl<'a> WebCteParser<'a> {
     ) -> Result<(String, String), String> {
         // Parse field name
         let field_name = match &parser.current_token {
-            Token::StringLiteral(name) => name.clone(),
+            Token::StringLiteral(name) | Token::JsonBlock(name) => name.clone(),
             _ => return Err("Expected field name string after FORM_FIELD".to_string()),
         };
         parser.advance();
 
-        // Parse field value
+        // Parse field value (can be regular string or JSON block)
         let value = match &parser.current_token {
-            Token::StringLiteral(val) => val.clone(),
-            _ => return Err("Expected field value string after field name".to_string()),
+            Token::StringLiteral(val) | Token::JsonBlock(val) => val.clone(),
+            _ => {
+                return Err(
+                    "Expected field value string or $JSON$ block after field name".to_string(),
+                )
+            }
         };
         parser.advance();
 
