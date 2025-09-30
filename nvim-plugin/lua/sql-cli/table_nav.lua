@@ -688,6 +688,45 @@ function M.yank_column()
   vim.notify("Yanked column '" .. col_name .. "' (" .. #values .. " values)", vim.log.levels.INFO)
 end
 
+-- Yank column as JSON array (for use in WEB CTE bodies)
+function M.yank_column_as_json()
+  if not nav_state.table_info or not nav_state.buffer then
+    vim.notify("No table navigation active", vim.log.levels.WARN)
+    return
+  end
+
+  local lines = vim.api.nvim_buf_get_lines(nav_state.buffer, 0, -1, false)
+  local values = {}
+  local max_row = nav_state.table_info.data_end - nav_state.table_info.data_start + 1
+
+  -- Collect all values from the column
+  for row = 1, max_row do
+    local value = get_cell_value(lines, nav_state.table_info, row, nav_state.current_col)
+    if value and value ~= "" then
+      -- Detect if value is a number or string
+      local num_value = tonumber(value)
+      if num_value then
+        -- It's a number, add without quotes
+        table.insert(values, tostring(num_value))
+      else
+        -- It's a string, add with quotes and escape internal quotes
+        local escaped_value = value:gsub('"', '\\"')
+        table.insert(values, '"' .. escaped_value .. '"')
+      end
+    end
+  end
+
+  -- Format as JSON array
+  local json_array = "[" .. table.concat(values, ", ") .. "]"
+
+  -- Copy to clipboard
+  vim.fn.setreg('"', json_array)
+  vim.fn.setreg('+', json_array) -- System clipboard
+
+  local col_name = nav_state.table_info.columns[nav_state.current_col] or ("Column " .. nav_state.current_col)
+  vim.notify("Yanked column '" .. col_name .. "' as JSON array (" .. #values .. " values)", vim.log.levels.INFO)
+end
+
 -- Get current cell info (for statusline)
 function M.get_cell_info()
   if not nav_state.table_info or not nav_state.table_info.data_start then
@@ -792,6 +831,9 @@ function M.setup_keymaps(bufnr, config)
   vim.keymap.set("n", "yy", M.yank_cell, opts)
   vim.keymap.set("n", "Y", M.yank_row, opts)
   vim.keymap.set("n", "yc", M.yank_column, opts)
+
+  -- Yank column as JSON array (for WEB CTE bodies)
+  vim.keymap.set("n", "<leader>sYj", M.yank_column_as_json, opts)
 
   -- Export operations with \s prefix
   vim.keymap.set("n", "<leader>se", function()
