@@ -126,6 +126,43 @@ function M.toggle_split_orientation(config, state)
   end
 end
 
+-- Reset/recover output window layout to known-good state
+-- This forcefully recreates the output window and clears corrupted state
+function M.reset_output_layout(config, state)
+  vim.notify("Resetting output layout...", vim.log.levels.INFO)
+
+  -- Clear table navigation if active
+  local table_nav = require('sql-cli.table_nav')
+  if table_nav.is_active() then
+    table_nav.disable_navigation()
+  end
+
+  -- Force close any existing output window (even if invalid)
+  local output_win = state:get_output_win()
+  if output_win and vim.api.nvim_win_is_valid(output_win) then
+    pcall(function()
+      vim.api.nvim_win_close(output_win, true)
+    end)
+  end
+
+  -- Force delete any existing output buffer (even if corrupted)
+  local output_buf = state:get_output_buf()
+  if output_buf and vim.api.nvim_buf_is_valid(output_buf) then
+    pcall(function()
+      vim.api.nvim_buf_delete(output_buf, { force = true })
+    end)
+  end
+
+  -- Clear state references
+  state:set_output_win(nil)
+  state:set_output_buf(nil)
+
+  -- Recreate output window from scratch
+  M.create_output_window(config, state)
+
+  vim.notify("Output layout reset complete - try running your query again", vim.log.levels.INFO)
+end
+
 -- Preview query at cursor position in floating window
 function M.preview_query_at_cursor(config)
   local bufnr = vim.api.nvim_get_current_buf()

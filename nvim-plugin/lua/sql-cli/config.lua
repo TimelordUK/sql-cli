@@ -55,6 +55,7 @@ M.defaults = {
     preview_query = "<leader>sP",   -- Preview query in floating window
     toggle_output = "<leader>sO",   -- Toggle output window (capital O)
     toggle_orientation = "<leader>so", -- Toggle split orientation (lowercase o)
+    reset_layout = "<leader>sR",    -- Reset/recover output layout (capital R for reset)
     set_data_file = "<leader>sD",   -- Set data file (capital D)
     clear_data_file = nil, -- Removed - conflicted with refactoring
     show_plan = "<leader>sp",       -- Show query plan

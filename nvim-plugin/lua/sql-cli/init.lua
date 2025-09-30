@@ -115,6 +115,10 @@ function M.create_commands()
     ui.toggle_output_window(M.config, M.state)
   end, { desc = "Toggle SQL output window" })
 
+  vim.api.nvim_create_user_command("SqlCliResetLayout", function()
+    ui.reset_output_layout(M.config, M.state)
+  end, { desc = "Reset/recover output window layout (fixes corrupted state)" })
+
   vim.api.nvim_create_user_command("SqlCliShowPlan", function()
     M.show_query_plan()
   end, { desc = "Show query execution plan" })
@@ -279,6 +283,12 @@ function M.setup_keymaps()
     vim.keymap.set("n", keymaps.toggle_orientation, function()
       ui.toggle_split_orientation(M.config, M.state)
     end, { desc = "Toggle split orientation", silent = true })
+  end
+
+  if keymaps.reset_layout then
+    vim.keymap.set("n", keymaps.reset_layout, function()
+      ui.reset_output_layout(M.config, M.state)
+    end, { desc = "Reset/recover output layout", silent = true })
   end
 
   if keymaps.set_data_file then

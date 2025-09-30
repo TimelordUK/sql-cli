@@ -589,21 +589,37 @@ function M.move_down()
 end
 
 function M.go_to_first_column()
+  if not nav_state.table_info then
+    vim.notify("No table navigation active", vim.log.levels.WARN)
+    return
+  end
   nav_state.current_col = 1
   M.highlight_current_cell()
 end
 
 function M.go_to_last_column()
+  if not nav_state.table_info or not nav_state.table_info.column_positions then
+    vim.notify("No table navigation active", vim.log.levels.WARN)
+    return
+  end
   nav_state.current_col = #nav_state.table_info.column_positions
   M.highlight_current_cell()
 end
 
 function M.go_to_first_row()
+  if not nav_state.table_info then
+    vim.notify("No table navigation active", vim.log.levels.WARN)
+    return
+  end
   nav_state.current_row = 1
   M.highlight_current_cell()
 end
 
 function M.go_to_last_row()
+  if not nav_state.table_info or not nav_state.table_info.data_end or not nav_state.table_info.data_start then
+    vim.notify("No table navigation active", vim.log.levels.WARN)
+    return
+  end
   nav_state.current_row = nav_state.table_info.data_end - nav_state.table_info.data_start + 1
   M.highlight_current_cell()
 end
