@@ -712,15 +712,20 @@ function M.yank_column_as_json()
   for row = 1, max_row do
     local value = get_cell_value(lines, nav_state.table_info, row, nav_state.current_col)
     if value and value ~= "" then
-      -- Detect if value is a number or string
-      local num_value = tonumber(value)
-      if num_value then
-        -- It's a number, add without quotes
-        table.insert(values, tostring(num_value))
-      else
-        -- It's a string, add with quotes and escape internal quotes
-        local escaped_value = value:gsub('"', '\\"')
-        table.insert(values, '"' .. escaped_value .. '"')
+      -- Trim leading/trailing whitespace
+      value = value:match("^%s*(.-)%s*$") or value
+
+      if value ~= "" then
+        -- Detect if value is a number or string
+        local num_value = tonumber(value)
+        if num_value then
+          -- It's a number, add without quotes
+          table.insert(values, tostring(num_value))
+        else
+          -- It's a string, add with quotes and escape internal quotes
+          local escaped_value = value:gsub('"', '\\"')
+          table.insert(values, '"' .. escaped_value .. '"')
+        end
       end
     end
   end
