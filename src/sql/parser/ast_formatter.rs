@@ -360,28 +360,45 @@ impl<'a> AstFormatter<'a> {
                                 // Pretty print JSON with 2-space indentation
                                 match serde_json::to_string_pretty(&json_val) {
                                     Ok(pretty_json) => {
-                                        // Add proper indentation for each line
-                                        let base_indent = "    ".repeat(indent_level + 1);
-                                        let json_lines: Vec<String> = pretty_json
-                                            .lines()
-                                            .enumerate()
-                                            .map(|(i, line)| {
-                                                if i == 0 {
-                                                    line.to_string()
-                                                } else {
-                                                    format!("{}{}", base_indent, line)
-                                                }
-                                            })
-                                            .collect();
-                                        let formatted_json = json_lines.join("\n");
+                                        // Check if JSON is complex (multiline or has special chars)
+                                        let is_complex = pretty_json.lines().count() > 1
+                                            || pretty_json.contains('"')
+                                            || pretty_json.contains('\\');
 
-                                        web_str.push_str(&format!(
-                                            "\n{}{} '{}' '{}'\n",
-                                            base_indent,
-                                            self.keyword("FORM_FIELD"),
-                                            field_name,
-                                            formatted_json
-                                        ));
+                                        if is_complex {
+                                            // Use $JSON$ delimiters for complex JSON
+                                            let base_indent = "    ".repeat(indent_level + 1);
+                                            let json_lines: Vec<String> = pretty_json
+                                                .lines()
+                                                .enumerate()
+                                                .map(|(i, line)| {
+                                                    if i == 0 {
+                                                        line.to_string()
+                                                    } else {
+                                                        format!("{}{}", base_indent, line)
+                                                    }
+                                                })
+                                                .collect();
+                                            let formatted_json = json_lines.join("\n");
+
+                                            web_str.push_str(&format!(
+                                                "\n{}{} '{}' $JSON${}\n{}$JSON$",
+                                                base_indent,
+                                                self.keyword("FORM_FIELD"),
+                                                field_name,
+                                                formatted_json,
+                                                base_indent
+                                            ));
+                                        } else {
+                                            // Simple JSON, use regular single quotes
+                                            web_str.push_str(&format!(
+                                                "\n{}{} '{}' '{}'",
+                                                "    ".repeat(indent_level + 1),
+                                                self.keyword("FORM_FIELD"),
+                                                field_name,
+                                                pretty_json
+                                            ));
+                                        }
                                     }
                                     Err(_) => {
                                         // Fall back to original if pretty print fails
