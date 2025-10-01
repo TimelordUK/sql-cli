@@ -49,7 +49,7 @@ pub struct Parser {
     columns: Vec<String>,        // Known column names for context-aware parsing
     paren_depth: i32,            // Track parentheses nesting depth
     paren_depth_stack: Vec<i32>, // Stack to save/restore paren depth for nested contexts
-    config: ParserConfig,        // Parser configuration including case sensitivity
+    _config: ParserConfig,       // Parser configuration including case sensitivity
     debug_trace: bool,           // Enable detailed token-by-token trace
     trace_depth: usize,          // Track recursion depth for indented trace
     function_registry: Arc<FunctionRegistry>, // Function registry for validation
@@ -68,7 +68,7 @@ impl Parser {
             columns: Vec::new(),
             paren_depth: 0,
             paren_depth_stack: Vec::new(),
-            config: ParserConfig::default(),
+            _config: ParserConfig::default(),
             debug_trace: false,
             trace_depth: 0,
             function_registry: Arc::new(FunctionRegistry::new()),
@@ -87,7 +87,7 @@ impl Parser {
             columns: Vec::new(),
             paren_depth: 0,
             paren_depth_stack: Vec::new(),
-            config,
+            _config: config,
             debug_trace: false,
             trace_depth: 0,
             function_registry: Arc::new(FunctionRegistry::new()),

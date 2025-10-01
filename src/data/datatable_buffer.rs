@@ -37,7 +37,7 @@ pub struct DataTableBuffer {
     edit_mode: EditMode,
     input: Input, // Legacy - kept for compatibility
     input_manager: Box<dyn InputManager>,
-    table_state: TableState,
+    _table_state: TableState,
     last_results_row: Option<usize>,
     last_scroll_offset: (usize, usize),
 
@@ -50,7 +50,7 @@ pub struct DataTableBuffer {
     filter_state: FilterState,
     fuzzy_filter_state: FuzzyFilterState,
     search_state: SearchState,
-    column_search_state: ColumnSearchState,
+    _column_search_state: ColumnSearchState,
     column_stats: Option<ColumnStatistics>,
     // REMOVED: filtered_data - DataView handles filtering
 
@@ -73,11 +73,11 @@ pub struct DataTableBuffer {
     last_query_source: Option<String>,
 
     // --- Syntax Highlighting ---
-    highlighted_text_cache: Option<Vec<(String, Color)>>,
-    last_highlighted_text: String,
+    _highlighted_text_cache: Option<Vec<(String, Color)>>,
+    _last_highlighted_text: String,
 
     // --- Input State Stack ---
-    saved_input_state: Option<(String, usize)>,
+    _saved_input_state: Option<(String, usize)>,
 }
 
 impl DataTableBuffer {
@@ -104,7 +104,7 @@ impl DataTableBuffer {
             edit_mode: EditMode::SingleLine,
             input: Input::default(),
             input_manager: create_single_line(String::new()),
-            table_state: TableState::default(),
+            _table_state: TableState::default(),
             last_results_row: None,
             last_scroll_offset: (0, 0),
 
@@ -120,7 +120,7 @@ impl DataTableBuffer {
             filter_state: FilterState::default(),
             fuzzy_filter_state: FuzzyFilterState::default(),
             search_state: SearchState::default(),
-            column_search_state: ColumnSearchState::default(),
+            _column_search_state: ColumnSearchState::default(),
             column_stats: None,
             // filtered_data removed - DataView handles filtering
 
@@ -142,11 +142,11 @@ impl DataTableBuffer {
             last_query_source: None,
 
             // --- Syntax Highlighting ---
-            highlighted_text_cache: None,
-            last_highlighted_text: String::new(),
+            _highlighted_text_cache: None,
+            _last_highlighted_text: String::new(),
 
             // --- Input State Stack ---
-            saved_input_state: None,
+            _saved_input_state: None,
         }
     }
 

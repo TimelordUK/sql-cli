@@ -5,7 +5,7 @@ use anyhow::Result;
 /// Evaluates WHERE clause expressions against `DataTable` rows
 pub struct WhereEvaluator<'a> {
     table: &'a DataTable,
-    column_indices: Vec<usize>,
+    _column_indices: Vec<usize>,
 }
 
 impl<'a> WhereEvaluator<'a> {
@@ -14,7 +14,7 @@ impl<'a> WhereEvaluator<'a> {
         let column_indices = (0..table.column_count()).collect();
         Self {
             table,
-            column_indices,
+            _column_indices: column_indices,
         }
     }
 

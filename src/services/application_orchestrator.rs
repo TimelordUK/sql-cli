@@ -7,7 +7,7 @@ use tracing::info;
 /// This removes file loading knowledge from the TUI
 pub struct ApplicationOrchestrator {
     data_loader: DataLoaderService,
-    query_orchestrator: QueryOrchestrator,
+    _query_orchestrator: QueryOrchestrator,
 }
 
 impl ApplicationOrchestrator {
@@ -15,7 +15,7 @@ impl ApplicationOrchestrator {
     pub fn new(case_insensitive: bool, auto_hide_empty: bool) -> Self {
         Self {
             data_loader: DataLoaderService::new(case_insensitive),
-            query_orchestrator: QueryOrchestrator::new(case_insensitive, auto_hide_empty),
+            _query_orchestrator: QueryOrchestrator::new(case_insensitive, auto_hide_empty),
         }
     }
 

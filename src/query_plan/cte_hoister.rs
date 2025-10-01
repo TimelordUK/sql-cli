@@ -23,7 +23,7 @@ use std::collections::{HashMap, HashSet};
 /// ```
 pub struct CTEHoister {
     hoisted_ctes: Vec<CTE>,
-    cte_counter: usize,
+    _cte_counter: usize,
     dependency_graph: HashMap<String, HashSet<String>>,
 }
 
@@ -31,7 +31,7 @@ impl CTEHoister {
     pub fn new() -> Self {
         Self {
             hoisted_ctes: Vec::new(),
-            cte_counter: 0,
+            _cte_counter: 0,
             dependency_graph: HashMap::new(),
         }
     }

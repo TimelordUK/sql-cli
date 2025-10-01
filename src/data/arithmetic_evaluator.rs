@@ -18,7 +18,7 @@ use tracing::debug;
 /// This is different from `RecursiveWhereEvaluator` which returns boolean
 pub struct ArithmeticEvaluator<'a> {
     table: &'a DataTable,
-    date_notation: String,
+    _date_notation: String,
     function_registry: Arc<FunctionRegistry>,
     aggregate_registry: Arc<AggregateRegistry>, // Old registry (being phased out)
     new_aggregate_registry: Arc<AggregateFunctionRegistry>, // New registry
@@ -33,7 +33,7 @@ impl<'a> ArithmeticEvaluator<'a> {
     pub fn new(table: &'a DataTable) -> Self {
         Self {
             table,
-            date_notation: get_date_notation(),
+            _date_notation: get_date_notation(),
             function_registry: Arc::new(FunctionRegistry::new()),
             aggregate_registry: Arc::new(AggregateRegistry::new()),
             new_aggregate_registry: Arc::new(AggregateFunctionRegistry::new()),
@@ -48,7 +48,7 @@ impl<'a> ArithmeticEvaluator<'a> {
     pub fn with_date_notation(table: &'a DataTable, date_notation: String) -> Self {
         Self {
             table,
-            date_notation,
+            _date_notation: date_notation,
             function_registry: Arc::new(FunctionRegistry::new()),
             aggregate_registry: Arc::new(AggregateRegistry::new()),
             new_aggregate_registry: Arc::new(AggregateFunctionRegistry::new()),
@@ -81,7 +81,7 @@ impl<'a> ArithmeticEvaluator<'a> {
     ) -> Self {
         Self {
             table,
-            date_notation,
+            _date_notation: date_notation,
             function_registry,
             aggregate_registry: Arc::new(AggregateRegistry::new()),
             new_aggregate_registry: Arc::new(AggregateFunctionRegistry::new()),

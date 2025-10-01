@@ -15,8 +15,8 @@ use regex::Regex;
 
 /// Handles all rendering operations for the TUI
 pub struct TuiRenderer {
-    config: Config,
-    sql_highlighter: SqlHighlighter,
+    _config: Config,
+    _sql_highlighter: SqlHighlighter,
 }
 
 impl Default for TuiRenderer {
@@ -69,8 +69,8 @@ impl TuiRenderer {
     #[must_use]
     pub fn new() -> Self {
         Self {
-            config: Config::load().unwrap_or_default(),
-            sql_highlighter: SqlHighlighter::new(),
+            _config: Config::load().unwrap_or_default(),
+            _sql_highlighter: SqlHighlighter::new(),
         }
     }
     /// Render the main status line at the bottom of the screen

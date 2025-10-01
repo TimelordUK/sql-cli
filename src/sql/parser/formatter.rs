@@ -552,7 +552,7 @@ pub fn format_sql_with_preserved_parens(query: &str, cols_per_line: usize) -> Ve
 fn format_where_clause_with_parens(where_text: &str) -> Vec<String> {
     let mut lines = Vec::new();
     let mut current = String::from("WHERE ");
-    let mut paren_depth = 0;
+    let mut _paren_depth = 0;
     let mut in_string = false;
     let mut escape_next = false;
     let mut chars = where_text.chars().peekable();
@@ -592,11 +592,11 @@ fn format_where_clause_with_parens(where_text: &str) -> Vec<String> {
             }
             '(' if !in_string => {
                 current.push(ch);
-                paren_depth += 1;
+                _paren_depth += 1;
             }
             ')' if !in_string => {
                 current.push(ch);
-                paren_depth -= 1;
+                _paren_depth -= 1;
             }
             _ => {
                 current.push(ch);

@@ -6,7 +6,7 @@ use std::time::Instant;
 struct KeySequence {
     key: String,
     count: usize,
-    first_press: Instant,
+    _first_press: Instant,
     last_press: Instant,
 }
 
@@ -76,7 +76,7 @@ impl KeySequenceRenderer {
         self.sequences.push_back(KeySequence {
             key,
             count: 1,
-            first_press: now,
+            _first_press: now,
             last_press: now,
         });
 

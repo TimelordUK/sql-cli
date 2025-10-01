@@ -4,15 +4,15 @@ use super::ast::{DataFormat, HttpMethod, WebCTESpec};
 use super::lexer::Token;
 
 pub struct WebCteParser<'a> {
-    tokens: &'a mut dyn Iterator<Item = Token>,
-    current_token: Token,
+    _tokens: &'a mut dyn Iterator<Item = Token>,
+    _current_token: Token,
 }
 
 impl<'a> WebCteParser<'a> {
     pub fn new(tokens: &'a mut dyn Iterator<Item = Token>, current_token: Token) -> Self {
         Self {
-            tokens,
-            current_token,
+            _tokens: tokens,
+            _current_token: current_token,
         }
     }
 

@@ -15,12 +15,12 @@ use crate::data::datatable::{DataColumn, DataRow, DataTable, DataType, DataValue
 #[derive(Debug)]
 struct ColumnAnalysis {
     index: usize,
-    name: String,
-    cardinality: usize,
-    sample_size: usize,
-    unique_ratio: f64,
+    _name: String,
+    _cardinality: usize,
+    _sample_size: usize,
+    _unique_ratio: f64,
     is_categorical: bool,
-    avg_string_length: usize,
+    _avg_string_length: usize,
 }
 
 /// Advanced stream-based CSV loader with string interning
@@ -83,12 +83,12 @@ impl StreamCsvLoader {
 
             analyses.push(ColumnAnalysis {
                 index: col_idx,
-                name: header.to_string(),
-                cardinality,
-                sample_size,
-                unique_ratio,
+                _name: header.to_string(),
+                _cardinality: cardinality,
+                _sample_size: sample_size,
+                _unique_ratio: unique_ratio,
                 is_categorical,
-                avg_string_length,
+                _avg_string_length: avg_string_length,
             });
         }
 

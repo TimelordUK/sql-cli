@@ -82,12 +82,12 @@ pub struct InternerStats {
 #[derive(Debug)]
 struct ColumnAnalysis {
     index: usize,
-    name: String,
-    cardinality: usize,
-    sample_size: usize,
-    unique_ratio: f64,
+    _name: String,
+    _cardinality: usize,
+    _sample_size: usize,
+    _unique_ratio: f64,
     is_categorical: bool,
-    avg_string_length: usize,
+    _avg_string_length: usize,
 }
 
 pub struct AdvancedCsvLoader {
@@ -167,12 +167,12 @@ impl AdvancedCsvLoader {
 
             analyses.push(ColumnAnalysis {
                 index: idx,
-                name: header.to_string(),
-                cardinality,
-                sample_size: row_count,
-                unique_ratio,
+                _name: header.to_string(),
+                _cardinality: cardinality,
+                _sample_size: row_count,
+                _unique_ratio: unique_ratio,
                 is_categorical,
-                avg_string_length: avg_length,
+                _avg_string_length: avg_length,
             });
 
             if is_categorical {

@@ -10,7 +10,7 @@ use crate::data::datatable::DataValue;
 struct Molecule {
     formula: &'static str,
     names: &'static [&'static str],
-    category: &'static str,
+    _category: &'static str,
 }
 
 lazy_static! {
@@ -20,201 +20,201 @@ lazy_static! {
         Molecule {
             formula: "H2O",
             names: &["WATER"],
-            category: "Inorganic"
+            _category: "Inorganic"
         },
         Molecule {
             formula: "H2O2",
             names: &["HYDROGEN PEROXIDE"],
-            category: "Inorganic"
+            _category: "Inorganic"
         },
 
         // Common gases
         Molecule {
             formula: "NH3",
             names: &["AMMONIA"],
-            category: "Inorganic"
+            _category: "Inorganic"
         },
         Molecule {
             formula: "CO2",
             names: &["CARBON DIOXIDE", "CO2"],
-            category: "Inorganic"
+            _category: "Inorganic"
         },
         Molecule {
             formula: "CO",
             names: &["CARBON MONOXIDE", "CO"],
-            category: "Inorganic"
+            _category: "Inorganic"
         },
         Molecule {
             formula: "O2",
             names: &["OXYGEN", "DIOXYGEN"],
-            category: "Inorganic"
+            _category: "Inorganic"
         },
         Molecule {
             formula: "N2",
             names: &["NITROGEN", "DINITROGEN"],
-            category: "Inorganic"
+            _category: "Inorganic"
         },
         Molecule {
             formula: "O3",
             names: &["OZONE"],
-            category: "Inorganic"
+            _category: "Inorganic"
         },
 
         // Hydrocarbons
         Molecule {
             formula: "CH4",
             names: &["METHANE"],
-            category: "Hydrocarbon"
+            _category: "Hydrocarbon"
         },
         Molecule {
             formula: "C2H6",
             names: &["ETHANE"],
-            category: "Hydrocarbon"
+            _category: "Hydrocarbon"
         },
         Molecule {
             formula: "C3H8",
             names: &["PROPANE"],
-            category: "Hydrocarbon"
+            _category: "Hydrocarbon"
         },
         Molecule {
             formula: "C4H10",
             names: &["BUTANE"],
-            category: "Hydrocarbon"
+            _category: "Hydrocarbon"
         },
         Molecule {
             formula: "C5H12",
             names: &["PENTANE"],
-            category: "Hydrocarbon"
+            _category: "Hydrocarbon"
         },
         Molecule {
             formula: "C6H14",
             names: &["HEXANE"],
-            category: "Hydrocarbon"
+            _category: "Hydrocarbon"
         },
         Molecule {
             formula: "C2H4",
             names: &["ETHENE", "ETHYLENE"],
-            category: "Hydrocarbon"
+            _category: "Hydrocarbon"
         },
         Molecule {
             formula: "C2H2",
             names: &["ETHYNE", "ACETYLENE"],
-            category: "Hydrocarbon"
+            _category: "Hydrocarbon"
         },
         Molecule {
             formula: "C6H6",
             names: &["BENZENE"],
-            category: "Hydrocarbon"
+            _category: "Hydrocarbon"
         },
 
         // Sugars
         Molecule {
             formula: "C6H12O6",
             names: &["GLUCOSE", "DEXTROSE"],
-            category: "Sugar"
+            _category: "Sugar"
         },
         Molecule {
             formula: "C6H12O6",
             names: &["FRUCTOSE"],
-            category: "Sugar"
+            _category: "Sugar"
         },
         Molecule {
             formula: "C12H22O11",
             names: &["SUCROSE", "TABLE SUGAR"],
-            category: "Sugar"
+            _category: "Sugar"
         },
         Molecule {
             formula: "C12H22O11",
             names: &["LACTOSE", "MILK SUGAR"],
-            category: "Sugar"
+            _category: "Sugar"
         },
 
         // Salts and minerals
         Molecule {
             formula: "NaCl",
             names: &["SALT", "TABLE SALT", "SODIUM CHLORIDE"],
-            category: "Salt"
+            _category: "Salt"
         },
         Molecule {
             formula: "NaHCO3",
             names: &["BAKING SODA", "SODIUM BICARBONATE"],
-            category: "Salt"
+            _category: "Salt"
         },
         Molecule {
             formula: "CaCO3",
             names: &["CALCIUM CARBONATE", "LIMESTONE", "CHALK"],
-            category: "Mineral"
+            _category: "Mineral"
         },
         Molecule {
             formula: "CaSO4",
             names: &["CALCIUM SULFATE", "GYPSUM"],
-            category: "Mineral"
+            _category: "Mineral"
         },
 
         // Acids
         Molecule {
             formula: "HCl",
             names: &["HYDROCHLORIC ACID"],
-            category: "Acid"
+            _category: "Acid"
         },
         Molecule {
             formula: "H2SO4",
             names: &["SULFURIC ACID"],
-            category: "Acid"
+            _category: "Acid"
         },
         Molecule {
             formula: "HNO3",
             names: &["NITRIC ACID"],
-            category: "Acid"
+            _category: "Acid"
         },
         Molecule {
             formula: "H3PO4",
             names: &["PHOSPHORIC ACID"],
-            category: "Acid"
+            _category: "Acid"
         },
         Molecule {
             formula: "CH3COOH",
             names: &["ACETIC ACID", "VINEGAR"],
-            category: "Acid"
+            _category: "Acid"
         },
 
         // Organic compounds
         Molecule {
             formula: "C2H5OH",
             names: &["ETHANOL", "ALCOHOL", "ETHYL ALCOHOL"],
-            category: "Alcohol"
+            _category: "Alcohol"
         },
         Molecule {
             formula: "CH3OH",
             names: &["METHANOL", "METHYL ALCOHOL"],
-            category: "Alcohol"
+            _category: "Alcohol"
         },
         Molecule {
             formula: "C3H8O",
             names: &["ISOPROPANOL", "ISOPROPYL ALCOHOL", "RUBBING ALCOHOL"],
-            category: "Alcohol"
+            _category: "Alcohol"
         },
         Molecule {
             formula: "CH3COCH3",
             names: &["ACETONE"],
-            category: "Organic"
+            _category: "Organic"
         },
         Molecule {
             formula: "C8H10N4O2",
             names: &["CAFFEINE"],
-            category: "Organic"
+            _category: "Organic"
         },
         Molecule {
             formula: "C9H8O4",
             names: &["ASPIRIN", "ACETYLSALICYLIC ACID"],
-            category: "Organic"
+            _category: "Organic"
         },
 
         // Vitamins
         Molecule {
             formula: "C6H8O6",
             names: &["VITAMIN C", "ASCORBIC ACID"],
-            category: "Vitamin"
+            _category: "Vitamin"
         },
     ];
 

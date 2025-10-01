@@ -77,18 +77,18 @@ struct CommandEditor {
     input: Input,
 
     // Command-specific state
-    scroll_offset: usize,
-    last_cursor_position: usize,
-    history_search_term: Option<String>,
+    _scroll_offset: usize,
+    _last_cursor_position: usize,
+    _history_search_term: Option<String>,
 }
 
 impl CommandEditor {
     fn new() -> Self {
         Self {
             input: Input::default(),
-            scroll_offset: 0,
-            last_cursor_position: 0,
-            history_search_term: None,
+            _scroll_offset: 0,
+            _last_cursor_position: 0,
+            _history_search_term: None,
         }
     }
 

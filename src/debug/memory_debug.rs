@@ -11,7 +11,7 @@ pub struct MemoryTracker {
 
 #[derive(Clone, Debug)]
 struct MemorySnapshot {
-    timestamp: std::time::Instant,
+    _timestamp: std::time::Instant,
     memory_kb: usize,
 }
 
@@ -27,7 +27,7 @@ impl MemoryTracker {
     pub fn record_snapshot(&self) {
         if let Some(memory_kb) = crate::utils::memory_tracker::get_process_memory_kb() {
             let snapshot = MemorySnapshot {
-                timestamp: std::time::Instant::now(),
+                _timestamp: std::time::Instant::now(),
                 memory_kb,
             };
 

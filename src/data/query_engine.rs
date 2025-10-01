@@ -30,7 +30,7 @@ use crate::sql::recursive_parser::{
 pub struct QueryEngine {
     case_insensitive: bool,
     date_notation: String,
-    behavior_config: Option<BehaviorConfig>,
+    _behavior_config: Option<BehaviorConfig>,
 }
 
 impl Default for QueryEngine {
@@ -45,7 +45,7 @@ impl QueryEngine {
         Self {
             case_insensitive: false,
             date_notation: get_date_notation(),
-            behavior_config: None,
+            _behavior_config: None,
         }
     }
 
@@ -57,7 +57,7 @@ impl QueryEngine {
         Self {
             case_insensitive,
             date_notation,
-            behavior_config: Some(config),
+            _behavior_config: Some(config),
         }
     }
 
@@ -66,7 +66,7 @@ impl QueryEngine {
         Self {
             case_insensitive: false,
             date_notation: get_date_notation(), // Always use the global function
-            behavior_config: None,
+            _behavior_config: None,
         }
     }
 
@@ -75,7 +75,7 @@ impl QueryEngine {
         Self {
             case_insensitive,
             date_notation: get_date_notation(),
-            behavior_config: None,
+            _behavior_config: None,
         }
     }
 
@@ -87,7 +87,7 @@ impl QueryEngine {
         Self {
             case_insensitive,
             date_notation: get_date_notation(), // Always use the global function
-            behavior_config: None,
+            _behavior_config: None,
         }
     }
 
