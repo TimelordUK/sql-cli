@@ -81,6 +81,8 @@ pub struct NonInteractiveConfig {
     pub lift_in_expressions: bool,
     pub script_file: Option<String>, // Path to the script file for relative path resolution
     pub debug_trace: bool,
+    pub max_col_width: Option<usize>, // Maximum column width for table output (None = unlimited)
+    pub col_sample_rows: usize,       // Number of rows to sample for column width (0 = all rows)
 }
 
 /// Execute a query in non-interactive mode
@@ -490,11 +492,23 @@ pub fn execute_non_interactive(config: NonInteractiveConfig) -> Result<()> {
     let output_result = if let Some(ref path) = config.output_file {
         let mut file = fs::File::create(path)
             .with_context(|| format!("Failed to create output file: {path}"))?;
-        output_results(&final_view, config.output_format, &mut file)?;
+        output_results(
+            &final_view,
+            config.output_format,
+            &mut file,
+            config.max_col_width,
+            config.col_sample_rows,
+        )?;
         info!("Results written to: {}", path);
         Ok(())
     } else {
-        output_results(&final_view, config.output_format, &mut io::stdout())?;
+        output_results(
+            &final_view,
+            config.output_format,
+            &mut io::stdout(),
+            config.max_col_width,
+            config.col_sample_rows,
+        )?;
         Ok(())
     };
 
@@ -615,7 +629,12 @@ pub fn execute_script(config: NonInteractiveConfig) -> Result<()> {
                         output_json(&final_view, &mut statement_output)?;
                     }
                     OutputFormat::Table => {
-                        output_table(&final_view, &mut statement_output)?;
+                        output_table(
+                            &final_view,
+                            &mut statement_output,
+                            config.max_col_width,
+                            config.col_sample_rows,
+                        )?;
                         writeln!(
                             &mut statement_output,
                             "Query completed: {} rows in {:.2}ms",
@@ -757,12 +776,14 @@ fn output_results<W: Write>(
     dataview: &DataView,
     format: OutputFormat,
     writer: &mut W,
+    max_col_width: Option<usize>,
+    col_sample_rows: usize,
 ) -> Result<()> {
     match format {
         OutputFormat::Csv => output_csv(dataview, writer, ','),
         OutputFormat::Tsv => output_csv(dataview, writer, '\t'),
         OutputFormat::Json => output_json(dataview, writer),
-        OutputFormat::Table => output_table(dataview, writer),
+        OutputFormat::Table => output_table(dataview, writer, max_col_width, col_sample_rows),
     }
 }
 
@@ -822,7 +843,12 @@ fn output_json<W: Write>(dataview: &DataView, writer: &mut W) -> Result<()> {
 }
 
 /// Output results as an ASCII table
-fn output_table<W: Write>(dataview: &DataView, writer: &mut W) -> Result<()> {
+fn output_table<W: Write>(
+    dataview: &DataView,
+    writer: &mut W,
+    max_col_width: Option<usize>,
+    col_sample_rows: usize,
+) -> Result<()> {
     let columns = dataview.column_names();
 
     // Calculate column widths
@@ -831,8 +857,15 @@ fn output_table<W: Write>(dataview: &DataView, writer: &mut W) -> Result<()> {
         widths[i] = col.len();
     }
 
-    // Check first 100 rows for width calculation
-    let sample_size = dataview.row_count().min(100);
+    // Sample rows for width calculation
+    // If col_sample_rows is 0, scan all rows
+    // Otherwise, scan min(col_sample_rows, total_rows)
+    let sample_size = if col_sample_rows == 0 {
+        dataview.row_count()
+    } else {
+        dataview.row_count().min(col_sample_rows)
+    };
+
     for row_idx in 0..sample_size {
         if let Some(row) = dataview.get_row(row_idx) {
             for (i, value) in row.values.iter().enumerate() {
@@ -844,9 +877,11 @@ fn output_table<W: Write>(dataview: &DataView, writer: &mut W) -> Result<()> {
         }
     }
 
-    // Limit column widths to 50 characters
-    for width in &mut widths {
-        *width = (*width).min(50);
+    // Apply maximum column width if specified
+    if let Some(max_width) = max_col_width {
+        for width in &mut widths {
+            *width = (*width).min(max_width);
+        }
     }
 
     // Print header separator

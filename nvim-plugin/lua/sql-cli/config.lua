@@ -19,6 +19,12 @@ M.defaults = {
   -- Default output format
   output_format = "table",
 
+  -- Table output settings
+  table_output = {
+    max_col_width = 50,      -- Maximum column width (0 = unlimited, default: 50)
+    col_sample_rows = 100,   -- Rows to sample for column width (0 = all rows, default: 100)
+  },
+
   -- Formatting preferences
   format = {
     lowercase = false,     -- Use lowercase keywords

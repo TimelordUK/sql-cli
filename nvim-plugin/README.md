@@ -101,7 +101,13 @@ require('sql-cli').setup({
   
   -- Default output format
   output_format = "table",
-  
+
+  -- Table output settings (when output_format = "table")
+  table_output = {
+    max_col_width = 50,      -- Maximum column width (0 = unlimited, default: 50)
+    col_sample_rows = 100,   -- Rows to sample for width (0 = all rows, default: 100)
+  },
+
   -- SQL Formatting preferences (NEW!)
   format = {
     lowercase = false,     -- Use lowercase keywords

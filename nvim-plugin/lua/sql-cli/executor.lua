@@ -558,6 +558,21 @@ function M.build_command(query, show_plan, config, state)
   table.insert(cmd_parts, "-o")
   table.insert(cmd_parts, config.output_format)
 
+  -- Add table output settings if using table format
+  if config.output_format == "table" and config.table_output then
+    -- Add max column width
+    if config.table_output.max_col_width then
+      table.insert(cmd_parts, "--max-col-width")
+      table.insert(cmd_parts, tostring(config.table_output.max_col_width))
+    end
+
+    -- Add column sample rows
+    if config.table_output.col_sample_rows then
+      table.insert(cmd_parts, "--col-sample-rows")
+      table.insert(cmd_parts, tostring(config.table_output.col_sample_rows))
+    end
+  end
+
   -- Add query plan flag if requested
   if show_plan then
     table.insert(cmd_parts, "--execution-plan")

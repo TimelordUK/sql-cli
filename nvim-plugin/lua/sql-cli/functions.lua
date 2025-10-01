@@ -673,12 +673,32 @@ function M.show_help_in_float(title, content)
 
   -- Set up keymaps to close window
   vim.keymap.set("n", "q", function()
-    vim.api.nvim_win_close(win, true)
+    if vim.api.nvim_win_is_valid(win) then
+      vim.api.nvim_win_close(win, true)
+    end
   end, { buffer = buf, silent = true })
 
   vim.keymap.set("n", "<Esc>", function()
-    vim.api.nvim_win_close(win, true)
+    if vim.api.nvim_win_is_valid(win) then
+      vim.api.nvim_win_close(win, true)
+    end
   end, { buffer = buf, silent = true })
+
+  -- Auto-close window when leaving the buffer (switching buffers, etc.)
+  local augroup = vim.api.nvim_create_augroup("SqlCliFunctionHelp_" .. buf, { clear = true })
+  vim.api.nvim_create_autocmd({"BufLeave", "WinLeave"}, {
+    group = augroup,
+    buffer = buf,
+    callback = function()
+      -- Close window and clean up
+      if vim.api.nvim_win_is_valid(win) then
+        vim.api.nvim_win_close(win, true)
+      end
+      -- Clean up augroup
+      pcall(vim.api.nvim_del_augroup_by_id, augroup)
+    end,
+    once = true,
+  })
 
   -- Add syntax highlighting for SQL code blocks
   vim.cmd([[

@@ -161,6 +161,14 @@ fn print_help() {
         "--limit".green()
     );
     println!(
+        "  {} <n>  - Maximum column width for table output (default: 50, 0 = unlimited)",
+        "--max-col-width".green()
+    );
+    println!(
+        "  {} <n> - Rows to sample for column width (default: 100, 0 = all rows)",
+        "--col-sample-rows".green()
+    );
+    println!(
         "  {} - Case-insensitive matching",
         "--case-insensitive".green()
     );
@@ -1053,6 +1061,26 @@ fn main() -> io::Result<()> {
             .cloned()
             .unwrap_or_default(); // Use empty string if no data file
 
+        // Parse max column width (0 = unlimited, default = 50)
+        let max_col_width = if let Some(pos) = args.iter().position(|arg| arg == "--max-col-width")
+        {
+            // Flag was provided, parse the value
+            args.get(pos + 1)
+                .and_then(|s| s.parse::<usize>().ok())
+                .and_then(|n| if n == 0 { None } else { Some(n) })
+        } else {
+            // Flag not provided, use default of 50
+            Some(50)
+        };
+
+        // Parse column sample rows (0 = all rows, default = 100)
+        let col_sample_rows = args
+            .iter()
+            .position(|arg| arg == "--col-sample-rows")
+            .and_then(|pos| args.get(pos + 1))
+            .and_then(|s| s.parse::<usize>().ok())
+            .unwrap_or(100);
+
         let config = sql_cli::non_interactive::NonInteractiveConfig {
             data_file,
             query,
@@ -1070,6 +1098,8 @@ fn main() -> io::Result<()> {
             lift_in_expressions: lift_in_arg,
             script_file: query_file_arg.clone(),
             debug_trace: debug_arg,
+            max_col_width,
+            col_sample_rows,
         };
 
         // Use script executor if GO separator is detected, otherwise normal execution
