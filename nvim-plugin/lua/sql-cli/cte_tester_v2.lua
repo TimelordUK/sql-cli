@@ -93,16 +93,20 @@ function M.test_cte_at_cursor(config, state)
 
   -- Find which CTE range contains the cursor
   local target_index = result.total  -- Default to last
-  vim.notify(string.format("Cursor at relative line %d", relative_cursor), vim.log.levels.DEBUG)
+  vim.notify(string.format("[CTE DEBUG] Cursor at relative line %d (absolute line %d)", relative_cursor, cursor_line), vim.log.levels.WARN)
+  vim.notify(string.format("[CTE DEBUG] Query starts at line %d, extracted %d lines", start_line, #query_lines), vim.log.levels.WARN)
+  vim.notify(string.format("[CTE DEBUG] Found %d CTE ranges", #cte_line_ranges), vim.log.levels.WARN)
 
   for _, range in ipairs(cte_line_ranges) do
-    vim.notify(string.format("CTE %d: lines %d-%d", range.cte_index, range.start_line, range.end_line), vim.log.levels.DEBUG)
+    vim.notify(string.format("[CTE DEBUG] CTE %d (%s): lines %d-%d", range.cte_index, result.ctes[range.cte_index].name, range.start_line, range.end_line), vim.log.levels.WARN)
     if relative_cursor >= range.start_line and relative_cursor <= range.end_line then
       target_index = range.cte_index
-      vim.notify(string.format("Cursor in CTE %d", range.cte_index), vim.log.levels.DEBUG)
+      vim.notify(string.format("[CTE DEBUG] ✓ Cursor MATCHED in CTE %d (%s)", range.cte_index, result.ctes[range.cte_index].name), vim.log.levels.WARN)
       break
     end
   end
+
+  vim.notify(string.format("[CTE DEBUG] Final target_index: %d (CTE: %s)", target_index, result.ctes[target_index].name), vim.log.levels.WARN)
 
   -- Get the target CTE (result.ctes is 1-indexed array from JSON, target_index is 1-based)
   target_cte = result.ctes[target_index]
