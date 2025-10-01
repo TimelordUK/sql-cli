@@ -61,8 +61,14 @@ function M.test_cte_at_cursor(config, state)
       --   WITH trades AS (
       --   WITH WEB trades AS (
       --   ,\n  trades AS (
-      local pattern = "%f[%w_]" .. cte_name .. "%s+AS%s*%("
-      if line:match(pattern) then
+      --   WEB trades AS (
+
+      -- Try multiple patterns to be more flexible
+      local upper_line = line:upper()
+      local upper_name = cte_name:upper()
+
+      -- Check if this line contains the CTE name followed by AS (case-insensitive)
+      if upper_line:match("%f[%w_]" .. upper_name .. "%s+AS%s*%(") then
         table.insert(cte_start_lines, {
           index = idx,
           line = i,
@@ -194,15 +200,28 @@ function M.generate_simple_test_query(query_lines, target_cte, all_ctes, target_
       if upper:match("WITH%s") or upper:match("WITH$") then
         with_found = true
         vim.notify("Found WITH clause", vim.log.levels.DEBUG)
-        -- Check if first CTE is on same line
-        if line:match("WITH%s+([%w_]+)%s+AS%s*%(") then
+        -- Check if first CTE is on same line (handles both regular and WEB CTEs)
+        local cte_on_with_line = line:match("WITH%s+([%w_]+)%s+AS%s*%(")  -- WITH name AS (
+        if not cte_on_with_line then
+          cte_on_with_line = line:match("WITH%s+WEB%s+([%w_]+)%s+AS%s*%(")  -- WITH WEB name AS (
+        end
+
+        if cte_on_with_line then
           current_cte_idx = 1
-          vim.notify("First CTE on same line as WITH", vim.log.levels.DEBUG)
+          vim.notify(string.format("First CTE '%s' on same line as WITH", cte_on_with_line), vim.log.levels.DEBUG)
         end
       end
     else
-      -- Check for new CTE definitions (not on WITH line)
-      local cte_name = line:match("^%s*([%w_]+)%s+AS%s*%(")
+      -- Check for new CTE definitions (including WEB CTEs)
+      -- Pattern: line contains "name AS (" where name is a CTE from our list
+      local cte_name = line:match("^%s*([%w_]+)%s+AS%s*%(")  -- Regular CTE: "  name AS ("
+
+      -- Also check for WEB CTE on continuation line after WITH
+      -- In this case, line looks like: "WEB name AS (" or "  WEB name AS ("
+      if not cte_name then
+        cte_name = line:match("^%s*WEB%s+([%w_]+)%s+AS%s*%(")
+      end
+
       if cte_name then
         current_cte_idx = current_cte_idx + 1
         vim.notify(string.format("Found CTE %d: %s (target=%d)", current_cte_idx, cte_name, target_position), vim.log.levels.INFO)
