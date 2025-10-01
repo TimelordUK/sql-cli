@@ -44,69 +44,46 @@ function M.test_cte_at_cursor(config, state)
   local relative_cursor = cursor_line - start_line + 1
   local target_cte = nil
 
-  -- Try to determine which CTE the cursor is in by analyzing the query
-  -- We'll count CTE definitions and track line numbers
-  local cte_line_ranges = {}
-  local current_cte_idx = 0
-  local paren_depth = 0
-  local cte_start_line = nil
+  -- Simpler approach: Find all CTE start lines by name and determine which one cursor is after
+  -- We know the CTE names from the CLI parser, so we can search for them in order
+  local cte_start_lines = {}
 
-  for i, line in ipairs(query_lines) do
-    local upper = line:upper()
-
-    -- Check for CTE definition
-    if line:match("^%s*([%w_]+)%s+AS%s*%(") then
-      -- New CTE starts (not on WITH line)
-      current_cte_idx = current_cte_idx + 1
-      cte_start_line = i
-      paren_depth = 0
-    elseif upper:match("WITH%s+") and line:match("WITH%s+([%w_]+)%s+AS%s*%(") then
-      -- CTE starts on WITH line
-      if current_cte_idx == 0 then  -- Only count if we haven't already
-        current_cte_idx = 1
-        cte_start_line = i
-        paren_depth = 0
-      end
-    elseif upper:match("^%s*WITH%s*$") then
-      -- WITH on its own line, CTE will follow
-      -- Don't count yet
-    end
-
-    -- Track parentheses to find CTE end
-    if cte_start_line then
-      for char in line:gmatch(".") do
-        if char == "(" then paren_depth = paren_depth + 1 end
-        if char == ")" then paren_depth = paren_depth - 1 end
-      end
-
-      -- If parentheses balanced, CTE ends here
-      if paren_depth == 0 and line:match("%)") then
-        table.insert(cte_line_ranges, {
-          cte_index = current_cte_idx,
-          start_line = cte_start_line,
-          end_line = i
+  for idx, cte in ipairs(result.ctes) do
+    local cte_name = cte.name
+    -- Find the line where this CTE is defined
+    for i, line in ipairs(query_lines) do
+      -- Match: "name AS (" or "WITH name AS ("
+      if line:match("%f[%w]" .. cte_name .. "%s+AS%s*%(") then
+        table.insert(cte_start_lines, {
+          index = idx,
+          line = i,
+          name = cte_name
         })
-        cte_start_line = nil
+        vim.notify(string.format("[CTE PARSE] Found CTE #%d '%s' at line %d", idx, cte_name, i), vim.log.levels.WARN)
+        break
       end
     end
   end
 
-  -- Find which CTE range contains the cursor
-  local target_index = result.total  -- Default to last
+  -- Determine which CTE the cursor is in
+  -- Logic: Cursor is in the CTE that starts at or before the cursor line,
+  -- but after the previous CTE's start
+  local target_index = 1  -- Default to first CTE
+
   vim.notify(string.format("[CTE DEBUG] Cursor at relative line %d (absolute line %d)", relative_cursor, cursor_line), vim.log.levels.WARN)
   vim.notify(string.format("[CTE DEBUG] Query starts at line %d, extracted %d lines", start_line, #query_lines), vim.log.levels.WARN)
-  vim.notify(string.format("[CTE DEBUG] Found %d CTE ranges", #cte_line_ranges), vim.log.levels.WARN)
+  vim.notify(string.format("[CTE DEBUG] Found %d CTEs with start lines", #cte_start_lines), vim.log.levels.WARN)
 
-  for _, range in ipairs(cte_line_ranges) do
-    vim.notify(string.format("[CTE DEBUG] CTE %d (%s): lines %d-%d", range.cte_index, result.ctes[range.cte_index].name, range.start_line, range.end_line), vim.log.levels.WARN)
-    if relative_cursor >= range.start_line and relative_cursor <= range.end_line then
-      target_index = range.cte_index
-      vim.notify(string.format("[CTE DEBUG] ✓ Cursor MATCHED in CTE %d (%s)", range.cte_index, result.ctes[range.cte_index].name), vim.log.levels.WARN)
-      break
+  -- Find the last CTE whose start line is <= cursor line
+  for _, cte_start in ipairs(cte_start_lines) do
+    vim.notify(string.format("[CTE DEBUG] CTE %d (%s): starts at line %d", cte_start.index, cte_start.name, cte_start.line), vim.log.levels.WARN)
+    if cte_start.line <= relative_cursor then
+      target_index = cte_start.index
+      vim.notify(string.format("[CTE DEBUG] → Cursor is at/after this CTE start (updating target to %d)", target_index), vim.log.levels.WARN)
     end
   end
 
-  vim.notify(string.format("[CTE DEBUG] Final target_index: %d (CTE: %s)", target_index, result.ctes[target_index].name), vim.log.levels.WARN)
+  vim.notify(string.format("[CTE DEBUG] ✓ Final target_index: %d (CTE: %s)", target_index, result.ctes[target_index].name), vim.log.levels.WARN)
 
   -- Get the target CTE (result.ctes is 1-indexed array from JSON, target_index is 1-based)
   target_cte = result.ctes[target_index]
