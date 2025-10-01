@@ -571,6 +571,11 @@ function M.build_command(query, show_plan, config, state)
       table.insert(cmd_parts, "--col-sample-rows")
       table.insert(cmd_parts, tostring(config.table_output.col_sample_rows))
     end
+
+    -- Add auto-hide empty columns
+    if config.table_output.auto_hide_empty then
+      table.insert(cmd_parts, "--auto-hide-empty")
+    end
   end
 
   -- Add query plan flag if requested

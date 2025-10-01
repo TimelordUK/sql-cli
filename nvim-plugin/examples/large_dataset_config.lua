@@ -24,6 +24,10 @@ require('sql-cli').setup({
     -- This ensures wide values appearing late in the dataset are not truncated
     -- Note: This may be slower for very large datasets (10k+ rows)
     col_sample_rows = 0,
+
+    -- Hide columns that are entirely NULL/empty
+    -- Useful for sparse datasets (e.g., spot trades with empty option columns)
+    auto_hide_empty = true,
   },
 
   -- Auto-detect features

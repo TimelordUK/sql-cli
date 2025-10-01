@@ -23,6 +23,7 @@ M.defaults = {
   table_output = {
     max_col_width = 50,      -- Maximum column width (0 = unlimited, default: 50)
     col_sample_rows = 100,   -- Rows to sample for column width (0 = all rows, default: 100)
+    auto_hide_empty = false, -- Automatically hide columns that are all NULL/empty (default: false)
   },
 
   -- Formatting preferences
