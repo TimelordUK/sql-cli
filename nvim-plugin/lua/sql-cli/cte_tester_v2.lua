@@ -177,6 +177,13 @@ function M.generate_simple_test_query(query_lines, target_cte, all_ctes, target_
 
   vim.notify(string.format("Building query for CTE '%s' at position %d", target_cte.name, target_position), vim.log.levels.INFO)
 
+  -- Add debug header as SQL comments
+  table.insert(test_lines, string.format("-- CTE Tester Debug Info"))
+  table.insert(test_lines, string.format("-- Target CTE: %s", target_cte.name))
+  table.insert(test_lines, string.format("-- Target Position: %d of %d total CTEs", target_position, #all_ctes))
+  table.insert(test_lines, string.format("-- CTEs in query: %s", table.concat(vim.tbl_map(function(c) return c.name end, all_ctes), ", ")))
+  table.insert(test_lines, "")
+
   -- Simple approach: Include everything from WITH up to and including target CTE
   for i, line in ipairs(query_lines) do
     local upper = line:upper()
@@ -204,6 +211,8 @@ function M.generate_simple_test_query(query_lines, target_cte, all_ctes, target_
       if cte_name then
         current_cte_idx = current_cte_idx + 1
         vim.notify(string.format("Found CTE %d: %s (target=%d)", current_cte_idx, cte_name, target_position), vim.log.levels.INFO)
+        -- Add debug comment in generated query
+        table.insert(test_lines, string.format("-- [DEBUG] Found CTE #%d: %s (target=%d)", current_cte_idx, cte_name, target_position))
 
         -- If we've gone past our target, don't include this line
         if current_cte_idx > target_position then
@@ -261,7 +270,9 @@ function M.generate_simple_test_query(query_lines, target_cte, all_ctes, target_
     end
   end
 
-  -- Add SELECT from target CTE
+  -- Add SELECT from target CTE with debug comment
+  table.insert(test_lines, "")
+  table.insert(test_lines, string.format("-- Selecting from target CTE: %s (position %d)", target_cte.name, target_position))
   table.insert(test_lines, string.format("SELECT * FROM %s;", target_cte.name))
 
   return table.concat(test_lines, "\n")
