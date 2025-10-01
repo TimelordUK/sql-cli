@@ -50,18 +50,32 @@ function M.test_cte_at_cursor(config, state)
 
   for idx, cte in ipairs(result.ctes) do
     local cte_name = cte.name
+    vim.notify(string.format("[CTE PARSE] Searching for CTE #%d '%s'...", idx, cte_name), vim.log.levels.WARN)
+
     -- Find the line where this CTE is defined
+    local found = false
     for i, line in ipairs(query_lines) do
-      -- Match: "name AS (" or "WITH name AS ("
-      if line:match("%f[%w]" .. cte_name .. "%s+AS%s*%(") then
+      -- Match: "name AS (" - handles regular CTEs, WEB CTEs, and comma-separated CTEs
+      -- Pattern explanation: word boundary, cte name, whitespace, AS, optional whitespace, opening paren
+      -- This matches:
+      --   WITH trades AS (
+      --   WITH WEB trades AS (
+      --   ,\n  trades AS (
+      local pattern = "%f[%w_]" .. cte_name .. "%s+AS%s*%("
+      if line:match(pattern) then
         table.insert(cte_start_lines, {
           index = idx,
           line = i,
           name = cte_name
         })
-        vim.notify(string.format("[CTE PARSE] Found CTE #%d '%s' at line %d", idx, cte_name, i), vim.log.levels.WARN)
+        vim.notify(string.format("[CTE PARSE] ✓ Found CTE #%d '%s' at line %d (matched: '%s')", idx, cte_name, i, vim.trim(line)), vim.log.levels.WARN)
+        found = true
         break
       end
+    end
+
+    if not found then
+      vim.notify(string.format("[CTE PARSE] ✗ WARNING: Could not find CTE #%d '%s' in query!", idx, cte_name), vim.log.levels.ERROR)
     end
   end
 
