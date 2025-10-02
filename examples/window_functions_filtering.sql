@@ -1,3 +1,4 @@
+-- #! ../data/sales_data.csv
 -- Window Functions: Filtering and Ordering Examples
 -- 
 -- Since window functions are evaluated after WHERE clauses,
