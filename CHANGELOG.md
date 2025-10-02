@@ -5,6 +5,42 @@ All notable changes to SQL CLI will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.56.0] - 2025-10-02
+
+### 🎯 Smart Column Intelligence & Cardinality Analysis
+
+This release brings intelligent column expansion and powerful data cardinality analysis to the Nvim plugin, making data exploration significantly faster.
+
+### ✨ New Features
+
+#### **Smart Star Expansion (`\sE`)**
+- Execute queries with `LIMIT 1` to discover actual column names from CTEs and subqueries
+- No longer limited to static CSV file hints - works with any query context
+- Supports both array-of-objects and object-with-columns JSON formats
+- Auto-inserts column hint comments for Nvim's built-in Ctrl+N completion
+- Configurable via `smart_expansion.enabled` and `auto_insert_column_hints` settings
+- Graceful fallback to static file hints when query execution isn't possible
+
+#### **Distinct Values Analysis (`\srD`)**
+- New `--distinct-column <column>` CLI flag for instant cardinality analysis
+- Automatically detects and preserves WEB CTE context (HTTP data sources)
+- Intelligent CTE extraction using parenthesis depth tracking
+- Displays top 100 distinct values with counts in floating window
+- Works seamlessly with CTEs, subqueries, files, and HTTP endpoints
+- Proper handling of nested CTEs and complex query structures
+
+### 🛠️ Technical Improvements
+- CTE-aware query rewriting in Rust with proper parenthesis tracking
+- Simplified Nvim plugin to call CLI and parse CSV output
+- Proper async handling with `vim.schedule()` for event context
+- Clear separation: Rust handles heavy lifting, Lua orchestrates display
+- Enhanced column state tracking across buffers
+
+### 📚 Documentation
+- Added comprehensive smart expansion guide: `SMART_EXPANSION_README.md`
+- Design document for column completion: `NVIM_SMART_COLUMN_COMPLETION.md`
+- Example queries showcasing smart expansion features
+
 ## [1.55.0] - 2025-09-27
 
 ### 🎉 Windows Nvim Export Support & Performance Documentation
