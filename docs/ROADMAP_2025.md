@@ -98,6 +98,31 @@ Based on current usage patterns and ROI analysis:
 - Excel/XLSX (via library)
 - JSON export options
 
+## 🏗️ Strategic Initiatives
+
+### Plugin Data Model Evolution
+**Status**: Architecture Planning
+**Priority**: P2 (Foundation for future)
+**Document**: [PLUGIN_DATA_MODEL_EVOLUTION.md](PLUGIN_DATA_MODEL_EVOLUTION.md)
+
+**Vision**: Transform plugin from "buffer parser" to "data-aware application"
+
+**Key Phases**:
+1. **Data Layer** (P2, 1 month) - Stop parsing buffers, store structured data
+2. **Multiple Renderers** (P2, 2 months) - Table, compact, summary, tree views
+3. **CTE Composition** (P2, 3 months) - Reference previous query results
+4. **Lua Scripting** (P3, future) - User-supplied transformations
+5. **Smart Decorations** (P3, future) - Annotations, summaries, sparklines
+
+**Benefits**:
+- No more fragile buffer parsing
+- Composable queries (chain results)
+- Multiple visualization styles
+- Extensibility via Lua
+- Foundation for advanced features
+
+**Quick Win Now**: Store query metadata in `vim.b.sql_cli_result`
+
 ## 🔧 Known Issues (Backlog)
 
 ### Window Function Ranking Bug
