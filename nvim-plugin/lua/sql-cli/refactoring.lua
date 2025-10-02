@@ -1028,8 +1028,63 @@ function M.insert_case_after_column(column, case_lines)
     vim.notify(string.format("Generated CASE for column '%s'", column), vim.log.levels.INFO)
 end
 
--- Show distinct values for column under cursor
+-- Helper function to detect table/CTE name from context
+local function get_table_name_from_context()
+  local lines = vim.api.nvim_buf_get_lines(0, 0, -1, false)
+  local cursor = vim.api.nvim_win_get_cursor(0)
+
+  -- Debug logging
+  local debug_file = io.open("/tmp/nvim_cte_detection.log", "w")
+  if debug_file then
+    debug_file:write("=== CTE DETECTION ===\n")
+    debug_file:write("Cursor position: line " .. cursor[1] .. "\n")
+    debug_file:write("Total lines: " .. #lines .. "\n")
+    debug_file:write("Search range: " .. cursor[1] - 1 .. " down to " .. math.max(1, cursor[1] - 50) .. "\n\n")
+  end
+
+  -- Look for CTE definition (WITH ... AS)
+  for i = cursor[1] - 1, math.max(1, cursor[1] - 50), -1 do
+    local line = lines[i]
+    if debug_file then
+      debug_file:write(string.format("Line %d: %s\n", i, tostring(line)))
+    end
+    if line then
+      -- Check for WEB CTE
+      local web_cte = line:match("WITH%s+WEB%s+(%w+)%s+AS") or line:match("with%s+web%s+(%w+)%s+as")
+      if web_cte then
+        if debug_file then
+          debug_file:write(string.format("  -> FOUND WEB CTE: %s\n", web_cte))
+          debug_file:close()
+        end
+        return web_cte, true  -- Return name and is_web flag
+      end
+      -- Check for regular CTE
+      local cte = line:match("WITH%s+(%w+)%s+AS") or line:match("with%s+(%w+)%s+as")
+      if cte then
+        if debug_file then
+          debug_file:write(string.format("  -> FOUND CTE: %s\n", cte))
+          debug_file:close()
+        end
+        return cte, false
+      end
+    end
+  end
+
+  if debug_file then
+    debug_file:write("\nNO CTE FOUND - returning default 'data'\n")
+    debug_file:close()
+  end
+
+  -- Default to 'data'
+  return 'data', false
+end
+
+-- Show distinct values for column under cursor using sql-cli --distinct-column
 function M.show_distinct_values()
+    local config = M.config or require('sql-cli.config').defaults
+    local utils = require('sql-cli.utils')
+    local Job = require('plenary.job')
+
     -- Get word under cursor (column name)
     local column = vim.fn.expand('<cword>')
 
@@ -1038,200 +1093,111 @@ function M.show_distinct_values()
         return
     end
 
-    -- Try to detect data file from context
-    local data_file = ''
-
-    -- Check state first
-    local state = require('sql-cli.state')
-    if state and state.data_file then
-        data_file = state.data_file
+    -- Get the full query context
+    local full_query = require('sql-cli.results').get_query_for_expansion()
+    if not full_query or full_query == '' then
+        vim.notify("Could not determine query context", vim.log.levels.WARN)
+        return
     end
 
-    -- Look for hints in buffer
-    if data_file == '' then
-        local lines = vim.api.nvim_buf_get_lines(0, 0, 30, false)
-        for _, line in ipairs(lines) do
-            -- Check for data file hint
-            local hint = line:match('-- #! (.+%.csv)') or line:match('--data: (.+%.csv)')
-            if hint then
-                local dir = vim.fn.expand('%:p:h')
-                data_file = vim.fn.simplify(dir .. '/' .. hint)
-                break
-            end
-            -- Check for direct file references
-            local from_file = line:match('FROM%s+["\']?([%w_/%.%-]+%.csv)["\']?') or
-                              line:match('from%s+["\']?([%w_/%.%-]+%.csv)["\']?')
-            if from_file then
-                data_file = from_file
-                break
-            end
-        end
-    end
-
-    -- Check common locations
-    if data_file == '' then
-        local common_paths = {
-            'data/house_prices_sample.csv',
-            '../data/house_prices_sample.csv',
-            'house_prices_sample.csv'
-        }
-        for _, path in ipairs(common_paths) do
-            if vim.fn.filereadable(path) == 1 then
-                data_file = path
-                break
-            end
-        end
-    end
-
-    if data_file == '' then
-        -- Ask for file if not found
-        vim.ui.input({ prompt = 'Data file for column "' .. column .. '": ' }, function(file)
-            if file and file ~= '' then
-                M.display_distinct_values(file, column)
-            end
-        end)
-    else
-        -- Display directly
-        M.display_distinct_values(data_file, column)
-    end
-end
-
--- Display distinct values in a floating window
-function M.display_distinct_values(file, column)
-    local config = M.config or require('sql-cli.config').defaults
+    -- Get command path
     local command_path, err = utils.get_command_path(config.command)
     if not command_path then
         vim.notify(err or "sql-cli command not found", vim.log.levels.ERROR)
         return
     end
 
-    -- Run SELECT DISTINCT with limit
+    vim.notify("Analyzing distinct values for '" .. column .. "'...", vim.log.levels.INFO)
+
+    -- Execute sql-cli with --distinct-column flag
     Job:new({
         command = command_path,
-        args = {
-            file,
-            '-q',
-            string.format("SELECT DISTINCT %s, COUNT(*) as count FROM data GROUP BY %s ORDER BY count DESC, %s LIMIT 20",
-                column, column, column),
-            '-o', 'csv'
-        },
+        args = {'-q', full_query, '--distinct-column', column},
         on_exit = function(j, return_val)
             vim.schedule(function()
                 if return_val == 0 then
-                    local result = j:result()
-
-                    -- Also get total distinct count
-                    Job:new({
-                        command = command_path,
-                        args = {
-                            file,
-                            '-q',
-                            string.format("SELECT COUNT(DISTINCT %s) as total_distinct FROM data", column),
-                            '-o', 'csv'
-                        },
-                        on_exit = function(j2, return_val2)
-                            vim.schedule(function()
-                                local total_count = 0
-                                if return_val2 == 0 then
-                                    local count_result = j2:result()
-                                    if count_result[2] then
-                                        total_count = tonumber(count_result[2]) or 0
-                                    end
-                                end
-
-                                -- Create floating window with results
-                                M.show_distinct_values_window(column, result, total_count)
-                            end)
-                        end
-                    }):start()
+                    local result = table.concat(j:result(), '\n')
+                    M.show_distinct_values_window(column, result)
                 else
-                    vim.notify("Could not get distinct values for " .. column, vim.log.levels.ERROR)
+                    local error_output = table.concat(j:stderr_result(), '\n')
+                    vim.notify("Error: " .. error_output, vim.log.levels.ERROR)
                 end
             end)
         end,
     }):start()
 end
 
--- Show distinct values in a floating window
-function M.show_distinct_values_window(column, csv_lines, total_count)
-    -- Parse CSV results
+function M.show_distinct_values_window(column, output)
+    -- Parse the CSV output (column,count format)
+    local lines = vim.split(output, '\n')
     local values = {}
-    for i = 2, #csv_lines do  -- Skip header
-        local parts = vim.split(csv_lines[i], ',')
-        if parts[1] and parts[2] then
-            table.insert(values, {
-                value = parts[1],
-                count = tonumber(parts[2]) or 0
-            })
+    local total_count = 0
+    local header_seen = false
+
+    for _, line in ipairs(lines) do
+        -- Skip comment lines
+        if line:match('^#') then
+            -- Could extract stats from comments if needed
+        elseif line:match('%S') then
+            -- Skip header line
+            if not header_seen and line:match('^' .. column .. ',') then
+                header_seen = true
+            elseif header_seen then
+                -- Parse CSV line: value,count
+                local value, count = line:match('^([^,]+),(%d+)$')
+                if value and count then
+                    table.insert(values, { value = value, count = tonumber(count) })
+                    total_count = total_count + 1
+                end
+            end
         end
-    end
-
-    -- Calculate window dimensions
-    local width = math.min(80, math.floor(vim.o.columns * 0.8))
-    local height = math.min(30, #values + 8)
-
-    -- Create buffer
-    local buf = vim.api.nvim_create_buf(false, true)
-
-    -- Format the content
-    local lines = {}
-    table.insert(lines, string.format("═══ Distinct values for '%s' ═══", column))
-    table.insert(lines, string.format("Total distinct values: %d", total_count))
-
-    if #values < total_count then
-        table.insert(lines, string.format("Showing top %d values by frequency", #values))
-    end
-
-    table.insert(lines, "")
-    table.insert(lines, "Value                                          Count")
-    table.insert(lines, string.rep("─", width - 4))
-
-    -- Add values
-    for _, item in ipairs(values) do
-        local value_str = tostring(item.value)
-        if #value_str > 40 then
-            value_str = string.sub(value_str, 1, 37) .. "..."
-        end
-
-        local line = string.format("%-45s %8d", value_str, item.count)
-        table.insert(lines, line)
     end
 
     if #values == 0 then
-        table.insert(lines, "No values found (column may be empty or NULL)")
+        vim.notify("No distinct values found for column '" .. column .. "'", vim.log.levels.WARN)
+        return
     end
 
-    table.insert(lines, "")
-    table.insert(lines, "[Press 'q' or <Esc> to close]")
+    -- Create display lines
+    local display_lines = {
+        string.format("=== Distinct Values for %s ===", column),
+        string.format("Total: %d distinct values", total_count),
+        "",
+        string.format("%-40s %s", "Value", "Count"),
+        string.rep("-", 60),
+    }
 
-    -- Set buffer content
-    vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
+    for _, item in ipairs(values) do
+        local value_str = item.value
+        if #value_str > 40 then
+            value_str = value_str:sub(1, 37) .. "..."
+        end
+        table.insert(display_lines, string.format("%-40s %d", value_str, item.count))
+    end
 
     -- Create floating window
+    local buf = vim.api.nvim_create_buf(false, true)
+    vim.api.nvim_buf_set_lines(buf, 0, -1, false, display_lines)
+
+    local width = 65
+    local height = math.min(#display_lines + 2, 30)
     local win = vim.api.nvim_open_win(buf, true, {
         relative = 'editor',
         width = width,
         height = height,
-        col = math.floor((vim.o.columns - width) / 2),
         row = math.floor((vim.o.lines - height) / 2),
+        col = math.floor((vim.o.columns - width) / 2),
         style = 'minimal',
-        border = 'rounded'
+        border = 'rounded',
     })
-
-    -- Set up keymaps to close window
-    local function close_window()
-        if vim.api.nvim_win_is_valid(win) then
-            vim.api.nvim_win_close(win, true)
-        end
-    end
-
-    vim.keymap.set('n', 'q', close_window, { buffer = buf })
-    vim.keymap.set('n', '<Esc>', close_window, { buffer = buf })
 
     -- Set buffer options
     vim.api.nvim_buf_set_option(buf, 'modifiable', false)
-    vim.api.nvim_buf_set_option(buf, 'buftype', 'nofile')
     vim.api.nvim_buf_set_option(buf, 'bufhidden', 'wipe')
+
+    -- Close on q or ESC
+    vim.api.nvim_buf_set_keymap(buf, 'n', 'q', '<cmd>close<CR>', { noremap = true, silent = true })
+    vim.api.nvim_buf_set_keymap(buf, 'n', '<ESC>', '<cmd>close<CR>', { noremap = true, silent = true })
 end
 
 -- Setup keymaps

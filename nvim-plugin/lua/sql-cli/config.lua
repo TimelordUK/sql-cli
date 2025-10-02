@@ -46,6 +46,14 @@ M.defaults = {
     data_hints = true,     -- Auto-detect -- #!data: hints in SQL files
   },
 
+  -- Smart expansion features
+  smart_expansion = {
+    enabled = true,                    -- Enable smart * expansion (executes query to get columns)
+    auto_insert_column_hints = true,   -- Auto-insert column hint comments for completion
+    auto_sync_column_hints = true,     -- Sync columns from results buffer to query buffer
+    fallback_to_static = true,         -- Fall back to static schema if query execution fails
+  },
+
   -- Table navigation settings
   table_navigation = {
     enabled_by_default = false,  -- Don't auto-enable table navigation (requires manual toggle)

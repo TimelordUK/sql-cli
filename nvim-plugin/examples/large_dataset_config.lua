@@ -3,46 +3,46 @@
 -- may appear later in the data (e.g., FIX file selectors with 3k+ rows)
 
 require('sql-cli').setup({
-  command = "sql-cli",  -- Or full path like "/home/user/sql-cli/target/release/sql-cli"
+   command = "sql-cli", -- Or full path like "/home/user/sql-cli/target/release/sql-cli"
 
-  -- Split configuration
-  split = {
-    direction = "vertical",
-    size = 0.5,
-  },
+   -- Split configuration
+   split = {
+      direction = "vertical",
+      size = 0.5,
+   },
 
-  -- Output format
-  output_format = "table",
+   -- Output format
+   output_format = "table",
 
-  -- Table output settings optimized for large datasets
-  table_output = {
-    -- Set to 0 for unlimited column width (no truncation)
-    -- Or set to a higher value like 150 if you want some limit
-    max_col_width = 0,
+   -- Table output settings optimized for large datasets
+   table_output = {
+      -- Set to 0 for unlimited column width (no truncation)
+      -- Or set to a higher value like 150 if you want some limit
+      max_col_width = 0,
 
-    -- Set to 0 to scan ALL rows for column width calculation
-    -- This ensures wide values appearing late in the dataset are not truncated
-    -- Note: This may be slower for very large datasets (10k+ rows)
-    col_sample_rows = 0,
+      -- Set to 0 to scan ALL rows for column width calculation
+      -- This ensures wide values appearing late in the dataset are not truncated
+      -- Note: This may be slower for very large datasets (10k+ rows)
+      col_sample_rows = 0,
 
-    -- Hide columns that are entirely NULL/empty
-    -- Useful for sparse datasets (e.g., spot trades with empty option columns)
-    auto_hide_empty = true,
-  },
+      -- Hide columns that are entirely NULL/empty
+      -- Useful for sparse datasets (e.g., spot trades with empty option columns)
+      auto_hide_empty = true,
+   },
 
-  -- Auto-detect features
-  auto_detect = {
-    csv_files = true,
-    data_hints = true,
-  },
+   -- Auto-detect features
+   auto_detect = {
+      csv_files = true,
+      data_hints = true,
+   },
 
-  -- Output settings
-  output = {
-    focus_on_run = false,
-    clear_on_run = true,
-    wrap = false,
-    number = false,
-  },
+   -- Output settings
+   output = {
+      focus_on_run = false,
+      clear_on_run = true,
+      wrap = false,
+      number = false,
+   },
 })
 
 -- Example use cases:
