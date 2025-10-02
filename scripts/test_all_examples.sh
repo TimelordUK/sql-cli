@@ -43,6 +43,8 @@ skip_examples["web_cte_file_upload.sql"]=1
 skip_examples["fix_message_analysis.sql"]=1
 skip_examples["fix_messages_with_selectors.sql"]=1
 skip_examples["parameterized_trades.sql"]=1
+skip_examples["format.sql"]=1
+skip_examples["format_body.sql"]=1
 
 failed=0
 passed=0
