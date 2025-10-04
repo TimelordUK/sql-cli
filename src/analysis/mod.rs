@@ -292,14 +292,83 @@ fn extract_column_from_expr(expr: &crate::sql::parser::ast::SqlExpression) -> Op
     }
 }
 
-/// Extract a specific CTE as a standalone query
+/// Extract a specific CTE as a testable query
+/// Returns ALL CTEs up to and including the target, then SELECT * FROM target
+/// This ensures the query is executable since CTEs depend on previous CTEs
 pub fn extract_cte(ast: &SelectStatement, cte_name: &str) -> Option<String> {
-    for cte in &ast.ctes {
+    // Find the target CTE index
+    let mut target_index = None;
+    for (idx, cte) in ast.ctes.iter().enumerate() {
         if cte.name == cte_name {
-            return Some(format_cte_as_query(cte));
+            target_index = Some(idx);
+            break;
         }
     }
-    None
+
+    let target_index = target_index?;
+
+    // Build query with all CTEs up to and including target
+    let mut parts = vec![];
+
+    // Add WITH clause with all CTEs up to target
+    parts.push("WITH".to_string());
+
+    for (idx, cte) in ast.ctes.iter().enumerate() {
+        if idx > target_index {
+            break; // Stop after target CTE
+        }
+
+        // Add comma separator for CTEs after the first
+        let prefix = if idx == 0 { "" } else { "," };
+
+        match &cte.cte_type {
+            CTEType::Standard(stmt) => {
+                parts.push(format!("{} {} AS (", prefix, cte.name));
+                parts.push(indent_query(&format_select_statement(stmt), 2));
+                parts.push(")".to_string());
+            }
+            CTEType::Web(web_spec) => {
+                parts.push(format!("{} WEB {} AS (", prefix, cte.name));
+                parts.push(format!("  URL '{}'", web_spec.url));
+
+                if let Some(ref m) = web_spec.method {
+                    parts.push(format!("  METHOD {:?}", m));
+                }
+
+                if !web_spec.headers.is_empty() {
+                    parts.push("  HEADERS (".to_string());
+                    for (k, v) in &web_spec.headers {
+                        parts.push(format!("    '{}' = '{}'", k, v));
+                    }
+                    parts.push("  )".to_string());
+                }
+
+                if let Some(ref b) = web_spec.body {
+                    parts.push(format!("  BODY '{}'", b));
+                }
+
+                if let Some(ref f) = web_spec.format {
+                    parts.push(format!("  FORMAT {:?}", f));
+                }
+
+                parts.push(")".to_string());
+            }
+        }
+    }
+
+    // Add SELECT * FROM target
+    parts.push(format!("SELECT * FROM {}", cte_name));
+
+    Some(parts.join("\n"))
+}
+
+fn indent_query(query: &str, spaces: usize) -> String {
+    let indent = " ".repeat(spaces);
+    query
+        .lines()
+        .map(|line| format!("{}{}", indent, line))
+        .collect::<Vec<_>>()
+        .join("\n")
 }
 
 fn format_cte_as_query(cte: &CTE) -> String {
