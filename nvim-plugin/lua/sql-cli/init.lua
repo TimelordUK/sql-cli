@@ -543,43 +543,216 @@ function M.setup_keymaps()
     end, { desc = "Toggle table navigation mode", silent = true })
   end
 
-  -- Multi-table navigation keymaps
-  if keymaps.next_table then
-    vim.keymap.set("n", keymaps.next_table, function()
-      multi_table_nav.goto_next_table(M.state)
-    end, { desc = "Next result table", silent = true })
+  -- Helper to check if in results buffer and auto-enable table navigation
+  local function require_results_buffer()
+    local bufnr = vim.api.nvim_get_current_buf()
+    local output_bufnr = M.state:get_output_buf()
+
+    if not output_bufnr or bufnr ~= output_bufnr then
+      vim.notify("This command only works in the results buffer", vim.log.levels.WARN)
+      return false
+    end
+
+    -- Auto-enable table navigation if not already enabled
+    if not table_nav.is_active() then
+      if table_nav.init_navigation(bufnr) then
+        table_nav.setup_keymaps(bufnr, M.config)
+      else
+        vim.notify("Could not find a table in the buffer", vim.log.levels.WARN)
+        return false
+      end
+    end
+
+    return true
   end
 
-  if keymaps.prev_table then
-    vim.keymap.set("n", keymaps.prev_table, function()
-      multi_table_nav.goto_prev_table(M.state)
-    end, { desc = "Previous result table", silent = true })
+  -- Table toggle (works in results buffer, also accessible via legacy \sn)
+  if keymaps.table_toggle then
+    vim.keymap.set("n", keymaps.table_toggle, function()
+      table_nav.toggle_navigation(nil, M.config)
+    end, { desc = "Table: Toggle navigation mode", silent = true })
   end
 
-  if keymaps.goto_table_1 then
-    vim.keymap.set("n", keymaps.goto_table_1, function()
-      multi_table_nav.goto_table(M.state, 1)
-    end, { desc = "Go to table 1", silent = true })
+  -- Table navigation keymaps (\sT prefix - all discoverable in which-key)
+  if keymaps.table_nav_left then
+    vim.keymap.set("n", keymaps.table_nav_left, function()
+      if require_results_buffer() then
+        table_nav.move_left()
+      end
+    end, { desc = "Table: Navigate left", silent = true })
   end
 
-  if keymaps.goto_table_2 then
-    vim.keymap.set("n", keymaps.goto_table_2, function()
-      multi_table_nav.goto_table(M.state, 2)
-    end, { desc = "Go to table 2", silent = true })
+  if keymaps.table_nav_down then
+    vim.keymap.set("n", keymaps.table_nav_down, function()
+      if require_results_buffer() then
+        table_nav.move_down()
+      end
+    end, { desc = "Table: Navigate down", silent = true })
   end
 
-  if keymaps.goto_table_3 then
-    vim.keymap.set("n", keymaps.goto_table_3, function()
-      multi_table_nav.goto_table(M.state, 3)
-    end, { desc = "Go to table 3", silent = true })
+  if keymaps.table_nav_up then
+    vim.keymap.set("n", keymaps.table_nav_up, function()
+      if require_results_buffer() then
+        table_nav.move_up()
+      end
+    end, { desc = "Table: Navigate up", silent = true })
+  end
+
+  if keymaps.table_nav_right then
+    vim.keymap.set("n", keymaps.table_nav_right, function()
+      if require_results_buffer() then
+        table_nav.move_right()
+      end
+    end, { desc = "Table: Navigate right", silent = true })
+  end
+
+  if keymaps.table_nav_first_col then
+    vim.keymap.set("n", keymaps.table_nav_first_col, function()
+      if require_results_buffer() then
+        table_nav.go_to_first_column()
+      end
+    end, { desc = "Table: First column", silent = true })
+  end
+
+  if keymaps.table_nav_last_col then
+    vim.keymap.set("n", keymaps.table_nav_last_col, function()
+      if require_results_buffer() then
+        table_nav.go_to_last_column()
+      end
+    end, { desc = "Table: Last column", silent = true })
+  end
+
+  if keymaps.table_nav_first_row then
+    vim.keymap.set("n", keymaps.table_nav_first_row, function()
+      if require_results_buffer() then
+        table_nav.go_to_first_row()
+      end
+    end, { desc = "Table: First row", silent = true })
+  end
+
+  if keymaps.table_nav_last_row then
+    vim.keymap.set("n", keymaps.table_nav_last_row, function()
+      if require_results_buffer() then
+        table_nav.go_to_last_row()
+      end
+    end, { desc = "Table: Last row", silent = true })
+  end
+
+  if keymaps.table_yank_cell then
+    vim.keymap.set("n", keymaps.table_yank_cell, function()
+      if require_results_buffer() then
+        table_nav.yank_cell()
+      end
+    end, { desc = "Table: Yank cell", silent = true })
+  end
+
+  if keymaps.table_yank_row then
+    vim.keymap.set("n", keymaps.table_yank_row, function()
+      if require_results_buffer() then
+        table_nav.yank_row()
+      end
+    end, { desc = "Table: Yank row", silent = true })
+  end
+
+  if keymaps.table_yank_column then
+    vim.keymap.set("n", keymaps.table_yank_column, function()
+      if require_results_buffer() then
+        table_nav.yank_column()
+      end
+    end, { desc = "Table: Yank column", silent = true })
+  end
+
+  if keymaps.table_yank_column_json then
+    vim.keymap.set("n", keymaps.table_yank_column_json, function()
+      if require_results_buffer() then
+        table_nav.yank_column_as_json()
+      end
+    end, { desc = "Table: Yank column as JSON", silent = true })
+  end
+
+  if keymaps.table_diagnostic then
+    vim.keymap.set("n", keymaps.table_diagnostic, function()
+      if require_results_buffer() then
+        table_nav.show_table_diagnostic()
+      end
+    end, { desc = "Table: Show diagnostic", silent = true })
+  end
+
+  -- Multi-table navigation keymaps (\sT prefix)
+  -- These don't need table nav to be enabled, just need to be in results buffer
+  local function in_results_buffer()
+    local bufnr = vim.api.nvim_get_current_buf()
+    local output_bufnr = M.state:get_output_buf()
+
+    -- Debug info
+    if M.logger then
+      M.logger.info('init', string.format(
+        'in_results_buffer check: current_buf=%d, output_bufnr=%s',
+        bufnr,
+        tostring(output_bufnr)
+      ))
+    end
+
+    if not output_bufnr or bufnr ~= output_bufnr then
+      if M.logger then
+        M.logger.warn('init', 'Buffer check failed')
+      end
+      vim.notify(string.format(
+        "This command only works in the results buffer (current=%d, expected=%s)",
+        bufnr,
+        tostring(output_bufnr)
+      ), vim.log.levels.WARN)
+      return false
+    end
+    return true
+  end
+
+  if keymaps.table_next then
+    vim.keymap.set("n", keymaps.table_next, function()
+      if in_results_buffer() then
+        multi_table_nav.goto_next_table(M.state)
+      end
+    end, { desc = "Table: Next result table", silent = true })
+  end
+
+  if keymaps.table_prev then
+    vim.keymap.set("n", keymaps.table_prev, function()
+      if in_results_buffer() then
+        multi_table_nav.goto_prev_table(M.state)
+      end
+    end, { desc = "Table: Previous result table", silent = true })
+  end
+
+  if keymaps.table_goto_1 then
+    vim.keymap.set("n", keymaps.table_goto_1, function()
+      if in_results_buffer() then
+        multi_table_nav.goto_table(M.state, 1)
+      end
+    end, { desc = "Table: Go to table 1", silent = true })
+  end
+
+  if keymaps.table_goto_2 then
+    vim.keymap.set("n", keymaps.table_goto_2, function()
+      if in_results_buffer() then
+        multi_table_nav.goto_table(M.state, 2)
+      end
+    end, { desc = "Table: Go to table 2", silent = true })
+  end
+
+  if keymaps.table_goto_3 then
+    vim.keymap.set("n", keymaps.table_goto_3, function()
+      if in_results_buffer() then
+        multi_table_nav.goto_table(M.state, 3)
+      end
+    end, { desc = "Table: Go to table 3", silent = true })
   end
 
   if keymaps.table_info then
     vim.keymap.set("n", keymaps.table_info, function()
-      -- Call debug function temporarily to see what tables are detected
-      multi_table_nav.debug_tables(M.state)
-      -- multi_table_nav.show_table_info(M.state)
-    end, { desc = "Debug table detection", silent = true })
+      if in_results_buffer() then
+        multi_table_nav.debug_tables(M.state)
+      end
+    end, { desc = "Table: Show table info", silent = true })
   end
 
   -- Export keymaps (auto-enable table nav if needed)

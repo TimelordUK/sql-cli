@@ -58,6 +58,7 @@ M.defaults = {
   table_navigation = {
     enabled_by_default = false,  -- Don't auto-enable table navigation (requires manual toggle)
     hijack_hjkl = true,          -- When enabled, use hjkl for table navigation (set false for normal vim movement)
+    use_data_model = false,      -- Use new data model architecture (experimental, default: false for stability)
   },
 
   -- Keymaps (set to false to disable)
@@ -90,14 +91,29 @@ M.defaults = {
     expand_star = "<leader>sE",     -- Expand SELECT * to column names (capital E)
     copy_query = "<leader>sy",       -- Copy query at cursor to clipboard (y for yank)
     copy_query_shell = "<leader>sY", -- Copy query for shell execution (capital Y)
-    toggle_table_nav = "<leader>sn", -- Toggle table navigation mode (n for nav)
-    -- Multi-table navigation (for scripts with GO statements)
-    next_table = "]t",              -- Jump to next result table
-    prev_table = "[t",              -- Jump to previous result table
-    goto_table_1 = "<leader>s1",    -- Jump to first table
-    goto_table_2 = "<leader>s2",    -- Jump to second table
-    goto_table_3 = "<leader>s3",    -- Jump to third table
-    table_info = "<leader>sI",      -- Show current table info (capital I to avoid conflict)
+    toggle_table_nav = "<leader>sn", -- Toggle table navigation mode (n for nav) - legacy
+    -- Table navigation (works in results buffer only, \sT prefix for which-key)
+    table_toggle = "<leader>sTt",       -- Toggle table navigation on/off (t for toggle)
+    table_nav_left = "<leader>sTh",     -- Navigate left (h in table nav)
+    table_nav_down = "<leader>sTj",     -- Navigate down (j in table nav)
+    table_nav_up = "<leader>sTk",       -- Navigate up (k in table nav)
+    table_nav_right = "<leader>sTl",    -- Navigate right (l in table nav)
+    table_nav_first_col = "<leader>sT0", -- Jump to first column (0)
+    table_nav_last_col = "<leader>sT$",  -- Jump to last column ($)
+    table_nav_first_row = "<leader>sTgg", -- Jump to first row (gg)
+    table_nav_last_row = "<leader>sTG",  -- Jump to last row (G)
+    table_yank_cell = "<leader>sTy",    -- Yank current cell
+    table_yank_row = "<leader>sTY",     -- Yank entire row
+    table_yank_column = "<leader>sTc",  -- Yank entire column
+    table_yank_column_json = "<leader>sTJ", -- Yank column as JSON array (capital J)
+    table_diagnostic = "<leader>sTd",   -- Show table diagnostic info
+    -- Multi-table navigation (for scripts with GO statements, \sT prefix)
+    table_next = "<leader>sTn",     -- Jump to next result table (n for next)
+    table_prev = "<leader>sTp",     -- Jump to previous result table (p for prev)
+    table_goto_1 = "<leader>sT1",   -- Jump to result table 1
+    table_goto_2 = "<leader>sT2",   -- Jump to result table 2
+    table_goto_3 = "<leader>sT3",   -- Jump to result table 3
+    table_info = "<leader>sTi",     -- Show current table info (i for info)
     -- Export keymaps (when in table navigation mode)
     export_menu = "<leader>se",     -- Export menu (all formats)
     export_browser = nil,  -- Removed - use export menu instead

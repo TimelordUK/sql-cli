@@ -844,11 +844,14 @@ function M.get_status()
 end
 
 -- Setup keymaps for navigation
+-- Setup table navigation mode
 function M.setup_keymaps(bufnr, config)
-  local opts = { noremap = true, silent = true, buffer = bufnr }
-
   -- Store that we're in table nav mode
   vim.b[bufnr].sql_cli_table_nav_active = true
+
+  -- Setup buffer-local convenience keymaps (hjkl, yy, etc.) when in table mode
+  -- This makes navigation more natural, while \sT keymaps remain globally available
+  local opts = { noremap = true, silent = true, buffer = bufnr }
 
   -- Get configuration or use defaults
   config = config or {}
@@ -873,26 +876,9 @@ function M.setup_keymaps(bufnr, config)
     vim.keymap.set("n", "l", function()
       M.move_right()
     end, opts)
-  else
-    -- Alternative arrow-key style navigation (preserves hjkl for normal vim movement)
-    vim.keymap.set("n", "<Left>", function()
-      M.move_left()
-    end, opts)
-
-    vim.keymap.set("n", "<Down>", function()
-      M.move_down()
-    end, opts)
-
-    vim.keymap.set("n", "<Up>", function()
-      M.move_up()
-    end, opts)
-
-    vim.keymap.set("n", "<Right>", function()
-      M.move_right()
-    end, opts)
   end
 
-  -- Jump to boundaries
+  -- Jump to boundaries (only when in table mode)
   vim.keymap.set("n", "0", M.go_to_first_column, opts)
   vim.keymap.set("n", "$", M.go_to_last_column, opts)
   vim.keymap.set("n", "gg", M.go_to_first_row, opts)
@@ -902,49 +888,6 @@ function M.setup_keymaps(bufnr, config)
   vim.keymap.set("n", "yy", M.yank_cell, opts)
   vim.keymap.set("n", "Y", M.yank_row, opts)
   vim.keymap.set("n", "yc", M.yank_column, opts)
-
-  -- Yank column as JSON array (for WEB CTE bodies)
-  vim.keymap.set("n", "<leader>sYj", M.yank_column_as_json, opts)
-
-  -- Diagnostic command to show table info
-  vim.keymap.set("n", "<leader>sd", M.show_table_diagnostic, opts)
-
-  -- Export operations with \s prefix
-  vim.keymap.set("n", "<leader>se", function()
-    export.show_export_menu(bufnr, nav_state.table_info)
-  end, opts)
-
-  vim.keymap.set("n", "<leader>sb", function()
-    export.yank_as_html(bufnr, nav_state.table_info, true)   -- Open in browser
-  end, opts)
-
-  vim.keymap.set("n", "<leader>sH", function()
-    export.yank_as_html(bufnr, nav_state.table_info, false)  -- Just yank HTML code
-  end, opts)
-
-  vim.keymap.set("n", "<leader>sm", function()
-    export.yank_as_markdown(bufnr, nav_state.table_info)
-  end, opts)
-
-  vim.keymap.set("n", "<leader>st", function()
-    export.yank_as_tsv(bufnr, nav_state.table_info)
-  end, opts)
-
-  vim.keymap.set("n", "<leader>si", function()
-    vim.ui.input({ prompt = "Table name: ", default = "my_table" }, function(name)
-      if name then
-        export.yank_as_insert(bufnr, nav_state.table_info, name)
-      end
-    end)
-  end, opts)
-
-  vim.keymap.set("n", "<leader>sC", function()
-    vim.ui.input({ prompt = "Table name: ", default = "my_table" }, function(name)
-      if name then
-        export.yank_create_table(bufnr, nav_state.table_info, name)
-      end
-    end)
-  end, opts)
 
   -- Tab navigation
   vim.keymap.set("n", "<Tab>", function()

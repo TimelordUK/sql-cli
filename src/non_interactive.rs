@@ -45,6 +45,7 @@ fn extract_cte_dependencies(cte: &CTE) -> Vec<String> {
 pub enum OutputFormat {
     Csv,
     Json,
+    JsonStructured, // Structured JSON with metadata for IDE/plugin integration
     Table,
     Tsv,
 }
@@ -54,10 +55,11 @@ impl OutputFormat {
         match s.to_lowercase().as_str() {
             "csv" => Ok(OutputFormat::Csv),
             "json" => Ok(OutputFormat::Json),
+            "json-structured" => Ok(OutputFormat::JsonStructured),
             "table" => Ok(OutputFormat::Table),
             "tsv" => Ok(OutputFormat::Tsv),
             _ => Err(anyhow::anyhow!(
-                "Invalid output format: {}. Use csv, json, table, or tsv",
+                "Invalid output format: {}. Use csv, json, json-structured, table, or tsv",
                 s
             )),
         }
@@ -489,6 +491,7 @@ pub fn execute_non_interactive(config: NonInteractiveConfig) -> Result<()> {
     }
 
     // 6. Output the results
+    let exec_time_ms = exec_time.as_secs_f64() * 1000.0;
     let output_result = if let Some(ref path) = config.output_file {
         let mut file = fs::File::create(path)
             .with_context(|| format!("Failed to create output file: {path}"))?;
@@ -498,6 +501,7 @@ pub fn execute_non_interactive(config: NonInteractiveConfig) -> Result<()> {
             &mut file,
             config.max_col_width,
             config.col_sample_rows,
+            exec_time_ms,
         )?;
         info!("Results written to: {}", path);
         Ok(())
@@ -508,6 +512,7 @@ pub fn execute_non_interactive(config: NonInteractiveConfig) -> Result<()> {
             &mut io::stdout(),
             config.max_col_width,
             config.col_sample_rows,
+            exec_time_ms,
         )?;
         Ok(())
     };
@@ -627,6 +632,9 @@ pub fn execute_script(config: NonInteractiveConfig) -> Result<()> {
                     }
                     OutputFormat::Json => {
                         output_json(&final_view, &mut statement_output)?;
+                    }
+                    OutputFormat::JsonStructured => {
+                        output_json_structured(&final_view, &mut statement_output, exec_time)?;
                     }
                     OutputFormat::Table => {
                         output_table(
@@ -778,11 +786,13 @@ fn output_results<W: Write>(
     writer: &mut W,
     max_col_width: Option<usize>,
     col_sample_rows: usize,
+    exec_time_ms: f64,
 ) -> Result<()> {
     match format {
         OutputFormat::Csv => output_csv(dataview, writer, ','),
         OutputFormat::Tsv => output_csv(dataview, writer, '\t'),
         OutputFormat::Json => output_json(dataview, writer),
+        OutputFormat::JsonStructured => output_json_structured(dataview, writer, exec_time_ms),
         OutputFormat::Table => output_table(dataview, writer, max_col_width, col_sample_rows),
     }
 }
@@ -837,6 +847,106 @@ fn output_json<W: Write>(dataview: &DataView, writer: &mut W) -> Result<()> {
     }
 
     let json = serde_json::to_string_pretty(&rows)?;
+    writeln!(writer, "{json}")?;
+
+    Ok(())
+}
+
+/// Output results as structured JSON with metadata for IDE/plugin integration
+fn output_json_structured<W: Write>(
+    dataview: &DataView,
+    writer: &mut W,
+    exec_time: f64,
+) -> Result<()> {
+    let column_names = dataview.column_names();
+    let data_table = dataview.source();
+
+    // Build column metadata
+    let mut columns = Vec::new();
+    for (idx, name) in column_names.iter().enumerate() {
+        let col_type = data_table
+            .columns
+            .get(idx)
+            .map(|c| format!("{:?}", c.data_type))
+            .unwrap_or_else(|| "UNKNOWN".to_string());
+
+        // Calculate max width for this column
+        let mut max_width = name.len();
+        for row_idx in 0..dataview.row_count() {
+            if let Some(row) = dataview.get_row(row_idx) {
+                if let Some(value) = row.values.get(idx) {
+                    let display_width = match value {
+                        DataValue::Null => 4, // "NULL"
+                        DataValue::Integer(i) => i.to_string().len(),
+                        DataValue::Float(f) => format!("{:.2}", f).len(),
+                        DataValue::String(s) => s.len(),
+                        DataValue::InternedString(s) => s.len(),
+                        DataValue::Boolean(b) => {
+                            if *b {
+                                4
+                            } else {
+                                5
+                            }
+                        } // "true" or "false"
+                        DataValue::DateTime(dt) => dt.len(),
+                    };
+                    max_width = max_width.max(display_width);
+                }
+            }
+        }
+
+        let alignment = match data_table.columns.get(idx).map(|c| &c.data_type) {
+            Some(crate::data::datatable::DataType::Integer) => "right",
+            Some(crate::data::datatable::DataType::Float) => "right",
+            _ => "left",
+        };
+
+        let col_meta = serde_json::json!({
+            "name": name,
+            "type": col_type,
+            "max_width": max_width,
+            "alignment": alignment
+        });
+        columns.push(col_meta);
+    }
+
+    // Build rows as arrays of strings
+    let mut rows = Vec::new();
+    for row_idx in 0..dataview.row_count() {
+        if let Some(row) = dataview.get_row(row_idx) {
+            let row_values: Vec<String> = row
+                .values
+                .iter()
+                .map(|v| match v {
+                    DataValue::Null => String::new(),
+                    DataValue::Integer(i) => i.to_string(),
+                    DataValue::Float(f) => format!("{:.2}", f),
+                    DataValue::String(s) => s.clone(),
+                    DataValue::InternedString(s) => s.to_string(),
+                    DataValue::Boolean(b) => b.to_string(),
+                    DataValue::DateTime(dt) => dt.clone(),
+                })
+                .collect();
+            rows.push(serde_json::Value::Array(
+                row_values
+                    .into_iter()
+                    .map(serde_json::Value::String)
+                    .collect(),
+            ));
+        }
+    }
+
+    // Build complete structured output
+    let output = serde_json::json!({
+        "columns": columns,
+        "rows": rows,
+        "metadata": {
+            "total_rows": dataview.row_count(),
+            "query_time_ms": exec_time
+        }
+    });
+
+    let json = serde_json::to_string_pretty(&output)?;
     writeln!(writer, "{json}")?;
 
     Ok(())
