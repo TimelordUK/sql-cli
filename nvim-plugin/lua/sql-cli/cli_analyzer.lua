@@ -309,14 +309,19 @@ function M.show_raw_analysis_popup(query)
     return
   end
 
-  -- Convert analysis to pretty JSON
+  -- Format JSON (use jq if available for pretty printing)
   local json_str = vim.fn.json_encode(analysis)
-  local ok, pretty_json = pcall(vim.fn.json_decode, json_str)
-  if ok then
-    json_str = vim.fn.json_encode(pretty_json)
+  if vim.fn.executable('jq') == 1 then
+    local jq_output = vim.fn.system('jq .', json_str)
+    if vim.v.shell_error == 0 then
+      json_str = jq_output
+      if log then
+        log.debug('cli_analyzer', 'Formatted JSON with jq')
+      end
+    end
   end
 
-  -- Format JSON with indentation
+  -- Split into lines
   local lines = {}
   for line in json_str:gmatch('[^\n]+') do
     table.insert(lines, line)
