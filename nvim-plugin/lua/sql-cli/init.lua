@@ -17,9 +17,8 @@ local results = require('sql-cli.results')
 local table_nav = require('sql-cli.table_nav')
 local multi_table_nav = require('sql-cli.multi_table_nav')
 local visualize = require('sql-cli.visualize')
-local cte_tester = require('sql-cli.cte_tester_v3')  -- V3: Uses CLI analysis instead of regex
-local cte_debug = require('sql-cli.cte_debug')
-local cte_parser_cli = require('sql-cli.cte_parser_cli')
+local cte_tester = require('sql-cli.cte_tester')  -- Uses CLI analysis instead of regex
+local cte_parser_cli = require('sql-cli.cte_parser_cli')  -- CTE analysis popup
 local refactoring = require('sql-cli.refactoring')
 local window_functions = require('sql-cli.window_functions')
 
@@ -183,20 +182,8 @@ function M.create_commands()
   end, { desc = "Test CTE in new buffer" })
 
   vim.api.nvim_create_user_command("SqlCliCteAnalysis", function()
-    cte_debug.show_cte_analysis_popup()
-  end, { desc = "Show CTE analysis popup" })
-
-  vim.api.nvim_create_user_command("SqlCliCteDebug", function()
-    cte_debug.debug_cte_parsing()
-  end, { desc = "Debug CTE parsing" })
-
-  vim.api.nvim_create_user_command("SqlCliCteAnalysisCli", function()
     cte_parser_cli.show_cte_analysis_popup()
-  end, { desc = "Show CTE analysis using CLI parser" })
-
-  vim.api.nvim_create_user_command("SqlCliTestCteV2", function()
-    cte_tester.test_cte_at_cursor(M.config, M.state)
-  end, { desc = "Test CTE at cursor (v2 with debug)" })
+  end, { desc = "Show CTE analysis popup" })
 
   vim.api.nvim_create_user_command("SqlCliResultsToBuffer", function()
     results.results_to_buffer(M.state)

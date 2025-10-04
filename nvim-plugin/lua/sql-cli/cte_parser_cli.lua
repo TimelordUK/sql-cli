@@ -1,49 +1,27 @@
--- SQL CLI CTE Parser using CLI JSON output
--- Uses sql-cli --cte-info for robust parsing
+-- SQL CLI CTE Parser using CLI analysis
+-- Uses cli_analyzer module with --analyze-query for robust parsing
 
 local M = {}
 
--- Parse CTEs using SQL CLI
-function M.parse_ctes_with_cli(query_lines)
-  -- Write query to temp file
-  local temp_file = vim.fn.tempname() .. ".sql"
-  vim.fn.writefile(query_lines, temp_file)
-
-  -- Get sql-cli command path
-  local utils = require('sql-cli.utils')
-  local cmd_path = utils.get_command_path("sql-cli")
-  if not cmd_path then
-    vim.notify("sql-cli not found", vim.log.levels.ERROR)
-    return nil
+-- Get logger
+local logger = nil
+local function get_logger()
+  if not logger then
+    local ok, sql_cli = pcall(require, 'sql-cli')
+    if ok and sql_cli.logger then
+      logger = sql_cli.logger
+    end
   end
-
-  -- Execute sql-cli with --cte-info
-  local cmd = string.format("%s -f %s --cte-info -o csv 2>/dev/null",
-    vim.fn.shellescape(cmd_path),
-    vim.fn.shellescape(temp_file))
-
-  local output = vim.fn.system(cmd)
-
-  -- Clean up temp file
-  vim.fn.delete(temp_file)
-
-  -- Parse JSON output
-  local ok, result = pcall(vim.json.decode, output)
-  if not ok then
-    vim.notify("Failed to parse CTE info: " .. output:sub(1, 100), vim.log.levels.ERROR)
-    return nil
-  end
-
-  if not result.success then
-    vim.notify("SQL parse error: " .. (result.error or "unknown"), vim.log.levels.ERROR)
-    return nil
-  end
-
-  return result
+  return logger
 end
 
--- Enhanced CTE analysis popup using CLI parser
+-- Enhanced CTE analysis popup using CLI analyzer
 function M.show_cte_analysis_popup()
+  local log = get_logger()
+  if log then
+    log.info('cte_parser_cli', 'show_cte_analysis_popup called')
+  end
+
   local bufnr = vim.api.nvim_get_current_buf()
   local cursor_line = vim.fn.line('.')
   local lines = vim.api.nvim_buf_get_lines(bufnr, 0, -1, false)
@@ -62,66 +40,89 @@ function M.show_cte_analysis_popup()
   for i = start_line, end_line do
     table.insert(query_lines, lines[i])
   end
+  local query = table.concat(query_lines, '\n')
 
-  -- Parse CTEs using SQL CLI
-  local result = M.parse_ctes_with_cli(query_lines)
+  if log then
+    log.debug('cte_parser_cli', string.format('Query range: %d-%d (%d lines)', start_line, end_line, #query_lines))
+  end
+
+  -- Analyze query using CLI analyzer
+  local cli_analyzer = require('sql-cli.cli_analyzer')
+  local analysis, err = cli_analyzer.analyze_query(query)
+
+  if err then
+    vim.notify("Failed to analyze query: " .. err, vim.log.levels.ERROR)
+    return
+  end
 
   -- Prepare analysis content
   local content = {}
   table.insert(content, "═══════════════════════════════════════════")
-  table.insert(content, "       CTE ANALYSIS REPORT (CLI Parser)")
+  table.insert(content, "       CTE ANALYSIS REPORT")
   table.insert(content, "═══════════════════════════════════════════")
   table.insert(content, "")
   table.insert(content, string.format("Query Range: Lines %d-%d", start_line, end_line))
   table.insert(content, string.format("Total Lines: %d", #query_lines))
+  table.insert(content, string.format("CTEs Found: %d", #analysis.ctes))
+  table.insert(content, string.format("Has SELECT *: %s", analysis.has_star and "Yes" or "No"))
+  table.insert(content, "")
 
-  if result then
-    table.insert(content, string.format("CTEs Found: %d", result.total))
-    table.insert(content, string.format("Has Final SELECT: %s", result.has_final_select and "Yes" or "No"))
+  if #analysis.ctes > 0 then
+    table.insert(content, "CTE STRUCTURE:")
+    table.insert(content, "─────────────────────────────────")
+    for i, cte in ipairs(analysis.ctes) do
+      local cte_type_indicator = cte.cte_type == "WEB" and " [WEB]" or ""
+      table.insert(content, string.format("%d. %s%s", i, cte.name, cte_type_indicator))
+
+      -- Show columns if available
+      if cte.columns and #cte.columns > 0 then
+        local col_preview = table.concat(cte.columns, ", ")
+        if #col_preview > 50 then
+          col_preview = col_preview:sub(1, 47) .. "..."
+        end
+        table.insert(content, "   Columns: " .. col_preview)
+      end
+
+      -- Show dependencies
+      if cte.references and #cte.references > 0 then
+        table.insert(content, "   Depends on: " .. table.concat(cte.references, ", "))
+      else
+        table.insert(content, "   Depends on: (none - base CTE)")
+      end
+    end
+
     table.insert(content, "")
-
-    if result.total > 0 then
-      table.insert(content, "CTE STRUCTURE:")
-      table.insert(content, "─────────────────────────────────")
-      for _, cte in ipairs(result.ctes) do
-        table.insert(content, string.format("%d. %s", cte.index + 1, cte.name))
-        -- Handle null/nil columns from JSON
-        if cte.columns and type(cte.columns) == "table" and #cte.columns > 0 then
-          table.insert(content, "   Columns: " .. table.concat(cte.columns, ", "))
-        end
-        -- Handle dependencies
-        if cte.dependencies and type(cte.dependencies) == "table" and #cte.dependencies > 0 then
-          table.insert(content, "   Depends on: " .. table.concat(cte.dependencies, ", "))
-        else
-          table.insert(content, "   Depends on: (none - base CTE)")
-        end
+    table.insert(content, "CTE DEPENDENCY CHAIN:")
+    table.insert(content, "─────────────────────────────────")
+    for _, cte in ipairs(analysis.ctes) do
+      local deps = "(base)"
+      if cte.references and #cte.references > 0 then
+        deps = table.concat(cte.references, ", ")
       end
+      table.insert(content, string.format("  %s <- %s", cte.name, deps))
+    end
 
-      table.insert(content, "")
-      table.insert(content, "CTE DEPENDENCY CHAIN:")
-      table.insert(content, "─────────────────────────────────")
-      for _, cte in ipairs(result.ctes) do
-        local deps = "(base)"
-        if cte.dependencies and type(cte.dependencies) == "table" and #cte.dependencies > 0 then
-          deps = table.concat(cte.dependencies, ", ")
-        end
-        table.insert(content, string.format("  %s <- %s", cte.name, deps))
-      end
-
-      table.insert(content, "")
-      table.insert(content, "TEST COMMANDS:")
-      table.insert(content, "─────────────────────────────────")
-      for _, cte in ipairs(result.ctes) do
-        table.insert(content, string.format("  • Test %s with <leader>sC", cte.name))
+    table.insert(content, "")
+    table.insert(content, "TABLES REFERENCED:")
+    table.insert(content, "─────────────────────────────────")
+    if #analysis.tables > 0 then
+      for _, table_name in ipairs(analysis.tables) do
+        table.insert(content, "  • " .. table_name)
       end
     else
-      table.insert(content, "")
-      table.insert(content, "❌ NO CTEs FOUND")
+      table.insert(content, "  (no external tables)")
+    end
+
+    table.insert(content, "")
+    table.insert(content, "TEST COMMANDS:")
+    table.insert(content, "─────────────────────────────────")
+    for _, cte in ipairs(analysis.ctes) do
+      table.insert(content, string.format("  • Test %s with \\sC (cursor in CTE)", cte.name))
     end
   else
     table.insert(content, "")
-    table.insert(content, "❌ PARSE ERROR")
-    table.insert(content, "Check query syntax or run sql-cli --cte-info manually")
+    table.insert(content, "❌ NO CTEs FOUND")
+    table.insert(content, "This query does not contain any WITH clauses")
   end
 
   table.insert(content, "")
@@ -143,11 +144,11 @@ function M.show_cte_analysis_popup()
   -- Create buffer
   local float_buf = vim.api.nvim_create_buf(false, true)
   vim.api.nvim_buf_set_lines(float_buf, 0, -1, false, content)
-  vim.bo[float_buf].modifiable = false
-  vim.bo[float_buf].filetype = 'markdown'
+  vim.api.nvim_buf_set_option(float_buf, 'modifiable', false)
+  vim.api.nvim_buf_set_option(float_buf, 'filetype', 'sql-cli-analysis')
 
-  -- Window options
-  local opts = {
+  -- Create window
+  local win_opts = {
     relative = 'editor',
     width = width,
     height = height,
@@ -155,31 +156,31 @@ function M.show_cte_analysis_popup()
     row = row,
     style = 'minimal',
     border = 'rounded',
-    title = ' CTE Analysis (CLI) ',
+    title = ' CTE Analysis ',
     title_pos = 'center',
   }
 
-  -- Create window
-  local win = vim.api.nvim_open_win(float_buf, true, opts)
+  local float_win = vim.api.nvim_open_win(float_buf, true, win_opts)
 
-  -- Set keymaps
-  local function close_popup()
-    vim.api.nvim_win_close(win, true)
+  -- Set up keymaps
+  local opts = { noremap = true, silent = true, buffer = float_buf }
+
+  vim.keymap.set('n', 'q', function()
+    vim.api.nvim_win_close(float_win, true)
+  end, opts)
+
+  vim.keymap.set('n', '<Esc>', function()
+    vim.api.nvim_win_close(float_win, true)
+  end, opts)
+
+  vim.keymap.set('n', 'y', function()
+    vim.fn.setreg('+', table.concat(content, '\n'))
+    vim.notify("Analysis copied to clipboard", vim.log.levels.INFO)
+  end, opts)
+
+  if log then
+    log.info('cte_parser_cli', string.format('Displayed analysis popup with %d CTEs', #analysis.ctes))
   end
-
-  local function copy_to_clipboard()
-    local text = table.concat(content, "\n")
-    vim.fn.setreg('+', text)
-    vim.notify("CTE analysis copied to clipboard", vim.log.levels.INFO)
-    close_popup()
-  end
-
-  vim.keymap.set('n', 'q', close_popup, { buffer = float_buf, silent = true })
-  vim.keymap.set('n', '<Esc>', close_popup, { buffer = float_buf, silent = true })
-  vim.keymap.set('n', 'y', copy_to_clipboard, { buffer = float_buf, silent = true })
-  vim.keymap.set('n', 'Y', copy_to_clipboard, { buffer = float_buf, silent = true })
-
-  return result
 end
 
 return M
