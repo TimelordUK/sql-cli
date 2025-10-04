@@ -356,6 +356,10 @@ pub fn extract_cte(ast: &SelectStatement, cte_name: &str) -> Option<String> {
                     parts.push(format!("  FORMAT {:?}", f));
                 }
 
+                if let Some(ref jp) = web_spec.json_path {
+                    parts.push(format!("  JSON_PATH '{}'", jp));
+                }
+
                 parts.push(")".to_string());
             }
         }
@@ -497,14 +501,49 @@ fn format_expr(expr: &crate::sql::parser::ast::SqlExpression) -> String {
         SqlExpression::Not { expr } => {
             format!("NOT {}", format_expr(expr))
         }
-        SqlExpression::CaseExpression { .. } => "CASE...END".to_string(), // Simplified
-        SqlExpression::SimpleCaseExpression { .. } => "CASE...END".to_string(), // Simplified
+        SqlExpression::CaseExpression {
+            when_branches,
+            else_branch,
+        } => {
+            let mut parts = vec!["CASE".to_string()];
+            for branch in when_branches {
+                parts.push(format!(
+                    "WHEN {} THEN {}",
+                    format_expr(&branch.condition),
+                    format_expr(&branch.result)
+                ));
+            }
+            if let Some(else_expr) = else_branch {
+                parts.push(format!("ELSE {}", format_expr(else_expr)));
+            }
+            parts.push("END".to_string());
+            parts.join(" ")
+        }
+        SqlExpression::SimpleCaseExpression {
+            expr,
+            when_branches,
+            else_branch,
+        } => {
+            let mut parts = vec![format!("CASE {}", format_expr(expr))];
+            for branch in when_branches {
+                parts.push(format!(
+                    "WHEN {} THEN {}",
+                    format_expr(&branch.value),
+                    format_expr(&branch.result)
+                ));
+            }
+            if let Some(else_expr) = else_branch {
+                parts.push(format!("ELSE {}", format_expr(else_expr)));
+            }
+            parts.push("END".to_string());
+            parts.join(" ")
+        }
         SqlExpression::ScalarSubquery { .. } => "(SELECT ...)".to_string(), // Simplified
-        SqlExpression::InSubquery { .. } => "IN (SELECT ...)".to_string(), // Simplified
+        SqlExpression::InSubquery { .. } => "IN (SELECT ...)".to_string(),  // Simplified
         SqlExpression::NotInSubquery { .. } => "NOT IN (SELECT ...)".to_string(), // Simplified
-        SqlExpression::InList { .. } => "IN (...)".to_string(),           // Simplified
-        SqlExpression::NotInList { .. } => "NOT IN (...)".to_string(),    // Simplified
-        SqlExpression::Between { .. } => "BETWEEN...AND...".to_string(),  // Simplified
+        SqlExpression::InList { .. } => "IN (...)".to_string(),             // Simplified
+        SqlExpression::NotInList { .. } => "NOT IN (...)".to_string(),      // Simplified
+        SqlExpression::Between { .. } => "BETWEEN...AND...".to_string(),    // Simplified
         _ => "...".to_string(), // Simplified for other cases
     }
 }
