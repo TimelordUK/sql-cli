@@ -203,6 +203,28 @@ fn print_help() {
     );
 
     println!();
+    println!(
+        "{}",
+        "Query Analysis (for IDE/plugin integration):".yellow()
+    );
+    println!(
+        "  {}     - Analyze query structure (JSON output)",
+        "--analyze-query".green()
+    );
+    println!(
+        "  {}        - Expand SELECT * to column names (JSON output)",
+        "--expand-star".green()
+    );
+    println!(
+        "  {} <name> - Extract CTE as standalone query",
+        "--extract-cte".green()
+    );
+    println!(
+        "  {} <line:col> - Find query context at position (JSON output)",
+        "--query-at-position".green()
+    );
+
+    println!();
     println!("{}", "SQL Formatting:".yellow());
     println!(
         "  {}, {} [file|-]   - Format SQL query (stdin if - or no file)",
@@ -1117,6 +1139,27 @@ fn main() -> io::Result<()> {
         .iter()
         .any(|arg| arg == "--check-in-lifting" || arg == "--check_in_lifting");
 
+    // Query analysis flags (for IDE/plugin integration)
+    let analyze_query_arg = args
+        .iter()
+        .any(|arg| arg == "--analyze-query" || arg == "--analyze_query");
+
+    let expand_star_arg = args
+        .iter()
+        .any(|arg| arg == "--expand-star" || arg == "--expand_star");
+
+    let extract_cte_arg = args
+        .iter()
+        .position(|arg| arg == "--extract-cte" || arg == "--extract_cte")
+        .and_then(|pos| args.get(pos + 1))
+        .map(std::string::ToString::to_string);
+
+    let query_at_position_arg = args
+        .iter()
+        .position(|arg| arg == "--query-at-position" || arg == "--query_at_position")
+        .and_then(|pos| args.get(pos + 1))
+        .map(std::string::ToString::to_string);
+
     let execution_plan_arg = args
         .iter()
         .any(|arg| arg == "--execution-plan" || arg == "--execution_plan");
@@ -1201,6 +1244,86 @@ fn main() -> io::Result<()> {
             .and_then(|pos| args.get(pos + 1))
             .and_then(|s| s.parse::<usize>().ok())
             .unwrap_or(100);
+
+        // Handle query analysis commands (for IDE/plugin integration)
+        if analyze_query_arg
+            || expand_star_arg
+            || extract_cte_arg.is_some()
+            || query_at_position_arg.is_some()
+        {
+            use sql_cli::analysis;
+            use sql_cli::sql::recursive_parser::Parser;
+
+            // Parse the query (already loaded from file or command line)
+            let mut parser = Parser::new(&query);
+            let ast = parser.parse().map_err(|e| {
+                io::Error::new(io::ErrorKind::InvalidInput, format!("Parse error: {e}"))
+            })?;
+
+            // Handle different analysis commands
+            if analyze_query_arg {
+                let analysis = analysis::analyze_query(&ast, &query);
+                println!(
+                    "{}",
+                    serde_json::to_string_pretty(&analysis).map_err(io::Error::other)?
+                );
+                return Ok(());
+            }
+
+            if expand_star_arg {
+                // TODO: Implement column expansion
+                // This requires loading data or executing CTEs to get schema
+                eprintln!("--expand-star: Not yet implemented");
+                eprintln!("Coming soon: Will expand SELECT * to actual column names");
+                return Err(io::Error::new(
+                    io::ErrorKind::Unsupported,
+                    "expand-star not yet implemented",
+                ));
+            }
+
+            if let Some(cte_name) = extract_cte_arg {
+                if let Some(cte_query) = analysis::extract_cte(&ast, &cte_name) {
+                    println!("{}", cte_query);
+                    return Ok(());
+                } else {
+                    return Err(io::Error::new(
+                        io::ErrorKind::NotFound,
+                        format!("CTE '{}' not found in query", cte_name),
+                    ));
+                }
+            }
+
+            if let Some(position) = query_at_position_arg {
+                let parts: Vec<&str> = position.split(':').collect();
+                if parts.len() != 2 {
+                    return Err(io::Error::new(
+                        io::ErrorKind::InvalidInput,
+                        "Position must be in format line:column (e.g., 45:10)",
+                    ));
+                }
+
+                let line = parts[0].parse::<usize>().map_err(|e| {
+                    io::Error::new(
+                        io::ErrorKind::InvalidInput,
+                        format!("Invalid line number: {e}"),
+                    )
+                })?;
+
+                let column = parts[1].parse::<usize>().map_err(|e| {
+                    io::Error::new(
+                        io::ErrorKind::InvalidInput,
+                        format!("Invalid column number: {e}"),
+                    )
+                })?;
+
+                let context = analysis::find_query_context(&ast, line, column);
+                println!(
+                    "{}",
+                    serde_json::to_string_pretty(&context).map_err(io::Error::other)?
+                );
+                return Ok(());
+            }
+        }
 
         let config = sql_cli::non_interactive::NonInteractiveConfig {
             data_file,

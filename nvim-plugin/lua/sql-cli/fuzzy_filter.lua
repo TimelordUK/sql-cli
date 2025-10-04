@@ -3,6 +3,20 @@
 
 local M = {}
 
+-- Get logger (lazy load to avoid circular dependencies)
+local logger = nil
+local function get_logger()
+  if not logger then
+    logger = require('sql-cli').logger
+  end
+  return logger
+end
+
+-- Configuration
+M.config = {
+  match_mode = 'exact'  -- 'exact' or 'fuzzy'
+}
+
 -- Cache for parsed table data
 local cache = {
   buffer = nil,
@@ -108,7 +122,34 @@ local function parse_table_from_buffer(bufnr)
   }
 end
 
--- Fuzzy match scoring
+-- Exact substring match (stricter, like fzf --exact)
+local function exact_match(pattern, text)
+  pattern = pattern:lower()
+  text = text:lower()
+
+  -- Check if pattern exists as exact substring
+  local match_pos = text:find(pattern, 1, true)  -- plain text search
+  if not match_pos then
+    return nil
+  end
+
+  -- Score based on position (earlier = better)
+  local score = 100 - match_pos
+
+  -- Bonus for exact match
+  if text == pattern then
+    score = score + 100
+  end
+
+  -- Bonus for match at start
+  if match_pos == 1 then
+    score = score + 50
+  end
+
+  return score
+end
+
+-- Fuzzy match scoring (original, more permissive)
 local function fuzzy_match(pattern, text)
   pattern = pattern:lower()
   text = text:lower()
@@ -158,6 +199,9 @@ local function apply_filter(data, pattern, column_filter)
     return
   end
 
+  -- Choose match function based on config
+  local match_fn = M.config.match_mode == 'exact' and exact_match or fuzzy_match
+
   -- Filter rows
   for _, row in ipairs(data.rows) do
     local best_score = 0
@@ -165,7 +209,7 @@ local function apply_filter(data, pattern, column_filter)
 
     if column_filter and column_filter > 0 and column_filter <= #row.cells then
       -- Filter specific column
-      local score = fuzzy_match(pattern, row.cells[column_filter])
+      local score = match_fn(pattern, row.cells[column_filter])
       if score then
         best_score = score
         match_found = true
@@ -173,7 +217,7 @@ local function apply_filter(data, pattern, column_filter)
     else
       -- Filter all columns
       for _, cell in ipairs(row.cells) do
-        local score = fuzzy_match(pattern, cell)
+        local score = match_fn(pattern, cell)
         if score and score > best_score then
           best_score = score
           match_found = true
@@ -291,17 +335,19 @@ local function debounced_filter(bufnr, pattern, column_filter, filter_win)
         end
       end
 
-      -- Update window title with match count
+      -- Update window title with match count and mode
       if filter_win and vim.api.nvim_win_is_valid(filter_win) then
+        local mode_indicator = M.config.match_mode == 'exact' and '[EXACT]' or '[FUZZY]'
         local title
         if pattern and pattern ~= "" then
           if visible_count == 0 then
-            title = string.format(' No matches (0/%d) ', #cache.data.rows)
+            title = string.format(' %s No matches (0/%d) ', mode_indicator, #cache.data.rows)
           else
-            title = string.format(' Showing %d/%d rows ', visible_count, #cache.data.rows)
+            title = string.format(' %s Showing %d/%d rows ', mode_indicator, visible_count, #cache.data.rows)
           end
         else
-          title = string.format(' Filter %d rows (ESC to close, C-l to clear) ', #cache.data.rows)
+          title = string.format(' %s Filter %d rows (ESC: close, C-l: clear, C-t: toggle) ',
+            mode_indicator, #cache.data.rows)
         end
 
         vim.api.nvim_win_set_config(filter_win, {
@@ -321,11 +367,24 @@ end
 function M.open_fuzzy_finder(bufnr)
   bufnr = bufnr or vim.api.nvim_get_current_buf()
 
+  local log = get_logger()
+  if log then
+    log.debug('fuzzy_filter', 'Opening fuzzy finder for buffer ' .. bufnr)
+  end
+
   -- Parse table data
   local data = parse_table_from_buffer(bufnr)
   if not data then
     vim.notify("No table found in buffer", vim.log.levels.WARN)
+    if log then
+      log.warn('fuzzy_filter', 'No table found in buffer ' .. bufnr)
+    end
     return
+  end
+
+  if log then
+    log.info('fuzzy_filter', string.format('Parsed table with %d rows, %d columns',
+      #data.rows, #data.headers))
   end
 
   -- Store in cache
@@ -339,8 +398,10 @@ function M.open_fuzzy_finder(bufnr)
 
   local filter_buf = vim.api.nvim_create_buf(false, true)
 
-  -- Initial title showing total rows
-  local initial_title = string.format(' Filter %d rows (ESC to close, C-l to clear) ', #data.rows)
+  -- Initial title showing total rows and match mode
+  local mode_indicator = M.config.match_mode == 'exact' and '[EXACT]' or '[FUZZY]'
+  local initial_title = string.format(' %s Filter %d rows (ESC: close, C-l: clear, C-t: toggle) ',
+    mode_indicator, #data.rows)
 
   local filter_win = vim.api.nvim_open_win(filter_buf, true, {
     relative = 'editor',
@@ -389,6 +450,39 @@ function M.open_fuzzy_finder(bufnr)
   vim.keymap.set('n', '<C-l>', function()
     vim.api.nvim_buf_set_lines(filter_buf, 0, -1, false, {""})
     vim.cmd('startinsert!')
+  end, opts)
+
+  -- Toggle match mode (exact vs fuzzy)
+  vim.keymap.set('n', '<C-t>', function()
+    -- Toggle mode
+    M.config.match_mode = M.config.match_mode == 'exact' and 'fuzzy' or 'exact'
+
+    local log = get_logger()
+    if log then
+      log.info('fuzzy_filter', 'Match mode toggled to: ' .. M.config.match_mode)
+    end
+
+    -- Re-apply current filter with new mode
+    local pattern = vim.api.nvim_buf_get_lines(filter_buf, 0, 1, false)[1] or ""
+    debounced_filter(bufnr, pattern, nil, filter_win)
+
+    -- Notify user
+    local mode_name = M.config.match_mode == 'exact' and 'EXACT' or 'FUZZY'
+    vim.notify("Match mode: " .. mode_name, vim.log.levels.INFO)
+  end, opts)
+
+  -- Toggle match mode in insert mode too
+  vim.keymap.set('i', '<C-t>', function()
+    -- Toggle mode
+    M.config.match_mode = M.config.match_mode == 'exact' and 'fuzzy' or 'exact'
+
+    -- Re-apply current filter with new mode
+    local pattern = vim.api.nvim_buf_get_lines(filter_buf, 0, 1, false)[1] or ""
+    debounced_filter(bufnr, pattern, nil, filter_win)
+
+    -- Notify user
+    local mode_name = M.config.match_mode == 'exact' and 'EXACT' or 'FUZZY'
+    vim.notify("Match mode: " .. mode_name, vim.log.levels.INFO)
   end, opts)
 
   -- Column-specific filtering

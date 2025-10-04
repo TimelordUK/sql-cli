@@ -4,18 +4,49 @@
 local M = {}
 local utils = require('sql-cli.utils')
 
+-- Get logger (lazy load to avoid circular dependencies)
+local logger = nil
+local function get_logger()
+  if not logger then
+    local ok, sql_cli = pcall(require, 'sql-cli')
+    if ok and sql_cli.logger then
+      logger = sql_cli.logger
+    end
+  end
+  return logger
+end
+
 -- Test CTE at cursor using CLI parser
 function M.test_cte_at_cursor(config, state)
+  local log = get_logger()
+
+  if log then
+    log.info('cte_test', '=== test_cte_at_cursor called ===')
+  end
+
   local bufnr = vim.api.nvim_get_current_buf()
   local cursor_line = vim.fn.line('.')
   local lines = vim.api.nvim_buf_get_lines(bufnr, 0, -1, false)
+
+  if log then
+    log.debug('cte_test', string.format('Buffer: %d, cursor line: %d, total lines: %d',
+      bufnr, cursor_line, #lines))
+  end
 
   -- Find query boundaries
   local start_line, end_line = utils.find_query_at_cursor(lines, cursor_line)
 
   if not start_line then
+    if log then
+      log.error('cte_test', string.format('No query found at cursor line %d', cursor_line))
+    end
     vim.notify("No SQL query found at cursor", vim.log.levels.WARN)
     return
+  end
+
+  if log then
+    log.info('cte_test', string.format('Found query boundaries: lines %d-%d (%d lines)',
+      start_line, end_line, end_line - start_line + 1))
   end
 
   -- Extract query lines
@@ -24,6 +55,11 @@ function M.test_cte_at_cursor(config, state)
   for i = start_line, end_line do
     table.insert(query_lines, lines[i])
   end
+
+  if log then
+    log.debug('cte_test', 'Query preview: ' .. table.concat(query_lines, '\n'):sub(1, 300))
+  end
+
   vim.notify(string.format("Extracted %d lines", #query_lines), vim.log.levels.INFO)
 
   -- Use CLI to parse CTEs

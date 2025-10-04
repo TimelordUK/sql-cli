@@ -5,6 +5,7 @@ local M = {}
 
 -- Load modules
 local config = require('sql-cli.config')
+local logger = require('sql-cli.logger')
 local state = require('sql-cli.state')
 local utils = require('sql-cli.utils')
 local executor = require('sql-cli.executor')
@@ -16,7 +17,7 @@ local results = require('sql-cli.results')
 local table_nav = require('sql-cli.table_nav')
 local multi_table_nav = require('sql-cli.multi_table_nav')
 local visualize = require('sql-cli.visualize')
-local cte_tester = require('sql-cli.cte_tester_v2')
+local cte_tester = require('sql-cli.cte_tester_v3')  -- V3: Uses CLI analysis instead of regex
 local cte_debug = require('sql-cli.cte_debug')
 local cte_parser_cli = require('sql-cli.cte_parser_cli')
 local refactoring = require('sql-cli.refactoring')
@@ -32,6 +33,20 @@ M.state = nil
 function M.setup(opts)
   -- Initialize configuration
   M.config = config.setup(opts)
+
+  -- Initialize logging system
+  if M.config.logging and M.config.logging.enabled then
+    local log_config = {
+      enabled = M.config.logging.enabled,
+      level = logger.levels[M.config.logging.level] or logger.levels.INFO,
+      max_files = M.config.logging.max_files or 20,
+      buffer_size = M.config.logging.buffer_size or 100,
+      auto_flush_interval = M.config.logging.auto_flush_interval or 5000,
+    }
+    logger.init(log_config)
+    logger.info('init', 'SQL CLI plugin initialized')
+    logger.info('init', 'Neovim version: ' .. vim.version().major .. '.' .. vim.version().minor .. '.' .. vim.version().patch)
+  end
 
   -- Initialize state
   M.state = state.new()
@@ -232,6 +247,25 @@ function M.create_commands()
     local column_sum = require('sql-cli.column_sum')
     column_sum.show_all_totals()
   end, { desc = "Add totals row to table" })
+
+  -- Logging commands
+  vim.api.nvim_create_user_command("SqlCliOpenLog", function()
+    logger.open_log()
+  end, { desc = "Open plugin log file" })
+
+  vim.api.nvim_create_user_command("SqlCliTailLog", function()
+    logger.tail_log()
+  end, { desc = "Tail plugin log file (live updates)" })
+
+  vim.api.nvim_create_user_command("SqlCliLogPath", function()
+    local log_path = logger.get_log_path()
+    if log_path then
+      vim.notify('Log file: ' .. log_path, vim.log.levels.INFO)
+      vim.fn.setreg('+', log_path)  -- Copy to clipboard
+    else
+      vim.notify('Logging not initialized', vim.log.levels.WARN)
+    end
+  end, { desc = "Show and copy log file path" })
 end
 
 -- Setup keymaps
@@ -852,5 +886,8 @@ function M.test_formatter()
   end
   formatter.test_formatter(M.config)
 end
+
+-- Expose logger module for use by other modules
+M.logger = logger
 
 return M

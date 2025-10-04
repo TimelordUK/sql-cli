@@ -144,6 +144,15 @@ M.defaults = {
   -- Debug settings (usually false)
   debug = false,           -- Enable debug logging for the plugin
   debug_format = false,    -- Show debug messages for formatting
+
+  -- Logging settings
+  logging = {
+    enabled = true,        -- Enable file logging
+    level = "INFO",        -- Log level: TRACE, DEBUG, INFO, WARN, ERROR
+    max_files = 20,        -- Maximum number of log files to keep
+    buffer_size = 100,     -- Number of messages to buffer before flush
+    auto_flush_interval = 5000, -- Auto-flush interval in milliseconds
+  },
 }
 
 -- Validate and merge config

@@ -1,4 +1,5 @@
 // New module structure (gradually moving files here)
+pub mod analysis;
 pub mod api;
 pub mod benchmarks;
 pub mod chart;
