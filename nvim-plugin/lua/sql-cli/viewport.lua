@@ -92,17 +92,18 @@ function Viewport:move_cursor(dr, dc)
 end
 
 --- Ensure cursor is within visible range, adjust top_row if needed
+--- Scrolls one line at a time like Vim (smooth scrolling)
 function Viewport:ensure_cursor_visible()
   local bottom_row = self.top_row + self.visible_rows - 1
 
-  -- Cursor scrolled above visible range
+  -- Cursor scrolled above visible range - scroll up one line
   if self.current_row < self.top_row then
     self.top_row = self.current_row
   end
 
-  -- Cursor scrolled below visible range
+  -- Cursor scrolled below visible range - scroll down one line
   if self.current_row > bottom_row then
-    self.top_row = self.current_row - self.visible_rows + 1
+    self.top_row = self.top_row + 1
   end
 
   -- Ensure top_row is valid
@@ -120,14 +121,9 @@ function Viewport:center_on_cursor()
   self.top_row = math.min(self.top_row, max_top_row)
 end
 
---- Get visible data range
---- @return table {rows, top_row, bottom_row, columns}
+--- Get all data (Neovim handles scrolling, we render everything)
+--- @return table {rows, total_rows, columns}
 function Viewport:get_visible_data()
-  local bottom_row = math.min(
-    self.top_row + self.visible_rows - 1,
-    self.data_model.total_rows
-  )
-
   -- Get visible columns (respecting hidden columns and order)
   local visible_columns = {}
   for _, col_idx in ipairs(self.column_order) do
@@ -136,9 +132,9 @@ function Viewport:get_visible_data()
     end
   end
 
-  -- Extract visible rows
+  -- Extract ALL rows (no limit - if the CLI handled it, we can render it)
   local rows = {}
-  for row = self.top_row, bottom_row do
+  for row = 1, self.data_model.total_rows do
     local row_data = {}
     for _, col_idx in ipairs(visible_columns) do
       table.insert(row_data, self.data_model:get_cell(row, col_idx))
@@ -148,8 +144,7 @@ function Viewport:get_visible_data()
 
   return {
     rows = rows,
-    top_row = self.top_row,
-    bottom_row = bottom_row,
+    total_rows = self.data_model.total_rows,
     columns = visible_columns,
   }
 end
@@ -188,14 +183,12 @@ function Viewport:toggle_column(col)
   end
 end
 
---- Get cursor position info
---- @return table {row, col, is_visible}
+--- Get cursor position info (in DATA coordinates)
+--- @return table {row, col}
 function Viewport:get_cursor_info()
-  local bottom_row = self.top_row + self.visible_rows - 1
   return {
     row = self.current_row,
     col = self.current_col,
-    is_visible = self.current_row >= self.top_row and self.current_row <= bottom_row,
   }
 end
 

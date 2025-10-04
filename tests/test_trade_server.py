@@ -14,7 +14,8 @@ import traceback
 app = Flask(__name__)
 
 # Generate sample trade data
-def generate_trades(source=None, trade_date=None):
+def generate_trades(source=None, trade_date=None, count=5000):
+    """Generate trade data - default 5000 rows for realistic testing"""
     sources = [
         "Bloomberg_FIX_FX",
         "Bloomberg_FIX_Equity",
@@ -27,7 +28,7 @@ def generate_trades(source=None, trade_date=None):
     statuses = ["Executed", "Pending", "Cancelled", "Settled"]
 
     trades = []
-    for i in range(1, 51):  # Generate 50 trades
+    for i in range(1, count + 1):  # Generate specified number of trades
         trade = {
             "TradeId": f"T{i:05d}",
             "Source": random.choice(sources) if not source else source,

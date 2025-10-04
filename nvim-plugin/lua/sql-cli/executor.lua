@@ -756,9 +756,9 @@ function M.run_command(query, show_plan, config, state)
             local viewport = require('sql-cli.viewport')
             local renderer = require('sql-cli.renderer')
 
-            -- Create viewport with all rows visible initially
+            -- Create viewport (renders full table, Neovim handles scrolling)
             local vp = viewport.Viewport:new(model, {
-              visible_rows = math.max(50, model.total_rows),  -- Show all rows or at least 50
+              visible_rows = 10000,  -- Not used, just for compatibility
               theme = "ascii"
             })
 
@@ -784,6 +784,9 @@ function M.run_command(query, show_plan, config, state)
             state.data_model = model
             state.viewport = vp
             state.renderer = rend
+
+            -- Set initial highlight at (1,1)
+            rend:update_highlight(output_buf)
           else
             -- Failed to parse JSON, fall back to text output
             vim.notify("Failed to parse structured JSON, falling back to text output: " .. (err or "unknown error"), vim.log.levels.WARN)

@@ -179,7 +179,11 @@ function Renderer:render_to_buffer(bufnr)
 
   -- Status line
   table.insert(lines, "")
-  table.insert(lines, self.viewport:get_status())
+  table.insert(lines, string.format(
+    "%d rows × %d columns",
+    self.viewport.data_model.total_rows,
+    #column_meta
+  ))
 
   -- Write to buffer
   vim.api.nvim_buf_set_option(bufnr, 'modifiable', true)
@@ -191,33 +195,70 @@ function Renderer:render_to_buffer(bufnr)
   end
 end
 
---- Update cell highlight using extmarks (no re-render needed)
+--- Update cell highlight (maps data coords → buffer position)
+--- Moves cursor so Neovim handles scrolling automatically
 --- @param bufnr number Buffer number
 function Renderer:update_highlight(bufnr)
-  -- Clear previous highlights
+  -- Clear ALL highlights from all possible namespaces
+  -- This ensures we don't have stale highlights from previous renders
+  vim.api.nvim_buf_clear_namespace(bufnr, -1, 0, -1)
+
+  -- Also clear our specific namespace just to be sure
   vim.api.nvim_buf_clear_namespace(bufnr, self.namespace, 0, -1)
 
   local cursor_info = self.viewport:get_cursor_info()
-  if not cursor_info.is_visible then
-    return  -- Cursor not in visible range
-  end
 
-  -- Calculate buffer line for current row
+  -- Calculate buffer line for current data row
   -- Line 0: top border
   -- Line 1: header
   -- Line 2: header separator
-  -- Line 3+: data rows (starting from top_row)
-  local visible_row_offset = cursor_info.row - self.viewport.top_row
-  local buffer_line = 3 + visible_row_offset  -- 0-indexed
+  -- Line 3+: data rows (row 1 = line 3, row 2 = line 4, etc.)
+  local buffer_line = 3 + (cursor_info.row - 1)  -- 0-indexed for API, but we need 1-indexed for cursor
 
-  -- Highlight the entire row
+  -- Get column metadata to calculate cell position
+  local column_meta = self.viewport:get_visible_column_meta()
+  if not column_meta[cursor_info.col] then
+    return  -- Column hidden
+  end
+
+  -- Calculate cell start position (sum of previous column widths + borders)
+  local col_start = 1  -- Start after first '|'
+  for i = 1, cursor_info.col - 1 do
+    if column_meta[i] then
+      col_start = col_start + column_meta[i].max_width + 3  -- width + ' | '
+    end
+  end
+
+  local col_end = col_start + column_meta[cursor_info.col].max_width + 2  -- width + '  '
+
+  -- Move Neovim's cursor to the cell (this makes Neovim scroll automatically)
+  local win = vim.fn.bufwinid(bufnr)
+  if win ~= -1 then
+    -- Save current window and switch to target window
+    local current_win = vim.api.nvim_get_current_win()
+    vim.api.nvim_set_current_win(win)
+
+    -- Set cursor position
+    vim.api.nvim_win_set_cursor(win, {buffer_line + 1, col_start})  -- +1 because cursor is 1-indexed
+
+    -- Reset the "goal column" by moving to the column explicitly
+    -- This prevents Neovim from jumping back to a previous column position
+    vim.cmd("normal! " .. col_start .. "|")
+
+    -- Restore original window if needed
+    if current_win ~= win and vim.api.nvim_win_is_valid(current_win) then
+      vim.api.nvim_set_current_win(current_win)
+    end
+  end
+
+  -- Highlight just the cell (not the whole row)
   vim.api.nvim_buf_add_highlight(
     bufnr,
     self.namespace,
-    'Visual',  -- Use Visual highlight group
+    'Visual',
     buffer_line,
-    0,
-    -1
+    col_start,
+    col_end
   )
 end
 
