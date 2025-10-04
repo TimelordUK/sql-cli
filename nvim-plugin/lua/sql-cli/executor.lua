@@ -556,13 +556,7 @@ function M.build_command(query, show_plan, config, state)
 
   -- Add output format
   table.insert(cmd_parts, "-o")
-  -- Use json-structured if data model is enabled
-  local use_data_model = config.table_navigation and config.table_navigation.use_data_model
-  if use_data_model then
-    table.insert(cmd_parts, "json-structured")
-  else
-    table.insert(cmd_parts, config.output_format)
-  end
+  table.insert(cmd_parts, config.output_format)
 
   -- Add table output settings if using table format
   if config.output_format == "table" and config.table_output then
@@ -724,96 +718,24 @@ function M.run_command(query, show_plan, config, state)
     end,
     on_exit = function(_, exit_code)
       vim.schedule(function()
-        -- Check if we should use data model rendering
-        local use_data_model = config.table_navigation and config.table_navigation.use_data_model
+        -- Combine cache messages and output, with cache messages at the top
+        local final_output = {}
 
-        if use_data_model and exit_code == 0 then
-          -- Data model path: parse JSON and render
-          -- Filter out non-JSON lines (like "# Query completed:" footer)
-          local json_lines = {}
-          local in_json = false
-          for _, line in ipairs(output_lines) do
-            if line:match("^{") then
-              in_json = true
-            end
-            if in_json then
-              -- Stop if we hit the footer
-              if line:match("^#") or line:match("^Query completed:") then
-                break
-              end
-              table.insert(json_lines, line)
-            end
-          end
-
-          local json_output = table.concat(json_lines, "\n")
-
-          -- Try to parse as structured JSON
-          local data_model = require('sql-cli.data_model')
-          local model, err = data_model.from_json(json_output)
-
-          if model then
-            -- Successfully parsed, use data model rendering
-            local viewport = require('sql-cli.viewport')
-            local renderer = require('sql-cli.renderer')
-
-            -- Create viewport (renders full table, Neovim handles scrolling)
-            local vp = viewport.Viewport:new(model, {
-              visible_rows = 10000,  -- Not used, just for compatibility
-              theme = "ascii"
-            })
-
-            -- Create renderer
-            local rend = renderer.Renderer:new(vp, "ascii")
-
-            -- Render to buffer
-            if output_buf then
-              vim.bo[output_buf].modifiable = true
-              vim.bo[output_buf].readonly = false
-              rend:render_to_buffer(output_buf)
-              vim.bo[output_buf].modifiable = false
-
-              vim.notify(string.format(
-                "Rendered %d rows × %d columns using data model (%.2fms)",
-                model.total_rows,
-                model.total_cols,
-                model:get_query_time()
-              ), vim.log.levels.INFO)
-            end
-
-            -- Store model in state for table navigation
-            state.data_model = model
-            state.viewport = vp
-            state.renderer = rend
-
-            -- Set initial highlight at (1,1)
-            rend:update_highlight(output_buf)
-          else
-            -- Failed to parse JSON, fall back to text output
-            vim.notify("Failed to parse structured JSON, falling back to text output: " .. (err or "unknown error"), vim.log.levels.WARN)
-            use_data_model = false  -- Fall back to regular text rendering below
-          end
+        -- Add cache messages first (if any)
+        if #cache_messages > 0 then
+          vim.list_extend(final_output, cache_messages)
+          table.insert(final_output, "")  -- Add blank line separator
         end
 
-        if not use_data_model then
-          -- Traditional text-based path
-          local final_output = {}
+        -- Add the actual query output
+        vim.list_extend(final_output, output_lines)
 
-          -- Add cache messages first (if any)
-          if #cache_messages > 0 then
-            vim.list_extend(final_output, cache_messages)
-            table.insert(final_output, "")  -- Add blank line separator
-          end
-
-          -- Add the actual query output
-          vim.list_extend(final_output, output_lines)
-
-          -- Append combined output
-          if output_buf then
-            -- Ensure buffer is modifiable before writing
-            vim.bo[output_buf].modifiable = true
-            vim.bo[output_buf].readonly = false
-            vim.api.nvim_buf_set_lines(output_buf, -1, -1, false, final_output)
-          end
+        -- Append combined output
+        if output_buf then
+          -- Ensure buffer is modifiable before writing
+          vim.bo[output_buf].modifiable = true
+          vim.bo[output_buf].readonly = false
+          vim.api.nvim_buf_set_lines(output_buf, -1, -1, false, final_output)
         end
 
         -- Store results for saving (prefer CSV format if available)

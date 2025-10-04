@@ -482,11 +482,6 @@ function M.highlight_current_cell()
       -- Set cursor position
       vim.api.nvim_win_set_cursor(nav_state.window, {line_num, col_pos.start})
 
-      -- Reset Neovim's "virtual column" memory to prevent jumping back
-      -- This forces the cursor to stay at the actual column position
-      vim.cmd("normal! 0")
-      vim.api.nvim_win_set_cursor(nav_state.window, {line_num, col_pos.start})
-
       -- Ensure header remains visible by managing the viewport
       local header_line = nav_state.table_info.header_row
       if header_line then
@@ -533,25 +528,9 @@ function M.highlight_current_cell()
   end
 end
 
--- Helper to check if using data model
-local function is_using_data_model()
-  local ok, sql_cli = pcall(require, 'sql-cli')
-  if not ok then return false end
-  return sql_cli.state and sql_cli.state.viewport and sql_cli.state.renderer
-end
-
 -- Navigation functions
 function M.move_left()
-  -- Check if using data model
-  if is_using_data_model() then
-    local sql_cli = require('sql-cli')
-    if sql_cli.state.viewport:move_cursor(0, -1) then
-      sql_cli.state.renderer:update_highlight(vim.api.nvim_get_current_buf())
-    end
-    return
-  end
-
-  -- Old text-based navigation
+  -- Auto-initialize if table_info is nil (after multi-table navigation)
   if not nav_state.table_info then
     local bufnr = vim.api.nvim_get_current_buf()
     local win = vim.api.nvim_get_current_win()
@@ -565,16 +544,7 @@ function M.move_left()
 end
 
 function M.move_right()
-  -- Check if using data model
-  if is_using_data_model() then
-    local sql_cli = require('sql-cli')
-    if sql_cli.state.viewport:move_cursor(0, 1) then
-      sql_cli.state.renderer:update_highlight(vim.api.nvim_get_current_buf())
-    end
-    return
-  end
-
-  -- Old text-based navigation
+  -- Auto-initialize if table_info is nil (after multi-table navigation)
   if not nav_state.table_info then
     local bufnr = vim.api.nvim_get_current_buf()
     local win = vim.api.nvim_get_current_win()
@@ -597,16 +567,7 @@ function M.move_right()
 end
 
 function M.move_up()
-  -- Check if using data model
-  if is_using_data_model() then
-    local sql_cli = require('sql-cli')
-    if sql_cli.state.viewport:move_cursor(-1, 0) then
-      sql_cli.state.renderer:update_highlight(vim.api.nvim_get_current_buf())
-    end
-    return
-  end
-
-  -- Old text-based navigation
+  -- Auto-initialize if table_info is nil (after multi-table navigation)
   if not nav_state.table_info then
     local bufnr = vim.api.nvim_get_current_buf()
     local win = vim.api.nvim_get_current_win()
@@ -620,16 +581,7 @@ function M.move_up()
 end
 
 function M.move_down()
-  -- Check if using data model
-  if is_using_data_model() then
-    local sql_cli = require('sql-cli')
-    if sql_cli.state.viewport:move_cursor(1, 0) then
-      sql_cli.state.renderer:update_highlight(vim.api.nvim_get_current_buf())
-    end
-    return
-  end
-
-  -- Old text-based navigation
+  -- Auto-initialize if table_info is nil (after multi-table navigation)
   if not nav_state.table_info then
     local bufnr = vim.api.nvim_get_current_buf()
     local win = vim.api.nvim_get_current_win()
@@ -646,15 +598,6 @@ function M.move_down()
 end
 
 function M.go_to_first_column()
-  -- Check if using data model
-  if is_using_data_model() then
-    local sql_cli = require('sql-cli')
-    sql_cli.state.viewport:goto_col(1)
-    sql_cli.state.renderer:update_highlight(vim.api.nvim_get_current_buf())
-    return
-  end
-
-  -- Old text-based navigation
   if not nav_state.table_info then
     vim.notify("No table navigation active", vim.log.levels.WARN)
     return
@@ -664,16 +607,6 @@ function M.go_to_first_column()
 end
 
 function M.go_to_last_column()
-  -- Check if using data model
-  if is_using_data_model() then
-    local sql_cli = require('sql-cli')
-    local total_cols = sql_cli.state.data_model.total_cols
-    sql_cli.state.viewport:goto_col(total_cols)
-    sql_cli.state.renderer:update_highlight(vim.api.nvim_get_current_buf())
-    return
-  end
-
-  -- Old text-based navigation
   if not nav_state.table_info or not nav_state.table_info.column_positions then
     vim.notify("No table navigation active", vim.log.levels.WARN)
     return
@@ -683,15 +616,6 @@ function M.go_to_last_column()
 end
 
 function M.go_to_first_row()
-  -- Check if using data model
-  if is_using_data_model() then
-    local sql_cli = require('sql-cli')
-    sql_cli.state.viewport:goto_row(1)
-    sql_cli.state.renderer:update_highlight(vim.api.nvim_get_current_buf())
-    return
-  end
-
-  -- Old text-based navigation
   if not nav_state.table_info then
     vim.notify("No table navigation active", vim.log.levels.WARN)
     return
@@ -701,16 +625,6 @@ function M.go_to_first_row()
 end
 
 function M.go_to_last_row()
-  -- Check if using data model
-  if is_using_data_model() then
-    local sql_cli = require('sql-cli')
-    local total_rows = sql_cli.state.data_model.total_rows
-    sql_cli.state.viewport:goto_row(total_rows)
-    sql_cli.state.renderer:update_highlight(vim.api.nvim_get_current_buf())
-    return
-  end
-
-  -- Old text-based navigation
   if not nav_state.table_info or not nav_state.table_info.data_end or not nav_state.table_info.data_start then
     vim.notify("No table navigation active", vim.log.levels.WARN)
     return
@@ -930,14 +844,11 @@ function M.get_status()
 end
 
 -- Setup keymaps for navigation
--- Setup table navigation mode
 function M.setup_keymaps(bufnr, config)
+  local opts = { noremap = true, silent = true, buffer = bufnr }
+
   -- Store that we're in table nav mode
   vim.b[bufnr].sql_cli_table_nav_active = true
-
-  -- Setup buffer-local convenience keymaps (hjkl, yy, etc.) when in table mode
-  -- This makes navigation more natural, while \sT keymaps remain globally available
-  local opts = { noremap = true, silent = true, buffer = bufnr }
 
   -- Get configuration or use defaults
   config = config or {}
@@ -962,9 +873,26 @@ function M.setup_keymaps(bufnr, config)
     vim.keymap.set("n", "l", function()
       M.move_right()
     end, opts)
+  else
+    -- Alternative arrow-key style navigation (preserves hjkl for normal vim movement)
+    vim.keymap.set("n", "<Left>", function()
+      M.move_left()
+    end, opts)
+
+    vim.keymap.set("n", "<Down>", function()
+      M.move_down()
+    end, opts)
+
+    vim.keymap.set("n", "<Up>", function()
+      M.move_up()
+    end, opts)
+
+    vim.keymap.set("n", "<Right>", function()
+      M.move_right()
+    end, opts)
   end
 
-  -- Jump to boundaries (only when in table mode)
+  -- Jump to boundaries
   vim.keymap.set("n", "0", M.go_to_first_column, opts)
   vim.keymap.set("n", "$", M.go_to_last_column, opts)
   vim.keymap.set("n", "gg", M.go_to_first_row, opts)
@@ -974,6 +902,49 @@ function M.setup_keymaps(bufnr, config)
   vim.keymap.set("n", "yy", M.yank_cell, opts)
   vim.keymap.set("n", "Y", M.yank_row, opts)
   vim.keymap.set("n", "yc", M.yank_column, opts)
+
+  -- Yank column as JSON array (for WEB CTE bodies)
+  vim.keymap.set("n", "<leader>sYj", M.yank_column_as_json, opts)
+
+  -- Diagnostic command to show table info
+  vim.keymap.set("n", "<leader>sd", M.show_table_diagnostic, opts)
+
+  -- Export operations with \s prefix
+  vim.keymap.set("n", "<leader>se", function()
+    export.show_export_menu(bufnr, nav_state.table_info)
+  end, opts)
+
+  vim.keymap.set("n", "<leader>sb", function()
+    export.yank_as_html(bufnr, nav_state.table_info, true)   -- Open in browser
+  end, opts)
+
+  vim.keymap.set("n", "<leader>sH", function()
+    export.yank_as_html(bufnr, nav_state.table_info, false)  -- Just yank HTML code
+  end, opts)
+
+  vim.keymap.set("n", "<leader>sm", function()
+    export.yank_as_markdown(bufnr, nav_state.table_info)
+  end, opts)
+
+  vim.keymap.set("n", "<leader>st", function()
+    export.yank_as_tsv(bufnr, nav_state.table_info)
+  end, opts)
+
+  vim.keymap.set("n", "<leader>si", function()
+    vim.ui.input({ prompt = "Table name: ", default = "my_table" }, function(name)
+      if name then
+        export.yank_as_insert(bufnr, nav_state.table_info, name)
+      end
+    end)
+  end, opts)
+
+  vim.keymap.set("n", "<leader>sC", function()
+    vim.ui.input({ prompt = "Table name: ", default = "my_table" }, function(name)
+      if name then
+        export.yank_create_table(bufnr, nav_state.table_info, name)
+      end
+    end)
+  end, opts)
 
   -- Tab navigation
   vim.keymap.set("n", "<Tab>", function()

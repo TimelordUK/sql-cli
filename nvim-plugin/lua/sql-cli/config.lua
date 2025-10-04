@@ -58,7 +58,6 @@ M.defaults = {
   table_navigation = {
     enabled_by_default = false,  -- Don't auto-enable table navigation (requires manual toggle)
     hijack_hjkl = true,          -- When enabled, use hjkl for table navigation (set false for normal vim movement)
-    use_data_model = false,      -- Use new data model architecture (experimental, default: false for stability)
   },
 
   -- Keymaps (set to false to disable)
