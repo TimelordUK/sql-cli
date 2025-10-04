@@ -268,6 +268,37 @@ impl RedisCache {
     }
 
     /// Check cache statistics
+    /// Purge all cache entries (delete all keys matching sql_cli:* pattern)
+    pub fn purge_all(&mut self) -> Result<usize, String> {
+        if !self.enabled {
+            return Err("Cache not enabled".to_string());
+        }
+
+        let conn = self.connection.as_mut().ok_or("No connection")?;
+
+        // Scan for all keys matching our prefix
+        let pattern = "sql_cli:*";
+        let keys: Vec<String> = redis::cmd("KEYS")
+            .arg(pattern)
+            .query(conn)
+            .map_err(|e| format!("Failed to scan keys: {}", e))?;
+
+        if keys.is_empty() {
+            return Ok(0);
+        }
+
+        let count = keys.len();
+
+        // Delete all keys in one command
+        redis::cmd("DEL")
+            .arg(&keys)
+            .query::<()>(conn)
+            .map_err(|e| format!("Failed to delete keys: {}", e))?;
+
+        info!("Purged {} cache entries", count);
+        Ok(count)
+    }
+
     pub fn stats(&mut self) -> Option<String> {
         if !self.enabled {
             return None;

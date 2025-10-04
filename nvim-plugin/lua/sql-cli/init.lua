@@ -327,6 +327,12 @@ function M.setup_keymaps()
       { desc = "Clear SQL data file", silent = true })
   end
 
+  if keymaps.cache_purge then
+    vim.keymap.set("n", keymaps.cache_purge, function()
+      M.purge_cache()
+    end, { desc = "Purge all cache entries", silent = true })
+  end
+
   if keymaps.show_plan then
     vim.keymap.set("n", keymaps.show_plan, M.show_query_plan,
       { desc = "Show SQL query plan", silent = true })
@@ -999,6 +1005,32 @@ function M.clear_data_file()
   end
   M.state:set_data_file(nil)
   vim.notify("Data file cleared", vim.log.levels.INFO)
+end
+
+-- Purge all cache entries
+function M.purge_cache()
+  local cmd = string.format("%s --cache-purge", M.config.sql_cli_path or "sql-cli")
+
+  vim.fn.jobstart(cmd, {
+    on_stdout = function(_, data)
+      if data then
+        for _, line in ipairs(data) do
+          if line ~= "" then
+            vim.notify(line, vim.log.levels.INFO)
+          end
+        end
+      end
+    end,
+    on_stderr = function(_, data)
+      if data then
+        for _, line in ipairs(data) do
+          if line ~= "" then
+            vim.notify(line, vim.log.levels.ERROR)
+          end
+        end
+      end
+    end,
+  })
 end
 
 -- Show query plan

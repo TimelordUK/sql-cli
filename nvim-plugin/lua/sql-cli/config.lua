@@ -113,6 +113,8 @@ M.defaults = {
     table_goto_2 = "<leader>sT2",   -- Jump to result table 2
     table_goto_3 = "<leader>sT3",   -- Jump to result table 3
     table_info = "<leader>sTi",     -- Show current table info (i for info)
+    -- Cache management
+    cache_purge = "<leader>sCP",    -- Purge all cache entries (capital CP)
     -- Export keymaps (when in table navigation mode)
     export_menu = "<leader>se",     -- Export menu (all formats)
     export_browser = nil,  -- Removed - use export menu instead

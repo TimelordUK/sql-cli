@@ -107,6 +107,10 @@ fn print_help() {
         "  {}         - Launch action system debugger (TUI)",
         "--keys".green()
     );
+    println!(
+        "  {}   - Purge all cache entries (requires SQL_CLI_CACHE=true)",
+        "--cache-purge".green()
+    );
 
     println!();
     println!("{}", "SQL Refactoring Tools:".yellow());
@@ -388,6 +392,28 @@ fn main() -> io::Result<()> {
     // Check for CASE generation from numeric range
     if args.contains(&"--generate-case-range".to_string()) {
         return handle_case_range_generation(&args);
+    }
+
+    // Check for cache purge flag
+    if args.contains(&"--cache-purge".to_string()) {
+        use sql_cli::redis_cache_module::RedisCache;
+        let mut cache = RedisCache::new();
+
+        if !cache.is_enabled() {
+            eprintln!("❌ Cache not enabled (set SQL_CLI_CACHE=true)");
+            std::process::exit(1);
+        }
+
+        match cache.purge_all() {
+            Ok(count) => {
+                println!("✅ Purged {} cache entries", count);
+                return Ok(());
+            }
+            Err(e) => {
+                eprintln!("❌ Failed to purge cache: {}", e);
+                std::process::exit(1);
+            }
+        }
     }
 
     // Check for help flag
