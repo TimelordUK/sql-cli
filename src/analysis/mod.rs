@@ -335,6 +335,14 @@ pub fn extract_cte(ast: &SelectStatement, cte_name: &str) -> Option<String> {
                     parts.push(format!("  METHOD {:?}", m));
                 }
 
+                if let Some(ref f) = web_spec.format {
+                    parts.push(format!("  FORMAT {:?}", f));
+                }
+
+                if let Some(cache) = web_spec.cache_seconds {
+                    parts.push(format!("  CACHE {}", cache));
+                }
+
                 if !web_spec.headers.is_empty() {
                     parts.push("  HEADERS (".to_string());
                     for (i, (k, v)) in web_spec.headers.iter().enumerate() {
@@ -348,12 +356,39 @@ pub fn extract_cte(ast: &SelectStatement, cte_name: &str) -> Option<String> {
                     parts.push("  )".to_string());
                 }
 
-                if let Some(ref b) = web_spec.body {
-                    parts.push(format!("  BODY '{}'", b));
+                // Add FORM_FILE entries
+                for (field_name, file_path) in &web_spec.form_files {
+                    parts.push(format!("  FORM_FILE '{}' '{}'", field_name, file_path));
                 }
 
-                if let Some(ref f) = web_spec.format {
-                    parts.push(format!("  FORMAT {:?}", f));
+                // Add FORM_FIELD entries (handle JSON formatting)
+                for (field_name, value) in &web_spec.form_fields {
+                    let trimmed_value = value.trim();
+                    // Check if value looks like JSON
+                    if (trimmed_value.starts_with('{') && trimmed_value.ends_with('}'))
+                        || (trimmed_value.starts_with('[') && trimmed_value.ends_with(']'))
+                    {
+                        // Use $JSON$ delimiters for JSON values
+                        parts.push(format!(
+                            "  FORM_FIELD '{}' $JSON${}$JSON$",
+                            field_name, trimmed_value
+                        ));
+                    } else {
+                        // Regular value with single quotes
+                        parts.push(format!("  FORM_FIELD '{}' '{}'", field_name, value));
+                    }
+                }
+
+                if let Some(ref b) = web_spec.body {
+                    // Check if body is JSON
+                    let trimmed_body = b.trim();
+                    if (trimmed_body.starts_with('{') && trimmed_body.ends_with('}'))
+                        || (trimmed_body.starts_with('[') && trimmed_body.ends_with(']'))
+                    {
+                        parts.push(format!("  BODY $JSON${}$JSON$", trimmed_body));
+                    } else {
+                        parts.push(format!("  BODY '{}'", b));
+                    }
                 }
 
                 if let Some(ref jp) = web_spec.json_path {
