@@ -293,4 +293,87 @@ function M.is_web_cte(cte)
   return cte.cte_type == 'WEB'
 end
 
+--- Show raw JSON analysis in a modal popup
+--- @param query string SQL query to analyze
+function M.show_raw_analysis_popup(query)
+  local log = get_logger()
+  if log then
+    log.info('cli_analyzer', 'show_raw_analysis_popup called')
+  end
+
+  -- Analyze query
+  local analysis, err = M.analyze_query(query)
+
+  if err then
+    vim.notify("Failed to analyze query: " .. err, vim.log.levels.ERROR)
+    return
+  end
+
+  -- Convert analysis to pretty JSON
+  local json_str = vim.fn.json_encode(analysis)
+  local ok, pretty_json = pcall(vim.fn.json_decode, json_str)
+  if ok then
+    json_str = vim.fn.json_encode(pretty_json)
+  end
+
+  -- Format JSON with indentation
+  local lines = {}
+  for line in json_str:gmatch('[^\n]+') do
+    table.insert(lines, line)
+  end
+
+  -- Add header and footer
+  table.insert(lines, 1, "")
+  table.insert(lines, 1, "Raw CLI Analysis Output (--analyze-query)")
+  table.insert(lines, 1, "═══════════════════════════════════════════")
+  table.insert(lines, "")
+  table.insert(lines, "═══════════════════════════════════════════")
+  table.insert(lines, "Press 'y' to yank | 'q' to close")
+
+  -- Create buffer
+  local buf = vim.api.nvim_create_buf(false, true)
+  vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
+  vim.api.nvim_buf_set_option(buf, 'modifiable', false)
+  vim.api.nvim_buf_set_option(buf, 'filetype', 'json')
+
+  -- Calculate window size
+  local width = math.min(80, vim.o.columns - 10)
+  local height = math.min(#lines + 2, vim.o.lines - 5)
+
+  -- Create window
+  local win_opts = {
+    relative = 'editor',
+    width = width,
+    height = height,
+    col = math.floor((vim.o.columns - width) / 2),
+    row = math.floor((vim.o.lines - height) / 2),
+    style = 'minimal',
+    border = 'rounded',
+    title = ' Query Analysis (JSON) ',
+    title_pos = 'center',
+  }
+
+  local win = vim.api.nvim_open_win(buf, true, win_opts)
+
+  -- Set keymaps
+  local opts = { noremap = true, silent = true, buffer = buf }
+
+  vim.keymap.set('n', 'q', function()
+    vim.api.nvim_win_close(win, true)
+  end, opts)
+
+  vim.keymap.set('n', '<Esc>', function()
+    vim.api.nvim_win_close(win, true)
+  end, opts)
+
+  vim.keymap.set('n', 'y', function()
+    vim.fn.setreg('+', json_str)
+    vim.notify("Analysis JSON yanked to clipboard", vim.log.levels.INFO)
+  end, opts)
+
+  if log then
+    log.info('cli_analyzer', 'Displayed raw analysis popup')
+  end
+end
+
 return M

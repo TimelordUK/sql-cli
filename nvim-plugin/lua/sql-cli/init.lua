@@ -185,6 +185,10 @@ function M.create_commands()
     cte_parser_cli.show_cte_analysis_popup()
   end, { desc = "Show CTE analysis popup" })
 
+  vim.api.nvim_create_user_command("SqlCliAnalyzeQuery", function()
+    M.analyze_query_raw()
+  end, { desc = "Show raw query analysis JSON" })
+
   vim.api.nvim_create_user_command("SqlCliResultsToBuffer", function()
     results.results_to_buffer(M.state)
   end, { desc = "Open query results in new buffer" })
@@ -463,6 +467,12 @@ function M.setup_keymaps()
       -- Use CLI parser by default as it's more robust
       cte_parser_cli.show_cte_analysis_popup()
     end, { desc = "Show CTE analysis", silent = true })
+  end
+
+  if keymaps.analyze_query then
+    vim.keymap.set("n", keymaps.analyze_query, function()
+      M.analyze_query_raw()
+    end, { desc = "Show raw query analysis JSON", silent = true })
   end
 
   if keymaps.function_help then
@@ -872,6 +882,32 @@ function M.test_formatter()
     return
   end
   formatter.test_formatter(M.config)
+end
+
+-- Show raw query analysis JSON
+function M.analyze_query_raw()
+  local bufnr = vim.api.nvim_get_current_buf()
+  local cursor_line = vim.fn.line('.')
+  local lines = vim.api.nvim_buf_get_lines(bufnr, 0, -1, false)
+
+  -- Find query boundaries
+  local start_line, end_line = utils.find_query_at_cursor(lines, cursor_line)
+
+  if not start_line then
+    vim.notify("No SQL query found at cursor", vim.log.levels.WARN)
+    return
+  end
+
+  -- Extract query
+  local query_lines = {}
+  for i = start_line, end_line do
+    table.insert(query_lines, lines[i])
+  end
+  local query = table.concat(query_lines, '\n')
+
+  -- Show raw analysis
+  local cli_analyzer = require('sql-cli.cli_analyzer')
+  cli_analyzer.show_raw_analysis_popup(query)
 end
 
 -- Expose logger module for use by other modules
