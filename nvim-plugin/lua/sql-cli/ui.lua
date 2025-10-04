@@ -6,6 +6,76 @@ local table_nav = require('sql-cli.table_nav')
 
 local M = {}
 
+-- Load custom syntax patterns from config
+local function load_custom_syntax_patterns(config)
+  local patterns = {}
+
+  -- First, try to load from external file if specified
+  if config.syntax and config.syntax.custom_file then
+    local expanded_path = vim.fn.expand(config.syntax.custom_file)
+    local ok, loaded = pcall(dofile, expanded_path)
+    if ok and type(loaded) == "table" then
+      vim.list_extend(patterns, loaded)
+    else
+      vim.notify(
+        string.format("Failed to load custom syntax file: %s", expanded_path),
+        vim.log.levels.WARN
+      )
+    end
+  end
+
+  -- Then, add patterns from config (these override file patterns if same group)
+  if config.syntax and config.syntax.patterns then
+    vim.list_extend(patterns, config.syntax.patterns)
+  end
+
+  return patterns
+end
+
+-- Apply custom syntax pattern
+local function apply_syntax_pattern(pattern_def)
+  if not pattern_def.pattern or not pattern_def.group then
+    return
+  end
+
+  -- Create syntax match
+  local group_name = "SqlCli" .. pattern_def.group
+  vim.cmd(string.format([[syntax match %s /%s/]], group_name, pattern_def.pattern))
+
+  -- Apply colors if specified
+  if pattern_def.color then
+    local hl_parts = { "highlight", group_name }
+
+    if pattern_def.color.gui then
+      table.insert(hl_parts, string.format("guifg=%s", pattern_def.color.gui))
+    end
+
+    if pattern_def.color.cterm then
+      table.insert(hl_parts, string.format("ctermfg=%s", pattern_def.color.cterm))
+    end
+
+    if pattern_def.color.bg_gui then
+      table.insert(hl_parts, string.format("guibg=%s", pattern_def.color.bg_gui))
+    end
+
+    if pattern_def.color.bg_cterm then
+      table.insert(hl_parts, string.format("ctermbg=%s", pattern_def.color.bg_cterm))
+    end
+
+    local attrs = {}
+    if pattern_def.color.bold then table.insert(attrs, "bold") end
+    if pattern_def.color.italic then table.insert(attrs, "italic") end
+    if pattern_def.color.underline then table.insert(attrs, "underline") end
+
+    if #attrs > 0 then
+      table.insert(hl_parts, string.format("gui=%s", table.concat(attrs, ",")))
+      table.insert(hl_parts, string.format("cterm=%s", table.concat(attrs, ",")))
+    end
+
+    vim.cmd(table.concat(hl_parts, " "))
+  end
+end
+
 -- Create output window for SQL CLI results
 function M.create_output_window(config, state)
   -- Save current window
@@ -65,11 +135,11 @@ function M.create_output_window(config, state)
   vim.bo[output_buf].buftype = "nofile"
   vim.bo[output_buf].bufhidden = "hide"
   vim.bo[output_buf].swapfile = false
-  vim.bo[output_buf].filetype = ""  -- No filetype to prevent unwanted syntax
-  vim.bo[output_buf].syntax = ""    -- Clear any syntax
+  vim.bo[output_buf].filetype = "sql-cli-output"  -- Use our custom syntax file
+  -- Note: Don't clear syntax - let the filetype apply sql-cli-output.vim
 
-  -- Apply our custom syntax highlighting
-  M.setup_output_highlighting(state)
+  -- Apply our custom syntax highlighting (if needed for additional rules)
+  M.setup_output_highlighting(config, state)
 
   -- Set window options
   vim.wo[output_win].wrap = config.output.wrap
@@ -297,7 +367,7 @@ function M.statusline(state)
 end
 
 -- Setup output buffer syntax highlighting
-function M.setup_output_highlighting(state, enable_nav)
+function M.setup_output_highlighting(config, state, enable_nav)
   local output_buf = state:get_output_buf()
   if not output_buf or not vim.api.nvim_buf_is_valid(output_buf) then
     return
@@ -327,23 +397,29 @@ function M.setup_output_highlighting(state, enable_nav)
     vim.cmd([[syntax match SqlCliCurrency /\S*\s\+\(USD\|EUR\|GBP\|JPY\|CHF\|CNY\|INR\|AUD\|CAD\|SEK\|NOK\|DKK\)\>/]])
 
     -- Number patterns - order matters for precedence
-    -- Use 'contained' and 'contains=NONE' to prevent overlapping matches
+    -- Use word boundaries \< \> to avoid matching inside alphanumeric IDs like ORD012234
 
     -- Compact numbers (1.5k, 2M, etc) - highest priority
-    vim.cmd([[syntax match SqlCliCompactNumber /\v\d+\.?\d*[kMBT]/ contains=NONE]])
+    vim.cmd([[syntax match SqlCliCompactNumber /\v<\d+\.?\d*[kMBT]>/ contains=NONE]])
 
     -- Numbers with thousand separators (1,234.56)
-    vim.cmd([[syntax match SqlCliFormattedNumber /\v\d{1,3}([,.']\d{3})+\.?\d*/ contains=NONE]])
+    vim.cmd([[syntax match SqlCliFormattedNumber /\v<\d{1,3}([,.']\d{3})+\.?\d*>/ contains=NONE]])
 
     -- Decimal numbers (must have decimal point)
-    vim.cmd([[syntax match SqlCliDecimalNumber /\v\d+\.\d+/ contains=NONE]])
+    vim.cmd([[syntax match SqlCliDecimalNumber /\v<\d+\.\d+>/ contains=NONE]])
 
-    -- Plain integers
-    vim.cmd([[syntax match SqlCliNumber /\v\d+/ contains=NONE]])
+    -- Plain integers (standalone only)
+    vim.cmd([[syntax match SqlCliNumber /\v<\d+>/ contains=NONE]])
 
     -- Special values
     vim.cmd([[syntax match SqlCliNull /\<NULL\>/]])
     vim.cmd([[syntax match SqlCliBoolean /\<\(true\|false\|TRUE\|FALSE\)\>/]])
+
+    -- Load and apply custom syntax patterns from config
+    local custom_patterns = load_custom_syntax_patterns(config)
+    for _, pattern in ipairs(custom_patterns) do
+      apply_syntax_pattern(pattern)
+    end
 
     -- Quoted strings (lowest priority)
     vim.cmd([[syntax match SqlCliString /"[^"]*"/]])
@@ -373,6 +449,8 @@ function M.setup_output_highlighting(state, enable_nav)
 
     -- Strings with subdued color
     vim.cmd([[highlight SqlCliString guifg=#f1fa8c ctermfg=228]])
+
+    -- Custom syntax pattern colors are applied by apply_syntax_pattern() above
   end)
 
   -- Note: Table navigation is now enabled in executor.lua after query completes

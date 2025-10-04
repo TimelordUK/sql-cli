@@ -24,6 +24,7 @@ M.defaults = {
     max_col_width = 50,      -- Maximum column width (0 = unlimited, default: 50)
     col_sample_rows = 100,   -- Rows to sample for column width (0 = all rows, default: 100)
     auto_hide_empty = false, -- Automatically hide columns that are all NULL/empty (default: false)
+    style = "default",       -- Table style: default, ascii, markdown, utf8, etc. (see --list-table-styles)
   },
 
   -- Formatting preferences
@@ -170,6 +171,20 @@ M.defaults = {
     max_files = 20,        -- Maximum number of log files to keep
     buffer_size = 100,     -- Number of messages to buffer before flush
     auto_flush_interval = 5000, -- Auto-flush interval in milliseconds
+  },
+
+  -- Custom syntax highlighting rules
+  syntax = {
+    -- Path to custom syntax file (Lua or TOML)
+    -- Example: "~/.config/sql-cli/syntax.lua"
+    custom_file = nil,
+
+    -- Built-in custom patterns (can be overridden by custom_file)
+    patterns = {
+      -- Trading patterns (example)
+      -- { pattern = [[\<Buy\>]], group = "SqlCliBuy", color = { gui = "#50fa7b", cterm = "Green", bold = true } },
+      -- { pattern = [[\<Sell\>]], group = "SqlCliSell", color = { gui = "#ff5555", cterm = "Red", bold = true } },
+    }
   },
 }
 

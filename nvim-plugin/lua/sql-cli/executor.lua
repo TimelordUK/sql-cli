@@ -560,6 +560,12 @@ function M.build_command(query, show_plan, config, state)
 
   -- Add table output settings if using table format
   if config.output_format == "table" and config.table_output then
+    -- Add table style
+    if config.table_output.style then
+      table.insert(cmd_parts, "--table-style")
+      table.insert(cmd_parts, config.table_output.style)
+    end
+
     -- Add max column width
     if config.table_output.max_col_width then
       table.insert(cmd_parts, "--max-col-width")

@@ -1,4 +1,6 @@
 use anyhow::{Context, Result};
+use comfy_table::presets::*;
+use comfy_table::{Cell, ContentArrangement, Table};
 use std::fs;
 use std::io::{self, Write};
 use std::path::Path;
@@ -66,6 +68,78 @@ impl OutputFormat {
     }
 }
 
+/// Table styling presets for table output format
+#[derive(Debug, Clone, Copy)]
+pub enum TableStyle {
+    /// Current default ASCII style with borders
+    Default,
+    /// ASCII table with full borders
+    AsciiFull,
+    /// ASCII table with condensed rows
+    AsciiCondensed,
+    /// ASCII table with only outer borders
+    AsciiBordersOnly,
+    /// ASCII table with horizontal lines only
+    AsciiHorizontalOnly,
+    /// ASCII table with no borders
+    AsciiNoBorders,
+    /// Markdown-style table
+    Markdown,
+    /// UTF8 table with box-drawing characters
+    Utf8Full,
+    /// UTF8 table with condensed rows
+    Utf8Condensed,
+    /// UTF8 table with only outer borders
+    Utf8BordersOnly,
+    /// UTF8 table with horizontal lines only
+    Utf8HorizontalOnly,
+    /// UTF8 table with no borders
+    Utf8NoBorders,
+    /// No table formatting, just data
+    Plain,
+}
+
+impl TableStyle {
+    pub fn from_str(s: &str) -> Result<Self> {
+        match s.to_lowercase().as_str() {
+            "default" => Ok(TableStyle::Default),
+            "ascii" | "ascii-full" => Ok(TableStyle::AsciiFull),
+            "ascii-condensed" => Ok(TableStyle::AsciiCondensed),
+            "ascii-borders" | "ascii-borders-only" => Ok(TableStyle::AsciiBordersOnly),
+            "ascii-horizontal" | "ascii-horizontal-only" => Ok(TableStyle::AsciiHorizontalOnly),
+            "ascii-noborders" | "ascii-no-borders" => Ok(TableStyle::AsciiNoBorders),
+            "markdown" | "md" => Ok(TableStyle::Markdown),
+            "utf8" | "utf8-full" => Ok(TableStyle::Utf8Full),
+            "utf8-condensed" => Ok(TableStyle::Utf8Condensed),
+            "utf8-borders" | "utf8-borders-only" => Ok(TableStyle::Utf8BordersOnly),
+            "utf8-horizontal" | "utf8-horizontal-only" => Ok(TableStyle::Utf8HorizontalOnly),
+            "utf8-noborders" | "utf8-no-borders" => Ok(TableStyle::Utf8NoBorders),
+            "plain" | "none" => Ok(TableStyle::Plain),
+            _ => Err(anyhow::anyhow!(
+                "Invalid table style: {}. Use: default, ascii, ascii-condensed, ascii-borders, ascii-horizontal, ascii-noborders, markdown, utf8, utf8-condensed, utf8-borders, utf8-horizontal, utf8-noborders, plain",
+                s
+            )),
+        }
+    }
+
+    pub fn list_styles() -> &'static str {
+        "Available table styles:
+  default            - Current default ASCII style
+  ascii              - ASCII with full borders
+  ascii-condensed    - ASCII with condensed rows
+  ascii-borders      - ASCII with outer borders only
+  ascii-horizontal   - ASCII with horizontal lines only
+  ascii-noborders    - ASCII with no borders
+  markdown           - GitHub-flavored Markdown table
+  utf8               - UTF8 box-drawing characters
+  utf8-condensed     - UTF8 with condensed rows
+  utf8-borders       - UTF8 with outer borders only
+  utf8-horizontal    - UTF8 with horizontal lines only
+  utf8-noborders     - UTF8 with no borders
+  plain              - No formatting, data only"
+    }
+}
+
 /// Configuration for non-interactive query execution
 pub struct NonInteractiveConfig {
     pub data_file: String,
@@ -85,6 +159,7 @@ pub struct NonInteractiveConfig {
     pub debug_trace: bool,
     pub max_col_width: Option<usize>, // Maximum column width for table output (None = unlimited)
     pub col_sample_rows: usize,       // Number of rows to sample for column width (0 = all rows)
+    pub table_style: TableStyle,      // Table styling preset (only affects table output format)
 }
 
 /// Execute a query in non-interactive mode
@@ -502,6 +577,7 @@ pub fn execute_non_interactive(config: NonInteractiveConfig) -> Result<()> {
             config.max_col_width,
             config.col_sample_rows,
             exec_time_ms,
+            config.table_style,
         )?;
         info!("Results written to: {}", path);
         Ok(())
@@ -513,6 +589,7 @@ pub fn execute_non_interactive(config: NonInteractiveConfig) -> Result<()> {
             config.max_col_width,
             config.col_sample_rows,
             exec_time_ms,
+            config.table_style,
         )?;
         Ok(())
     };
@@ -642,6 +719,7 @@ pub fn execute_script(config: NonInteractiveConfig) -> Result<()> {
                             &mut statement_output,
                             config.max_col_width,
                             config.col_sample_rows,
+                            config.table_style,
                         )?;
                         writeln!(
                             &mut statement_output,
@@ -787,13 +865,20 @@ fn output_results<W: Write>(
     max_col_width: Option<usize>,
     col_sample_rows: usize,
     exec_time_ms: f64,
+    table_style: TableStyle,
 ) -> Result<()> {
     match format {
         OutputFormat::Csv => output_csv(dataview, writer, ','),
         OutputFormat::Tsv => output_csv(dataview, writer, '\t'),
         OutputFormat::Json => output_json(dataview, writer),
         OutputFormat::JsonStructured => output_json_structured(dataview, writer, exec_time_ms),
-        OutputFormat::Table => output_table(dataview, writer, max_col_width, col_sample_rows),
+        OutputFormat::Table => output_table(
+            dataview,
+            writer,
+            max_col_width,
+            col_sample_rows,
+            table_style,
+        ),
     }
 }
 
@@ -952,12 +1037,11 @@ fn output_json_structured<W: Write>(
     Ok(())
 }
 
-/// Output results as an ASCII table
-fn output_table<W: Write>(
+/// Output results using the old custom ASCII table format (for Nvim compatibility)
+fn output_table_old_style<W: Write>(
     dataview: &DataView,
     writer: &mut W,
     max_col_width: Option<usize>,
-    col_sample_rows: usize,
 ) -> Result<()> {
     let columns = dataview.column_names();
 
@@ -967,16 +1051,8 @@ fn output_table<W: Write>(
         widths[i] = col.len();
     }
 
-    // Sample rows for width calculation
-    // If col_sample_rows is 0, scan all rows
-    // Otherwise, scan min(col_sample_rows, total_rows)
-    let sample_size = if col_sample_rows == 0 {
-        dataview.row_count()
-    } else {
-        dataview.row_count().min(col_sample_rows)
-    };
-
-    for row_idx in 0..sample_size {
+    // Scan all rows for width calculation
+    for row_idx in 0..dataview.row_count() {
         if let Some(row) = dataview.get_row(row_idx) {
             for (i, value) in row.values.iter().enumerate() {
                 if i < widths.len() {
@@ -994,10 +1070,11 @@ fn output_table<W: Write>(
         }
     }
 
-    // Print header separator
+    // Print top border
     write!(writer, "+")?;
     for width in &widths {
-        write!(writer, "-{}-+", "-".repeat(*width))?;
+        write!(writer, "{}", "-".repeat(*width + 2))?;
+        write!(writer, "+")?;
     }
     writeln!(writer)?;
 
@@ -1011,11 +1088,12 @@ fn output_table<W: Write>(
     // Print header separator
     write!(writer, "+")?;
     for width in &widths {
-        write!(writer, "-{}-+", "-".repeat(*width))?;
+        write!(writer, "{}", "-".repeat(*width + 2))?;
+        write!(writer, "+")?;
     }
     writeln!(writer)?;
 
-    // Print rows
+    // Print data rows (no separators between rows)
     for row_idx in 0..dataview.row_count() {
         if let Some(row) = dataview.get_row(row_idx) {
             write!(writer, "|")?;
@@ -1023,7 +1101,7 @@ fn output_table<W: Write>(
                 if i < widths.len() {
                     let value_str = format_value(value);
                     let truncated = if value_str.len() > widths[i] {
-                        format!("{}...", &value_str[..widths[i] - 3])
+                        format!("{}...", &value_str[..widths[i].saturating_sub(3)])
                     } else {
                         value_str
                     };
@@ -1034,12 +1112,107 @@ fn output_table<W: Write>(
         }
     }
 
-    // Print bottom separator
+    // Print bottom border
     write!(writer, "+")?;
     for width in &widths {
-        write!(writer, "-{}-+", "-".repeat(*width))?;
+        write!(writer, "{}", "-".repeat(*width + 2))?;
+        write!(writer, "+")?;
     }
     writeln!(writer)?;
+
+    Ok(())
+}
+
+/// Output results as a table using comfy-table with styling
+fn output_table<W: Write>(
+    dataview: &DataView,
+    writer: &mut W,
+    max_col_width: Option<usize>,
+    _col_sample_rows: usize, // Not needed with comfy-table
+    style: TableStyle,
+) -> Result<()> {
+    let mut table = Table::new();
+
+    // Apply the selected style preset
+    match style {
+        TableStyle::Default => {
+            // Use custom old-style renderer for Nvim compatibility
+            // This matches what the table navigation parser expects
+            return output_table_old_style(dataview, writer, max_col_width);
+        }
+        TableStyle::AsciiFull => {
+            table.load_preset(ASCII_FULL);
+        }
+        TableStyle::AsciiCondensed => {
+            table.load_preset(ASCII_FULL_CONDENSED);
+        }
+        TableStyle::AsciiBordersOnly => {
+            table.load_preset(ASCII_BORDERS_ONLY);
+        }
+        TableStyle::AsciiHorizontalOnly => {
+            table.load_preset(ASCII_HORIZONTAL_ONLY);
+        }
+        TableStyle::AsciiNoBorders => {
+            table.load_preset(ASCII_NO_BORDERS);
+        }
+        TableStyle::Markdown => {
+            table.load_preset(ASCII_MARKDOWN);
+        }
+        TableStyle::Utf8Full => {
+            table.load_preset(UTF8_FULL);
+        }
+        TableStyle::Utf8Condensed => {
+            table.load_preset(UTF8_FULL_CONDENSED);
+        }
+        TableStyle::Utf8BordersOnly => {
+            table.load_preset(UTF8_BORDERS_ONLY);
+        }
+        TableStyle::Utf8HorizontalOnly => {
+            table.load_preset(UTF8_HORIZONTAL_ONLY);
+        }
+        TableStyle::Utf8NoBorders => {
+            table.load_preset(UTF8_NO_BORDERS);
+        }
+        TableStyle::Plain => {
+            table.load_preset(NOTHING);
+        }
+    }
+
+    // Set content arrangement (automatic width adjustment)
+    if max_col_width.is_some() {
+        table.set_content_arrangement(ContentArrangement::Dynamic);
+    }
+
+    // Set column headers
+    let columns = dataview.column_names();
+    table.set_header(&columns);
+
+    // Add data rows
+    for row_idx in 0..dataview.row_count() {
+        if let Some(row) = dataview.get_row(row_idx) {
+            let row_strings: Vec<String> = row
+                .values
+                .iter()
+                .map(|v| {
+                    let s = format_value(v);
+                    // Apply max width truncation if specified
+                    if let Some(max_width) = max_col_width {
+                        if s.len() > max_width {
+                            format!("{}...", &s[..max_width.saturating_sub(3)])
+                        } else {
+                            s
+                        }
+                    } else {
+                        s
+                    }
+                })
+                .collect();
+            table.add_row(row_strings);
+        }
+    }
+
+    // Write the table to the writer
+    writeln!(writer, "{}", table)?;
 
     Ok(())
 }

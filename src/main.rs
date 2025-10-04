@@ -160,6 +160,14 @@ fn print_help() {
         "--output-file".green()
     );
     println!(
+        "  {} <style> - Table style: markdown, utf8, ascii, etc. (default: default)",
+        "--table-style".green()
+    );
+    println!(
+        "  {} - List all available table styles",
+        "--list-table-styles".green()
+    );
+    println!(
         "  {} <col> - Show distinct values with counts for column",
         "--distinct-column".green()
     );
@@ -376,6 +384,12 @@ fn main() -> io::Result<()> {
     // Check for version flag
     if args.contains(&"--version".to_string()) || args.contains(&"-V".to_string()) {
         println!("sql-cli {}", env!("CARGO_PKG_VERSION"));
+        return Ok(());
+    }
+
+    // Check for list table styles flag
+    if args.contains(&"--list-table-styles".to_string()) {
+        println!("{}", sql_cli::non_interactive::TableStyle::list_styles());
         return Ok(());
     }
 
@@ -829,6 +843,7 @@ fn main() -> io::Result<()> {
                         debug_trace: false,
                         max_col_width: None,
                         col_sample_rows: 100,
+                        table_style: sql_cli::non_interactive::TableStyle::Default,
                     };
 
                     // Execute using the non-interactive interface which will output to stdout
@@ -1153,6 +1168,12 @@ fn main() -> io::Result<()> {
         .and_then(|pos| args.get(pos + 1))
         .map(std::string::ToString::to_string);
 
+    let table_style_arg = args
+        .iter()
+        .position(|arg| arg == "--table-style")
+        .and_then(|pos| args.get(pos + 1))
+        .map_or_else(|| "default".to_string(), std::string::ToString::to_string);
+
     let query_plan_arg = args
         .iter()
         .any(|arg| arg == "--query-plan" || arg == "--query_plan");
@@ -1370,6 +1391,8 @@ fn main() -> io::Result<()> {
             debug_trace: debug_arg,
             max_col_width,
             col_sample_rows,
+            table_style: sql_cli::non_interactive::TableStyle::from_str(&table_style_arg)
+                .map_err(io::Error::other)?,
         };
 
         // Use script executor if GO separator is detected, otherwise normal execution
