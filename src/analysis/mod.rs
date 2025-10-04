@@ -482,70 +482,10 @@ fn format_select_statement(stmt: &SelectStatement) -> String {
     parts.join("\n")
 }
 
+/// Format an expression using the centralized AST formatter
+/// This ensures consistency with query reformatting
 fn format_expr(expr: &crate::sql::parser::ast::SqlExpression) -> String {
-    use crate::sql::parser::ast::SqlExpression;
-
-    match expr {
-        SqlExpression::Column(col) => col.name.clone(),
-        SqlExpression::NumberLiteral(n) => n.clone(),
-        SqlExpression::StringLiteral(s) => format!("'{}'", s),
-        SqlExpression::BooleanLiteral(b) => b.to_string(),
-        SqlExpression::Null => "NULL".to_string(),
-        SqlExpression::BinaryOp { left, op, right } => {
-            format!("{} {} {}", format_expr(left), op, format_expr(right))
-        }
-        SqlExpression::FunctionCall { name, args, .. } => {
-            let arg_strs: Vec<String> = args.iter().map(|a| format_expr(a)).collect();
-            format!("{}({})", name, arg_strs.join(", "))
-        }
-        SqlExpression::Not { expr } => {
-            format!("NOT {}", format_expr(expr))
-        }
-        SqlExpression::CaseExpression {
-            when_branches,
-            else_branch,
-        } => {
-            let mut parts = vec!["CASE".to_string()];
-            for branch in when_branches {
-                parts.push(format!(
-                    "WHEN {} THEN {}",
-                    format_expr(&branch.condition),
-                    format_expr(&branch.result)
-                ));
-            }
-            if let Some(else_expr) = else_branch {
-                parts.push(format!("ELSE {}", format_expr(else_expr)));
-            }
-            parts.push("END".to_string());
-            parts.join(" ")
-        }
-        SqlExpression::SimpleCaseExpression {
-            expr,
-            when_branches,
-            else_branch,
-        } => {
-            let mut parts = vec![format!("CASE {}", format_expr(expr))];
-            for branch in when_branches {
-                parts.push(format!(
-                    "WHEN {} THEN {}",
-                    format_expr(&branch.value),
-                    format_expr(&branch.result)
-                ));
-            }
-            if let Some(else_expr) = else_branch {
-                parts.push(format!("ELSE {}", format_expr(else_expr)));
-            }
-            parts.push("END".to_string());
-            parts.join(" ")
-        }
-        SqlExpression::ScalarSubquery { .. } => "(SELECT ...)".to_string(), // Simplified
-        SqlExpression::InSubquery { .. } => "IN (SELECT ...)".to_string(),  // Simplified
-        SqlExpression::NotInSubquery { .. } => "NOT IN (SELECT ...)".to_string(), // Simplified
-        SqlExpression::InList { .. } => "IN (...)".to_string(),             // Simplified
-        SqlExpression::NotInList { .. } => "NOT IN (...)".to_string(),      // Simplified
-        SqlExpression::Between { .. } => "BETWEEN...AND...".to_string(),    // Simplified
-        _ => "...".to_string(), // Simplified for other cases
-    }
+    crate::sql::parser::ast_formatter::format_expression(expr)
 }
 
 /// Find query context at a specific line:column position

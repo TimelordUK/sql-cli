@@ -41,6 +41,14 @@ pub fn format_select_with_config(stmt: &SelectStatement, config: &FormatConfig) 
     formatter.format_select(stmt, 0)
 }
 
+/// Format a single SQL expression into a string
+/// This is useful for extracting and displaying parts of a query
+pub fn format_expression(expr: &SqlExpression) -> String {
+    let config = FormatConfig::default();
+    let formatter = AstFormatter::new(&config);
+    formatter.format_expression(expr)
+}
+
 struct AstFormatter<'a> {
     config: &'a FormatConfig,
 }
@@ -657,6 +665,48 @@ impl<'a> AstFormatter<'a> {
                 result.push_str(&self.keyword("END"));
                 result
             }
+            SqlExpression::SimpleCaseExpression {
+                expr,
+                when_branches,
+                else_branch,
+            } => {
+                // Format simple CASE expressions on multiple lines for readability
+                let mut result = String::new();
+                result.push_str(&format!(
+                    "{} {}",
+                    self.keyword("CASE"),
+                    self.format_expression(expr)
+                ));
+                result.push('\n');
+
+                // Format each WHEN branch on its own line with indentation
+                for branch in when_branches {
+                    result.push_str("        "); // 8 spaces for WHEN indent
+                    result.push_str(&format!(
+                        "{} {} {} {}",
+                        self.keyword("WHEN"),
+                        self.format_expression(&branch.value),
+                        self.keyword("THEN"),
+                        self.format_expression(&branch.result)
+                    ));
+                    result.push('\n');
+                }
+
+                // Format ELSE clause if present
+                if let Some(else_expr) = else_branch {
+                    result.push_str("        "); // 8 spaces for ELSE indent
+                    result.push_str(&format!(
+                        "{} {}",
+                        self.keyword("ELSE"),
+                        self.format_expression(else_expr)
+                    ));
+                    result.push('\n');
+                }
+
+                result.push_str("    "); // 4 spaces for END
+                result.push_str(&self.keyword("END"));
+                result
+            }
             SqlExpression::Between { expr, lower, upper } => {
                 format!(
                     "{} {} {} {} {}",
@@ -867,6 +917,34 @@ impl<'a> AstFormatter<'a> {
 
                 result.push(')');
                 result
+            }
+            SqlExpression::DateTimeConstructor {
+                year,
+                month,
+                day,
+                hour,
+                minute,
+                second,
+            } => {
+                if let (Some(h), Some(m), Some(s)) = (hour, minute, second) {
+                    format!(
+                        "DateTime({}, {}, {}, {}, {}, {})",
+                        year, month, day, h, m, s
+                    )
+                } else {
+                    format!("DateTime({}, {}, {})", year, month, day)
+                }
+            }
+            SqlExpression::DateTimeToday {
+                hour,
+                minute,
+                second,
+            } => {
+                if let (Some(h), Some(m), Some(s)) = (hour, minute, second) {
+                    format!("Today({}, {}, {})", h, m, s)
+                } else {
+                    "Today()".to_string()
+                }
             }
             _ => format!("{:?}", expr), // Fallback for unhandled expression types
         }
