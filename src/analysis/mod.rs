@@ -337,8 +337,13 @@ pub fn extract_cte(ast: &SelectStatement, cte_name: &str) -> Option<String> {
 
                 if !web_spec.headers.is_empty() {
                     parts.push("  HEADERS (".to_string());
-                    for (k, v) in &web_spec.headers {
-                        parts.push(format!("    '{}' = '{}'", k, v));
+                    for (i, (k, v)) in web_spec.headers.iter().enumerate() {
+                        let comma = if i < web_spec.headers.len() - 1 {
+                            ","
+                        } else {
+                            ""
+                        };
+                        parts.push(format!("    '{}': '{}'{}", k, v, comma));
                     }
                     parts.push("  )".to_string());
                 }
