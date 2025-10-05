@@ -61,32 +61,56 @@ FROM deltas
 WHERE ms_delta IS NOT NULL;
 GO
 
+
 -- Example 5: Group by latency buckets
 -- Categorize transaction latencies into buckets
-SELECT
-    CASE
+WITH
+    deltas AS (
+        SELECT
+            DATEDIFF('millisecond', LAG(transaction_time, 1) OVER (ORDER BY transaction_time ASC), transaction_time) AS ms_delta,
+            *
+        FROM fix_timestamps
+    ),
+    labels AS (
+        SELECT
+            order_id,
+            transaction_time,
+            CASE
         WHEN ms_delta < 100 THEN '<100ms'
         WHEN ms_delta < 200 THEN '100-200ms'
         WHEN ms_delta < 300 THEN '200-300ms'
         WHEN ms_delta < 500 THEN '300-500ms'
         ELSE '>500ms'
-    END AS latency_bucket,
-    COUNT(*) AS transaction_count
-FROM (
-    SELECT
-        DATEDIFF('millisecond',
-                 LAG(transaction_time, 1) OVER (ORDER BY transaction_time),
-                 transaction_time) AS ms_delta
-    FROM fix_timestamps
-)
-WHERE ms_delta IS NOT NULL
-GROUP BY latency_bucket
-ORDER BY
-    CASE latency_bucket
-        WHEN '<100ms' THEN 1
-        WHEN '100-200ms' THEN 2
-        WHEN '200-300ms' THEN 3
-        WHEN '300-500ms' THEN 4
-        ELSE 5
-    END;
+    END AS latency_bucket
+        FROM deltas
+    )
+SELECT *
+FROM labels;
+
+-- Example 5b: Group by latency buckets
+-- Categorize transaction latencies into buckets
+WITH
+    deltas AS (
+        SELECT
+            DATEDIFF('millisecond', LAG(transaction_time, 1) OVER (ORDER BY transaction_time ASC), transaction_time) AS ms_delta,
+            *
+        FROM fix_timestamps
+    ),
+    labels AS (
+        SELECT
+            order_id,
+            transaction_time,
+            CASE
+        WHEN ms_delta < 100 THEN '<100ms'
+        WHEN ms_delta < 200 THEN '100-200ms'
+        WHEN ms_delta < 300 THEN '200-300ms'
+        WHEN ms_delta < 500 THEN '300-500ms'
+        ELSE '>500ms'
+    END AS latency_bucket
+        FROM deltas
+    )
+SELECT latency_bucket, count(*) as bucket_count
+FROM labels
+group by latency_bucket
+order by latency_bucket;
 GO
