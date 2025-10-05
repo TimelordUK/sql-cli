@@ -178,11 +178,18 @@ pub enum SqlExpression {
     ScalarSubquery {
         query: Box<SelectStatement>,
     },
-    /// IN subquery that returns multiple values  
+    /// IN subquery that returns multiple values
     /// Used in expressions like: WHERE col IN (SELECT id FROM table WHERE ...)
     InSubquery {
         expr: Box<SqlExpression>,
         subquery: Box<SelectStatement>,
+    },
+    /// UNNEST - Row expansion function that splits delimited strings
+    /// Used like: SELECT UNNEST(accounts, '|') AS account FROM fix_trades
+    /// Causes row multiplication - one input row becomes N output rows
+    Unnest {
+        column: Box<SqlExpression>,
+        delimiter: String,
     },
     /// NOT IN subquery
     /// Used in expressions like: WHERE col NOT IN (SELECT id FROM table WHERE ...)

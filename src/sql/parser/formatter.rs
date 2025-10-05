@@ -318,6 +318,13 @@ pub fn format_expression_ast(expr: &SqlExpression) -> String {
                 format_expression_ast(expr)
             )
         }
+        SqlExpression::Unnest { column, delimiter } => {
+            format!(
+                "Unnest {{ column: {}, delimiter: \"{}\" }}",
+                format_expression_ast(column),
+                delimiter
+            )
+        }
     }
 }
 
@@ -816,6 +823,9 @@ pub fn format_expression(expr: &SqlExpression) -> String {
         }
         SqlExpression::NotInSubquery { expr, subquery: _ } => {
             format!("{} NOT IN (SELECT ...)", format_expression(expr))
+        }
+        SqlExpression::Unnest { column, delimiter } => {
+            format!("UNNEST({}, '{}')", format_expression(column), delimiter)
         }
     }
 }

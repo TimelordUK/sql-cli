@@ -205,6 +205,8 @@ impl TextNavigator {
             Token::Except => "EXCEPT",
             // Special CTE keyword
             Token::Web => "WEB",
+            // Row expansion functions
+            Token::Unnest => "UNNEST",
             Token::Identifier(s) => s,
             Token::QuotedIdentifier(s) => s,
             Token::StringLiteral(s) => s,

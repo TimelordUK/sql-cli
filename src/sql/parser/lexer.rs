@@ -54,6 +54,9 @@ pub enum Token {
     // Special CTE keyword
     Web, // WEB (for WEB CTEs)
 
+    // Row expansion functions
+    Unnest, // UNNEST (for expanding delimited strings into rows)
+
     // JOIN keywords
     Join,  // JOIN keyword
     Inner, // INNER JOIN
@@ -142,6 +145,7 @@ impl Token {
             "INTERSECT" => Some(Token::Intersect),
             "EXCEPT" => Some(Token::Except),
             "WEB" => Some(Token::Web),
+            "UNNEST" => Some(Token::Unnest),
             "JOIN" => Some(Token::Join),
             "INNER" => Some(Token::Inner),
             "LEFT" => Some(Token::Left),
@@ -575,6 +579,8 @@ impl Lexer {
                     "EXCEPT" => Token::Except,
                     // Special CTE keyword
                     "WEB" => Token::Web,
+                    // Row expansion functions
+                    "UNNEST" => Token::Unnest,
                     // JOIN keywords
                     "JOIN" => Token::Join,
                     "INNER" => Token::Inner,
