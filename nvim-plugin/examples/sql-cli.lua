@@ -17,53 +17,79 @@ return
         -- FIX Message Syntax Highlighting
         syntax = {
           patterns = {
-            -- Message Types
-            { pattern = [[\<ExecutionReport\>]], group = "FixExecReport",
-              color = { gui = "#50fa7b", cterm = "Green", bold = true } },
-            { pattern = [[\<AllocationReport\>]], group = "FixAllocReport",
-              color = { gui = "#8be9fd", cterm = "Cyan", bold = true } },
-            { pattern = [[\<NewOrderSingle\>]], group = "FixNewOrder",
-              color = { gui = "#f1fa8c", cterm = "Yellow", bold = true } },
-            { pattern = [[\<OrderCancelReject\>]], group = "FixCancelReject",
-              color = { gui = "#ff5555", cterm = "Red", bold = true } },
+            -- Multi-leg trades (ORDER0001.1, ORDER0001.2, etc.)
+            { pattern = [[\w\+\.\d\+]], group = "FixMultiLeg",
+              color = { gui = "Cyan", cterm = "Cyan", bold = true } },
 
-            -- Order Status
-            { pattern = [[\<PendingNew\>]], group = "FixStatPendingNew",
-              color = { gui = "#f1fa8c", cterm = "Yellow" } },
-            { pattern = [[\<New\>]], group = "FixStatNew",
-              color = { gui = "#50fa7b", cterm = "Green" } },
-            { pattern = [[\<PartiallyFilled\>]], group = "FixStatPartial",
-              color = { gui = "#50fa7b", cterm = "Green" } },
-            { pattern = [[\<Filled\>]], group = "FixStatFilled",
-              color = { gui = "#50fa7b", cterm = "Green", bold = true } },
-            { pattern = [[\<Canceled\>]], group = "FixStatCanceled",
-              color = { gui = "#6272a4", cterm = "DarkGray" } },
-            { pattern = [[\<Rejected\>]], group = "FixStatRejected",
-              color = { gui = "#ff5555", cterm = "Red", bold = true } },
+            -- Message Types (case-insensitive to match Executionreport, etc.)
+            { pattern = [[\c\<ExecutionReport\>]], group = "FixExecReport",
+              color = { gui = "Green", cterm = "Green", bold = true } },  -- #50fa7b
+            { pattern = [[\c\<AllocationReport\>]], group = "FixAllocReport",
+              color = { gui = "Cyan", cterm = "Cyan", bold = true } },  -- #8be9fd
+            { pattern = [[\c\<NewOrderSingle\>]], group = "FixNewOrder",
+              color = { gui = "Yellow", cterm = "Yellow", bold = true } },  -- #f1fa8c
+            { pattern = [[\c\<OrderCancelReject\>]], group = "FixCancelReject",
+              color = { gui = "Red", cterm = "Red", bold = true } },  -- #ff5555
 
-            -- Side (Buy/Sell)
-            { pattern = [[\<Buy\>]], group = "FixSideBuy",
-              color = { gui = "#50fa7b", cterm = "Green", bold = true } },
-            { pattern = [[\<Sell\>]], group = "FixSideSell",
-              color = { gui = "#ff5555", cterm = "Red", bold = true } },
+            -- Order Status (case-insensitive: Pendingnew, New, Partial, Filled, Cancelled)
+            -- Different colors for each state to show what's going on
+            { pattern = [[\c\<Pendingnew\>]], group = "FixStatPendingNew",
+              color = { gui = "Yellow", cterm = "Yellow" } },  -- #f1fa8c - Warning/waiting
+            { pattern = [[\c\<New\>]], group = "FixStatNew",
+              color = { gui = "Cyan", cterm = "Cyan" } },  -- #8be9fd - Active/submitted
+            { pattern = [[\c\<Partial\>]], group = "FixStatPartial",
+              color = { gui = "Magenta", cterm = "Magenta" } },  -- #bd93f9 - In progress
+            { pattern = [[\c\<Filled\>]], group = "FixStatFilled",
+              color = { gui = "Green", cterm = "Green", bold = true } },  -- #50fa7b - Complete
+            { pattern = [[\c\<Cancelled\>]], group = "FixStatCanceled",
+              color = { gui = "DarkGray", cterm = "DarkGray" } },  -- #6272a4 - Inactive
+            { pattern = [[\c\<Canceled\>]], group = "FixStatCanceled2",
+              color = { gui = "DarkGray", cterm = "DarkGray" } },  -- US spelling variant
+            { pattern = [[\c\<Rejected\>]], group = "FixStatRejected",
+              color = { gui = "Red", cterm = "Red", bold = true } },  -- #ff5555 - Error
+
+            -- Side (Buy/Sell) - Green/Red for quick visual
+            { pattern = [[\c\<Buy\>]], group = "FixSideBuy",
+              color = { gui = "Green", cterm = "Green", bold = true } },  -- #50fa7b
+            { pattern = [[\c\<Sell\>]], group = "FixSideSell",
+              color = { gui = "Red", cterm = "Red", bold = true } },  -- #ff5555
+
+            -- Bloomberg Yellow Key Codes
+            { pattern = [[\c\<Index\>]], group = "BBGIndex",
+              color = { gui = "Yellow", cterm = "Yellow", bold = true } },
+            { pattern = [[\c\<Comdty\>]], group = "BBGComdty",
+              color = { gui = "Yellow", cterm = "Yellow", bold = true } },
+            { pattern = [[\c\<Equity\>]], group = "BBGEquity",
+              color = { gui = "Cyan", cterm = "Cyan" } },
+            { pattern = [[\c\<Govt\>]], group = "BBGGovt",
+              color = { gui = "Green", cterm = "Green" } },
+            { pattern = [[\c\<Corp\>]], group = "BBGCorp",
+              color = { gui = "Magenta", cterm = "Magenta" } },
+            { pattern = [[\c\<Curncy\>]], group = "BBGCurncy",
+              color = { gui = "Cyan", cterm = "Cyan", bold = true } },
+
+            -- Futures codes (e.g., FVZ5, ESH4) - 2-3 letters + month code + digit
+            -- This is conservative to avoid false positives
+            { pattern = [[\<[A-Z]\{2,3\}[FGHJKMNQUVXZ]\d\>]], group = "FuturesCode",
+              color = { gui = "Yellow", cterm = "Yellow" } },
 
             -- Exchanges
-            { pattern = [[\<NYSE\>]], group = "FixExchNYSE",
-              color = { gui = "#bd93f9", cterm = "Magenta" } },
-            { pattern = [[\<NASDAQ\>]], group = "FixExchNASDAQ",
-              color = { gui = "#ff79c6", cterm = "Magenta" } },
-            { pattern = [[\<LSE\>]], group = "FixExchLSE",
-              color = { gui = "#bd93f9", cterm = "Magenta" } },
+            { pattern = [[\c\<NYSE\>]], group = "FixExchNYSE",
+              color = { gui = "Magenta", cterm = "Magenta" } },  -- #bd93f9
+            { pattern = [[\c\<NASDAQ\>]], group = "FixExchNASDAQ",
+              color = { gui = "Magenta", cterm = "Magenta" } },  -- #ff79c6
+            { pattern = [[\c\<LSE\>]], group = "FixExchLSE",
+              color = { gui = "Magenta", cterm = "Magenta" } },  -- #bd93f9
 
             -- Instrument Types
-            { pattern = [[\<NDS\>]], group = "FixInstNDS",
-              color = { gui = "#00aaff", cterm = "Cyan" } },
-            { pattern = [[\<NFD\>]], group = "FixInstNFD",
-              color = { gui = "#ffaa00", cterm = "Yellow" } },
-            { pattern = [[\<CDS\>]], group = "FixInstCDS",
-              color = { gui = "#aa00ff", cterm = "Magenta" } },
-            { pattern = [[\<IRS\>]], group = "FixInstIRS",
-              color = { gui = "#00ffaa", cterm = "Green" } },
+            { pattern = [[\c\<NDS\>]], group = "FixInstNDS",
+              color = { gui = "Cyan", cterm = "Cyan" } },  -- #00aaff
+            { pattern = [[\c\<NFD\>]], group = "FixInstNFD",
+              color = { gui = "Yellow", cterm = "Yellow" } },  -- #ffaa00
+            { pattern = [[\c\<CDS\>]], group = "FixInstCDS",
+              color = { gui = "Magenta", cterm = "Magenta" } },  -- #aa00ff
+            { pattern = [[\c\<IRS\>]], group = "FixInstIRS",
+              color = { gui = "Green", cterm = "Green" } },  -- #00ffaa
           }
         },
       })
