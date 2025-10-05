@@ -15,6 +15,7 @@ use crate::data::evaluation_context::EvaluationContext;
 use crate::data::group_by_expressions::GroupByExpressions;
 use crate::data::hash_join::HashJoinExecutor;
 use crate::data::recursive_where_evaluator::RecursiveWhereEvaluator;
+use crate::data::row_expanders::RowExpanderRegistry;
 use crate::data::subquery_executor::SubqueryExecutor;
 use crate::execution_plan::{ExecutionPlan, ExecutionPlanBuilder, StepType};
 use crate::sql::aggregates::{contains_aggregate, is_aggregate_compatible};
@@ -142,6 +143,71 @@ impl QueryEngine {
         }
 
         matrix[len1][len2]
+    }
+
+    /// Check if an expression contains UNNEST function call
+    fn contains_unnest(expr: &SqlExpression) -> bool {
+        match expr {
+            // Direct UNNEST variant
+            SqlExpression::Unnest { .. } => true,
+            SqlExpression::FunctionCall { name, args, .. } => {
+                if name.to_uppercase() == "UNNEST" {
+                    return true;
+                }
+                // Check recursively in function arguments
+                args.iter().any(Self::contains_unnest)
+            }
+            SqlExpression::BinaryOp { left, right, .. } => {
+                Self::contains_unnest(left) || Self::contains_unnest(right)
+            }
+            SqlExpression::Not { expr } => Self::contains_unnest(expr),
+            SqlExpression::CaseExpression {
+                when_branches,
+                else_branch,
+            } => {
+                when_branches.iter().any(|branch| {
+                    Self::contains_unnest(&branch.condition)
+                        || Self::contains_unnest(&branch.result)
+                }) || else_branch
+                    .as_ref()
+                    .map_or(false, |e| Self::contains_unnest(e))
+            }
+            SqlExpression::SimpleCaseExpression {
+                expr,
+                when_branches,
+                else_branch,
+            } => {
+                Self::contains_unnest(expr)
+                    || when_branches.iter().any(|branch| {
+                        Self::contains_unnest(&branch.value)
+                            || Self::contains_unnest(&branch.result)
+                    })
+                    || else_branch
+                        .as_ref()
+                        .map_or(false, |e| Self::contains_unnest(e))
+            }
+            SqlExpression::InList { expr, values } => {
+                Self::contains_unnest(expr) || values.iter().any(Self::contains_unnest)
+            }
+            SqlExpression::NotInList { expr, values } => {
+                Self::contains_unnest(expr) || values.iter().any(Self::contains_unnest)
+            }
+            SqlExpression::Between { expr, lower, upper } => {
+                Self::contains_unnest(expr)
+                    || Self::contains_unnest(lower)
+                    || Self::contains_unnest(upper)
+            }
+            SqlExpression::InSubquery { expr, .. } => Self::contains_unnest(expr),
+            SqlExpression::NotInSubquery { expr, .. } => Self::contains_unnest(expr),
+            SqlExpression::ScalarSubquery { .. } => false, // Subqueries are handled separately
+            SqlExpression::WindowFunction { args, .. } => args.iter().any(Self::contains_unnest),
+            SqlExpression::MethodCall { args, .. } => args.iter().any(Self::contains_unnest),
+            SqlExpression::ChainedMethodCall { base, args, .. } => {
+                Self::contains_unnest(base) || args.iter().any(Self::contains_unnest)
+            }
+            SqlExpression::Unnest { .. } => true, // Direct UNNEST variant
+            _ => false,
+        }
     }
 
     /// Execute a SQL query on a `DataTable` and return a `DataView` (for backward compatibility)
@@ -1020,6 +1086,17 @@ impl QueryEngine {
             view.row_count()
         );
 
+        // Check if any SELECT item contains UNNEST - if so, use row expansion mode
+        let has_unnest = select_items.iter().any(|item| match item {
+            SelectItem::Expression { expr, .. } => Self::contains_unnest(expr),
+            _ => false,
+        });
+
+        if has_unnest {
+            debug!("QueryEngine::apply_select_items - UNNEST detected, using row expansion");
+            return self.apply_select_with_row_expansion(view, select_items);
+        }
+
         // Check if this is an aggregate query:
         // 1. At least one aggregate function exists
         // 2. All other items are either aggregates or constants (aggregate-compatible)
@@ -1185,6 +1262,198 @@ impl QueryEngine {
         // Return a view of the computed result
         // This is a temporary view for this query only
         Ok(DataView::new(Arc::new(computed_table)))
+    }
+
+    /// Apply SELECT with row expansion (for UNNEST, EXPLODE, etc.)
+    fn apply_select_with_row_expansion(
+        &self,
+        view: DataView,
+        select_items: &[SelectItem],
+    ) -> Result<DataView> {
+        debug!("QueryEngine::apply_select_with_row_expansion - expanding rows");
+
+        let source_table = view.source();
+        let visible_rows = view.visible_row_indices();
+        let expander_registry = RowExpanderRegistry::new();
+
+        // Create result table
+        let mut result_table = DataTable::new("unnest_result");
+
+        // Expand * to columns and set up result columns
+        let mut expanded_items = Vec::new();
+        for item in select_items {
+            match item {
+                SelectItem::Star => {
+                    for col_name in source_table.column_names() {
+                        expanded_items.push(SelectItem::Column(ColumnRef::unquoted(
+                            col_name.to_string(),
+                        )));
+                    }
+                }
+                _ => expanded_items.push(item.clone()),
+            }
+        }
+
+        // Add columns to result table
+        for item in &expanded_items {
+            let column_name = match item {
+                SelectItem::Column(col_ref) => col_ref.name.clone(),
+                SelectItem::Expression { alias, .. } => alias.clone(),
+                SelectItem::Star => unreachable!("Star should have been expanded"),
+            };
+            result_table.add_column(DataColumn::new(&column_name));
+        }
+
+        // Process each input row
+        let mut evaluator =
+            ArithmeticEvaluator::with_date_notation(source_table, self.date_notation.clone());
+
+        for &row_idx in visible_rows {
+            // First pass: identify UNNEST expressions and collect their expansion arrays
+            let mut unnest_expansions = Vec::new();
+            let mut unnest_indices = Vec::new();
+
+            for (col_idx, item) in expanded_items.iter().enumerate() {
+                if let SelectItem::Expression { expr, .. } = item {
+                    if let Some(expansion_result) = self.try_expand_unnest(
+                        expr,
+                        source_table,
+                        row_idx,
+                        &mut evaluator,
+                        &expander_registry,
+                    )? {
+                        unnest_expansions.push(expansion_result);
+                        unnest_indices.push(col_idx);
+                    }
+                }
+            }
+
+            // Determine how many output rows to generate
+            let expansion_count = if unnest_expansions.is_empty() {
+                1 // No UNNEST, just one row
+            } else {
+                unnest_expansions
+                    .iter()
+                    .map(|exp| exp.row_count())
+                    .max()
+                    .unwrap_or(1)
+            };
+
+            // Generate output rows
+            for output_idx in 0..expansion_count {
+                let mut row_values = Vec::new();
+
+                for (col_idx, item) in expanded_items.iter().enumerate() {
+                    // Check if this column is an UNNEST column
+                    let unnest_position = unnest_indices.iter().position(|&idx| idx == col_idx);
+
+                    let value = if let Some(unnest_idx) = unnest_position {
+                        // Get value from expansion array (or NULL if exhausted)
+                        let expansion = &unnest_expansions[unnest_idx];
+                        expansion
+                            .values
+                            .get(output_idx)
+                            .cloned()
+                            .unwrap_or(DataValue::Null)
+                    } else {
+                        // Regular column or non-UNNEST expression - replicate from input
+                        match item {
+                            SelectItem::Column(col_ref) => {
+                                let col_idx =
+                                    source_table.get_column_index(&col_ref.name).ok_or_else(
+                                        || anyhow::anyhow!("Column '{}' not found", col_ref.name),
+                                    )?;
+                                let row = source_table
+                                    .get_row(row_idx)
+                                    .ok_or_else(|| anyhow::anyhow!("Row {} not found", row_idx))?;
+                                row.get(col_idx)
+                                    .ok_or_else(|| {
+                                        anyhow::anyhow!("Column {} not found in row", col_idx)
+                                    })?
+                                    .clone()
+                            }
+                            SelectItem::Expression { expr, .. } => {
+                                // Non-UNNEST expression - evaluate once and replicate
+                                evaluator.evaluate(expr, row_idx)?
+                            }
+                            SelectItem::Star => unreachable!(),
+                        }
+                    };
+
+                    row_values.push(value);
+                }
+
+                result_table
+                    .add_row(DataRow::new(row_values))
+                    .map_err(|e| anyhow::anyhow!("Failed to add expanded row: {}", e))?;
+            }
+        }
+
+        debug!(
+            "QueryEngine::apply_select_with_row_expansion - input rows: {}, output rows: {}",
+            visible_rows.len(),
+            result_table.row_count()
+        );
+
+        Ok(DataView::new(Arc::new(result_table)))
+    }
+
+    /// Try to expand an expression if it's an UNNEST call
+    /// Returns Some(ExpansionResult) if successful, None if not an UNNEST
+    fn try_expand_unnest(
+        &self,
+        expr: &SqlExpression,
+        _source_table: &DataTable,
+        row_idx: usize,
+        evaluator: &mut ArithmeticEvaluator,
+        expander_registry: &RowExpanderRegistry,
+    ) -> Result<Option<crate::data::row_expanders::ExpansionResult>> {
+        // Check for UNNEST variant (direct syntax)
+        if let SqlExpression::Unnest { column, delimiter } = expr {
+            // Evaluate the column expression
+            let column_value = evaluator.evaluate(column, row_idx)?;
+
+            // Delimiter is already a string literal
+            let delimiter_value = DataValue::String(delimiter.clone());
+
+            // Get the UNNEST expander
+            let expander = expander_registry
+                .get("UNNEST")
+                .ok_or_else(|| anyhow::anyhow!("UNNEST expander not found"))?;
+
+            // Expand the value
+            let expansion = expander.expand(&column_value, &[delimiter_value])?;
+            return Ok(Some(expansion));
+        }
+
+        // Also check for FunctionCall form (for compatibility)
+        if let SqlExpression::FunctionCall { name, args, .. } = expr {
+            if name.to_uppercase() == "UNNEST" {
+                // UNNEST(column, delimiter)
+                if args.len() != 2 {
+                    return Err(anyhow::anyhow!(
+                        "UNNEST requires exactly 2 arguments: UNNEST(column, delimiter)"
+                    ));
+                }
+
+                // Evaluate the column expression (first arg)
+                let column_value = evaluator.evaluate(&args[0], row_idx)?;
+
+                // Evaluate the delimiter expression (second arg)
+                let delimiter_value = evaluator.evaluate(&args[1], row_idx)?;
+
+                // Get the UNNEST expander
+                let expander = expander_registry
+                    .get("UNNEST")
+                    .ok_or_else(|| anyhow::anyhow!("UNNEST expander not found"))?;
+
+                // Expand the value
+                let expansion = expander.expand(&column_value, &[delimiter_value])?;
+                return Ok(Some(expansion));
+            }
+        }
+
+        Ok(None)
     }
 
     /// Apply aggregate-only SELECT (no GROUP BY - produces single row)
