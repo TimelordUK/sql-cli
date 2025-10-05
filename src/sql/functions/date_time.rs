@@ -12,6 +12,16 @@ pub fn parse_datetime(s: &str) -> Result<DateTime<Utc>> {
         return Ok(dt);
     }
 
+    // FIX Protocol timestamp format: YYYYMMDD-HH:MM:SS.sss (UTC)
+    // This is a standard financial messaging format (tag 60, 52, etc.)
+    if let Ok(dt) = NaiveDateTime::parse_from_str(s, "%Y%m%d-%H:%M:%S%.3f") {
+        return Ok(Utc.from_utc_datetime(&dt));
+    }
+    // FIX format without milliseconds
+    if let Ok(dt) = NaiveDateTime::parse_from_str(s, "%Y%m%d-%H:%M:%S") {
+        return Ok(Utc.from_utc_datetime(&dt));
+    }
+
     // ISO formats (most common and unambiguous)
     // With T separator
     if let Ok(dt) = NaiveDateTime::parse_from_str(s, "%Y-%m-%dT%H:%M:%S") {
@@ -135,7 +145,7 @@ pub fn parse_datetime(s: &str) -> Result<DateTime<Utc>> {
         return Ok(dt.with_timezone(&Utc));
     }
 
-    Err(anyhow!("Could not parse date: {}. Supported formats: YYYY-MM-DD, MM/DD/YYYY, DD/MM/YYYY, DD-MMM-YYYY, Month DD YYYY", s))
+    Err(anyhow!("Could not parse date: {}. Supported formats: YYYYMMDD-HH:MM:SS.sss (FIX), YYYY-MM-DD, MM/DD/YYYY, DD/MM/YYYY, DD-MMM-YYYY, Month DD YYYY", s))
 }
 
 /// NOW function - Returns current datetime
@@ -263,9 +273,17 @@ impl SqlFunction for DateDiffFunction {
                 let duration = date2.signed_duration_since(date1);
                 duration.num_seconds()
             }
+            "millisecond" | "milliseconds" | "ms" => {
+                let duration = date2.signed_duration_since(date1);
+                duration.num_milliseconds()
+            }
+            "microsecond" | "microseconds" | "us" => {
+                let duration = date2.signed_duration_since(date1);
+                duration.num_microseconds().unwrap_or(0)
+            }
             _ => {
                 return Err(anyhow!(
-                    "Unknown DATEDIFF unit: {}. Use: day, month, year, hour, minute, second",
+                    "Unknown DATEDIFF unit: {}. Use: day, month, year, hour, minute, second, millisecond, microsecond",
                     unit
                 ))
             }
