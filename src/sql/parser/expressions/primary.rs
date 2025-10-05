@@ -61,6 +61,11 @@ where
             parse_datetime_constructor(parser)
         }
 
+        Token::Unnest => {
+            debug!("Parsing UNNEST expression");
+            parse_unnest(parser)
+        }
+
         Token::Identifier(id) => {
             let id_upper = id.to_uppercase();
             let id_clone = id.clone();
@@ -440,6 +445,46 @@ where
     } else {
         Err("Expected expression after NOT".to_string())
     }
+}
+
+/// Parse UNNEST expression
+/// Syntax: UNNEST(column_expr, 'delimiter')
+fn parse_unnest<P>(parser: &mut P) -> Result<SqlExpression, String>
+where
+    P: ParsePrimary + ExpressionParser + ?Sized,
+{
+    debug!("parse_unnest: starting");
+    ExpressionParser::advance(parser); // consume UNNEST
+    ExpressionParser::consume(parser, Token::LeftParen)?;
+
+    // Parse the column expression (first argument)
+    let column = parser.parse_logical_or()?;
+    debug!("parse_unnest: parsed column expression");
+
+    // Expect comma
+    ExpressionParser::consume(parser, Token::Comma)?;
+
+    // Parse the delimiter (second argument - must be a string literal)
+    let delimiter = match ExpressionParser::current_token(parser) {
+        Token::StringLiteral(s) => {
+            let delim = s.clone();
+            ExpressionParser::advance(parser);
+            delim
+        }
+        _ => {
+            return Err("UNNEST delimiter must be a string literal".to_string());
+        }
+    };
+
+    debug!(delimiter = %delimiter, "parse_unnest: parsed delimiter");
+
+    ExpressionParser::consume(parser, Token::RightParen)?;
+
+    debug!("parse_unnest: complete");
+    Ok(SqlExpression::Unnest {
+        column: Box::new(column),
+        delimiter,
+    })
 }
 
 /// Trait that parsers must implement to use primary expression parsing

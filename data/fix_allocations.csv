@@ -1,0 +1,4 @@
+msg_type,order_id,symbol,accounts,amounts
+AS,ORD001,ZX5Y,ACC_1|ACC_2|ACC_3,"200,200,200"
+AS,ORD002,ABCD,ACC_4|ACC_5,"300,700"
+8,ORD003,WXYZ,ACC_1,"1000"
