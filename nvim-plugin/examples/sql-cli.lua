@@ -17,6 +17,10 @@ return
         -- FIX Message Syntax Highlighting
         syntax = {
           patterns = {
+            -- FIX UTC Timestamps (20250925-07:46:33.333)
+            { pattern = [[\<\d\{8\}-\d\{2\}:\d\{2\}:\d\{2\}\.\d\{3\}\>]], group = "FixTimestamp",
+              color = { gui = "Blue", cterm = "Blue" } },
+
             -- Multi-leg trades (ORDER0001.1, ORDER0001.2, etc.)
             { pattern = [[\w\+\.\d\+]], group = "FixMultiLeg",
               color = { gui = "Cyan", cterm = "Cyan", bold = true } },
@@ -31,10 +35,14 @@ return
             { pattern = [[\c\<OrderCancelReject\>]], group = "FixCancelReject",
               color = { gui = "Red", cterm = "Red", bold = true } },  -- #ff5555
 
-            -- Order Status (case-insensitive: Pendingnew, New, Partial, Filled, Cancelled)
+            -- Order Status (case-insensitive: Pendingnew, Pendingrep, New, Partial, Filled, Cancelled)
             -- Different colors for each state to show what's going on
             { pattern = [[\c\<Pendingnew\>]], group = "FixStatPendingNew",
               color = { gui = "Yellow", cterm = "Yellow" } },  -- #f1fa8c - Warning/waiting
+            { pattern = [[\c\<Pendingrep\>]], group = "FixStatPendingRep",
+              color = { gui = "Yellow", cterm = "Yellow" } },  -- #f1fa8c - Pending replace
+            { pattern = [[\c\<PendingCancel\>]], group = "FixStatPendingCancel",
+              color = { gui = "Yellow", cterm = "Yellow" } },  -- #f1fa8c - Pending cancel
             { pattern = [[\c\<New\>]], group = "FixStatNew",
               color = { gui = "Cyan", cterm = "Cyan" } },  -- #8be9fd - Active/submitted
             { pattern = [[\c\<Partial\>]], group = "FixStatPartial",
@@ -80,6 +88,11 @@ return
               color = { gui = "Magenta", cterm = "Magenta" } },  -- #ff79c6
             { pattern = [[\c\<LSE\>]], group = "FixExchLSE",
               color = { gui = "Magenta", cterm = "Magenta" } },  -- #bd93f9
+
+            -- ISO Currency Codes (3 uppercase letters)
+            -- Common currencies: USD, EUR, GBP, JPY, CHF, AUD, CAD, HKD, SGD, etc.
+            { pattern = [[\<[A-Z]\{3\}\>]], group = "CurrencyCode",
+              color = { gui = "Green", cterm = "Green" } },
 
             -- Instrument Types
             { pattern = [[\c\<NDS\>]], group = "FixInstNDS",
