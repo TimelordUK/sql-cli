@@ -1009,7 +1009,14 @@ end
 
 -- Purge all cache entries
 function M.purge_cache()
-  local cmd = string.format("%s --cache-purge", M.config.sql_cli_path or "sql-cli")
+  local utils = require('sql-cli.utils')
+  local command_path, err = utils.get_command_path(M.config.command)
+  if not command_path then
+    vim.notify("Failed to find sql-cli command: " .. (err or "unknown error"), vim.log.levels.ERROR)
+    return
+  end
+
+  local cmd = string.format("%s --cache-purge", command_path)
 
   vim.fn.jobstart(cmd, {
     on_stdout = function(_, data)
