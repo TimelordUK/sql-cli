@@ -40,6 +40,7 @@ pub mod hash_join;
 pub mod query_engine;
 pub mod query_executor;
 pub mod recursive_where_evaluator;
+pub mod row_expanders; // Row expansion system (UNNEST, etc.)
 pub mod simple_where;
 pub mod subquery_executor;
 pub mod unit_converter;
