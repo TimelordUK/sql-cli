@@ -268,7 +268,7 @@ impl RedisCache {
     }
 
     /// Check cache statistics
-    /// Purge all cache entries (delete all keys matching sql_cli:* pattern)
+    /// Purge all cache entries (delete all keys matching sql-cli:* pattern)
     pub fn purge_all(&mut self) -> Result<usize, String> {
         if !self.enabled {
             return Err("Cache not enabled".to_string());
@@ -277,7 +277,7 @@ impl RedisCache {
         let conn = self.connection.as_mut().ok_or("No connection")?;
 
         // Scan for all keys matching our prefix
-        let pattern = "sql_cli:*";
+        let pattern = "sql-cli:*";
         let keys: Vec<String> = redis::cmd("KEYS")
             .arg(pattern)
             .query(conn)
