@@ -307,7 +307,15 @@ pub struct SelectStatement {
     pub having: Option<SqlExpression>,        // HAVING clause for post-aggregation filtering
     pub limit: Option<usize>,
     pub offset: Option<usize>,
-    pub ctes: Vec<CTE>, // Common Table Expressions (WITH clause)
+    pub ctes: Vec<CTE>,                // Common Table Expressions (WITH clause)
+    pub into_table: Option<IntoTable>, // INTO clause for temporary tables
+}
+
+/// INTO clause for creating temporary tables
+#[derive(Debug, Clone, PartialEq)]
+pub struct IntoTable {
+    /// Name of the temporary table (must start with #)
+    pub name: String,
 }
 
 // ===== Table and Join Types =====

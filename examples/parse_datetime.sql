@@ -131,7 +131,7 @@ GO
 
 -- Convert to Unix timestamps
 SELECT
-    PARSE_DATETIME('15/01/2024 14:30:00', '%d/%m/%Y %H:%M:%S') as datetime,
+    PARSE_DATETIME('15/01/2024 14:30:00', '%d/%m/%Y %H:%M:%S') as dtime,
     UNIX_TIMESTAMP(PARSE_DATETIME('15/01/2024 14:30:00', '%d/%m/%Y %H:%M:%S')) as unix_ts;
 GO
 

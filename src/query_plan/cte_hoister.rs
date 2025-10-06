@@ -427,6 +427,7 @@ mod tests {
             limit: None,
             offset: None,
             ctes: vec![],
+            into_table: None,
         };
 
         let nested_query = SelectStatement {
@@ -453,6 +454,7 @@ mod tests {
                 having: None,
                 limit: None,
                 offset: None,
+                into_table: None,
             })),
             from_table: None,
             from_function: None,
@@ -465,6 +467,7 @@ mod tests {
             limit: None,
             offset: None,
             ctes: vec![],
+            into_table: None,
         };
 
         let result = CTEHoister::hoist_ctes(nested_query);

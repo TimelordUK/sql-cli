@@ -768,6 +768,7 @@ impl Parser {
             limit,
             offset,
             ctes: Vec::new(), // Will be populated by WITH clause parser
+            into_table: None,
         })
     }
 
