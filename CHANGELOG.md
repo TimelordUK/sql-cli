@@ -5,6 +5,58 @@ All notable changes to SQL CLI will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.57.0] - 2025-10-06
+
+### 🗓️ Flexible Date Parsing & Nvim Plugin UX Improvements
+
+This release introduces powerful date parsing functions with custom format support and improves the Nvim plugin user experience by removing unnecessary prompts.
+
+### ✨ New Features
+
+#### **Flexible Date Parsing Functions**
+- **PARSE_DATETIME(date_string, format_string)** - Parse dates with custom chrono format strings
+  - Supports European (DD/MM/YYYY), American (MM/DD/YYYY), ISO 8601, FIX Protocol formats
+  - Text month names (Jan, January)
+  - Millisecond precision support
+  - Full chrono strftime format compatibility
+  - Example: `SELECT PARSE_DATETIME('15/01/2024', '%d/%m/%Y')`
+
+- **PARSE_DATETIME_UTC(date_string, [format_string])** - Parse datetime explicitly as UTC
+  - 1 argument: auto-detects format (includes FIX Protocol)
+  - 2 arguments: uses custom format string
+  - Example: `SELECT PARSE_DATETIME_UTC('20240115-14:30:45.567')` (auto-detects FIX)
+
+- **DATETIME(year, month, day, [hour], [minute], [second])** - Construct datetime from components
+  - 3-6 arguments supported
+  - All times interpreted as UTC
+  - Handles leap years and month boundaries
+  - Example: `SELECT DATETIME(2024, 1, 15, 14, 30, 45)`
+
+#### **FIX Protocol Support**
+- Verified compatibility with FIX timestamp format (YYYYMMDD-HH:MM:SS.sss)
+- Millisecond precision maintained throughout parsing pipeline
+- Works seamlessly with existing date functions (DATEDIFF, DATEADD, etc.)
+
+### 🛠️ Nvim Plugin UX Improvements
+
+#### **Instant Query Execution**
+- `\sx` (execute at cursor) now executes immediately without parameter prompts
+- Removed debug notification that caused "Press ENTER" prompts
+- Parameter resolution skipped for cursor-based execution for faster workflow
+- Debug mode (`vim.g.sql_cli_debug = true`) still available when needed
+
+### 📚 Documentation & Testing
+- **New Examples**: `examples/parse_datetime.sql` - Comprehensive date parsing guide with format reference
+- **Test Suite**: 18 new Python tests for date parsing functions (all passing)
+- **Format Reference**: Inline chrono strftime format documentation
+- Verified with real FIX timestamp data (`data/fix_timestamps.csv`)
+
+### 🔧 Technical Details
+- Built on existing chrono dependency (no new dependencies)
+- Parser currently supports up to 6 function arguments (7th argument support planned)
+- All datetime values stored with millisecond precision
+- Consistent UTC interpretation across all new functions
+
 ## [1.56.0] - 2025-10-02
 
 ### 🎯 Smart Column Intelligence & Cardinality Analysis

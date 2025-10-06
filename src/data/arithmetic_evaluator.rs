@@ -167,6 +167,19 @@ impl<'a> ArithmeticEvaluator<'a> {
                 when_branches,
                 else_branch,
             } => self.evaluate_simple_case_expression(expr, when_branches, else_branch, row_index),
+            SqlExpression::DateTimeConstructor {
+                year,
+                month,
+                day,
+                hour,
+                minute,
+                second,
+            } => self.evaluate_datetime_constructor(*year, *month, *day, *hour, *minute, *second),
+            SqlExpression::DateTimeToday {
+                hour,
+                minute,
+                second,
+            } => self.evaluate_datetime_today(*hour, *minute, *second),
             _ => Err(anyhow!(
                 "Unsupported expression type for arithmetic evaluation: {:?}",
                 expr
@@ -1326,6 +1339,68 @@ impl<'a> ArithmeticEvaluator<'a> {
             DataValue::InternedString(s) => Ok(!s.is_empty()),
             _ => Ok(true), // Other types are considered truthy
         }
+    }
+
+    /// Evaluate a DATETIME constructor expression
+    fn evaluate_datetime_constructor(
+        &self,
+        year: i32,
+        month: u32,
+        day: u32,
+        hour: Option<u32>,
+        minute: Option<u32>,
+        second: Option<u32>,
+    ) -> Result<DataValue> {
+        use chrono::{NaiveDate, TimeZone, Utc};
+
+        // Create a NaiveDate
+        let date = NaiveDate::from_ymd_opt(year, month, day)
+            .ok_or_else(|| anyhow!("Invalid date: {}-{}-{}", year, month, day))?;
+
+        // Create datetime with provided time components or defaults
+        let hour = hour.unwrap_or(0);
+        let minute = minute.unwrap_or(0);
+        let second = second.unwrap_or(0);
+
+        let naive_datetime = date
+            .and_hms_opt(hour, minute, second)
+            .ok_or_else(|| anyhow!("Invalid time: {}:{}:{}", hour, minute, second))?;
+
+        // Convert to UTC DateTime
+        let datetime = Utc.from_utc_datetime(&naive_datetime);
+
+        // Format as string with milliseconds
+        let datetime_str = datetime.format("%Y-%m-%d %H:%M:%S%.3f").to_string();
+        Ok(DataValue::String(datetime_str))
+    }
+
+    /// Evaluate a DATETIME.TODAY constructor expression
+    fn evaluate_datetime_today(
+        &self,
+        hour: Option<u32>,
+        minute: Option<u32>,
+        second: Option<u32>,
+    ) -> Result<DataValue> {
+        use chrono::{TimeZone, Utc};
+
+        // Get today's date in UTC
+        let today = Utc::now().date_naive();
+
+        // Create datetime with provided time components or defaults
+        let hour = hour.unwrap_or(0);
+        let minute = minute.unwrap_or(0);
+        let second = second.unwrap_or(0);
+
+        let naive_datetime = today
+            .and_hms_opt(hour, minute, second)
+            .ok_or_else(|| anyhow!("Invalid time: {}:{}:{}", hour, minute, second))?;
+
+        // Convert to UTC DateTime
+        let datetime = Utc.from_utc_datetime(&naive_datetime);
+
+        // Format as string with milliseconds
+        let datetime_str = datetime.format("%Y-%m-%d %H:%M:%S%.3f").to_string();
+        Ok(DataValue::String(datetime_str))
     }
 }
 

@@ -429,7 +429,8 @@ function M.execute_at_cursor(config, state)
   state.original_win = original_win
   state.original_cursor = original_cursor
 
-  M.execute_query(query, config, state)
+  -- Skip parameter resolution for quick execution at cursor
+  M.execute_query(query, config, state, true)
 end
 
 -- Execute query at cursor with execution plan
@@ -590,7 +591,10 @@ function M.build_command(query, show_plan, config, state)
   end
 
   local cmd = table.concat(cmd_parts, " ")
-  vim.notify(string.format("Executing command: %s", cmd:sub(1, 500)), vim.log.levels.DEBUG)
+  -- Only show command in debug mode (won't trigger "Press ENTER" prompt)
+  if vim.g.sql_cli_debug then
+    vim.notify(string.format("Executing command: %s", cmd:sub(1, 500)), vim.log.levels.INFO)
+  end
   return cmd
 end
 

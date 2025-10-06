@@ -934,6 +934,264 @@ impl SqlFunction for MonthNameFunction {
     }
 }
 
+/// PARSE_DATETIME - Parse datetime with custom format string
+pub struct ParseDateTimeFunction;
+
+impl SqlFunction for ParseDateTimeFunction {
+    fn signature(&self) -> FunctionSignature {
+        FunctionSignature {
+            name: "PARSE_DATETIME",
+            category: FunctionCategory::Date,
+            arg_count: ArgCount::Fixed(2),
+            description: "Parse datetime string with custom format (uses chrono strftime format)",
+            returns: "DATETIME",
+            examples: vec![
+                "SELECT PARSE_DATETIME('15/01/2024', '%d/%m/%Y')",
+                "SELECT PARSE_DATETIME('Jan 15, 2024 14:30', '%b %d, %Y %H:%M')",
+                "SELECT PARSE_DATETIME('2024-01-15T14:30:00', '%Y-%m-%dT%H:%M:%S')",
+                "SELECT PARSE_DATETIME(date_string, '%Y%m%d-%H:%M:%S%.3f') FROM data -- FIX format",
+            ],
+        }
+    }
+
+    fn evaluate(&self, args: &[DataValue]) -> Result<DataValue> {
+        self.validate_args(args)?;
+
+        let date_str = match &args[0] {
+            DataValue::String(s) | DataValue::DateTime(s) => s.as_str(),
+            DataValue::InternedString(s) => s.as_str(),
+            DataValue::Null => return Ok(DataValue::Null),
+            _ => return Err(anyhow!("PARSE_DATETIME expects a string as first argument")),
+        };
+
+        let format_str = match &args[1] {
+            DataValue::String(s) => s.as_str(),
+            DataValue::InternedString(s) => s.as_str(),
+            DataValue::Null => return Ok(DataValue::Null),
+            _ => {
+                return Err(anyhow!(
+                    "PARSE_DATETIME expects a format string as second argument"
+                ))
+            }
+        };
+
+        // Try parsing with time component first
+        if let Ok(dt) = NaiveDateTime::parse_from_str(date_str, format_str) {
+            return Ok(DataValue::DateTime(
+                Utc.from_utc_datetime(&dt)
+                    .format("%Y-%m-%d %H:%M:%S%.3f")
+                    .to_string(),
+            ));
+        }
+
+        // Try parsing as date only
+        if let Ok(d) = NaiveDate::parse_from_str(date_str, format_str) {
+            return Ok(DataValue::DateTime(
+                Utc.from_utc_datetime(&d.and_hms_opt(0, 0, 0).unwrap())
+                    .format("%Y-%m-%d %H:%M:%S%.3f")
+                    .to_string(),
+            ));
+        }
+
+        Err(anyhow!(
+            "Failed to parse '{}' with format '{}'. See https://docs.rs/chrono/latest/chrono/format/strftime/index.html",
+            date_str,
+            format_str
+        ))
+    }
+}
+
+/// PARSE_DATETIME_UTC - Parse datetime and explicitly interpret as UTC
+pub struct ParseDateTimeUtcFunction;
+
+impl SqlFunction for ParseDateTimeUtcFunction {
+    fn signature(&self) -> FunctionSignature {
+        FunctionSignature {
+            name: "PARSE_DATETIME_UTC",
+            category: FunctionCategory::Date,
+            arg_count: ArgCount::Range(1, 2),
+            description: "Parse datetime as UTC. With 1 arg: auto-detect format. With 2 args: use custom format",
+            returns: "DATETIME (UTC)",
+            examples: vec![
+                "SELECT PARSE_DATETIME_UTC('2024-01-15 14:30:00')",
+                "SELECT PARSE_DATETIME_UTC('20250925-14:52:15.567') -- FIX format auto-detected",
+                "SELECT PARSE_DATETIME_UTC('15/01/2024 14:30', '%d/%m/%Y %H:%M')",
+            ],
+        }
+    }
+
+    fn evaluate(&self, args: &[DataValue]) -> Result<DataValue> {
+        if args.is_empty() || args.len() > 2 {
+            return Err(anyhow!("PARSE_DATETIME_UTC expects 1 or 2 arguments"));
+        }
+
+        let date_str = match &args[0] {
+            DataValue::String(s) | DataValue::DateTime(s) => s.as_str(),
+            DataValue::InternedString(s) => s.as_str(),
+            DataValue::Null => return Ok(DataValue::Null),
+            _ => {
+                return Err(anyhow!(
+                    "PARSE_DATETIME_UTC expects a string as first argument"
+                ))
+            }
+        };
+
+        // If format string provided, use it
+        if args.len() == 2 {
+            let format_str = match &args[1] {
+                DataValue::String(s) => s.as_str(),
+                DataValue::InternedString(s) => s.as_str(),
+                DataValue::Null => return Ok(DataValue::Null),
+                _ => {
+                    return Err(anyhow!(
+                        "PARSE_DATETIME_UTC expects a format string as second argument"
+                    ))
+                }
+            };
+
+            // Try parsing with time component first
+            if let Ok(dt) = NaiveDateTime::parse_from_str(date_str, format_str) {
+                return Ok(DataValue::DateTime(
+                    Utc.from_utc_datetime(&dt)
+                        .format("%Y-%m-%d %H:%M:%S%.3f")
+                        .to_string(),
+                ));
+            }
+
+            // Try parsing as date only
+            if let Ok(d) = NaiveDate::parse_from_str(date_str, format_str) {
+                return Ok(DataValue::DateTime(
+                    Utc.from_utc_datetime(&d.and_hms_opt(0, 0, 0).unwrap())
+                        .format("%Y-%m-%d %H:%M:%S%.3f")
+                        .to_string(),
+                ));
+            }
+
+            return Err(anyhow!(
+                "Failed to parse '{}' with format '{}'",
+                date_str,
+                format_str
+            ));
+        }
+
+        // No format string - use auto-detection (existing parse_datetime function)
+        let dt = parse_datetime(date_str)?;
+        Ok(DataValue::DateTime(
+            dt.format("%Y-%m-%d %H:%M:%S%.3f").to_string(),
+        ))
+    }
+}
+
+/// DATETIME constructor - Create datetime from components
+pub struct DateTimeConstructor;
+
+impl SqlFunction for DateTimeConstructor {
+    fn signature(&self) -> FunctionSignature {
+        FunctionSignature {
+            name: "DATETIME",
+            category: FunctionCategory::Date,
+            arg_count: ArgCount::Range(3, 7),
+            description: "Create datetime from components: (year, month, day, [hour], [minute], [second], [is_utc])",
+            returns: "DATETIME",
+            examples: vec![
+                "SELECT DATETIME(2024, 1, 15)",
+                "SELECT DATETIME(2024, 1, 15, 14, 30, 0)",
+                "SELECT DATETIME(2024, 12, 31, 23, 59, 59)",
+                "-- Note: All times are interpreted as UTC",
+            ],
+        }
+    }
+
+    fn evaluate(&self, args: &[DataValue]) -> Result<DataValue> {
+        if args.len() < 3 || args.len() > 7 {
+            return Err(anyhow!("DATETIME expects 3-7 arguments: year, month, day, [hour], [minute], [second], [is_utc]"));
+        }
+
+        // Extract components
+        let year = match &args[0] {
+            DataValue::Integer(i) => *i as i32,
+            DataValue::Float(f) => *f as i32,
+            DataValue::Null => return Ok(DataValue::Null),
+            _ => return Err(anyhow!("DATETIME year must be numeric")),
+        };
+
+        let month = match &args[1] {
+            DataValue::Integer(i) => *i as u32,
+            DataValue::Float(f) => *f as u32,
+            DataValue::Null => return Ok(DataValue::Null),
+            _ => return Err(anyhow!("DATETIME month must be numeric")),
+        };
+
+        let day = match &args[2] {
+            DataValue::Integer(i) => *i as u32,
+            DataValue::Float(f) => *f as u32,
+            DataValue::Null => return Ok(DataValue::Null),
+            _ => return Err(anyhow!("DATETIME day must be numeric")),
+        };
+
+        let hour = if args.len() > 3 {
+            match &args[3] {
+                DataValue::Integer(i) => *i as u32,
+                DataValue::Float(f) => *f as u32,
+                DataValue::Null => return Ok(DataValue::Null),
+                _ => return Err(anyhow!("DATETIME hour must be numeric")),
+            }
+        } else {
+            0
+        };
+
+        let minute = if args.len() > 4 {
+            match &args[4] {
+                DataValue::Integer(i) => *i as u32,
+                DataValue::Float(f) => *f as u32,
+                DataValue::Null => return Ok(DataValue::Null),
+                _ => return Err(anyhow!("DATETIME minute must be numeric")),
+            }
+        } else {
+            0
+        };
+
+        let second = if args.len() > 5 {
+            match &args[5] {
+                DataValue::Integer(i) => *i as u32,
+                DataValue::Float(f) => *f as u32,
+                DataValue::Null => return Ok(DataValue::Null),
+                _ => return Err(anyhow!("DATETIME second must be numeric")),
+            }
+        } else {
+            0
+        };
+
+        // is_utc parameter (default true)
+        let _is_utc = if args.len() > 6 {
+            match &args[6] {
+                DataValue::Boolean(b) => *b,
+                DataValue::Integer(i) => *i != 0,
+                DataValue::Null => true,
+                _ => return Err(anyhow!("DATETIME is_utc must be boolean")),
+            }
+        } else {
+            true
+        };
+
+        // Create date
+        let date = NaiveDate::from_ymd_opt(year, month, day)
+            .ok_or_else(|| anyhow!("Invalid date: {}-{}-{}", year, month, day))?;
+
+        // Create datetime
+        let dt = date
+            .and_hms_opt(hour, minute, second)
+            .ok_or_else(|| anyhow!("Invalid time: {}:{}:{}", hour, minute, second))?;
+
+        // For now, always interpret as UTC (local timezone support would require additional dependencies)
+        let utc_dt = Utc.from_utc_datetime(&dt);
+
+        Ok(DataValue::DateTime(
+            utc_dt.format("%Y-%m-%d %H:%M:%S%.3f").to_string(),
+        ))
+    }
+}
+
 /// Register all date/time functions
 pub fn register_date_time_functions(registry: &mut super::FunctionRegistry) {
     registry.register(Box::new(NowFunction));
@@ -956,4 +1214,9 @@ pub fn register_date_time_functions(registry: &mut super::FunctionRegistry) {
     registry.register(Box::new(IsLeapYearFunction));
     registry.register(Box::new(WeekOfYearFunction));
     registry.register(Box::new(QuarterFunction));
+
+    // Flexible parsing functions
+    registry.register(Box::new(ParseDateTimeFunction));
+    registry.register(Box::new(ParseDateTimeUtcFunction));
+    registry.register(Box::new(DateTimeConstructor));
 }
