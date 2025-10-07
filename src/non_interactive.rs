@@ -11,9 +11,48 @@ use crate::config::config::Config;
 use crate::data::data_view::DataView;
 use crate::data::datatable::{DataTable, DataValue};
 use crate::data::datatable_loaders::{load_csv_to_datatable, load_json_to_datatable};
+use crate::data::temp_table_registry::TempTableRegistry;
 use crate::services::query_execution_service::QueryExecutionService;
 use crate::sql::parser::ast::{CTEType, TableSource, CTE};
+use crate::sql::recursive_parser::Parser;
 use crate::sql::script_parser::{ScriptParser, ScriptResult};
+
+/// Check if a query references temporary tables (starting with #)
+/// Temporary tables are only valid in script mode
+fn check_temp_table_usage(query: &str) -> Result<()> {
+    use crate::sql::recursive_parser::Parser;
+
+    let mut parser = Parser::new(query);
+    match parser.parse() {
+        Ok(stmt) => {
+            // Check FROM clause
+            if let Some(from_table) = &stmt.from_table {
+                if from_table.starts_with('#') {
+                    anyhow::bail!(
+                        "Temporary table '{}' cannot be used in single-query mode. \
+                        Temporary tables are only available in script mode (using -f flag with GO separators).",
+                        from_table
+                    );
+                }
+            }
+
+            // Check INTO clause
+            if let Some(into_table) = &stmt.into_table {
+                anyhow::bail!(
+                    "INTO clause for temporary table '{}' is only supported in script mode. \
+                    Use -f flag with GO separators to create temporary tables.",
+                    into_table.name
+                );
+            }
+
+            Ok(())
+        }
+        Err(_) => {
+            // If parse fails, let it fail later in the actual execution
+            Ok(())
+        }
+    }
+}
 
 /// Extract dependencies from a CTE by analyzing what tables it references
 fn extract_cte_dependencies(cte: &CTE) -> Vec<String> {
@@ -165,6 +204,9 @@ pub struct NonInteractiveConfig {
 /// Execute a query in non-interactive mode
 pub fn execute_non_interactive(config: NonInteractiveConfig) -> Result<()> {
     let start_time = Instant::now();
+
+    // Check if query tries to use temporary tables (only valid in script mode)
+    check_temp_table_usage(&config.query)?;
 
     // 1. Load the data file or create DUAL table
     let (data_table, _is_dual) = if config.data_file.is_empty() {
@@ -678,6 +720,9 @@ pub fn execute_script(config: NonInteractiveConfig) -> Result<()> {
     // Create Arc<DataTable> once for all statements - avoids expensive cloning
     let arc_data_table = std::sync::Arc::new(data_table);
 
+    // Create temporary table registry for this script execution
+    let mut temp_tables = TempTableRegistry::new();
+
     // Execute each statement
     for (idx, statement) in statements.iter().enumerate() {
         let statement_num = idx + 1;
@@ -691,8 +736,49 @@ pub fn execute_script(config: NonInteractiveConfig) -> Result<()> {
             output.push(format!("-- Query {} --", statement_num));
         }
 
-        // Create a fresh DataView for each statement (reuses the Arc)
-        let dataview = DataView::new(arc_data_table.clone());
+        // Parse the statement to check for INTO clause and temp table references
+        let mut parser = Parser::new(statement);
+        let parsed_stmt = match parser.parse() {
+            Ok(stmt) => stmt,
+            Err(e) => {
+                // If parsing fails, record error and stop (scripts stop on first error)
+                script_result.add_failure(
+                    statement_num,
+                    statement.clone(),
+                    format!("Parse error: {}", e),
+                    stmt_start.elapsed().as_secs_f64() * 1000.0,
+                );
+                break;
+            }
+        };
+
+        // Check if FROM clause references a temp table
+        let source_table = if let Some(from_table) = &parsed_stmt.from_table {
+            if from_table.starts_with('#') {
+                // Resolve temp table
+                match temp_tables.get(from_table) {
+                    Some(temp_table) => temp_table,
+                    None => {
+                        script_result.add_failure(
+                            statement_num,
+                            statement.clone(),
+                            format!("Temporary table {} not found", from_table),
+                            stmt_start.elapsed().as_secs_f64() * 1000.0,
+                        );
+                        break;
+                    }
+                }
+            } else {
+                // Use the base table
+                arc_data_table.clone()
+            }
+        } else {
+            // No FROM clause, use base table
+            arc_data_table.clone()
+        };
+
+        // Create a fresh DataView for each statement
+        let dataview = DataView::new(source_table);
 
         // Execute the statement
         let service = QueryExecutionService::new(config.case_insensitive, config.auto_hide_empty);
@@ -701,7 +787,53 @@ pub fn execute_script(config: NonInteractiveConfig) -> Result<()> {
                 let exec_time = stmt_start.elapsed().as_secs_f64() * 1000.0;
                 let final_view = result.dataview;
 
-                // Format the output based on the output format
+                // Check if this is an INTO statement - store result in temp table
+                if let Some(into_table) = &parsed_stmt.into_table {
+                    // Get the source table from the DataView - this contains the query result
+                    let result_table = final_view.source_arc();
+                    let row_count = result_table.row_count();
+
+                    match temp_tables.insert(into_table.name.clone(), result_table) {
+                        Ok(_) => {
+                            info!(
+                                "Stored {} rows in temporary table {}",
+                                row_count, into_table.name
+                            );
+
+                            // For INTO statements, output a simple confirmation message
+                            let mut statement_output = Vec::new();
+                            writeln!(
+                                &mut statement_output,
+                                "({} rows affected) -> {}",
+                                row_count, into_table.name
+                            )?;
+                            output.extend(
+                                String::from_utf8_lossy(&statement_output)
+                                    .lines()
+                                    .map(String::from),
+                            );
+
+                            script_result.add_success(
+                                statement_num,
+                                statement.clone(),
+                                row_count,
+                                exec_time,
+                            );
+                            continue; // Skip normal output formatting for INTO statements
+                        }
+                        Err(e) => {
+                            script_result.add_failure(
+                                statement_num,
+                                statement.clone(),
+                                e.to_string(),
+                                exec_time,
+                            );
+                            break;
+                        }
+                    }
+                }
+
+                // Format the output based on the output format (normal query without INTO)
                 let mut statement_output = Vec::new();
                 match config.output_format {
                     OutputFormat::Csv => {

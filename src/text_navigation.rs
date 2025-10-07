@@ -231,6 +231,7 @@ impl TextNavigator {
             Token::Between => "BETWEEN",
             Token::Limit => "LIMIT",
             Token::Offset => "OFFSET",
+            Token::Into => "INTO",
             Token::Plus => "+",
             Token::Minus => "-",
             Token::Divide => "/",

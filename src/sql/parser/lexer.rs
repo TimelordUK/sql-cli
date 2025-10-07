@@ -26,6 +26,7 @@ pub enum Token {
     Desc,
     Limit,
     Offset,
+    Into,      // INTO keyword for temporary tables
     DateTime,  // DateTime constructor
     Case,      // CASE expression
     When,      // WHEN clause
@@ -125,6 +126,7 @@ impl Token {
             "DESC" => Some(Token::Desc),
             "LIMIT" => Some(Token::Limit),
             "OFFSET" => Some(Token::Offset),
+            "INTO" => Some(Token::Into),
             "DISTINCT" => Some(Token::Distinct),
             "CASE" => Some(Token::Case),
             "WHEN" => Some(Token::When),
@@ -523,6 +525,18 @@ impl Lexer {
                 let num = self.read_number();
                 Token::NumberLiteral(num)
             }
+            Some('#') => {
+                // Temporary table identifier: #tablename
+                self.advance(); // consume #
+                let table_name = self.read_identifier();
+                if table_name.is_empty() {
+                    // Just # by itself
+                    Token::Identifier("#".to_string())
+                } else {
+                    // #tablename
+                    Token::Identifier(format!("#{}", table_name))
+                }
+            }
             Some(ch) if ch.is_alphabetic() || ch == '_' => {
                 let ident = self.read_identifier();
                 match ident.to_uppercase().as_str() {
@@ -554,6 +568,7 @@ impl Lexer {
                     "DESC" => Token::Desc,
                     "LIMIT" => Token::Limit,
                     "OFFSET" => Token::Offset,
+                    "INTO" => Token::Into,
                     "DATETIME" => Token::DateTime,
                     "CASE" => Token::Case,
                     "WHEN" => Token::When,

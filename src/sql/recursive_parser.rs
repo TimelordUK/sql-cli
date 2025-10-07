@@ -2,8 +2,8 @@
 
 // Re-exports for backward compatibility - these serve as both imports and re-exports
 pub use super::parser::ast::{
-    CTEType, Condition, DataFormat, FrameBound, FrameUnit, HttpMethod, JoinClause, JoinCondition,
-    JoinOperator, JoinType, LogicalOp, OrderByColumn, SelectItem, SelectStatement,
+    CTEType, Condition, DataFormat, FrameBound, FrameUnit, HttpMethod, IntoTable, JoinClause,
+    JoinCondition, JoinOperator, JoinType, LogicalOp, OrderByColumn, SelectItem, SelectStatement,
     SingleJoinCondition, SortDirection, SqlExpression, TableFunction, TableSource, WebCTESpec,
     WhenBranch, WhereClause, WindowFrame, WindowSpec, CTE,
 };
@@ -694,6 +694,14 @@ impl Parser {
             None
         };
 
+        // Parse INTO clause (for temporary tables)
+        let into_table = if matches!(self.current_token, Token::Into) {
+            self.advance();
+            Some(self.parse_into_clause()?)
+        } else {
+            None
+        };
+
         // Parse ORDER BY clause (comes after GROUP BY and HAVING)
         let order_by = if matches!(self.current_token, Token::OrderBy) {
             self.trace_token("Found OrderBy token");
@@ -768,7 +776,7 @@ impl Parser {
             limit,
             offset,
             ctes: Vec::new(), // Will be populated by WITH clause parser
-            into_table: None,
+            into_table,
         })
     }
 
@@ -984,6 +992,32 @@ impl Parser {
         }
 
         Ok(order_columns)
+    }
+
+    /// Parse INTO clause for temporary tables
+    /// Syntax: INTO #table_name
+    fn parse_into_clause(&mut self) -> Result<IntoTable, String> {
+        // Expect an identifier starting with #
+        let name = match &self.current_token {
+            Token::Identifier(id) if id.starts_with('#') => {
+                let table_name = id.clone();
+                self.advance();
+                table_name
+            }
+            Token::Identifier(id) => {
+                return Err(format!(
+                    "Temporary table name must start with #, got: {}",
+                    id
+                ));
+            }
+            _ => {
+                return Err(
+                    "Expected temporary table name (starting with #) after INTO".to_string()
+                );
+            }
+        };
+
+        Ok(IntoTable { name })
     }
 
     fn parse_window_frame(&mut self) -> Result<Option<WindowFrame>, String> {
