@@ -3,6 +3,60 @@
 
 use anyhow::Result;
 
+/// Directives that can be attached to a script statement
+#[derive(Debug, Clone, PartialEq)]
+pub enum ScriptDirective {
+    /// Skip execution of this statement
+    Skip,
+}
+
+/// Type of script statement
+#[derive(Debug, Clone, PartialEq)]
+pub enum ScriptStatementType {
+    /// Regular SQL query
+    Query(String),
+    /// EXIT statement - stops script execution
+    /// Optional exit code (defaults to 0 for success)
+    Exit(Option<i32>),
+}
+
+/// A parsed script statement with optional directives
+#[derive(Debug, Clone)]
+pub struct ScriptStatement {
+    /// The type of statement (Query or Exit)
+    pub statement_type: ScriptStatementType,
+    /// Directives attached to this statement (from comments above it)
+    pub directives: Vec<ScriptDirective>,
+}
+
+impl ScriptStatement {
+    /// Check if this statement should be skipped
+    pub fn should_skip(&self) -> bool {
+        self.directives.contains(&ScriptDirective::Skip)
+    }
+
+    /// Check if this is an EXIT statement
+    pub fn is_exit(&self) -> bool {
+        matches!(self.statement_type, ScriptStatementType::Exit(_))
+    }
+
+    /// Get exit code if this is an EXIT statement
+    pub fn get_exit_code(&self) -> Option<i32> {
+        match &self.statement_type {
+            ScriptStatementType::Exit(code) => Some(code.unwrap_or(0)),
+            _ => None,
+        }
+    }
+
+    /// Get the SQL query if this is a query statement
+    pub fn get_query(&self) -> Option<&str> {
+        match &self.statement_type {
+            ScriptStatementType::Query(sql) => Some(sql),
+            ScriptStatementType::Exit(_) => None,
+        }
+    }
+}
+
 /// Parses SQL scripts into individual statements using GO as separator
 pub struct ScriptParser {
     content: String,
@@ -59,26 +113,69 @@ impl ScriptParser {
         self.data_file_hint.as_deref()
     }
 
-    /// Parse the script into individual SQL statements
+    /// Parse directives from comment lines
+    /// Looks for patterns like: -- [SKIP], -- [TODO], etc.
+    fn parse_directives(comment_lines: &[String]) -> Vec<ScriptDirective> {
+        let mut directives = Vec::new();
+
+        for line in comment_lines {
+            let trimmed = line.trim();
+            if !trimmed.starts_with("--") {
+                continue;
+            }
+
+            let comment_content = trimmed.strip_prefix("--").unwrap().trim();
+
+            // Check for directive patterns: [SKIP], [IGNORE]
+            if comment_content.eq_ignore_ascii_case("[skip]")
+                || comment_content.eq_ignore_ascii_case("[ignore]")
+            {
+                directives.push(ScriptDirective::Skip);
+            }
+        }
+
+        directives
+    }
+
+    /// Parse the script into ScriptStatements with directives
     /// GO must be on its own line (case-insensitive)
-    /// Returns a vector of SQL statements to execute
-    pub fn parse_statements(&self) -> Vec<String> {
+    pub fn parse_script_statements(&self) -> Vec<ScriptStatement> {
         let mut statements = Vec::new();
         let mut current_statement = String::new();
+        let mut pending_comments = Vec::new();
 
         for line in self.content.lines() {
             let trimmed = line.trim();
 
             // Check if this line is just "GO" (case-insensitive)
             if trimmed.eq_ignore_ascii_case("go") {
-                // Add the current statement if it's not empty or just comments
+                // Add the current statement if it's not empty
                 let statement = current_statement.trim().to_string();
                 if !statement.is_empty() && !Self::is_comment_only(&statement) {
-                    statements.push(statement);
+                    // Parse directives from pending comments
+                    let directives = Self::parse_directives(&pending_comments);
+
+                    // Check if this is an EXIT statement
+                    let statement_type = Self::parse_exit_statement(&statement)
+                        .unwrap_or_else(|| ScriptStatementType::Query(statement));
+
+                    statements.push(ScriptStatement {
+                        statement_type,
+                        directives,
+                    });
                 }
                 current_statement.clear();
+                pending_comments.clear();
+            } else if trimmed.starts_with("--") {
+                // This is a comment line - save it for directive parsing
+                pending_comments.push(line.to_string());
+                // Also add to current statement
+                if !current_statement.is_empty() {
+                    current_statement.push('\n');
+                }
+                current_statement.push_str(line);
             } else {
-                // Add this line to the current statement
+                // Regular line - add to current statement
                 if !current_statement.is_empty() {
                     current_statement.push('\n');
                 }
@@ -89,10 +186,67 @@ impl ScriptParser {
         // Don't forget the last statement if there's no trailing GO
         let statement = current_statement.trim().to_string();
         if !statement.is_empty() && !Self::is_comment_only(&statement) {
-            statements.push(statement);
+            let directives = Self::parse_directives(&pending_comments);
+
+            let statement_type = Self::parse_exit_statement(&statement)
+                .unwrap_or_else(|| ScriptStatementType::Query(statement));
+
+            statements.push(ScriptStatement {
+                statement_type,
+                directives,
+            });
         }
 
         statements
+    }
+
+    /// Try to parse an EXIT statement with optional exit code
+    /// Supports: EXIT, EXIT;, EXIT 0, EXIT 1;, etc.
+    /// Strips comments before checking
+    fn parse_exit_statement(statement: &str) -> Option<ScriptStatementType> {
+        // Extract non-comment content
+        let mut non_comment_lines = Vec::new();
+        for line in statement.lines() {
+            let trimmed = line.trim();
+            if !trimmed.is_empty() && !trimmed.starts_with("--") {
+                non_comment_lines.push(trimmed);
+            }
+        }
+
+        if non_comment_lines.is_empty() {
+            return None;
+        }
+
+        // Join non-comment lines and check if it's EXIT
+        let content = non_comment_lines.join(" ");
+        let trimmed = content.trim().trim_end_matches(';').trim();
+
+        if trimmed.eq_ignore_ascii_case("exit") {
+            return Some(ScriptStatementType::Exit(None));
+        }
+
+        // Check for EXIT with a number: EXIT 0, EXIT 1, etc.
+        let parts: Vec<&str> = trimmed.split_whitespace().collect();
+        if parts.len() == 2 && parts[0].eq_ignore_ascii_case("exit") {
+            if let Ok(code) = parts[1].parse::<i32>() {
+                return Some(ScriptStatementType::Exit(Some(code)));
+            }
+        }
+
+        None
+    }
+
+    /// Parse the script into individual SQL statements (legacy method)
+    /// GO must be on its own line (case-insensitive)
+    /// Returns a vector of SQL statements to execute
+    pub fn parse_statements(&self) -> Vec<String> {
+        self.parse_script_statements()
+            .into_iter()
+            .filter_map(|stmt| match stmt.statement_type {
+                ScriptStatementType::Query(sql) => Some(sql),
+                ScriptStatementType::Exit(_) => None,
+            })
+            .collect()
     }
 
     /// Check if a statement contains only comments (no actual SQL)

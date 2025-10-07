@@ -655,11 +655,15 @@ pub fn execute_non_interactive(config: NonInteractiveConfig) -> Result<()> {
 pub fn execute_script(config: NonInteractiveConfig) -> Result<()> {
     let _start_time = Instant::now();
 
-    // Parse the script into individual statements
+    // Parse the script into individual statements with directives
     let parser = ScriptParser::new(&config.query);
-    let statements = parser.parse_and_validate()?;
+    let script_statements = parser.parse_script_statements();
 
-    info!("Found {} statements in script", statements.len());
+    if script_statements.is_empty() {
+        anyhow::bail!("No statements found in script");
+    }
+
+    info!("Found {} statements in script", script_statements.len());
 
     // Determine data file to use (command-line overrides script hint)
     let data_file = if !config.data_file.is_empty() {
@@ -724,9 +728,67 @@ pub fn execute_script(config: NonInteractiveConfig) -> Result<()> {
     let mut temp_tables = TempTableRegistry::new();
 
     // Execute each statement
-    for (idx, statement) in statements.iter().enumerate() {
+    for (idx, script_stmt) in script_statements.iter().enumerate() {
         let statement_num = idx + 1;
         let stmt_start = Instant::now();
+
+        // Check if this is an EXIT statement
+        if script_stmt.is_exit() {
+            let exit_code = script_stmt.get_exit_code().unwrap_or(0);
+            info!("EXIT statement encountered (code: {})", exit_code);
+
+            // Print message for table format
+            if matches!(config.output_format, OutputFormat::Table) {
+                if idx > 0 {
+                    output.push(String::new());
+                }
+                output.push(format!("-- Statement {} --", statement_num));
+                output.push(format!("Script execution stopped by EXIT {}", exit_code));
+            }
+
+            // Mark as success in results
+            script_result.add_success(
+                statement_num,
+                format!("EXIT {}", exit_code),
+                0,
+                stmt_start.elapsed().as_secs_f64() * 1000.0,
+            );
+
+            // Stop execution
+            break;
+        }
+
+        // Check if this statement should be skipped
+        if script_stmt.should_skip() {
+            info!(
+                "Skipping statement {} due to [SKIP] directive",
+                statement_num
+            );
+
+            // Print message for table format
+            if matches!(config.output_format, OutputFormat::Table) {
+                if idx > 0 {
+                    output.push(String::new());
+                }
+                output.push(format!("-- Statement {} [SKIPPED] --", statement_num));
+            }
+
+            // Mark as success but with 0 rows
+            script_result.add_success(
+                statement_num,
+                "[SKIPPED]".to_string(),
+                0,
+                stmt_start.elapsed().as_secs_f64() * 1000.0,
+            );
+
+            continue;
+        }
+
+        // Get the SQL query
+        let statement = match script_stmt.get_query() {
+            Some(sql) => sql,
+            None => continue, // Should not happen
+        };
 
         // Print separator for table format
         if matches!(config.output_format, OutputFormat::Table) {
@@ -744,7 +806,7 @@ pub fn execute_script(config: NonInteractiveConfig) -> Result<()> {
                 // If parsing fails, record error and stop (scripts stop on first error)
                 script_result.add_failure(
                     statement_num,
-                    statement.clone(),
+                    statement.to_string(),
                     format!("Parse error: {}", e),
                     stmt_start.elapsed().as_secs_f64() * 1000.0,
                 );
@@ -761,7 +823,7 @@ pub fn execute_script(config: NonInteractiveConfig) -> Result<()> {
                     None => {
                         script_result.add_failure(
                             statement_num,
-                            statement.clone(),
+                            statement.to_string(),
                             format!("Temporary table {} not found", from_table),
                             stmt_start.elapsed().as_secs_f64() * 1000.0,
                         );
@@ -815,7 +877,7 @@ pub fn execute_script(config: NonInteractiveConfig) -> Result<()> {
 
                             script_result.add_success(
                                 statement_num,
-                                statement.clone(),
+                                statement.to_string(),
                                 row_count,
                                 exec_time,
                             );
@@ -824,7 +886,7 @@ pub fn execute_script(config: NonInteractiveConfig) -> Result<()> {
                         Err(e) => {
                             script_result.add_failure(
                                 statement_num,
-                                statement.clone(),
+                                statement.to_string(),
                                 e.to_string(),
                                 exec_time,
                             );
@@ -874,7 +936,7 @@ pub fn execute_script(config: NonInteractiveConfig) -> Result<()> {
 
                 script_result.add_success(
                     statement_num,
-                    statement.clone(),
+                    statement.to_string(),
                     final_view.row_count(),
                     exec_time,
                 );
@@ -889,7 +951,7 @@ pub fn execute_script(config: NonInteractiveConfig) -> Result<()> {
 
                 script_result.add_failure(
                     statement_num,
-                    statement.clone(),
+                    statement.to_string(),
                     e.to_string(),
                     exec_time,
                 );
