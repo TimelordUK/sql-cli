@@ -141,6 +141,15 @@ impl WebDataFetcher {
         // Add body if provided (typically for POST/PUT/PATCH) - only if not using multipart
         else if let Some(body) = &spec.body {
             let resolved_body = self.resolve_env_var(body)?;
+
+            // Debug: Always print the expanded body to help verify template expansion
+            eprintln!("\n=== WEB CTE Request Debug ===");
+            eprintln!("URL: {}", spec.url);
+            eprintln!("Method: {:?}", spec.method.as_ref().unwrap_or(&HttpMethod::POST));
+            eprintln!("Body (after template expansion):");
+            eprintln!("{}", resolved_body);
+            eprintln!("=============================\n");
+
             request = request.body(resolved_body);
             // Set Content-Type to JSON if not already set and body looks like JSON
             if spec.body.as_ref().unwrap().trim().starts_with('{') {

@@ -16,6 +16,7 @@ pub mod recursive_parser;
 pub mod script_parser;
 pub mod smart_parser;
 pub mod sql_highlighter;
+pub mod template_expander;
 pub mod where_ast;
 pub mod where_parser;
 pub mod window_context;

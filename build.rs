@@ -11,13 +11,13 @@ fn is_prime(n: u32) -> bool {
     if n == 2 {
         return true;
     }
-    if n % 2 == 0 {
+    if n.is_multiple_of(2) {
         return false;
     }
 
     let sqrt_n = f64::from(n).sqrt() as u32;
     for i in (3..=sqrt_n).step_by(2) {
-        if n % i == 0 {
+        if n.is_multiple_of(i) {
             return false;
         }
     }

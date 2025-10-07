@@ -1,6 +1,6 @@
 use anyhow::{Context, Result};
 use comfy_table::presets::*;
-use comfy_table::{Cell, ContentArrangement, Table};
+use comfy_table::{ContentArrangement, Table};
 use std::fs;
 use std::io::{self, Write};
 use std::path::Path;
@@ -798,7 +798,54 @@ pub fn execute_script(config: NonInteractiveConfig) -> Result<()> {
             output.push(format!("-- Query {} --", statement_num));
         }
 
-        // Parse the statement to check for INTO clause and temp table references
+        // Step 1: Expand templates in the SQL string FIRST (before parsing)
+        // This ensures templates are expanded even when the SQL is re-parsed internally
+        use crate::sql::template_expander::TemplateExpander;
+        let expander = TemplateExpander::new(&temp_tables);
+
+        let expanded_statement = match expander.parse_templates(statement) {
+            Ok(vars) => {
+                if vars.is_empty() {
+                    statement.to_string()
+                } else {
+                    match expander.expand(statement, &vars) {
+                        Ok(expanded) => {
+                            debug!("Expanded templates in SQL: {} vars found", vars.len());
+                            for var in &vars {
+                                debug!(
+                                    "  {} -> expanding from {}",
+                                    var.placeholder, var.table_name
+                                );
+                            }
+                            expanded
+                        }
+                        Err(e) => {
+                            script_result.add_failure(
+                                statement_num,
+                                statement.to_string(),
+                                format!("Template expansion error: {}", e),
+                                stmt_start.elapsed().as_secs_f64() * 1000.0,
+                            );
+                            continue; // Skip this statement
+                        }
+                    }
+                }
+            }
+            Err(e) => {
+                script_result.add_failure(
+                    statement_num,
+                    statement.to_string(),
+                    format!("Template parse error: {}", e),
+                    stmt_start.elapsed().as_secs_f64() * 1000.0,
+                );
+                continue; // Skip this statement
+            }
+        };
+
+        // Use the expanded statement for the rest of the processing
+        let statement = expanded_statement.as_str();
+
+        // Step 2: Parse the (possibly expanded) statement to check for INTO clause and temp table references
         let mut parser = Parser::new(statement);
         let parsed_stmt = match parser.parse() {
             Ok(stmt) => stmt,
@@ -842,9 +889,20 @@ pub fn execute_script(config: NonInteractiveConfig) -> Result<()> {
         // Create a fresh DataView for each statement
         let dataview = DataView::new(source_table);
 
+        // If this statement has an INTO clause, we need to remove it before execution
+        // because the query executor doesn't understand INTO syntax
+        let executable_sql = if parsed_stmt.into_table.is_some() {
+            // Remove the INTO clause from the SQL
+            // Strategy: Find "INTO #table_name" and remove it
+            let into_pattern = regex::Regex::new(r"(?i)\s+INTO\s+#\w+").unwrap();
+            into_pattern.replace(statement, "").to_string()
+        } else {
+            statement.to_string()
+        };
+
         // Execute the statement
         let service = QueryExecutionService::new(config.case_insensitive, config.auto_hide_empty);
-        match service.execute(statement, Some(&dataview), None) {
+        match service.execute(&executable_sql, Some(&dataview), None) {
             Ok(result) => {
                 let exec_time = stmt_start.elapsed().as_secs_f64() * 1000.0;
                 let final_view = result.dataview;
@@ -1044,7 +1102,7 @@ fn limit_results(dataview: &DataView, limit: usize) -> Result<DataTable> {
     let rows_to_copy = dataview.row_count().min(limit);
     for i in 0..rows_to_copy {
         if let Some(row) = dataview.get_row(i) {
-            limited_table.add_row(row.clone());
+            let _ = limited_table.add_row(row.clone());
         }
     }
 

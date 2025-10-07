@@ -108,6 +108,7 @@ impl<'a> WebCteParser<'a> {
             json_path,
             form_files,
             form_fields,
+            template_vars: Vec::new(), // Will be populated by template expander
         })
     }
 

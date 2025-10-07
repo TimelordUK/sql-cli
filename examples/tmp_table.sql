@@ -51,3 +51,43 @@ FROM #high_value_sales
 GROUP BY region, product
 ORDER BY region, total_amount DESC;
 GO
+
+-- ============================================================================
+-- TEMPLATE INJECTION FOR WEB CTEs (Phase 2A)
+-- ============================================================================
+-- Temp tables can now be injected into WEB CTE requests using template syntax!
+--
+-- TEMPLATE SYNTAX:
+--   ${#table}              → Entire table as JSON array
+--   ${#table.column}       → Column values as JSON array
+--   ${#table[0]}           → First row as JSON object
+--   ${#table[0].column}    → Single cell value
+--
+-- EXAMPLE 1: Single value injection
+-- WITH WEB api_call AS (
+--     URL 'https://api.example.com/region/${#high_value_sales[0].region}'
+--     METHOD GET
+--     FORMAT JSON
+-- )
+-- SELECT * FROM api_call;
+--
+-- This would request: https://api.example.com/region/West
+--
+-- EXAMPLE 2: JSON body injection
+-- WITH WEB forecast AS (
+--     URL 'https://api.example.com/forecast'
+--     METHOD POST
+--     BODY '{"region": "${#high_value_sales[0].region}", "amount": ${#high_value_sales[0].sales_amount}}'
+--     FORMAT JSON
+-- )
+-- SELECT * FROM forecast;
+--
+-- This sends: {"region": "West", "amount": 22000}
+--
+-- REAL-WORLD USE CASE: Multi-System Data Integration
+-- 1. Parse FIX logs → SELECT DISTINCT instrument INTO #instruments FROM fix_logs
+-- 2. Query trades DB → WEB CTE with ${#instruments.instrument} in URL
+-- 3. Get security master → WEB CTE with ${#trades.isin} for details
+-- 4. Submit to risk system → WEB CTE with ${#positions} in POST body
+-- All in one script, dynamically building queries based on previous results!
+-- ============================================================================

@@ -356,6 +356,16 @@ pub struct WebCTESpec {
     pub json_path: Option<String>, // JSON path to extract (e.g., "Result" for {Result: [...]})
     pub form_files: Vec<(String, String)>, // Multipart form files: (field_name, file_path)
     pub form_fields: Vec<(String, String)>, // Multipart form fields: (field_name, value)
+    pub template_vars: Vec<TemplateVar>, // Template variables for injection from temp tables
+}
+
+/// Template variable for injecting temp table data into WEB CTEs
+#[derive(Debug, Clone)]
+pub struct TemplateVar {
+    pub placeholder: String,    // e.g., "${#instruments}"
+    pub table_name: String,     // e.g., "#instruments"
+    pub column: Option<String>, // e.g., Some("symbol") for ${#instruments.symbol}
+    pub index: Option<usize>,   // e.g., Some(0) for ${#instruments[0]}
 }
 
 /// HTTP methods for WEB CTEs
