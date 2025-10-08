@@ -1,6 +1,7 @@
 use crate::config::config::BehaviorConfig;
 use crate::data::data_view::DataView;
 use crate::data::query_engine::QueryEngine;
+use crate::data::temp_table_registry::TempTableRegistry;
 use crate::debug_trace::{DebugContext, DebugLevel, QueryTrace, ScopedTimer};
 use crate::execution_plan::ExecutionPlan;
 use anyhow::Result;
@@ -94,12 +95,47 @@ impl QueryExecutionService {
         self.execute_with_debug(query, current_dataview, original_source, None)
     }
 
+    /// Execute a query with temp table support
+    pub fn execute_with_temp_tables(
+        &self,
+        query: &str,
+        current_dataview: Option<&DataView>,
+        original_source: Option<&crate::data::datatable::DataTable>,
+        temp_tables: Option<&TempTableRegistry>,
+    ) -> Result<QueryExecutionResult> {
+        self.execute_with_temp_tables_and_debug(
+            query,
+            current_dataview,
+            original_source,
+            temp_tables,
+            None,
+        )
+    }
+
     /// Execute a query with optional debug tracing
     pub fn execute_with_debug(
         &self,
         query: &str,
         current_dataview: Option<&DataView>,
         original_source: Option<&crate::data::datatable::DataTable>,
+        debug_context: Option<DebugContext>,
+    ) -> Result<QueryExecutionResult> {
+        self.execute_with_temp_tables_and_debug(
+            query,
+            current_dataview,
+            original_source,
+            None,
+            debug_context,
+        )
+    }
+
+    /// Execute a query with temp tables and optional debug tracing
+    pub fn execute_with_temp_tables_and_debug(
+        &self,
+        query: &str,
+        current_dataview: Option<&DataView>,
+        original_source: Option<&crate::data::datatable::DataTable>,
+        temp_tables: Option<&TempTableRegistry>,
         debug_context: Option<DebugContext>,
     ) -> Result<QueryExecutionResult> {
         // Check if debug context is enabled before moving it
@@ -243,7 +279,11 @@ impl QueryExecutionService {
                 self.date_notation.clone(),
             )
         };
-        let mut new_dataview = engine.execute(table_arc, query)?;
+        let mut new_dataview = if temp_tables.is_some() {
+            engine.execute_with_temp_tables(table_arc, query, temp_tables)?
+        } else {
+            engine.execute(table_arc, query)?
+        };
         let query_engine_time = query_start.elapsed();
 
         trace.log_timed(

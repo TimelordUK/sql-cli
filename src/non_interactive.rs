@@ -902,7 +902,12 @@ pub fn execute_script(config: NonInteractiveConfig) -> Result<()> {
 
         // Execute the statement
         let service = QueryExecutionService::new(config.case_insensitive, config.auto_hide_empty);
-        match service.execute(&executable_sql, Some(&dataview), None) {
+        match service.execute_with_temp_tables(
+            &executable_sql,
+            Some(&dataview),
+            None,
+            Some(&temp_tables),
+        ) {
             Ok(result) => {
                 let exec_time = stmt_start.elapsed().as_secs_f64() * 1000.0;
                 let final_view = result.dataview;

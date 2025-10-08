@@ -17,6 +17,7 @@ use crate::data::hash_join::HashJoinExecutor;
 use crate::data::recursive_where_evaluator::RecursiveWhereEvaluator;
 use crate::data::row_expanders::RowExpanderRegistry;
 use crate::data::subquery_executor::SubqueryExecutor;
+use crate::data::temp_table_registry::TempTableRegistry;
 use crate::execution_plan::{ExecutionPlan, ExecutionPlanBuilder, StepType};
 use crate::sql::aggregates::{contains_aggregate, is_aggregate_compatible};
 use crate::sql::parser::ast::ColumnRef;
@@ -216,14 +217,47 @@ impl QueryEngine {
         Ok(view)
     }
 
+    /// Execute a SQL query with optional temp table registry access
+    pub fn execute_with_temp_tables(
+        &self,
+        table: Arc<DataTable>,
+        sql: &str,
+        temp_tables: Option<&TempTableRegistry>,
+    ) -> Result<DataView> {
+        let (view, _plan) = self.execute_with_plan_and_temp_tables(table, sql, temp_tables)?;
+        Ok(view)
+    }
+
     /// Execute a parsed SelectStatement on a `DataTable` and return a `DataView`
     pub fn execute_statement(
         &self,
         table: Arc<DataTable>,
         statement: SelectStatement,
     ) -> Result<DataView> {
+        self.execute_statement_with_temp_tables(table, statement, None)
+    }
+
+    /// Execute a parsed SelectStatement with optional temp table access
+    pub fn execute_statement_with_temp_tables(
+        &self,
+        table: Arc<DataTable>,
+        statement: SelectStatement,
+        temp_tables: Option<&TempTableRegistry>,
+    ) -> Result<DataView> {
         // First process CTEs to build context
         let mut cte_context = HashMap::new();
+
+        // Add temp tables to CTE context if provided
+        if let Some(temp_registry) = temp_tables {
+            for table_name in temp_registry.list_tables() {
+                if let Some(temp_table) = temp_registry.get(&table_name) {
+                    debug!("Adding temp table {} to CTE context", table_name);
+                    let view = DataView::new(temp_table);
+                    cte_context.insert(table_name, Arc::new(view));
+                }
+            }
+        }
+
         for cte in &statement.ctes {
             debug!("QueryEngine: Pre-processing CTE '{}'...", cte.name);
             // Execute the CTE based on its type
@@ -350,6 +384,16 @@ impl QueryEngine {
         table: Arc<DataTable>,
         sql: &str,
     ) -> Result<(DataView, ExecutionPlan)> {
+        self.execute_with_plan_and_temp_tables(table, sql, None)
+    }
+
+    /// Execute a query with temp tables and return both the result and the execution plan
+    pub fn execute_with_plan_and_temp_tables(
+        &self,
+        table: Arc<DataTable>,
+        sql: &str,
+        temp_tables: Option<&TempTableRegistry>,
+    ) -> Result<(DataView, ExecutionPlan)> {
         let mut plan_builder = ExecutionPlanBuilder::new();
         let start_time = Instant::now();
 
@@ -371,6 +415,17 @@ impl QueryEngine {
 
         // First process CTEs to build context
         let mut cte_context = HashMap::new();
+
+        // Add temp tables to CTE context if provided
+        if let Some(temp_registry) = temp_tables {
+            for table_name in temp_registry.list_tables() {
+                if let Some(temp_table) = temp_registry.get(&table_name) {
+                    debug!("Adding temp table {} to CTE context", table_name);
+                    let view = DataView::new(temp_table);
+                    cte_context.insert(table_name, Arc::new(view));
+                }
+            }
+        }
 
         if !statement.ctes.is_empty() {
             plan_builder.begin_step(
