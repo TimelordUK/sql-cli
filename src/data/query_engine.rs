@@ -27,6 +27,49 @@ use crate::sql::recursive_parser::{
     TableFunction,
 };
 
+/// Execution context for tracking table aliases and scope during query execution
+#[derive(Debug, Clone)]
+pub struct ExecutionContext {
+    /// Map from alias to actual table/CTE name
+    /// Example: "t" -> "#tmp_trades", "a" -> "data"
+    alias_map: HashMap<String, String>,
+}
+
+impl ExecutionContext {
+    /// Create a new empty execution context
+    pub fn new() -> Self {
+        Self {
+            alias_map: HashMap::new(),
+        }
+    }
+
+    /// Register a table alias
+    pub fn register_alias(&mut self, alias: String, table_name: String) {
+        debug!("Registering alias: {} -> {}", alias, table_name);
+        self.alias_map.insert(alias, table_name);
+    }
+
+    /// Resolve an alias to its actual table name
+    /// Returns the alias itself if not found in the map
+    pub fn resolve_alias(&self, name: &str) -> String {
+        self.alias_map
+            .get(name)
+            .cloned()
+            .unwrap_or_else(|| name.to_string())
+    }
+
+    /// Check if a name is a registered alias
+    pub fn is_alias(&self, name: &str) -> bool {
+        self.alias_map.contains_key(name)
+    }
+}
+
+impl Default for ExecutionContext {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 /// Query engine that executes SQL directly on `DataTable`
 #[derive(Clone)]
 pub struct QueryEngine {
@@ -593,7 +636,14 @@ impl QueryEngine {
         cte_context: &mut HashMap<String, Arc<DataView>>,
     ) -> Result<DataView> {
         let mut dummy_plan = ExecutionPlanBuilder::new();
-        self.build_view_with_context_and_plan(table, statement, cte_context, &mut dummy_plan)
+        let mut exec_context = ExecutionContext::new();
+        self.build_view_with_context_and_plan_and_exec(
+            table,
+            statement,
+            cte_context,
+            &mut dummy_plan,
+            &mut exec_context,
+        )
     }
 
     /// Build a DataView from a SelectStatement with CTE context and execution plan tracking
@@ -603,6 +653,25 @@ impl QueryEngine {
         statement: SelectStatement,
         cte_context: &mut HashMap<String, Arc<DataView>>,
         plan: &mut ExecutionPlanBuilder,
+    ) -> Result<DataView> {
+        let mut exec_context = ExecutionContext::new();
+        self.build_view_with_context_and_plan_and_exec(
+            table,
+            statement,
+            cte_context,
+            plan,
+            &mut exec_context,
+        )
+    }
+
+    /// Build a DataView with CTE context, execution plan, and alias resolution context
+    fn build_view_with_context_and_plan_and_exec(
+        &self,
+        table: Arc<DataTable>,
+        statement: SelectStatement,
+        cte_context: &mut HashMap<String, Arc<DataView>>,
+        plan: &mut ExecutionPlanBuilder,
+        exec_context: &mut ExecutionContext,
     ) -> Result<DataView> {
         // First, process any CTEs that aren't already in the context
         for cte in &statement.ctes {
@@ -737,6 +806,13 @@ impl QueryEngine {
             // No FROM clause - use the provided table
             table.clone()
         };
+
+        // Register alias in execution context if present
+        if let Some(ref alias) = statement.from_alias {
+            if let Some(ref table_name) = statement.from_table {
+                exec_context.register_alias(alias.clone(), table_name.clone());
+            }
+        }
 
         // Process JOINs if present
         let final_table = if !statement.joins.is_empty() {
