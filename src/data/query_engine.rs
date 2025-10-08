@@ -62,12 +62,155 @@ impl ExecutionContext {
     pub fn is_alias(&self, name: &str) -> bool {
         self.alias_map.contains_key(name)
     }
+
+    /// Resolve a column reference to its index in the table, handling aliases
+    ///
+    /// This is the unified column resolution function that should be used by all
+    /// SQL clauses (WHERE, SELECT, ORDER BY, GROUP BY) to ensure consistent
+    /// alias resolution behavior.
+    ///
+    /// Resolution strategy:
+    /// 1. If column_ref has a table_prefix (e.g., "t" in "t.amount"):
+    ///    a. Resolve the alias: t -> actual_table_name
+    ///    b. Try qualified lookup: "actual_table_name.amount"
+    ///    c. Fall back to unqualified: "amount"
+    /// 2. If column_ref has no prefix:
+    ///    a. Try simple column name lookup: "amount"
+    ///    b. Try as qualified name if it contains a dot: "table.column"
+    pub fn resolve_column_index(&self, table: &DataTable, column_ref: &ColumnRef) -> Result<usize> {
+        if let Some(table_prefix) = &column_ref.table_prefix {
+            // Qualified column reference: resolve the alias first
+            let actual_table = self.resolve_alias(table_prefix);
+
+            // Try qualified lookup: "actual_table.column"
+            let qualified_name = format!("{}.{}", actual_table, column_ref.name);
+            if let Some(idx) = table.find_column_by_qualified_name(&qualified_name) {
+                debug!(
+                    "Resolved {}.{} -> qualified column '{}' at index {}",
+                    table_prefix, column_ref.name, qualified_name, idx
+                );
+                return Ok(idx);
+            }
+
+            // Fall back to unqualified lookup
+            if let Some(idx) = table.get_column_index(&column_ref.name) {
+                debug!(
+                    "Resolved {}.{} -> unqualified column '{}' at index {}",
+                    table_prefix, column_ref.name, column_ref.name, idx
+                );
+                return Ok(idx);
+            }
+
+            // Not found with either qualified or unqualified name
+            Err(anyhow!(
+                "Column '{}' not found. Table '{}' may not support qualified column names",
+                qualified_name,
+                actual_table
+            ))
+        } else {
+            // Unqualified column reference
+            if let Some(idx) = table.get_column_index(&column_ref.name) {
+                debug!(
+                    "Resolved unqualified column '{}' at index {}",
+                    column_ref.name, idx
+                );
+                return Ok(idx);
+            }
+
+            // If the column name contains a dot, try it as a qualified name
+            if column_ref.name.contains('.') {
+                if let Some(idx) = table.find_column_by_qualified_name(&column_ref.name) {
+                    debug!(
+                        "Resolved '{}' as qualified column at index {}",
+                        column_ref.name, idx
+                    );
+                    return Ok(idx);
+                }
+            }
+
+            // Column not found - provide helpful error
+            let suggestion = self.find_similar_column(table, &column_ref.name);
+            match suggestion {
+                Some(similar) => Err(anyhow!(
+                    "Column '{}' not found. Did you mean '{}'?",
+                    column_ref.name,
+                    similar
+                )),
+                None => Err(anyhow!("Column '{}' not found", column_ref.name)),
+            }
+        }
+    }
+
+    /// Find a similar column name using edit distance (for better error messages)
+    fn find_similar_column(&self, table: &DataTable, name: &str) -> Option<String> {
+        let columns = table.column_names();
+        let mut best_match: Option<(String, usize)> = None;
+
+        for col in columns {
+            let distance = edit_distance(name, &col);
+            if distance <= 2 {
+                // Allow up to 2 character differences
+                match best_match {
+                    Some((_, best_dist)) if distance < best_dist => {
+                        best_match = Some((col.clone(), distance));
+                    }
+                    None => {
+                        best_match = Some((col.clone(), distance));
+                    }
+                    _ => {}
+                }
+            }
+        }
+
+        best_match.map(|(name, _)| name)
+    }
 }
 
 impl Default for ExecutionContext {
     fn default() -> Self {
         Self::new()
     }
+}
+
+/// Calculate edit distance between two strings (Levenshtein distance)
+fn edit_distance(a: &str, b: &str) -> usize {
+    let len_a = a.chars().count();
+    let len_b = b.chars().count();
+
+    if len_a == 0 {
+        return len_b;
+    }
+    if len_b == 0 {
+        return len_a;
+    }
+
+    let mut matrix = vec![vec![0; len_b + 1]; len_a + 1];
+
+    for i in 0..=len_a {
+        matrix[i][0] = i;
+    }
+    for j in 0..=len_b {
+        matrix[0][j] = j;
+    }
+
+    let a_chars: Vec<char> = a.chars().collect();
+    let b_chars: Vec<char> = b.chars().collect();
+
+    for i in 1..=len_a {
+        for j in 1..=len_b {
+            let cost = if a_chars[i - 1] == b_chars[j - 1] {
+                0
+            } else {
+                1
+            };
+            matrix[i][j] = min(
+                min(matrix[i - 1][j] + 1, matrix[i][j - 1] + 1),
+                matrix[i - 1][j - 1] + cost,
+            );
+        }
+    }
+
+    matrix[len_a][len_b]
 }
 
 /// Query engine that executes SQL directly on `DataTable`
