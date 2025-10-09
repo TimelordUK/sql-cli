@@ -1,6 +1,7 @@
 use crate::data::arithmetic_evaluator::ArithmeticEvaluator;
 use crate::data::datatable::{DataTable, DataValue};
 use crate::data::evaluation_context::EvaluationContext;
+use crate::data::query_engine::ExecutionContext;
 use crate::data::value_comparisons::compare_with_op;
 use crate::sql::recursive_parser::{Condition, LogicalOp, SqlExpression, WhereClause};
 use anyhow::{anyhow, Result};
@@ -8,19 +9,21 @@ use chrono::{DateTime, Local, NaiveDate, NaiveDateTime, NaiveTime, TimeZone, Utc
 use tracing::debug;
 
 /// Evaluates WHERE clauses from `recursive_parser` directly against `DataTable`
-pub struct RecursiveWhereEvaluator<'a, 'ctx> {
+pub struct RecursiveWhereEvaluator<'a, 'ctx, 'exec> {
     table: &'a DataTable,
     case_insensitive: bool,
     context: Option<&'ctx mut EvaluationContext>,
+    exec_context: Option<&'exec ExecutionContext>,
 }
 
-impl<'a, 'ctx> RecursiveWhereEvaluator<'a, 'ctx> {
+impl<'a, 'ctx, 'exec> RecursiveWhereEvaluator<'a, 'ctx, 'exec> {
     #[must_use]
-    pub fn new(table: &'a DataTable) -> RecursiveWhereEvaluator<'a, 'static> {
+    pub fn new(table: &'a DataTable) -> RecursiveWhereEvaluator<'a, 'static, 'static> {
         RecursiveWhereEvaluator {
             table,
             case_insensitive: false,
             context: None,
+            exec_context: None,
         }
     }
 
@@ -31,6 +34,21 @@ impl<'a, 'ctx> RecursiveWhereEvaluator<'a, 'ctx> {
             table,
             case_insensitive,
             context: Some(context),
+            exec_context: None,
+        }
+    }
+
+    /// Create evaluator with execution context for alias resolution
+    pub fn with_exec_context(
+        table: &'a DataTable,
+        exec_context: &'exec ExecutionContext,
+        case_insensitive: bool,
+    ) -> Self {
+        Self {
+            table,
+            case_insensitive,
+            context: None,
+            exec_context: Some(exec_context),
         }
     }
 
@@ -91,11 +109,12 @@ impl<'a, 'ctx> RecursiveWhereEvaluator<'a, 'ctx> {
     pub fn with_case_insensitive(
         table: &'a DataTable,
         case_insensitive: bool,
-    ) -> RecursiveWhereEvaluator<'a, 'static> {
+    ) -> RecursiveWhereEvaluator<'a, 'static, 'static> {
         RecursiveWhereEvaluator {
             table,
             case_insensitive,
             context: None,
+            exec_context: None,
         }
     }
 
@@ -104,11 +123,12 @@ impl<'a, 'ctx> RecursiveWhereEvaluator<'a, 'ctx> {
         table: &'a DataTable,
         case_insensitive: bool,
         _date_notation: String, // No longer needed since we use centralized parse_datetime
-    ) -> RecursiveWhereEvaluator<'a, 'static> {
+    ) -> RecursiveWhereEvaluator<'a, 'static, 'static> {
         RecursiveWhereEvaluator {
             table,
             case_insensitive,
             context: None,
+            exec_context: None,
         }
     }
 
@@ -913,15 +933,23 @@ impl<'a, 'ctx> RecursiveWhereEvaluator<'a, 'ctx> {
     fn extract_column_name(&self, expr: &SqlExpression) -> Result<String> {
         match expr {
             SqlExpression::Column(column_ref) => {
-                // Handle qualified column names
-                if column_ref.name.contains('.') {
-                    if let Some(dot_pos) = column_ref.name.rfind('.') {
-                        Ok(column_ref.name[dot_pos + 1..].to_string())
+                // Use ExecutionContext for proper alias resolution if available
+                if let Some(exec_ctx) = self.exec_context {
+                    // Use the unified column resolution
+                    let col_idx = exec_ctx.resolve_column_index(self.table, column_ref)?;
+                    // Return the actual column name (not the qualified one)
+                    Ok(self.table.column_names()[col_idx].clone())
+                } else {
+                    // Fallback: Handle qualified column names the old way (for backward compatibility)
+                    if column_ref.name.contains('.') {
+                        if let Some(dot_pos) = column_ref.name.rfind('.') {
+                            Ok(column_ref.name[dot_pos + 1..].to_string())
+                        } else {
+                            Ok(column_ref.name.clone())
+                        }
                     } else {
                         Ok(column_ref.name.clone())
                     }
-                } else {
-                    Ok(column_ref.name.clone())
                 }
             }
             _ => Err(anyhow::anyhow!("Expected column name, got: {:?}", expr)),

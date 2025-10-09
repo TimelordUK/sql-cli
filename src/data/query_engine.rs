@@ -1056,7 +1056,12 @@ impl QueryEngine {
         };
 
         // Continue with the existing build_view logic but using final_table
-        self.build_view_internal_with_plan(final_table, statement, plan)
+        self.build_view_internal_with_plan_and_exec(
+            final_table,
+            statement,
+            plan,
+            Some(exec_context),
+        )
     }
 
     /// Materialize a DataView into a new DataTable
@@ -1113,6 +1118,16 @@ impl QueryEngine {
         statement: SelectStatement,
         plan: &mut ExecutionPlanBuilder,
     ) -> Result<DataView> {
+        self.build_view_internal_with_plan_and_exec(table, statement, plan, None)
+    }
+
+    fn build_view_internal_with_plan_and_exec(
+        &self,
+        table: Arc<DataTable>,
+        statement: SelectStatement,
+        plan: &mut ExecutionPlanBuilder,
+        exec_context: Option<&ExecutionContext>,
+    ) -> Result<DataView> {
         debug!(
             "QueryEngine::build_view - select_items: {:?}",
             statement.select_items
@@ -1151,8 +1166,18 @@ impl QueryEngine {
                 if row_idx < 3 {
                     debug!("QueryEngine: Evaluating WHERE clause for row {}", row_idx);
                 }
-                let mut evaluator =
-                    RecursiveWhereEvaluator::with_context(&table, &mut eval_context);
+
+                // Use exec_context for alias resolution if available, otherwise use eval_context
+                let mut evaluator = if let Some(exec_ctx) = exec_context {
+                    RecursiveWhereEvaluator::with_exec_context(
+                        &table,
+                        exec_ctx,
+                        self.case_insensitive,
+                    )
+                } else {
+                    RecursiveWhereEvaluator::with_context(&table, &mut eval_context)
+                };
+
                 match evaluator.evaluate(where_clause, row_idx) {
                     Ok(result) => {
                         if row_idx < 3 {
