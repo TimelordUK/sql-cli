@@ -7,6 +7,11 @@
 -- This is the KEY feature for multi-system data integration workflows
 -- Template syntax: #table.column expands to JSON array
 
+-- need the python trade flask up to test
+
+exit;
+go
+
 SELECT region, COUNT(*) as cnt
 INTO #regions
 FROM sales_data
