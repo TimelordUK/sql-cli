@@ -63,6 +63,11 @@ impl ExecutionContext {
         self.alias_map.contains_key(name)
     }
 
+    /// Get a copy of all registered aliases
+    pub fn get_aliases(&self) -> HashMap<String, String> {
+        self.alias_map.clone()
+    }
+
     /// Resolve a column reference to its index in the table, handling aliases
     ///
     /// This is the unified column resolution function that should be used by all
@@ -1275,7 +1280,12 @@ impl QueryEngine {
                 // 1. We have computed expressions or explicit columns
                 // 2. OR we have a mix of star and other items (e.g., SELECT *, computed_col)
                 if has_non_star_items || statement.select_items.len() > 1 {
-                    view = self.apply_select_items(view, &statement.select_items)?;
+                    view = self.apply_select_items(
+                        view,
+                        &statement.select_items,
+                        &statement,
+                        exec_context,
+                    )?;
                 } else {
                 }
                 // If it's just a single star, no projection needed
@@ -1375,7 +1385,13 @@ impl QueryEngine {
     }
 
     /// Apply SELECT items (columns and computed expressions) to create new view
-    fn apply_select_items(&self, view: DataView, select_items: &[SelectItem]) -> Result<DataView> {
+    fn apply_select_items(
+        &self,
+        view: DataView,
+        select_items: &[SelectItem],
+        statement: &SelectStatement,
+        exec_context: Option<&ExecutionContext>,
+    ) -> Result<DataView> {
         debug!(
             "QueryEngine::apply_select_items - items: {:?}",
             select_items
@@ -1490,59 +1506,36 @@ impl QueryEngine {
         let mut evaluator =
             ArithmeticEvaluator::with_date_notation(source_table, self.date_notation.clone());
 
+        // Populate table aliases from exec_context if available
+        if let Some(exec_ctx) = exec_context {
+            let aliases = exec_ctx.get_aliases();
+            if !aliases.is_empty() {
+                debug!(
+                    "Applying {} aliases to evaluator: {:?}",
+                    aliases.len(),
+                    aliases
+                );
+                evaluator = evaluator.with_table_aliases(aliases);
+            }
+        }
+
         for &row_idx in visible_rows {
             let mut row_values = Vec::new();
 
             for item in &expanded_items {
                 let value = match item {
                     SelectItem::Column(col_ref) => {
-                        // Column reference with optional table prefix
-                        let col_idx = if let Some(table_prefix) = &col_ref.table_prefix {
-                            // For qualified references, ONLY try qualified lookup - no fallback
-                            let qualified_name = format!("{}.{}", table_prefix, col_ref.name);
-                            let result = source_table.find_column_by_qualified_name(&qualified_name);
-
-                            // Debug: log what qualified names are available when lookup fails
-                            if result.is_none() {
-                                let available_qualified: Vec<String> = source_table.columns.iter()
-                                    .filter_map(|c| c.qualified_name.clone())
-                                    .collect();
-                                let available_simple: Vec<String> = source_table.columns.iter()
-                                    .map(|c| c.name.clone())
-                                    .collect();
-                                debug!(
-                                    "Qualified column '{}' not found. Available qualified names: {:?}, Simple names: {:?}",
-                                    qualified_name, available_qualified, available_simple
-                                );
-                                // This MUST return None to trigger error
+                        // Use evaluator for column resolution (handles aliases properly)
+                        match evaluator.evaluate(&SqlExpression::Column(col_ref.clone()), row_idx) {
+                            Ok(val) => val,
+                            Err(e) => {
+                                return Err(anyhow!(
+                                    "Failed to evaluate column {}: {}",
+                                    col_ref.to_sql(),
+                                    e
+                                ));
                             }
-                            result
-                        } else {
-                            // Simple column name lookup
-                            source_table.get_column_index(&col_ref.name)
                         }
-                        .ok_or_else(|| {
-                            let display_name = if let Some(prefix) = &col_ref.table_prefix {
-                                format!("{}.{}", prefix, col_ref.name)
-                            } else {
-                                col_ref.name.clone()
-                            };
-                            let suggestion = self.find_similar_column(source_table, &col_ref.name);
-                            match suggestion {
-                                Some(similar) => anyhow::anyhow!(
-                                    "Column '{}' not found. Did you mean '{}'?",
-                                    display_name,
-                                    similar
-                                ),
-                                None => anyhow::anyhow!("Column '{}' not found", display_name),
-                            }
-                        })?;
-                        let row = source_table
-                            .get_row(row_idx)
-                            .ok_or_else(|| anyhow::anyhow!("Row {} not found", row_idx))?;
-                        row.get(col_idx)
-                            .ok_or_else(|| anyhow::anyhow!("Column {} not found in row", col_idx))?
-                            .clone()
                     }
                     SelectItem::Expression { expr, .. } => {
                         // Computed expression

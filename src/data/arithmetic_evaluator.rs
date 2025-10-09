@@ -190,10 +190,21 @@ impl<'a> ArithmeticEvaluator<'a> {
     /// Evaluate a column reference with proper table scoping
     fn evaluate_column_ref(&self, column_ref: &ColumnRef, row_index: usize) -> Result<DataValue> {
         if let Some(table_prefix) = &column_ref.table_prefix {
-            // For qualified references, ONLY try qualified lookup - no fallback
-            let qualified_name = format!("{}.{}", table_prefix, column_ref.name);
+            // Resolve alias if it exists in table_aliases map
+            let actual_table = self
+                .table_aliases
+                .get(table_prefix)
+                .map(|s| s.as_str())
+                .unwrap_or(table_prefix);
+
+            // Try qualified lookup with resolved table name
+            let qualified_name = format!("{}.{}", actual_table, column_ref.name);
 
             if let Some(col_idx) = self.table.find_column_by_qualified_name(&qualified_name) {
+                debug!(
+                    "Resolved {}.{} -> '{}' at index {}",
+                    table_prefix, column_ref.name, qualified_name, col_idx
+                );
                 return self
                     .table
                     .get_value(row_index, col_idx)
@@ -201,8 +212,25 @@ impl<'a> ArithmeticEvaluator<'a> {
                     .map(|v| v.clone());
             }
 
-            // If not found, return error - don't fall back
-            Err(anyhow!("Column '{}' not found", qualified_name))
+            // Fallback: try unqualified lookup
+            if let Some(col_idx) = self.table.get_column_index(&column_ref.name) {
+                debug!(
+                    "Resolved {}.{} -> unqualified '{}' at index {}",
+                    table_prefix, column_ref.name, column_ref.name, col_idx
+                );
+                return self
+                    .table
+                    .get_value(row_index, col_idx)
+                    .ok_or_else(|| anyhow!("Row {} out of bounds", row_index))
+                    .map(|v| v.clone());
+            }
+
+            // If not found, return error
+            Err(anyhow!(
+                "Column '{}' not found. Table '{}' may not support qualified column names",
+                qualified_name,
+                actual_table
+            ))
         } else {
             // Simple column name lookup
             self.evaluate_column(&column_ref.name, row_index)
