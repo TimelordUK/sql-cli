@@ -940,7 +940,23 @@ impl Parser {
                 Token::Identifier(id) => {
                     let col = id.clone();
                     self.advance();
-                    col
+
+                    // Check for qualified column name (table.column)
+                    if matches!(self.current_token, Token::Dot) {
+                        self.advance();
+                        match &self.current_token {
+                            Token::Identifier(col_name) => {
+                                let mut qualified = col;
+                                qualified.push('.');
+                                qualified.push_str(col_name);
+                                self.advance();
+                                qualified
+                            }
+                            _ => return Err("Expected column name after '.'".to_string()),
+                        }
+                    } else {
+                        col
+                    }
                 }
                 Token::QuotedIdentifier(id) => {
                     let col = id.clone();

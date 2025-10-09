@@ -1331,7 +1331,8 @@ impl QueryEngine {
                 }
 
                 let sort_start = Instant::now();
-                view = self.apply_multi_order_by(view, order_by_columns)?;
+                view =
+                    self.apply_multi_order_by_with_context(view, order_by_columns, exec_context)?;
 
                 plan.add_detail(format!(
                     "Sort time: {:.3}ms",
@@ -1902,36 +1903,60 @@ impl QueryEngine {
         mut view: DataView,
         order_by_columns: &[OrderByColumn],
     ) -> Result<DataView> {
+        self.apply_multi_order_by_with_context(view, order_by_columns, None)
+    }
+
+    /// Apply multi-column ORDER BY sorting with exec_context for alias resolution
+    fn apply_multi_order_by_with_context(
+        &self,
+        mut view: DataView,
+        order_by_columns: &[OrderByColumn],
+        exec_context: Option<&ExecutionContext>,
+    ) -> Result<DataView> {
         // Build list of (source_column_index, ascending) tuples
         let mut sort_columns = Vec::new();
 
         for order_col in order_by_columns {
-            // Try to find the column index
-            // Check in the current view's source table (this handles both regular columns and computed columns)
-            // This is especially important after GROUP BY where we have a new result table with aggregate aliases
-            let col_index = view
-                .source()
-                .get_column_index(&order_col.column)
-                .ok_or_else(|| {
-                    // If not found, provide helpful error with suggestions
-                    let suggestion = self.find_similar_column(view.source(), &order_col.column);
-                    match suggestion {
-                        Some(similar) => anyhow::anyhow!(
-                            "Column '{}' not found. Did you mean '{}'?",
+            // Try to find the column index, handling qualified column names (table.column)
+            let col_index = if order_col.column.contains('.') {
+                // Qualified column name - extract unqualified part
+                if let Some(dot_pos) = order_col.column.rfind('.') {
+                    let col_name = &order_col.column[dot_pos + 1..];
+
+                    // After SELECT processing, columns are unqualified
+                    // So just use the column name part
+                    debug!(
+                        "ORDER BY: Extracting unqualified column '{}' from '{}'",
+                        col_name, order_col.column
+                    );
+                    view.source().get_column_index(col_name)
+                } else {
+                    view.source().get_column_index(&order_col.column)
+                }
+            } else {
+                // Simple column name
+                view.source().get_column_index(&order_col.column)
+            }
+            .ok_or_else(|| {
+                // If not found, provide helpful error with suggestions
+                let suggestion = self.find_similar_column(view.source(), &order_col.column);
+                match suggestion {
+                    Some(similar) => anyhow::anyhow!(
+                        "Column '{}' not found. Did you mean '{}'?",
+                        order_col.column,
+                        similar
+                    ),
+                    None => {
+                        // Also list available columns for debugging
+                        let available_cols = view.source().column_names().join(", ");
+                        anyhow::anyhow!(
+                            "Column '{}' not found. Available columns: {}",
                             order_col.column,
-                            similar
-                        ),
-                        None => {
-                            // Also list available columns for debugging
-                            let available_cols = view.source().column_names().join(", ");
-                            anyhow::anyhow!(
-                                "Column '{}' not found. Available columns: {}",
-                                order_col.column,
-                                available_cols
-                            )
-                        }
+                            available_cols
+                        )
                     }
-                })?;
+                }
+            })?;
 
             let ascending = matches!(order_col.direction, SortDirection::Asc);
             sort_columns.push((col_index, ascending));
