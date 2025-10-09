@@ -5,6 +5,93 @@ All notable changes to SQL CLI will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.58.0] - 2025-10-09
+
+### 🎯 Qualified Column Names and Table Alias Support
+
+This release brings comprehensive table alias support across all SQL clauses, enabling more readable and maintainable queries with qualified column references.
+
+### ✨ New Features
+
+#### **Qualified Column Names (table.column syntax)**
+- **Table aliases now work throughout queries** - Use `t.column_name` syntax in WHERE, SELECT, ORDER BY, and GROUP BY clauses
+  - Example: `SELECT t.id, t.amount FROM data t WHERE t.amount > 100 ORDER BY t.amount DESC`
+  - Works with CTEs, nested queries, and complex multi-level aliases
+  - Full support for method calls on qualified names: `WHERE t.classification.Contains('value')`
+
+#### **Implementation Phases (All Complete)**
+- **Phase 1-2**: ExecutionContext infrastructure and unified column resolution
+- **Phase 3**: WHERE clause alias resolution - Qualified names in filtering conditions
+- **Phase 4**: SELECT clause alias resolution - Qualified names in projections
+- **Phase 5**: ORDER BY clause alias resolution - Qualified names in sorting
+- **Phase 6**: GROUP BY clause - Already working with expression-based parsing
+
+### 🏗️ Architecture Highlights
+
+#### **Non-Breaking Design**
+- All changes maintain backward compatibility
+- Fallback behavior when ExecutionContext unavailable
+- Unqualified column names continue to work as before
+
+#### **ExecutionContext System**
+- Tracks table alias mappings during query execution
+- Resolves qualified names (table.column) to actual column indices
+- Provides "did you mean?" suggestions using edit distance algorithm
+
+#### **ArithmeticEvaluator Enhancement**
+- Resolves table aliases in column references
+- Tries qualified lookup first, falls back to unqualified
+- Supports both qualified and unqualified names in same query
+
+### 📚 Documentation & Examples
+
+#### **New Example File: `examples/qualified_names.sql`**
+- 7 comprehensive examples demonstrating alias support
+- Basic CTE with aliases in WHERE/SELECT
+- ORDER BY with qualified column names
+- GROUP BY with qualified columns and aggregations
+- Nested CTEs with multi-level aliases
+- String method calls with qualified names
+- Complex queries combining all clauses
+
+### 🔧 Technical Implementation
+
+**Key Files Modified:**
+- `src/data/query_engine.rs` - ExecutionContext, resolve_column_index, apply_select_items integration
+- `src/data/recursive_where_evaluator.rs` - WHERE clause alias resolution
+- `src/data/arithmetic_evaluator.rs` - evaluate_column_ref with table_aliases
+- `src/sql/recursive_parser.rs` - ORDER BY parser for qualified names
+
+**Commit History:**
+- `125679e` - Phase 1: ExecutionContext infrastructure
+- `7771912` - Phase 2: Unified resolve_column helper
+- `9a42c0b` - Phase 3: WHERE clause resolution
+- `abd5b8d` - Phase 4: SELECT clause resolution
+- `8000cad` - Phase 5: ORDER BY resolution
+- `722ee33` - Documentation and examples
+
+### 📝 Known Limitations
+- HAVING clause currently requires unqualified column references
+- Temp tables (#table) with aliases have limited support (investigation ongoing)
+
+### 🎉 Use Cases Enabled
+```sql
+-- Nested CTEs with aliases throughout
+WITH base AS (
+    SELECT value as id, value % 5 as bucket
+    FROM RANGE(1, 25)
+),
+enriched AS (
+    SELECT b.id, b.bucket, b.id * 10 as score
+    FROM base b
+    WHERE b.bucket IN (0, 1, 2)
+)
+SELECT e.bucket, COUNT(*), SUM(e.score)
+FROM enriched e
+GROUP BY e.bucket
+ORDER BY e.bucket;
+```
+
 ## [1.57.0] - 2025-10-06
 
 ### 🗓️ Flexible Date Parsing & Nvim Plugin UX Improvements
