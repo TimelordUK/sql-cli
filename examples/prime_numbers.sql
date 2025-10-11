@@ -1,5 +1,30 @@
 -- Prime number functions showcase
 -- sql-cli supports sophisticated prime number operations
+WITH
+    p AS (
+        SELECT prime, prime + 2 AS plus_2
+        FROM GENERATE_PRIMES(200)
+    ),
+    pairs AS (
+        SELECT
+            *,
+            IS_PRIME(plus_2) AS is_pair
+        FROM p
+    )
+SELECT *
+FROM pairs
+WHERE is_pair = TRUE;
+go
+
+WITH
+    nums AS (
+        SELECT value AS n
+        FROM RANGE(20)
+    )
+SELECT
+    n,
+    IS_PRIME(n) AS is_n_prime
+FROM nums;
 
 -- Check if numbers are prime
 SELECT 
