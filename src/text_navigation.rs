@@ -245,6 +245,8 @@ impl TextNavigator {
             Token::Cross => "CROSS",
             Token::Outer => "OUTER",
             Token::On => "ON",
+            Token::LineComment(text) => text,
+            Token::BlockComment(text) => text,
             Token::Eof => "EOF",
         }
     }

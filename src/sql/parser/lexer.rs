@@ -98,6 +98,10 @@ pub enum Token {
     // String operators
     Concat, // || for string concatenation
 
+    // Comments (preserved for formatting)
+    LineComment(String),  // -- comment text (without the -- prefix)
+    BlockComment(String), // /* comment text */ (without delimiters)
+
     // Special
     Eof,
 }
@@ -284,6 +288,51 @@ impl Lexer {
         }
     }
 
+    /// Read a line comment and return its content (without the -- prefix)
+    fn read_line_comment(&mut self) -> String {
+        let mut result = String::new();
+
+        // Skip '--'
+        self.advance();
+        self.advance();
+
+        // Read until end of line or EOF
+        while let Some(ch) = self.current_char {
+            if ch == '\n' {
+                self.advance(); // consume the newline
+                break;
+            }
+            result.push(ch);
+            self.advance();
+        }
+
+        result
+    }
+
+    /// Read a block comment and return its content (without /* */ delimiters)
+    fn read_block_comment(&mut self) -> String {
+        let mut result = String::new();
+
+        // Skip '/*'
+        self.advance();
+        self.advance();
+
+        // Read until we find '*/'
+        while let Some(ch) = self.current_char {
+            if ch == '*' && self.peek(1) == Some('/') {
+                self.advance(); // skip '*'
+                self.advance(); // skip '/'
+                break;
+            }
+            result.push(ch);
+            self.advance();
+        }
+
+        result
+    }
+
+    /// Skip whitespace and comments (for backwards compatibility with parser)
+    /// This is the old behavior that discards comments
     fn skip_whitespace_and_comments(&mut self) {
         loop {
             // Skip whitespace
@@ -398,6 +447,147 @@ impl Lexer {
         result
     }
 
+    /// Get next token while preserving comments as tokens
+    /// This is the new behavior for comment-aware formatting
+    pub fn next_token_with_comments(&mut self) -> Token {
+        // Only skip whitespace, NOT comments
+        self.skip_whitespace();
+
+        match self.current_char {
+            None => Token::Eof,
+            // Handle comments as tokens
+            Some('-') if self.peek(1) == Some('-') => {
+                let comment_text = self.read_line_comment();
+                Token::LineComment(comment_text)
+            }
+            Some('/') if self.peek(1) == Some('*') => {
+                let comment_text = self.read_block_comment();
+                Token::BlockComment(comment_text)
+            }
+            Some('*') => {
+                self.advance();
+                Token::Star
+            }
+            Some('+') => {
+                self.advance();
+                Token::Plus
+            }
+            Some('/') => {
+                // Regular division (comment case handled above)
+                self.advance();
+                Token::Divide
+            }
+            Some('%') => {
+                self.advance();
+                Token::Modulo
+            }
+            Some('.') => {
+                self.advance();
+                Token::Dot
+            }
+            Some(',') => {
+                self.advance();
+                Token::Comma
+            }
+            Some(':') => {
+                self.advance();
+                Token::Colon
+            }
+            Some('(') => {
+                self.advance();
+                Token::LeftParen
+            }
+            Some(')') => {
+                self.advance();
+                Token::RightParen
+            }
+            Some('=') => {
+                self.advance();
+                Token::Equal
+            }
+            Some('<') => {
+                self.advance();
+                if self.current_char == Some('=') {
+                    self.advance();
+                    Token::LessThanOrEqual
+                } else if self.current_char == Some('>') {
+                    self.advance();
+                    Token::NotEqual
+                } else {
+                    Token::LessThan
+                }
+            }
+            Some('>') => {
+                self.advance();
+                if self.current_char == Some('=') {
+                    self.advance();
+                    Token::GreaterThanOrEqual
+                } else {
+                    Token::GreaterThan
+                }
+            }
+            Some('!') if self.peek(1) == Some('=') => {
+                self.advance();
+                self.advance();
+                Token::NotEqual
+            }
+            Some('|') if self.peek(1) == Some('|') => {
+                self.advance();
+                self.advance();
+                Token::Concat
+            }
+            Some('"') => {
+                let ident_val = self.read_string();
+                Token::QuotedIdentifier(ident_val)
+            }
+            Some('$') => {
+                if self.peek_string(6) == "$JSON$" {
+                    let json_content = self.read_json_block();
+                    Token::JsonBlock(json_content)
+                } else {
+                    let ident = self.read_identifier();
+                    Token::Identifier(ident)
+                }
+            }
+            Some('\'') => {
+                let string_val = self.read_string();
+                Token::StringLiteral(string_val)
+            }
+            Some('-') if self.peek(1).is_some_and(char::is_numeric) => {
+                self.advance();
+                let num = self.read_number();
+                Token::NumberLiteral(format!("-{num}"))
+            }
+            Some('-') => {
+                self.advance();
+                Token::Minus
+            }
+            Some(ch) if ch.is_numeric() => {
+                let num = self.read_number();
+                Token::NumberLiteral(num)
+            }
+            Some('#') => {
+                self.advance();
+                let table_name = self.read_identifier();
+                if table_name.is_empty() {
+                    Token::Identifier("#".to_string())
+                } else {
+                    Token::Identifier(format!("#{}", table_name))
+                }
+            }
+            Some(ch) if ch.is_alphabetic() || ch == '_' => {
+                let ident = self.read_identifier();
+                Token::from_keyword(&ident).unwrap_or_else(|| Token::Identifier(ident))
+            }
+            Some(ch) => {
+                self.advance();
+                Token::Identifier(ch.to_string())
+            }
+        }
+    }
+
+    /// Get next token (backwards compatible - skips comments)
+    /// This is the old behavior for existing parser
     pub fn next_token(&mut self) -> Token {
         self.skip_whitespace_and_comments();
 
@@ -662,5 +852,95 @@ impl Lexer {
             tokens.push((start_pos, end_pos, token));
         }
         tokens
+    }
+
+    /// Tokenize all tokens including comments
+    /// This is useful for formatting tools that need to preserve comments
+    pub fn tokenize_all_with_comments(&mut self) -> Vec<Token> {
+        let mut tokens = Vec::new();
+        loop {
+            let token = self.next_token_with_comments();
+            if matches!(token, Token::Eof) {
+                tokens.push(token);
+                break;
+            }
+            tokens.push(token);
+        }
+        tokens
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_line_comment_tokenization() {
+        let sql = "SELECT col1, -- this is a comment\ncol2 FROM table";
+        let mut lexer = Lexer::new(sql);
+        let tokens = lexer.tokenize_all_with_comments();
+
+        // Find the comment token
+        let comment_token = tokens.iter().find(|t| matches!(t, Token::LineComment(_)));
+        assert!(comment_token.is_some(), "Should find line comment token");
+
+        if let Some(Token::LineComment(text)) = comment_token {
+            assert_eq!(text.trim(), "this is a comment");
+        }
+    }
+
+    #[test]
+    fn test_block_comment_tokenization() {
+        let sql = "SELECT /* block comment */ col1 FROM table";
+        let mut lexer = Lexer::new(sql);
+        let tokens = lexer.tokenize_all_with_comments();
+
+        // Find the comment token
+        let comment_token = tokens.iter().find(|t| matches!(t, Token::BlockComment(_)));
+        assert!(comment_token.is_some(), "Should find block comment token");
+
+        if let Some(Token::BlockComment(text)) = comment_token {
+            assert_eq!(text.trim(), "block comment");
+        }
+    }
+
+    #[test]
+    fn test_multiple_comments() {
+        let sql = "-- First comment\nSELECT col1, /* inline */ col2\n-- Second comment\nFROM table";
+        let mut lexer = Lexer::new(sql);
+        let tokens = lexer.tokenize_all_with_comments();
+
+        let line_comments: Vec<_> = tokens
+            .iter()
+            .filter(|t| matches!(t, Token::LineComment(_)))
+            .collect();
+        let block_comments: Vec<_> = tokens
+            .iter()
+            .filter(|t| matches!(t, Token::BlockComment(_)))
+            .collect();
+
+        assert_eq!(line_comments.len(), 2, "Should find 2 line comments");
+        assert_eq!(block_comments.len(), 1, "Should find 1 block comment");
+    }
+
+    #[test]
+    fn test_backwards_compatibility() {
+        // Test that next_token() still skips comments
+        let sql = "SELECT -- comment\ncol1 FROM table";
+        let mut lexer = Lexer::new(sql);
+        let tokens = lexer.tokenize_all();
+
+        // Should NOT contain any comment tokens
+        let has_comments = tokens
+            .iter()
+            .any(|t| matches!(t, Token::LineComment(_) | Token::BlockComment(_)));
+        assert!(
+            !has_comments,
+            "next_token() should skip comments for backwards compatibility"
+        );
+
+        // Should still parse correctly
+        assert!(tokens.iter().any(|t| matches!(t, Token::Select)));
+        assert!(tokens.iter().any(|t| matches!(t, Token::From)));
     }
 }
