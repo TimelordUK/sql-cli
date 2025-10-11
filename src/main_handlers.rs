@@ -439,6 +439,144 @@ fn handle_generator_help(args: &[String], pos: usize) -> io::Result<()> {
     Ok(())
 }
 
+/// Handle distinct column analysis flag (--distinct-column)
+/// Returns Some(result) if handled, None if flag not found
+pub fn handle_distinct_column_flag(args: &[String]) -> Option<io::Result<()>> {
+    let pos = args.iter().position(|arg| arg == "--distinct-column")?;
+
+    let column_name = match args.get(pos + 1) {
+        Some(name) => name,
+        None => {
+            eprintln!("Error: --distinct-column requires a column name");
+            eprintln!("Usage: sql-cli -q \"SELECT * FROM data\" --distinct-column <column_name>");
+            std::process::exit(1);
+        }
+    };
+
+    // Get the query from -q or --query
+    let query_pos = args.iter().position(|arg| arg == "-q" || arg == "--query");
+    let query = match query_pos.and_then(|qpos| args.get(qpos + 1)) {
+        Some(q) => q,
+        None => {
+            eprintln!("Error: --distinct-column requires a query via -q or --query");
+            std::process::exit(1);
+        }
+    };
+
+    // Build distinct query (wrap in CTE if needed)
+    let distinct_query = build_distinct_query(query, column_name);
+
+    // Get data file if provided
+    let data_file = args
+        .iter()
+        .filter(|arg| !arg.starts_with('-'))
+        .find(|arg| arg.ends_with(".csv") || arg.ends_with(".json"))
+        .cloned()
+        .unwrap_or_default();
+
+    let config = sql_cli::non_interactive::NonInteractiveConfig {
+        data_file,
+        query: distinct_query,
+        output_format: sql_cli::non_interactive::OutputFormat::Csv,
+        output_file: None,
+        case_insensitive: false,
+        auto_hide_empty: false,
+        limit: None,
+        query_plan: false,
+        show_work_units: false,
+        execution_plan: false,
+        cte_info: false,
+        rewrite_analysis: false,
+        lift_in_expressions: false,
+        script_file: None,
+        debug_trace: false,
+        max_col_width: None,
+        col_sample_rows: 100,
+        table_style: sql_cli::non_interactive::TableStyle::Default,
+    };
+
+    // Execute using the non-interactive interface
+    match sql_cli::non_interactive::execute_non_interactive(config) {
+        Ok(_) => Some(Ok(())),
+        Err(e) => {
+            eprintln!("Error executing query: {}", e);
+            std::process::exit(1);
+        }
+    }
+}
+
+/// Build a distinct value query from a base query and column name
+fn build_distinct_query(query: &str, column_name: &str) -> String {
+    // Check if query already contains a CTE (WITH keyword)
+    if query.trim().to_uppercase().starts_with("WITH ") {
+        // Extract CTE name
+        let cte_name = extract_cte_name(query);
+
+        // Extract just the CTE part (everything up to and including the closing paren)
+        let cte_part = extract_cte_part(query);
+
+        format!(
+            "{}\nSELECT {}, COUNT(*) as count FROM {} GROUP BY {} ORDER BY count DESC, {} LIMIT 100",
+            cte_part, column_name, cte_name, column_name, column_name
+        )
+    } else {
+        // No CTE, wrap in one
+        format!(
+            "WITH base_query AS ({}) SELECT {}, COUNT(*) as count FROM base_query GROUP BY {} ORDER BY count DESC, {} LIMIT 100",
+            query, column_name, column_name, column_name
+        )
+    }
+}
+
+/// Extract CTE name from a query that starts with WITH
+fn extract_cte_name(query: &str) -> String {
+    if let Some(pos) = query.find(" AS ") {
+        let before_as = &query[..pos];
+        // Extract the name after WITH [WEB]
+        let name_part = before_as
+            .trim_start_matches("WITH ")
+            .trim_start_matches("with ")
+            .trim_start_matches("WEB ")
+            .trim_start_matches("web ")
+            .trim();
+        name_part
+            .split_whitespace()
+            .next()
+            .unwrap_or("data")
+            .to_string()
+    } else {
+        "data".to_string()
+    }
+}
+
+/// Extract the CTE part from a query (everything up to the closing paren)
+fn extract_cte_part(query: &str) -> String {
+    let mut paren_depth = 0;
+    let mut in_cte_body = false;
+    let mut cte_end_pos = query.len();
+
+    for (i, ch) in query.chars().enumerate() {
+        if ch == '(' && !in_cte_body {
+            // Found the opening paren of AS (...)
+            in_cte_body = true;
+            paren_depth = 1;
+        } else if in_cte_body {
+            if ch == '(' {
+                paren_depth += 1;
+            } else if ch == ')' {
+                paren_depth -= 1;
+                if paren_depth == 0 {
+                    // Found the closing paren of the CTE
+                    cte_end_pos = i + 1;
+                    break;
+                }
+            }
+        }
+    }
+
+    query[..cte_end_pos].to_string()
+}
+
 /// Check if we're in non-interactive mode (has -q or -f flags)
 pub fn is_non_interactive(args: &[String]) -> bool {
     args.iter()
