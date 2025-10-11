@@ -49,7 +49,8 @@ SELECT 'Product B' as product, 'Store 2' as location, 20 as quantity;
 GO
 
 -- Notes:
--- - UNION ALL keeps all rows, including duplicates
+-- - UNION ALL keeps all rows, including duplicates (faster performance)
 -- - All queries must have the same number of columns
 -- - Column names come from the first query
--- - UNION (without ALL) for deduplication is not yet supported
+-- - Use UNION (without ALL) to automatically remove duplicate rows
+-- - See examples/union.sql for UNION with deduplication examples

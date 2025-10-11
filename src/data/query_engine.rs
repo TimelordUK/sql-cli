@@ -1370,6 +1370,9 @@ impl QueryEngine {
             let first_columns = combined_table.column_names();
             let first_column_count = first_columns.len();
 
+            // Track if any operation requires deduplication
+            let mut needs_deduplication = false;
+
             // Process each set operation
             for (idx, (operation, next_statement)) in statement.set_operations.iter().enumerate() {
                 let op_start = Instant::now();
@@ -1440,9 +1443,15 @@ impl QueryEngine {
                         ));
                     }
                     SetOperation::Union => {
-                        // UNION: Concatenate and deduplicate
-                        // TODO: Implement deduplication logic
-                        return Err(anyhow!("UNION (with deduplication) is not yet implemented. Use UNION ALL instead."));
+                        // UNION: Concatenate all rows first, deduplicate at the end
+                        for row in next_table.rows.iter() {
+                            combined_table.add_row(row.clone());
+                        }
+                        needs_deduplication = true;
+                        plan.add_detail(format!(
+                            "Combined: {} rows (deduplication pending)",
+                            combined_table.row_count()
+                        ));
                     }
                     SetOperation::Intersect => {
                         // INTERSECT: Keep only rows that appear in both
@@ -1466,7 +1475,7 @@ impl QueryEngine {
 
             plan.set_rows_out(combined_table.row_count());
             plan.add_detail(format!(
-                "Final result: {} rows after {} operations",
+                "Combined result: {} rows after {} operations",
                 combined_table.row_count(),
                 statement.set_operations.len()
             ));
@@ -1474,6 +1483,27 @@ impl QueryEngine {
 
             // Create a new view from the combined table
             view = DataView::new(Arc::new(combined_table));
+
+            // Apply deduplication if any UNION (not UNION ALL) operation was used
+            if needs_deduplication {
+                plan.begin_step(
+                    StepType::Distinct,
+                    "UNION deduplication - remove duplicate rows".to_string(),
+                );
+                plan.set_rows_in(view.row_count());
+                plan.add_detail(format!("Input: {} rows", view.row_count()));
+
+                let distinct_start = Instant::now();
+                view = self.apply_distinct(view)?;
+
+                plan.set_rows_out(view.row_count());
+                plan.add_detail(format!("Output: {} unique rows", view.row_count()));
+                plan.add_detail(format!(
+                    "Deduplication time: {:.3}ms",
+                    distinct_start.elapsed().as_secs_f64() * 1000.0
+                ));
+                plan.end_step();
+            }
         }
 
         Ok(view)
