@@ -97,6 +97,19 @@ impl<'a> AstFormatter<'a> {
             self.format_select_items(&mut result, &stmt.select_items, indent_level);
         }
 
+        // INTO clause (for SELECT INTO #temp)
+        if let Some(ref into_table) = stmt.into_table {
+            writeln!(&mut result).unwrap();
+            write!(
+                &mut result,
+                "{}{} {}",
+                indent,
+                self.keyword("INTO"),
+                into_table.name
+            )
+            .unwrap();
+        }
+
         // FROM clause
         if let Some(ref table) = stmt.from_table {
             writeln!(&mut result).unwrap();

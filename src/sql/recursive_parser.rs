@@ -476,6 +476,14 @@ impl Parser {
             })
             .collect();
 
+        // Parse INTO clause (for temporary tables) - comes immediately after SELECT items
+        let into_table = if matches!(self.current_token, Token::Into) {
+            self.advance();
+            Some(self.parse_into_clause()?)
+        } else {
+            None
+        };
+
         // Parse FROM clause - can be a table name, subquery, or table function
         let (from_table, from_subquery, from_function, from_alias) =
             if matches!(self.current_token, Token::From) {
@@ -690,14 +698,6 @@ impl Parser {
             }
             self.advance();
             Some(self.parse_expression()?)
-        } else {
-            None
-        };
-
-        // Parse INTO clause (for temporary tables)
-        let into_table = if matches!(self.current_token, Token::Into) {
-            self.advance();
-            Some(self.parse_into_clause()?)
         } else {
             None
         };
