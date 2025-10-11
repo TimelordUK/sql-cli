@@ -5,6 +5,75 @@ All notable changes to SQL CLI will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.59.0] - 2025-10-11
+
+### 🚀 Critical Performance Fix & Infrastructure Improvements
+
+This release fixes a severe performance regression introduced by the alias resolution feature and adds important SQL formatting and preprocessing improvements.
+
+### ⚡ Performance Improvements
+
+#### **WHERE Clause Evaluation Optimization - 23x Faster!**
+- **Fixed critical regression** - `RecursiveWhereEvaluator` was being created inside the row loop instead of once before the loop
+- **Impact on complex queries**:
+  - 3-condition WHERE on 5,000 rows: **1277ms → 54ms** (23x speedup)
+  - 2-condition WHERE on 5,000 rows: **46ms → unchanged**
+  - Simple WHERE on 5,000 rows: **17ms → unchanged**
+- **Root cause**: Alias resolution feature (v1.58.0) moved evaluator creation inside the loop, causing 5000+ unnecessary object instantiations
+- **Solution**:
+  - Added `with_both_contexts()` method to support both alias resolution AND regex caching
+  - Moved evaluator creation outside the loop
+  - Reuses single evaluator instance for all rows
+
+### 🏗️ SQL Formatting & Preprocessing
+
+#### **SELECT INTO Syntax Support**
+- **Proper SQL Server syntax** - `SELECT col1, col2 INTO #temp FROM table WHERE ...`
+- **AST-based formatting** - INTO clause now properly formatted in query output
+- **Parser fix** - INTO recognized in correct position (after SELECT, before FROM)
+- **Example formatting** works correctly: `examples/tmp_table.sql`
+
+#### **AST-Based INTO Clause Removal**
+- **New preprocessing module** - `IntoClauseRemover` follows CTEHoister pattern
+- **Replaced regex hack** - Brittle regex removal replaced with proper AST manipulation
+- **Recursive handling** - Removes INTO from all nested subqueries
+- **Maintainable architecture** - Clean separation of parsing, preprocessing, and execution
+
+#### **Comment-Aware Tokenization Foundation**
+- **Dual-path lexer** - New `next_token_with_comments()` preserves comments, old `next_token()` skips them
+- **Token types added** - `Token::LineComment` and `Token::BlockComment`
+- **Backwards compatible** - Parser unchanged, uses comment-skipping path
+- **Future-ready** - Foundation for Prettier/Rustfmt-style comment preservation in formatters
+
+### 🔧 Technical Details
+
+**Performance Fix Files**:
+- `src/data/recursive_where_evaluator.rs` - Added `with_both_contexts()` method (lines 55-68)
+- `src/data/query_engine.rs` - Moved evaluator creation outside loop (lines 1169-1174)
+
+**Formatting Files**:
+- `src/sql/parser/ast_formatter.rs` - Added INTO clause formatting
+- `src/sql/recursive_parser.rs` - Fixed INTO parsing position
+- `src/query_plan/into_clause_remover.rs` - New AST-based preprocessor
+- `src/sql/parser/lexer.rs` - Added comment token support
+
+### 📊 Benchmark Results
+
+Testing complex WHERE clause (3 conditions) on 5,000 rows:
+```
+Before fix:  1277.48ms  ❌
+After fix:   54.65ms    ✅  (23x faster)
+```
+
+### 🐛 Bug Fixes
+- Fixed SELECT INTO being dropped during formatting
+- Fixed execution of SELECT INTO statements in scripts
+- Fixed text_navigation.rs compilation after comment tokens added
+
+### 📚 Documentation
+- Updated `examples/tmp_table.sql` with correct SQL Server syntax
+- Added `src/query_plan/into_clause_remover.rs` with comprehensive doc comments
+
 ## [1.58.0] - 2025-10-09
 
 ### 🎯 Qualified Column Names and Table Alias Support
