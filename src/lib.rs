@@ -3,6 +3,7 @@ pub mod analysis;
 pub mod api;
 pub mod benchmarks;
 pub mod chart;
+pub mod cli;
 pub mod config;
 pub mod core;
 pub mod data;
