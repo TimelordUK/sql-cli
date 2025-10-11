@@ -196,7 +196,7 @@ impl IntoClauseRemover {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::sql::parser::ast::{IntoTable, SelectItem};
+    use crate::sql::parser::ast::IntoTable;
 
     #[test]
     fn test_remove_simple_into() {
