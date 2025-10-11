@@ -187,6 +187,7 @@ WHERE SQRT(area) BETWEEN 10 AND 50
 - **Basic:** `ROUND`, `ABS`, `FLOOR`, `CEILING`, `MOD`, `QUOTIENT`, `POWER`, `SQRT`, `EXP`, `LN`, `LOG`, `LOG10`
 - **Prime Numbers:** `PRIME(n)` - nth prime, `IS_PRIME(n)` - primality test, `PRIME_COUNT(n)` - count primes ≤ n, `NEXT_PRIME(n)`, `PREV_PRIME(n)`
 - **Constants:** `PI()`, `E()` - mathematical constants
+- **π Digits:** `PI_DIGITS(n)` - π to N decimal places (up to 10,000), `PI_DIGIT(n)` - Nth decimal digit of π
 
 
 ```
@@ -225,6 +226,14 @@ SELECT IS_PRIME(17), IS_PRIME(100);  -- true, false
 SELECT PRIME_COUNT(1000);  -- 168 primes under 1000
 SELECT NEXT_PRIME(100), PREV_PRIME(100);  -- 101, 97
 ```
+
+**Fun with π Digits:**
+```bash
+# Get first 50 decimal digits of π with their positions
+sql-cli -q "SELECT value as position, PI_DIGIT(value) as digit FROM RANGE(1, 50)" -o table --table-style markdown
+```
+
+Output shows π = 3.1415926535897932384626433832795028841971693993751...
 
 #### **Comparison & NULL Functions**
 ```sql
