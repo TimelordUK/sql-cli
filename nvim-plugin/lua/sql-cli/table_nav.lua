@@ -405,6 +405,16 @@ function M.disable_navigation(config)
     pcall(vim.keymap.del, "n", "yy", opts)
     pcall(vim.keymap.del, "n", "Y", opts)
     pcall(vim.keymap.del, "n", "yc", opts)
+
+    -- Delete boundary navigation keymaps (gg, G, 0, $)
+    pcall(vim.keymap.del, "n", "gg", opts)
+    pcall(vim.keymap.del, "n", "G", opts)
+    pcall(vim.keymap.del, "n", "0", opts)
+    pcall(vim.keymap.del, "n", "$", opts)
+
+    -- Delete tab navigation
+    pcall(vim.keymap.del, "n", "<Tab>", opts)
+    pcall(vim.keymap.del, "n", "<S-Tab>", opts)
   end
 
   -- Reset state
