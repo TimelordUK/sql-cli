@@ -892,10 +892,12 @@ pub fn execute_script(config: NonInteractiveConfig) -> Result<()> {
         // If this statement has an INTO clause, we need to remove it before execution
         // because the query executor doesn't understand INTO syntax
         let executable_sql = if parsed_stmt.into_table.is_some() {
-            // Remove the INTO clause from the SQL
-            // Strategy: Find "INTO #table_name" and remove it
-            let into_pattern = regex::Regex::new(r"(?i)\s+INTO\s+#\w+").unwrap();
-            into_pattern.replace(statement, "").to_string()
+            // Remove the INTO clause using AST preprocessing (robust and maintainable)
+            use crate::query_plan::IntoClauseRemover;
+            use crate::sql::parser::ast_formatter;
+
+            let cleaned_stmt = IntoClauseRemover::remove_into_clause(parsed_stmt.clone());
+            ast_formatter::format_select_statement(&cleaned_stmt)
         } else {
             statement.to_string()
         };
