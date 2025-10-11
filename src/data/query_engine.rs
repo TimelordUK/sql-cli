@@ -398,7 +398,6 @@ impl QueryEngine {
             SqlExpression::ChainedMethodCall { base, args, .. } => {
                 Self::contains_unnest(base) || args.iter().any(Self::contains_unnest)
             }
-            SqlExpression::Unnest { .. } => true, // Direct UNNEST variant
             _ => false,
         }
     }
@@ -1165,6 +1164,14 @@ impl QueryEngine {
             // Create an evaluation context for caching compiled regexes
             let mut eval_context = EvaluationContext::new(self.case_insensitive);
 
+            // Create evaluator ONCE before the loop for performance
+            let mut evaluator = if let Some(exec_ctx) = exec_context {
+                // Use both contexts: exec_context for alias resolution, eval_context for regex caching
+                RecursiveWhereEvaluator::with_both_contexts(&table, &mut eval_context, exec_ctx)
+            } else {
+                RecursiveWhereEvaluator::with_context(&table, &mut eval_context)
+            };
+
             // Filter visible rows based on WHERE clause
             let mut filtered_rows = Vec::new();
             for row_idx in visible_rows {
@@ -1172,17 +1179,6 @@ impl QueryEngine {
                 if row_idx < 3 {
                     debug!("QueryEngine: Evaluating WHERE clause for row {}", row_idx);
                 }
-
-                // Use exec_context for alias resolution if available, otherwise use eval_context
-                let mut evaluator = if let Some(exec_ctx) = exec_context {
-                    RecursiveWhereEvaluator::with_exec_context(
-                        &table,
-                        exec_ctx,
-                        self.case_insensitive,
-                    )
-                } else {
-                    RecursiveWhereEvaluator::with_context(&table, &mut eval_context)
-                };
 
                 match evaluator.evaluate(where_clause, row_idx) {
                     Ok(result) => {
@@ -1287,7 +1283,6 @@ impl QueryEngine {
                         &statement,
                         exec_context,
                     )?;
-                } else {
                 }
                 // If it's just a single star, no projection needed
             } else if !statement.columns.is_empty() && statement.columns[0] != "*" {
@@ -1540,7 +1535,7 @@ impl QueryEngine {
         &self,
         view: DataView,
         select_items: &[SelectItem],
-        statement: &SelectStatement,
+        _statement: &SelectStatement,
         exec_context: Option<&ExecutionContext>,
     ) -> Result<DataView> {
         debug!(
@@ -2050,7 +2045,7 @@ impl QueryEngine {
     /// Apply multi-column ORDER BY sorting to the view
     fn apply_multi_order_by(
         &self,
-        mut view: DataView,
+        view: DataView,
         order_by_columns: &[OrderByColumn],
     ) -> Result<DataView> {
         self.apply_multi_order_by_with_context(view, order_by_columns, None)
@@ -2061,7 +2056,7 @@ impl QueryEngine {
         &self,
         mut view: DataView,
         order_by_columns: &[OrderByColumn],
-        exec_context: Option<&ExecutionContext>,
+        _exec_context: Option<&ExecutionContext>,
     ) -> Result<DataView> {
         // Build list of (source_column_index, ascending) tuples
         let mut sort_columns = Vec::new();

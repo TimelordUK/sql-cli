@@ -235,7 +235,6 @@ impl Parser {
         if let Some(depth) = self.paren_depth_stack.pop() {
             // Ignore the internal depth - just restore the saved value
             self.paren_depth = depth;
-        } else {
         }
     }
 

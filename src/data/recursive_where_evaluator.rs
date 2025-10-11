@@ -52,6 +52,21 @@ impl<'a, 'ctx, 'exec> RecursiveWhereEvaluator<'a, 'ctx, 'exec> {
         }
     }
 
+    /// Create evaluator with both execution context (for alias resolution) and evaluation context (for regex caching)
+    pub fn with_both_contexts(
+        table: &'a DataTable,
+        context: &'ctx mut EvaluationContext,
+        exec_context: &'exec ExecutionContext,
+    ) -> Self {
+        let case_insensitive = context.is_case_insensitive();
+        Self {
+            table,
+            case_insensitive,
+            context: Some(context),
+            exec_context: Some(exec_context),
+        }
+    }
+
     /// Find a column name similar to the given name using edit distance
     fn find_similar_column(&self, name: &str) -> Option<String> {
         let columns = self.table.column_names();
