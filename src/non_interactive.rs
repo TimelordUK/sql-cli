@@ -927,18 +927,21 @@ pub fn execute_script(config: NonInteractiveConfig) -> Result<()> {
                                 row_count, into_table.name
                             );
 
-                            // For INTO statements, output a simple confirmation message
-                            let mut statement_output = Vec::new();
-                            writeln!(
-                                &mut statement_output,
-                                "({} rows affected) -> {}",
-                                row_count, into_table.name
-                            )?;
-                            output.extend(
-                                String::from_utf8_lossy(&statement_output)
-                                    .lines()
-                                    .map(String::from),
-                            );
+                            // For INTO statements, output a confirmation message only for table format
+                            // CSV/TSV/JSON formats should not include this message as it pollutes machine-readable output
+                            if matches!(config.output_format, OutputFormat::Table) {
+                                let mut statement_output = Vec::new();
+                                writeln!(
+                                    &mut statement_output,
+                                    "({} rows affected) -> {}",
+                                    row_count, into_table.name
+                                )?;
+                                output.extend(
+                                    String::from_utf8_lossy(&statement_output)
+                                        .lines()
+                                        .map(String::from),
+                                );
+                            }
 
                             script_result.add_success(
                                 statement_num,
