@@ -400,11 +400,12 @@ impl FunctionRegistry {
     fn register_constants(&mut self) {
         use constants::{
             EFunction, HbarFunction, MassElectronFunction, MeFunction, PhiFunction,
-            PiDigitsFunction, PiFunction, TauFunction,
+            PiDigitFunction, PiDigitsFunction, PiFunction, TauFunction,
         };
 
         self.register(Box::new(PiFunction));
         self.register(Box::new(PiDigitsFunction)); // Arbitrary precision pi
+        self.register(Box::new(PiDigitFunction)); // Single digit lookup
         self.register(Box::new(EFunction));
         self.register(Box::new(MeFunction)); // Mass of electron
         self.register(Box::new(MassElectronFunction)); // Alias for ME

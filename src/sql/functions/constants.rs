@@ -203,6 +203,56 @@ impl SqlFunction for PiDigitsFunction {
     }
 }
 
+/// PI_DIGIT function - Returns the Nth decimal digit of π
+pub struct PiDigitFunction;
+
+impl SqlFunction for PiDigitFunction {
+    fn signature(&self) -> FunctionSignature {
+        FunctionSignature {
+            name: "PI_DIGIT",
+            category: FunctionCategory::Constant,
+            arg_count: ArgCount::Fixed(1),
+            description: "Returns the Nth decimal digit of π (1-indexed, up to 10,000 digits)",
+            returns: "INTEGER",
+            examples: vec![
+                "SELECT PI_DIGIT(1)",
+                "SELECT PI_DIGIT(10)",
+                "SELECT n, PI_DIGIT(n) FROM RANGE(1, 10)",
+            ],
+        }
+    }
+
+    fn evaluate(&self, args: &[DataValue]) -> Result<DataValue> {
+        self.validate_args(args)?;
+
+        let position = match &args[0] {
+            DataValue::Integer(n) => *n as usize,
+            DataValue::Float(f) => *f as usize,
+            _ => anyhow::bail!("PI_DIGIT requires an integer argument"),
+        };
+
+        if position == 0 {
+            anyhow::bail!("PI_DIGIT: Position must be >= 1 (1-indexed)");
+        }
+
+        if position > 10000 {
+            anyhow::bail!("PI_DIGIT: Maximum position is 10,000");
+        }
+
+        // PI_DIGITS contains "3.1415926535..."
+        // Position 1 = first digit after decimal point = index 2 (after "3.")
+        let char_index = 1 + position; // Skip "3." (2 chars) but we want 1-indexed
+
+        if let Some(ch) = PI_DIGITS.chars().nth(char_index) {
+            if let Some(digit) = ch.to_digit(10) {
+                return Ok(DataValue::Integer(digit as i64));
+            }
+        }
+
+        anyhow::bail!("PI_DIGIT: Could not extract digit at position {}", position)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
