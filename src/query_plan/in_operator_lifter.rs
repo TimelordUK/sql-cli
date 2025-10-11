@@ -152,6 +152,7 @@ impl InOperatorLifter {
             offset: None,
             ctes: Vec::new(),
             into_table: None,
+            set_operations: Vec::new(),
         };
 
         CTE {

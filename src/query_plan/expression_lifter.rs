@@ -158,6 +158,7 @@ impl ExpressionLifter {
                     offset: None,
                     ctes: Vec::new(),
                     into_table: None,
+                    set_operations: Vec::new(),
                 };
 
                 let cte = CTE {
@@ -275,6 +276,7 @@ impl ExpressionLifter {
             offset: None,
             ctes: Vec::new(),
             into_table: None,
+            set_operations: Vec::new(),
         };
 
         // Update the main query to use simple column references

@@ -37,6 +37,7 @@ pub enum StepType {
     Subquery,
     Aggregate,
     Distinct,
+    SetOperation,
 }
 
 impl fmt::Display for StepType {
@@ -59,6 +60,7 @@ impl fmt::Display for StepType {
             StepType::Subquery => write!(f, "SUBQUERY"),
             StepType::Aggregate => write!(f, "AGGREGATE"),
             StepType::Distinct => write!(f, "DISTINCT"),
+            StepType::SetOperation => write!(f, "SET_OP"),
         }
     }
 }

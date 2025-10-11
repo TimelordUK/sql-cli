@@ -280,6 +280,19 @@ pub struct WindowSpec {
 
 // ===== SELECT Statement Types =====
 
+/// Set operation type for combining SELECT statements
+#[derive(Debug, Clone, PartialEq)]
+pub enum SetOperation {
+    /// UNION ALL - combines results without deduplication
+    UnionAll,
+    /// UNION - combines results with deduplication (not yet implemented)
+    Union,
+    /// INTERSECT - returns common rows (not yet implemented)
+    Intersect,
+    /// EXCEPT - returns rows from left not in right (not yet implemented)
+    Except,
+}
+
 /// Represents a SELECT item - either a simple column or a computed expression with alias
 #[derive(Debug, Clone)]
 pub enum SelectItem {
@@ -309,6 +322,7 @@ pub struct SelectStatement {
     pub offset: Option<usize>,
     pub ctes: Vec<CTE>,                // Common Table Expressions (WITH clause)
     pub into_table: Option<IntoTable>, // INTO clause for temporary tables
+    pub set_operations: Vec<(SetOperation, Box<SelectStatement>)>, // UNION/INTERSECT/EXCEPT operations
 }
 
 /// INTO clause for creating temporary tables

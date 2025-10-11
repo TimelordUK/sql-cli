@@ -4,8 +4,8 @@
 pub use super::parser::ast::{
     CTEType, Condition, DataFormat, FrameBound, FrameUnit, HttpMethod, IntoTable, JoinClause,
     JoinCondition, JoinOperator, JoinType, LogicalOp, OrderByColumn, SelectItem, SelectStatement,
-    SingleJoinCondition, SortDirection, SqlExpression, TableFunction, TableSource, WebCTESpec,
-    WhenBranch, WhereClause, WindowFrame, WindowSpec, CTE,
+    SetOperation, SingleJoinCondition, SortDirection, SqlExpression, TableFunction, TableSource,
+    WebCTESpec, WhenBranch, WhereClause, WindowFrame, WindowSpec, CTE,
 };
 pub use super::parser::legacy::{ParseContext, ParseState, Schema, SqlParser, SqlToken, TableInfo};
 pub use super::parser::lexer::{Lexer, Token};
@@ -760,6 +760,9 @@ impl Parser {
             None
         };
 
+        // Parse UNION/INTERSECT/EXCEPT operations
+        let set_operations = self.parse_set_operations()?;
+
         Ok(SelectStatement {
             distinct,
             columns,
@@ -777,7 +780,55 @@ impl Parser {
             offset,
             ctes: Vec::new(), // Will be populated by WITH clause parser
             into_table,
+            set_operations,
         })
+    }
+
+    /// Parse UNION/INTERSECT/EXCEPT operations
+    /// Returns a vector of (operation, select_statement) pairs
+    fn parse_set_operations(
+        &mut self,
+    ) -> Result<Vec<(SetOperation, Box<SelectStatement>)>, String> {
+        let mut operations = Vec::new();
+
+        while matches!(
+            self.current_token,
+            Token::Union | Token::Intersect | Token::Except
+        ) {
+            // Determine the operation type
+            let operation = match &self.current_token {
+                Token::Union => {
+                    self.advance();
+                    // Check for ALL keyword
+                    if let Token::Identifier(id) = &self.current_token {
+                        if id.to_uppercase() == "ALL" {
+                            self.advance();
+                            SetOperation::UnionAll
+                        } else {
+                            SetOperation::Union
+                        }
+                    } else {
+                        SetOperation::Union
+                    }
+                }
+                Token::Intersect => {
+                    self.advance();
+                    SetOperation::Intersect
+                }
+                Token::Except => {
+                    self.advance();
+                    SetOperation::Except
+                }
+                _ => unreachable!(),
+            };
+
+            // Parse the next SELECT statement
+            let next_select = self.parse_select_statement_inner()?;
+
+            operations.push((operation, Box::new(next_select)));
+        }
+
+        Ok(operations)
     }
 
     /// Parse SELECT items that support computed expressions with aliases

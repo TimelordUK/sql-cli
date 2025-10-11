@@ -21,6 +21,7 @@ use crate::data::temp_table_registry::TempTableRegistry;
 use crate::execution_plan::{ExecutionPlan, ExecutionPlanBuilder, StepType};
 use crate::sql::aggregates::{contains_aggregate, is_aggregate_compatible};
 use crate::sql::parser::ast::ColumnRef;
+use crate::sql::parser::ast::SetOperation;
 use crate::sql::parser::ast::TableSource;
 use crate::sql::recursive_parser::{
     CTEType, OrderByColumn, Parser, SelectItem, SelectStatement, SortDirection, SqlExpression,
@@ -1354,6 +1355,125 @@ impl QueryEngine {
             plan.set_rows_out(view.row_count());
             plan.add_detail(format!("Output: {} rows", view.row_count()));
             plan.end_step();
+        }
+
+        // Process set operations (UNION ALL, UNION, INTERSECT, EXCEPT)
+        if !statement.set_operations.is_empty() {
+            plan.begin_step(
+                StepType::SetOperation,
+                format!("Process {} set operations", statement.set_operations.len()),
+            );
+            plan.set_rows_in(view.row_count());
+
+            // Materialize the first result set
+            let mut combined_table = self.materialize_view(view)?;
+            let first_columns = combined_table.column_names();
+            let first_column_count = first_columns.len();
+
+            // Process each set operation
+            for (idx, (operation, next_statement)) in statement.set_operations.iter().enumerate() {
+                let op_start = Instant::now();
+                plan.begin_step(
+                    StepType::SetOperation,
+                    format!("{:?} operation #{}", operation, idx + 1),
+                );
+
+                // Execute the next SELECT statement
+                // We need to pass the original table and exec_context for proper resolution
+                let next_view = if let Some(exec_ctx) = exec_context {
+                    self.build_view_internal_with_plan_and_exec(
+                        table.clone(),
+                        *next_statement.clone(),
+                        plan,
+                        Some(exec_ctx),
+                    )?
+                } else {
+                    self.build_view_internal_with_plan(
+                        table.clone(),
+                        *next_statement.clone(),
+                        plan,
+                    )?
+                };
+
+                // Materialize the next result set
+                let next_table = self.materialize_view(next_view)?;
+                let next_columns = next_table.column_names();
+                let next_column_count = next_columns.len();
+
+                // Validate schema compatibility
+                if first_column_count != next_column_count {
+                    return Err(anyhow!(
+                        "UNION queries must have the same number of columns: first query has {} columns, but query #{} has {} columns",
+                        first_column_count,
+                        idx + 2,
+                        next_column_count
+                    ));
+                }
+
+                // Warn if column names don't match (but allow it - some SQL dialects do)
+                for (col_idx, (first_col, next_col)) in
+                    first_columns.iter().zip(next_columns.iter()).enumerate()
+                {
+                    if !first_col.eq_ignore_ascii_case(next_col) {
+                        debug!(
+                            "UNION column name mismatch at position {}: '{}' vs '{}' (using first query's name)",
+                            col_idx + 1,
+                            first_col,
+                            next_col
+                        );
+                    }
+                }
+
+                plan.add_detail(format!("Left: {} rows", combined_table.row_count()));
+                plan.add_detail(format!("Right: {} rows", next_table.row_count()));
+
+                // Perform the set operation
+                match operation {
+                    SetOperation::UnionAll => {
+                        // UNION ALL: Simply concatenate all rows without deduplication
+                        for row in next_table.rows.iter() {
+                            combined_table.add_row(row.clone());
+                        }
+                        plan.add_detail(format!(
+                            "Result: {} rows (no deduplication)",
+                            combined_table.row_count()
+                        ));
+                    }
+                    SetOperation::Union => {
+                        // UNION: Concatenate and deduplicate
+                        // TODO: Implement deduplication logic
+                        return Err(anyhow!("UNION (with deduplication) is not yet implemented. Use UNION ALL instead."));
+                    }
+                    SetOperation::Intersect => {
+                        // INTERSECT: Keep only rows that appear in both
+                        // TODO: Implement intersection logic
+                        return Err(anyhow!("INTERSECT is not yet implemented"));
+                    }
+                    SetOperation::Except => {
+                        // EXCEPT: Keep only rows from left that don't appear in right
+                        // TODO: Implement except logic
+                        return Err(anyhow!("EXCEPT is not yet implemented"));
+                    }
+                }
+
+                plan.add_detail(format!(
+                    "Operation time: {:.3}ms",
+                    op_start.elapsed().as_secs_f64() * 1000.0
+                ));
+                plan.set_rows_out(combined_table.row_count());
+                plan.end_step();
+            }
+
+            plan.set_rows_out(combined_table.row_count());
+            plan.add_detail(format!(
+                "Final result: {} rows after {} operations",
+                combined_table.row_count(),
+                statement.set_operations.len()
+            ));
+            plan.end_step();
+
+            // Create a new view from the combined table
+            view = DataView::new(Arc::new(combined_table));
         }
 
         Ok(view)
