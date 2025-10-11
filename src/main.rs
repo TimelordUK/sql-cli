@@ -8,6 +8,7 @@ use sql_cli::utils::app_paths::AppPaths;
 use std::{borrow::Cow, io};
 
 mod completer;
+mod main_handlers;
 mod table_display;
 
 use completer::SqlCompleter;
@@ -379,117 +380,24 @@ fn main() -> io::Result<()> {
     // Parse arguments first to handle version/help before logging init
     let args: Vec<String> = std::env::args().collect();
 
-    // Check for version flag
-    if args.contains(&"--version".to_string()) || args.contains(&"-V".to_string()) {
-        println!("sql-cli {}", env!("CARGO_PKG_VERSION"));
-        return Ok(());
+    // Handle quick exit flags (version, help, list-table-styles)
+    if let Some(result) = main_handlers::handle_quick_flags(&args) {
+        return result;
     }
 
-    // Check for list table styles flag
-    if args.contains(&"--list-table-styles".to_string()) {
-        println!("{}", sql_cli::non_interactive::TableStyle::list_styles());
-        return Ok(());
+    // Handle SQL refactoring tools (--generate-bands, --generate-case, etc.)
+    if let Some(result) = main_handlers::handle_refactoring_flags(&args) {
+        return result;
     }
 
-    // Check for banding generation
-    if args.contains(&"--generate-bands".to_string()) {
-        return sql_cli::cli::refactoring::handle_banding_generation(&args);
+    // Handle cache operations
+    if let Some(result) = main_handlers::handle_cache_flags(&args) {
+        return result;
     }
 
-    // Check for CASE generation from data
-    if args.contains(&"--generate-case".to_string()) {
-        return sql_cli::cli::refactoring::handle_case_generation(&args);
-    }
-
-    // Check for CASE generation from numeric range
-    if args.contains(&"--generate-case-range".to_string()) {
-        return sql_cli::cli::refactoring::handle_case_range_generation(&args);
-    }
-
-    // Check for cache purge flag
-    if args.contains(&"--cache-purge".to_string()) {
-        use sql_cli::redis_cache_module::RedisCache;
-        let mut cache = RedisCache::new();
-
-        if !cache.is_enabled() {
-            eprintln!("❌ Cache not enabled (set SQL_CLI_CACHE=true)");
-            std::process::exit(1);
-        }
-
-        match cache.purge_all() {
-            Ok(count) => {
-                println!("✅ Purged {} cache entries", count);
-                return Ok(());
-            }
-            Err(e) => {
-                eprintln!("❌ Failed to purge cache: {}", e);
-                std::process::exit(1);
-            }
-        }
-    }
-
-    // Check for help flag
-    if args.contains(&"--help".to_string()) || args.contains(&"-h".to_string()) {
-        print_help();
-        return Ok(());
-    }
-
-    // Check for SQL formatting mode
-    if args.contains(&"--format".to_string()) || args.contains(&"-F".to_string()) {
-        use sql_cli::sql::recursive_parser::FormatConfig;
-        use std::io::Read;
-
-        // Check if query is provided via stdin or file
-        let query = if let Some(pos) = args.iter().position(|arg| arg == "--format" || arg == "-F")
-        {
-            if let Some(file_path) = args.get(pos + 1).filter(|arg| !arg.starts_with('-')) {
-                // Read from file
-                std::fs::read_to_string(file_path)?
-            } else {
-                // Read from stdin
-                let mut buffer = String::new();
-                std::io::stdin().read_to_string(&mut buffer)?;
-                buffer
-            }
-        } else {
-            // Read from stdin
-            let mut buffer = String::new();
-            std::io::stdin().read_to_string(&mut buffer)?;
-            buffer
-        };
-
-        // Check for configuration options
-        let config = if args.contains(&"--compact".to_string()) {
-            FormatConfig {
-                indent: "  ".to_string(),
-                items_per_line: 10,
-                uppercase_keywords: !args.contains(&"--lowercase".to_string()),
-                compact: true,
-            }
-        } else {
-            FormatConfig {
-                indent: if args.contains(&"--tabs".to_string()) {
-                    "\t"
-                } else {
-                    "    "
-                }
-                .to_string(),
-                items_per_line: 5,
-                uppercase_keywords: !args.contains(&"--lowercase".to_string()),
-                compact: false,
-            }
-        };
-
-        match sql_cli::sql::recursive_parser::format_sql_ast_with_config(&query.trim(), &config) {
-            Ok(formatted) => {
-                println!("{}", formatted);
-            }
-            Err(e) => {
-                eprintln!("Error formatting SQL: {}", e);
-                std::process::exit(1);
-            }
-        }
-        return Ok(());
+    // Handle SQL formatting
+    if let Some(result) = main_handlers::handle_format_flags(&args) {
+        return result;
     }
 
     // Check for function documentation flags
