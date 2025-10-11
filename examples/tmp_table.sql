@@ -15,9 +15,9 @@ SELECT
     product,
     sales_amount,
     salesperson
+INTO #high_value_sales
 FROM sales_data
-WHERE sales_amount > 15000
-INTO #high_value_sales;
+WHERE sales_amount > 15000;
 GO
 
 -- Step 2: Query the temporary table to get regional summaries
