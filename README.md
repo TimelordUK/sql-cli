@@ -52,6 +52,8 @@ A sophisticated Neovim plugin provides an IDE-like experience for SQL developmen
 
 ![Description](docs/images/screenshot-20250920-210319.png)
 
+![Description](docs/images/screenshot-20251011-204209.png)
+
 ```vim
 " Execute queries directly from Neovim with intelligent features:
 " - Visual selection execution
