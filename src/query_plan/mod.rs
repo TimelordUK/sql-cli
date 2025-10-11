@@ -3,6 +3,7 @@ mod query_plan;
 
 // Sub-modules
 pub mod cte_hoister;
+pub mod dependency_analyzer;
 pub mod expression_lifter;
 pub mod in_operator_lifter;
 pub mod into_clause_remover;
@@ -15,6 +16,7 @@ pub use query_plan::{
 
 // Re-export commonly used items
 pub use cte_hoister::CTEHoister;
+pub use dependency_analyzer::{ScriptDependencyGraph, StatementNode};
 pub use expression_lifter::{ExpressionLifter, LiftableExpression};
 pub use in_operator_lifter::{InOperatorLifter, LiftedInExpression};
 pub use into_clause_remover::IntoClauseRemover;
