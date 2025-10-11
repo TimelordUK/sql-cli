@@ -1,5 +1,19 @@
 # Code CTE Design - Programmable Data Transformations
 
+> **⚠️ DECISION: NOT PROCEEDING WITH THIS FEATURE (2025-01-11)**
+>
+> After investigation, we decided NOT to implement CODE CTEs due to Python environment management complexity (venvs, versions, dependencies). The same capability can be achieved more simply by:
+>
+> 1. **Enhancing WEB CTEs** to support POST with query result as body
+> 2. **User runs their own Flask/Node/Go server** for transformations
+> 3. User maintains full control of their Python environment
+>
+> This document is preserved for historical reference only.
+>
+> See `docs/SESSION_SUMMARY_2025-01-11.md` for full analysis.
+
+---
+
 ## Executive Summary
 
 This document outlines a strategic design for adding programmable CTEs to SQL-CLI, enabling users to write code-based data transformations that integrate seamlessly with the SQL execution pipeline. This is a long-term, multi-phase project that will be developed iteratively.
