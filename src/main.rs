@@ -376,10 +376,8 @@ fn execute_query(client: &ApiClient, query: &str) -> Result<(), Box<dyn std::err
     }
 }
 
-/// Handle non-interactive query mode
-/// Executes queries from command line or file and outputs results
-fn handle_non_interactive_query(
-    args: &[String],
+/// Parsed command-line arguments for non-interactive mode
+struct NonInteractiveArgs {
     query_arg: Option<String>,
     query_file_arg: Option<String>,
     output_format_arg: String,
@@ -397,14 +395,110 @@ fn handle_non_interactive_query(
     expand_star_arg: bool,
     extract_cte_arg: Option<String>,
     query_at_position_arg: Option<String>,
+}
+
+/// Parse command-line arguments into a structured context object
+fn parse_non_interactive_args(args: &[String]) -> NonInteractiveArgs {
+    NonInteractiveArgs {
+        query_arg: args
+            .iter()
+            .position(|arg| arg == "-q" || arg == "--query")
+            .and_then(|pos| args.get(pos + 1))
+            .map(std::string::ToString::to_string),
+
+        query_file_arg: args
+            .iter()
+            .position(|arg| arg == "-f" || arg == "--query-file")
+            .and_then(|pos| args.get(pos + 1))
+            .map(std::string::ToString::to_string),
+
+        output_format_arg: args
+            .iter()
+            .position(|arg| arg == "-o" || arg == "--output")
+            .and_then(|pos| args.get(pos + 1))
+            .map_or_else(|| "csv".to_string(), std::string::ToString::to_string),
+
+        output_file_arg: args
+            .iter()
+            .position(|arg| arg == "-O" || arg == "--output-file")
+            .and_then(|pos| args.get(pos + 1))
+            .map(std::string::ToString::to_string),
+
+        table_style_arg: args
+            .iter()
+            .position(|arg| arg == "--table-style")
+            .and_then(|pos| args.get(pos + 1))
+            .map_or_else(|| "default".to_string(), std::string::ToString::to_string),
+
+        query_plan_arg: args
+            .iter()
+            .any(|arg| arg == "--query-plan" || arg == "--query_plan"),
+
+        show_work_units_arg: args
+            .iter()
+            .any(|arg| arg == "--show-work-units" || arg == "--show_work_units"),
+
+        lift_in_arg: args
+            .iter()
+            .any(|arg| arg == "--check-in-lifting" || arg == "--check_in_lifting"),
+
+        analyze_query_arg: args
+            .iter()
+            .any(|arg| arg == "--analyze-query" || arg == "--analyze_query"),
+
+        expand_star_arg: args
+            .iter()
+            .any(|arg| arg == "--expand-star" || arg == "--expand_star"),
+
+        extract_cte_arg: args
+            .iter()
+            .position(|arg| arg == "--extract-cte" || arg == "--extract_cte")
+            .and_then(|pos| args.get(pos + 1))
+            .map(std::string::ToString::to_string),
+
+        query_at_position_arg: args
+            .iter()
+            .position(|arg| arg == "--query-at-position" || arg == "--query_at_position")
+            .and_then(|pos| args.get(pos + 1))
+            .map(std::string::ToString::to_string),
+
+        execution_plan_arg: args
+            .iter()
+            .any(|arg| arg == "--execution-plan" || arg == "--execution_plan"),
+
+        cte_info_arg: args
+            .iter()
+            .any(|arg| arg == "--cte-info" || arg == "--cte-json"),
+
+        rewrite_analysis_arg: args
+            .iter()
+            .any(|arg| arg == "--analyze-rewrite" || arg == "--rewrite-analysis"),
+
+        debug_arg: args
+            .iter()
+            .any(|arg| arg == "--debug" || arg == "--debug-trace"),
+
+        limit_arg: args
+            .iter()
+            .position(|arg| arg == "-l" || arg == "--limit")
+            .and_then(|pos| args.get(pos + 1))
+            .and_then(|s| s.parse::<usize>().ok()),
+    }
+}
+
+/// Handle non-interactive query mode
+/// Executes queries from command line or file and outputs results
+fn handle_non_interactive_query(
+    args: &[String],
+    parsed_args: NonInteractiveArgs,
 ) -> io::Result<()> {
     // Read query from file if specified
-    let query_file = query_file_arg.clone();
+    let query_file = parsed_args.query_file_arg.clone();
     let query = if let Some(file) = &query_file {
         std::fs::read_to_string(file)
             .map_err(|e| io::Error::other(format!("Failed to read query file {file}: {e}")))?
     } else {
-        query_arg.unwrap()
+        parsed_args.query_arg.unwrap()
     };
 
     // Check if this is a multi-statement script (contains GO separator)
@@ -440,10 +534,10 @@ fn handle_non_interactive_query(
         .unwrap_or(100);
 
     // Handle query analysis commands (for IDE/plugin integration)
-    if analyze_query_arg
-        || expand_star_arg
-        || extract_cte_arg.is_some()
-        || query_at_position_arg.is_some()
+    if parsed_args.analyze_query_arg
+        || parsed_args.expand_star_arg
+        || parsed_args.extract_cte_arg.is_some()
+        || parsed_args.query_at_position_arg.is_some()
     {
         use sql_cli::analysis;
         use sql_cli::sql::recursive_parser::Parser;
@@ -455,7 +549,7 @@ fn handle_non_interactive_query(
         })?;
 
         // Handle different analysis commands
-        if analyze_query_arg {
+        if parsed_args.analyze_query_arg {
             let analysis = analysis::analyze_query(&ast, &query);
             println!(
                 "{}",
@@ -464,7 +558,7 @@ fn handle_non_interactive_query(
             return Ok(());
         }
 
-        if expand_star_arg {
+        if parsed_args.expand_star_arg {
             // TODO: Implement column expansion
             // This requires loading data or executing CTEs to get schema
             eprintln!("--expand-star: Not yet implemented");
@@ -475,7 +569,7 @@ fn handle_non_interactive_query(
             ));
         }
 
-        if let Some(cte_name) = extract_cte_arg {
+        if let Some(cte_name) = parsed_args.extract_cte_arg {
             if let Some(cte_query) = analysis::extract_cte(&ast, &cte_name) {
                 println!("{}", cte_query);
                 return Ok(());
@@ -487,7 +581,7 @@ fn handle_non_interactive_query(
             }
         }
 
-        if let Some(position) = query_at_position_arg {
+        if let Some(position) = parsed_args.query_at_position_arg {
             let parts: Vec<&str> = position.split(':').collect();
             if parts.len() != 2 {
                 return Err(io::Error::new(
@@ -522,23 +616,25 @@ fn handle_non_interactive_query(
     let config = sql_cli::non_interactive::NonInteractiveConfig {
         data_file,
         query,
-        output_format: sql_cli::non_interactive::OutputFormat::from_str(&output_format_arg)
-            .map_err(io::Error::other)?,
-        output_file: output_file_arg,
+        output_format: sql_cli::non_interactive::OutputFormat::from_str(
+            &parsed_args.output_format_arg,
+        )
+        .map_err(io::Error::other)?,
+        output_file: parsed_args.output_file_arg,
         case_insensitive: args.contains(&"--case-insensitive".to_string()),
         auto_hide_empty: args.contains(&"--auto-hide-empty".to_string()),
-        limit: limit_arg,
-        query_plan: query_plan_arg,
-        show_work_units: show_work_units_arg,
-        execution_plan: execution_plan_arg,
-        cte_info: cte_info_arg,
-        rewrite_analysis: rewrite_analysis_arg,
-        lift_in_expressions: lift_in_arg,
-        script_file: query_file_arg.clone(),
-        debug_trace: debug_arg,
+        limit: parsed_args.limit_arg,
+        query_plan: parsed_args.query_plan_arg,
+        show_work_units: parsed_args.show_work_units_arg,
+        execution_plan: parsed_args.execution_plan_arg,
+        cte_info: parsed_args.cte_info_arg,
+        rewrite_analysis: parsed_args.rewrite_analysis_arg,
+        lift_in_expressions: parsed_args.lift_in_arg,
+        script_file: parsed_args.query_file_arg.clone(),
+        debug_trace: parsed_args.debug_arg,
         max_col_width,
         col_sample_rows,
-        table_style: sql_cli::non_interactive::TableStyle::from_str(&table_style_arg)
+        table_style: sql_cli::non_interactive::TableStyle::from_str(&parsed_args.table_style_arg)
             .map_err(io::Error::other)?,
     };
 
@@ -594,98 +690,16 @@ fn main() -> io::Result<()> {
         return result;
     }
 
-    // Check for non-interactive query mode
-    let query_arg = args
-        .iter()
-        .position(|arg| arg == "-q" || arg == "--query")
-        .and_then(|pos| args.get(pos + 1))
-        .map(std::string::ToString::to_string);
-
-    let query_file_arg = args
-        .iter()
-        .position(|arg| arg == "-f" || arg == "--query-file")
-        .and_then(|pos| args.get(pos + 1))
-        .map(std::string::ToString::to_string);
-
-    let output_format_arg = args
-        .iter()
-        .position(|arg| arg == "-o" || arg == "--output")
-        .and_then(|pos| args.get(pos + 1))
-        .map_or_else(|| "csv".to_string(), std::string::ToString::to_string);
-
-    let output_file_arg = args
-        .iter()
-        .position(|arg| arg == "-O" || arg == "--output-file")
-        .and_then(|pos| args.get(pos + 1))
-        .map(std::string::ToString::to_string);
-
-    let table_style_arg = args
-        .iter()
-        .position(|arg| arg == "--table-style")
-        .and_then(|pos| args.get(pos + 1))
-        .map_or_else(|| "default".to_string(), std::string::ToString::to_string);
-
-    let query_plan_arg = args
-        .iter()
-        .any(|arg| arg == "--query-plan" || arg == "--query_plan");
-
-    let show_work_units_arg = args
-        .iter()
-        .any(|arg| arg == "--show-work-units" || arg == "--show_work_units");
-
-    let lift_in_arg = args
-        .iter()
-        .any(|arg| arg == "--check-in-lifting" || arg == "--check_in_lifting");
-
-    // Query analysis flags (for IDE/plugin integration)
-    let analyze_query_arg = args
-        .iter()
-        .any(|arg| arg == "--analyze-query" || arg == "--analyze_query");
-
-    let expand_star_arg = args
-        .iter()
-        .any(|arg| arg == "--expand-star" || arg == "--expand_star");
-
-    let extract_cte_arg = args
-        .iter()
-        .position(|arg| arg == "--extract-cte" || arg == "--extract_cte")
-        .and_then(|pos| args.get(pos + 1))
-        .map(std::string::ToString::to_string);
-
-    let query_at_position_arg = args
-        .iter()
-        .position(|arg| arg == "--query-at-position" || arg == "--query_at_position")
-        .and_then(|pos| args.get(pos + 1))
-        .map(std::string::ToString::to_string);
-
-    let execution_plan_arg = args
-        .iter()
-        .any(|arg| arg == "--execution-plan" || arg == "--execution_plan");
-
-    let cte_info_arg = args
-        .iter()
-        .any(|arg| arg == "--cte-info" || arg == "--cte-json");
-
-    let rewrite_analysis_arg = args
-        .iter()
-        .any(|arg| arg == "--analyze-rewrite" || arg == "--rewrite-analysis");
-
-    let debug_arg = args
-        .iter()
-        .any(|arg| arg == "--debug" || arg == "--debug-trace");
-
-    let limit_arg = args
-        .iter()
-        .position(|arg| arg == "-l" || arg == "--limit")
-        .and_then(|pos| args.get(pos + 1))
-        .and_then(|s| s.parse::<usize>().ok());
+    // Parse non-interactive arguments into a structured context
+    let parsed_args = parse_non_interactive_args(&args);
 
     // Initialize unified logging (tracing + dual logging) for both modes
     // Do this before non-interactive mode so we get debug logs
     sql_cli::utils::logging::init_tracing_with_dual_logging();
 
     // Check if running in non-interactive mode
-    let is_non_interactive = query_arg.is_some() || query_file_arg.is_some();
+    let is_non_interactive =
+        parsed_args.query_arg.is_some() || parsed_args.query_file_arg.is_some();
 
     // Only show log path in interactive mode or if debug logging is enabled
     if !is_non_interactive || std::env::var("RUST_LOG").is_ok() {
@@ -701,26 +715,7 @@ fn main() -> io::Result<()> {
 
     // If we have a query, run in non-interactive mode
     if is_non_interactive {
-        return handle_non_interactive_query(
-            &args,
-            query_arg,
-            query_file_arg,
-            output_format_arg,
-            output_file_arg,
-            table_style_arg,
-            query_plan_arg,
-            show_work_units_arg,
-            execution_plan_arg,
-            cte_info_arg,
-            rewrite_analysis_arg,
-            lift_in_arg,
-            debug_arg,
-            limit_arg,
-            analyze_query_arg,
-            expand_star_arg,
-            extract_cte_arg,
-            query_at_position_arg,
-        );
+        return handle_non_interactive_query(&args, parsed_args);
     }
 
     // Check for config initialization
