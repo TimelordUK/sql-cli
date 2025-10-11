@@ -150,6 +150,59 @@ impl SqlFunction for HbarFunction {
     }
 }
 
+// 10,000 digits of π (from MIT's pi-billion.txt)
+// Remove decimal point for storage efficiency
+const PI_DIGITS: &str = include_str!("pi_10000_digits.txt");
+
+/// PI_DIGITS function - Returns π to arbitrary precision as a string
+pub struct PiDigitsFunction;
+
+impl SqlFunction for PiDigitsFunction {
+    fn signature(&self) -> FunctionSignature {
+        FunctionSignature {
+            name: "PI_DIGITS",
+            category: FunctionCategory::Constant,
+            arg_count: ArgCount::Fixed(1),
+            description: "Returns π (pi) to N decimal places as a string (up to 10,000 digits)",
+            returns: "STRING",
+            examples: vec![
+                "SELECT PI_DIGITS(10)",
+                "SELECT PI_DIGITS(100)",
+                "SELECT PI_DIGITS(1000)",
+            ],
+        }
+    }
+
+    fn evaluate(&self, args: &[DataValue]) -> Result<DataValue> {
+        self.validate_args(args)?;
+
+        let places = match &args[0] {
+            DataValue::Integer(n) => *n as usize,
+            DataValue::Float(f) => *f as usize,
+            _ => anyhow::bail!("PI_DIGITS requires an integer argument"),
+        };
+
+        if places == 0 {
+            return Ok(DataValue::String("3".to_string()));
+        }
+
+        if places > 10000 {
+            anyhow::bail!("PI_DIGITS: Maximum 10,000 decimal places supported");
+        }
+
+        // PI_DIGITS contains "3." followed by digits
+        // We need to return "3." + first N digits after decimal point
+        let result = if places <= PI_DIGITS.len() - 2 {
+            // -2 for "3."
+            PI_DIGITS[..2 + places].to_string()
+        } else {
+            PI_DIGITS.to_string()
+        };
+
+        Ok(DataValue::String(result))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
