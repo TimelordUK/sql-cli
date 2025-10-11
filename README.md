@@ -82,6 +82,8 @@ Execute SQL queries directly from the command line - perfect for scripting and a
 
 ![Description](docs/images/screenshot-20250921-110026.png)
 
+![Description](docs/images/screenshot-20251011-202603.png)
+
 ```bash
 # Run a query and get CSV output
 sql-cli data.csv -q "SELECT * FROM data WHERE price > 100"
