@@ -376,6 +376,180 @@ fn execute_query(client: &ApiClient, query: &str) -> Result<(), Box<dyn std::err
     }
 }
 
+/// Handle non-interactive query mode
+/// Executes queries from command line or file and outputs results
+fn handle_non_interactive_query(
+    args: &[String],
+    query_arg: Option<String>,
+    query_file_arg: Option<String>,
+    output_format_arg: String,
+    output_file_arg: Option<String>,
+    table_style_arg: String,
+    query_plan_arg: bool,
+    show_work_units_arg: bool,
+    execution_plan_arg: bool,
+    cte_info_arg: bool,
+    rewrite_analysis_arg: bool,
+    lift_in_arg: bool,
+    debug_arg: bool,
+    limit_arg: Option<usize>,
+    analyze_query_arg: bool,
+    expand_star_arg: bool,
+    extract_cte_arg: Option<String>,
+    query_at_position_arg: Option<String>,
+) -> io::Result<()> {
+    // Read query from file if specified
+    let query_file = query_file_arg.clone();
+    let query = if let Some(file) = &query_file {
+        std::fs::read_to_string(file)
+            .map_err(|e| io::Error::other(format!("Failed to read query file {file}: {e}")))?
+    } else {
+        query_arg.unwrap()
+    };
+
+    // Check if this is a multi-statement script (contains GO separator)
+    let is_script = query
+        .lines()
+        .any(|line| line.trim().eq_ignore_ascii_case("go"));
+
+    // Find the data file if provided
+    let data_file = args
+        .iter()
+        .filter(|arg| !arg.starts_with('-'))
+        .find(|arg| arg.ends_with(".csv") || arg.ends_with(".json"))
+        .cloned()
+        .unwrap_or_default(); // Use empty string if no data file
+
+    // Parse max column width (0 = unlimited, default = 50)
+    let max_col_width = if let Some(pos) = args.iter().position(|arg| arg == "--max-col-width") {
+        // Flag was provided, parse the value
+        args.get(pos + 1)
+            .and_then(|s| s.parse::<usize>().ok())
+            .and_then(|n| if n == 0 { None } else { Some(n) })
+    } else {
+        // Flag not provided, use default of 50
+        Some(50)
+    };
+
+    // Parse column sample rows (0 = all rows, default = 100)
+    let col_sample_rows = args
+        .iter()
+        .position(|arg| arg == "--col-sample-rows")
+        .and_then(|pos| args.get(pos + 1))
+        .and_then(|s| s.parse::<usize>().ok())
+        .unwrap_or(100);
+
+    // Handle query analysis commands (for IDE/plugin integration)
+    if analyze_query_arg
+        || expand_star_arg
+        || extract_cte_arg.is_some()
+        || query_at_position_arg.is_some()
+    {
+        use sql_cli::analysis;
+        use sql_cli::sql::recursive_parser::Parser;
+
+        // Parse the query (already loaded from file or command line)
+        let mut parser = Parser::new(&query);
+        let ast = parser.parse().map_err(|e| {
+            io::Error::new(io::ErrorKind::InvalidInput, format!("Parse error: {e}"))
+        })?;
+
+        // Handle different analysis commands
+        if analyze_query_arg {
+            let analysis = analysis::analyze_query(&ast, &query);
+            println!(
+                "{}",
+                serde_json::to_string_pretty(&analysis).map_err(io::Error::other)?
+            );
+            return Ok(());
+        }
+
+        if expand_star_arg {
+            // TODO: Implement column expansion
+            // This requires loading data or executing CTEs to get schema
+            eprintln!("--expand-star: Not yet implemented");
+            eprintln!("Coming soon: Will expand SELECT * to actual column names");
+            return Err(io::Error::new(
+                io::ErrorKind::Unsupported,
+                "expand-star not yet implemented",
+            ));
+        }
+
+        if let Some(cte_name) = extract_cte_arg {
+            if let Some(cte_query) = analysis::extract_cte(&ast, &cte_name) {
+                println!("{}", cte_query);
+                return Ok(());
+            } else {
+                return Err(io::Error::new(
+                    io::ErrorKind::NotFound,
+                    format!("CTE '{}' not found in query", cte_name),
+                ));
+            }
+        }
+
+        if let Some(position) = query_at_position_arg {
+            let parts: Vec<&str> = position.split(':').collect();
+            if parts.len() != 2 {
+                return Err(io::Error::new(
+                    io::ErrorKind::InvalidInput,
+                    "Position must be in format line:column (e.g., 45:10)",
+                ));
+            }
+
+            let line = parts[0].parse::<usize>().map_err(|e| {
+                io::Error::new(
+                    io::ErrorKind::InvalidInput,
+                    format!("Invalid line number: {e}"),
+                )
+            })?;
+
+            let column = parts[1].parse::<usize>().map_err(|e| {
+                io::Error::new(
+                    io::ErrorKind::InvalidInput,
+                    format!("Invalid column number: {e}"),
+                )
+            })?;
+
+            let context = analysis::find_query_context(&ast, line, column);
+            println!(
+                "{}",
+                serde_json::to_string_pretty(&context).map_err(io::Error::other)?
+            );
+            return Ok(());
+        }
+    }
+
+    let config = sql_cli::non_interactive::NonInteractiveConfig {
+        data_file,
+        query,
+        output_format: sql_cli::non_interactive::OutputFormat::from_str(&output_format_arg)
+            .map_err(io::Error::other)?,
+        output_file: output_file_arg,
+        case_insensitive: args.contains(&"--case-insensitive".to_string()),
+        auto_hide_empty: args.contains(&"--auto-hide-empty".to_string()),
+        limit: limit_arg,
+        query_plan: query_plan_arg,
+        show_work_units: show_work_units_arg,
+        execution_plan: execution_plan_arg,
+        cte_info: cte_info_arg,
+        rewrite_analysis: rewrite_analysis_arg,
+        lift_in_expressions: lift_in_arg,
+        script_file: query_file_arg.clone(),
+        debug_trace: debug_arg,
+        max_col_width,
+        col_sample_rows,
+        table_style: sql_cli::non_interactive::TableStyle::from_str(&table_style_arg)
+            .map_err(io::Error::other)?,
+    };
+
+    // Use script executor if GO separator is detected, otherwise normal execution
+    if is_script {
+        sql_cli::non_interactive::execute_script(config).map_err(io::Error::other)
+    } else {
+        sql_cli::non_interactive::execute_non_interactive(config).map_err(io::Error::other)
+    }
+}
+
 fn main() -> io::Result<()> {
     // Parse arguments first to handle version/help before logging init
     let args: Vec<String> = std::env::args().collect();
@@ -527,158 +701,26 @@ fn main() -> io::Result<()> {
 
     // If we have a query, run in non-interactive mode
     if is_non_interactive {
-        // Read query from file if specified
-        let query_file = query_file_arg.clone();
-        let query = if let Some(file) = &query_file {
-            std::fs::read_to_string(file)
-                .map_err(|e| io::Error::other(format!("Failed to read query file {file}: {e}")))?
-        } else {
-            query_arg.unwrap()
-        };
-
-        // Check if this is a multi-statement script (contains GO separator)
-        let is_script = query
-            .lines()
-            .any(|line| line.trim().eq_ignore_ascii_case("go"));
-
-        // Find the data file if provided
-        let data_file = args
-            .iter()
-            .filter(|arg| !arg.starts_with('-'))
-            .find(|arg| arg.ends_with(".csv") || arg.ends_with(".json"))
-            .cloned()
-            .unwrap_or_default(); // Use empty string if no data file
-
-        // Parse max column width (0 = unlimited, default = 50)
-        let max_col_width = if let Some(pos) = args.iter().position(|arg| arg == "--max-col-width")
-        {
-            // Flag was provided, parse the value
-            args.get(pos + 1)
-                .and_then(|s| s.parse::<usize>().ok())
-                .and_then(|n| if n == 0 { None } else { Some(n) })
-        } else {
-            // Flag not provided, use default of 50
-            Some(50)
-        };
-
-        // Parse column sample rows (0 = all rows, default = 100)
-        let col_sample_rows = args
-            .iter()
-            .position(|arg| arg == "--col-sample-rows")
-            .and_then(|pos| args.get(pos + 1))
-            .and_then(|s| s.parse::<usize>().ok())
-            .unwrap_or(100);
-
-        // Handle query analysis commands (for IDE/plugin integration)
-        if analyze_query_arg
-            || expand_star_arg
-            || extract_cte_arg.is_some()
-            || query_at_position_arg.is_some()
-        {
-            use sql_cli::analysis;
-            use sql_cli::sql::recursive_parser::Parser;
-
-            // Parse the query (already loaded from file or command line)
-            let mut parser = Parser::new(&query);
-            let ast = parser.parse().map_err(|e| {
-                io::Error::new(io::ErrorKind::InvalidInput, format!("Parse error: {e}"))
-            })?;
-
-            // Handle different analysis commands
-            if analyze_query_arg {
-                let analysis = analysis::analyze_query(&ast, &query);
-                println!(
-                    "{}",
-                    serde_json::to_string_pretty(&analysis).map_err(io::Error::other)?
-                );
-                return Ok(());
-            }
-
-            if expand_star_arg {
-                // TODO: Implement column expansion
-                // This requires loading data or executing CTEs to get schema
-                eprintln!("--expand-star: Not yet implemented");
-                eprintln!("Coming soon: Will expand SELECT * to actual column names");
-                return Err(io::Error::new(
-                    io::ErrorKind::Unsupported,
-                    "expand-star not yet implemented",
-                ));
-            }
-
-            if let Some(cte_name) = extract_cte_arg {
-                if let Some(cte_query) = analysis::extract_cte(&ast, &cte_name) {
-                    println!("{}", cte_query);
-                    return Ok(());
-                } else {
-                    return Err(io::Error::new(
-                        io::ErrorKind::NotFound,
-                        format!("CTE '{}' not found in query", cte_name),
-                    ));
-                }
-            }
-
-            if let Some(position) = query_at_position_arg {
-                let parts: Vec<&str> = position.split(':').collect();
-                if parts.len() != 2 {
-                    return Err(io::Error::new(
-                        io::ErrorKind::InvalidInput,
-                        "Position must be in format line:column (e.g., 45:10)",
-                    ));
-                }
-
-                let line = parts[0].parse::<usize>().map_err(|e| {
-                    io::Error::new(
-                        io::ErrorKind::InvalidInput,
-                        format!("Invalid line number: {e}"),
-                    )
-                })?;
-
-                let column = parts[1].parse::<usize>().map_err(|e| {
-                    io::Error::new(
-                        io::ErrorKind::InvalidInput,
-                        format!("Invalid column number: {e}"),
-                    )
-                })?;
-
-                let context = analysis::find_query_context(&ast, line, column);
-                println!(
-                    "{}",
-                    serde_json::to_string_pretty(&context).map_err(io::Error::other)?
-                );
-                return Ok(());
-            }
-        }
-
-        let config = sql_cli::non_interactive::NonInteractiveConfig {
-            data_file,
-            query,
-            output_format: sql_cli::non_interactive::OutputFormat::from_str(&output_format_arg)
-                .map_err(io::Error::other)?,
-            output_file: output_file_arg,
-            case_insensitive: args.contains(&"--case-insensitive".to_string()),
-            auto_hide_empty: args.contains(&"--auto-hide-empty".to_string()),
-            limit: limit_arg,
-            query_plan: query_plan_arg,
-            show_work_units: show_work_units_arg,
-            execution_plan: execution_plan_arg,
-            cte_info: cte_info_arg,
-            rewrite_analysis: rewrite_analysis_arg,
-            lift_in_expressions: lift_in_arg,
-            script_file: query_file_arg.clone(),
-            debug_trace: debug_arg,
-            max_col_width,
-            col_sample_rows,
-            table_style: sql_cli::non_interactive::TableStyle::from_str(&table_style_arg)
-                .map_err(io::Error::other)?,
-        };
-
-        // Use script executor if GO separator is detected, otherwise normal execution
-        if is_script {
-            return sql_cli::non_interactive::execute_script(config).map_err(io::Error::other);
-        } else {
-            return sql_cli::non_interactive::execute_non_interactive(config)
-                .map_err(io::Error::other);
-        }
+        return handle_non_interactive_query(
+            &args,
+            query_arg,
+            query_file_arg,
+            output_format_arg,
+            output_file_arg,
+            table_style_arg,
+            query_plan_arg,
+            show_work_units_arg,
+            execution_plan_arg,
+            cte_info_arg,
+            rewrite_analysis_arg,
+            lift_in_arg,
+            debug_arg,
+            limit_arg,
+            analyze_query_arg,
+            expand_star_arg,
+            extract_cte_arg,
+            query_at_position_arg,
+        );
     }
 
     // Check for config initialization
