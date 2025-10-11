@@ -1,10 +1,10 @@
-# SQL CLI v1.58.0
+# SQL CLI v1.59.0
 
-**Release Date:** October 09, 2025
+**Release Date:** October 11, 2025
 
 ## 📊 Release Overview
-- **Commits in this release:** 14
-- **Files updated:** 32
+- **Commits in this release:** 13
+- **Files updated:** 27
 
 ## ✨ Highlights
 
@@ -14,36 +14,40 @@
 ## 📝 Changes by Category
 
 ### 🚀 New Features
-- Phase 5 - Add ORDER BY alias resolution
-- Phase 4 - Fix SELECT clause alias resolution
-- Phase 3 - Fix WHERE clause alias resolution
-- Phase 2 - Add unified resolve_column helper
-- Phase 1 - Add ExecutionContext for table alias tracking
-- Enable CTEs to reference temp tables
-- Implement Phase 2A - Template injection for WEB CTEs
-- Add EXIT and [SKIP] directives for script control
-- Implement temporary tables (#tmp) for script execution
+- Add comment-aware tokenization foundation
+- Add UNION (with deduplication) support
+- Add UNION ALL support for combining SELECT query results
+
+### 🐛 Bug Fixes
+- Correct SELECT INTO syntax in tmp_table.sql example
+- Support SELECT INTO #temp formatting
+- Restore normal buffer navigation after toggling out of table mode
+
+### 🔧 Refactoring
+- Replace regex-based INTO removal with AST preprocessing
 
 ### 📚 Documentation
-- Add comprehensive qualified names example
+- Mark CODE CTE feature as not proceeding
+- Add session summary for 2025-01-11 CODE CTE investigation
+- Add lexer and parser considerations analysis
+- Add CODE CTE design document for programmable data transformations
 
 <details>
 <summary>📋 View all commits</summary>
 
-- chore: Release v1.58.0 - Qualified Column Names and Table Alias Support (TimelordUK)
-- test remove from auto runner (TimelordUK)
-- docs: Add comprehensive qualified names example (TimelordUK)
-- feat: Phase 5 - Add ORDER BY alias resolution (TimelordUK)
-- feat: Phase 4 - Fix SELECT clause alias resolution (TimelordUK)
-- feat: Phase 3 - Fix WHERE clause alias resolution (TimelordUK)
-- feat: Phase 2 - Add unified resolve_column helper (TimelordUK)
-- feat: Phase 1 - Add ExecutionContext for table alias tracking (TimelordUK)
-- feat: Enable CTEs to reference temp tables (TimelordUK)
-- format (TimelordUK)
-- feat: Implement Phase 2A - Template injection for WEB CTEs (TimelordUK)
-- feat: Add EXIT and [SKIP] directives for script control (TimelordUK)
-- feat: Implement temporary tables (#tmp) for script execution (TimelordUK)
-- start on tmp table implementation. (TimelordUK)
+- chore: Bump version to v1.59.0 (TimelordUK)
+- perf: Fix 23x performance regression in WHERE clause evaluation (TimelordUK)
+- feat: Add comment-aware tokenization foundation (TimelordUK)
+- refactor: Replace regex-based INTO removal with AST preprocessing (TimelordUK)
+- fix: Correct SELECT INTO syntax in tmp_table.sql example (TimelordUK)
+- fix: Support SELECT INTO #temp formatting (TimelordUK)
+- fix: Restore normal buffer navigation after toggling out of table mode (TimelordUK)
+- feat: Add UNION (with deduplication) support (TimelordUK)
+- feat: Add UNION ALL support for combining SELECT query results (TimelordUK)
+- docs: Mark CODE CTE feature as not proceeding (TimelordUK)
+- docs: Add session summary for 2025-01-11 CODE CTE investigation (TimelordUK)
+- docs: Add lexer and parser considerations analysis (TimelordUK)
+- docs: Add CODE CTE design document for programmable data transformations (TimelordUK)
 
 </details>
 
