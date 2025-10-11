@@ -674,6 +674,170 @@ pub fn handle_benchmark_flags(args: &[String]) -> Option<io::Result<()>> {
     Some(Ok(()))
 }
 
+/// Handle schema inspection flags (--schema and --schema-json)
+/// Returns Some(result) if handled, None if flag not found
+pub fn handle_schema_flags(args: &[String]) -> Option<io::Result<()>> {
+    let is_json = args.contains(&"--schema-json".to_string());
+    let is_colored = args.contains(&"--schema".to_string());
+
+    if !is_json && !is_colored {
+        return None;
+    }
+
+    // Find the file argument
+    let file_arg = args
+        .iter()
+        .find(|arg| arg.ends_with(".csv") || arg.ends_with(".json"))
+        .or_else(|| args.last().filter(|arg| !arg.starts_with('-')));
+
+    let file_path = match file_arg {
+        Some(path) => path,
+        None => {
+            eprintln!("Error: No data file specified");
+            if is_json {
+                eprintln!("Usage: sql-cli <file.csv|file.json> --schema-json");
+            } else {
+                eprintln!("Usage: sql-cli <file.csv|file.json> --schema");
+            }
+            std::process::exit(1);
+        }
+    };
+
+    // Load the table
+    let table = match load_table_for_schema(file_path) {
+        Ok(t) => t,
+        Err(e) => return Some(Err(e)),
+    };
+
+    // Output schema in requested format
+    if is_json {
+        Some(output_schema_json(&table))
+    } else {
+        Some(output_schema_colored(&table))
+    }
+}
+
+/// Load a table from CSV or JSON file
+fn load_table_for_schema(file_path: &str) -> io::Result<sql_cli::data::datatable::DataTable> {
+    let table_name = std::path::Path::new(file_path)
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or("data");
+
+    if file_path.ends_with(".json") {
+        sql_cli::data::datatable_loaders::load_json_to_datatable(file_path, table_name)
+            .map_err(|e| io::Error::new(io::ErrorKind::Other, e))
+    } else {
+        sql_cli::data::datatable_loaders::load_csv_to_datatable(file_path, table_name)
+            .map_err(|e| io::Error::new(io::ErrorKind::Other, e))
+    }
+}
+
+/// Analyze column types by sampling data
+fn analyze_column_types(
+    table: &sql_cli::data::datatable::DataTable,
+    column_idx: usize,
+) -> (std::collections::HashMap<&'static str, usize>, usize) {
+    use sql_cli::data::datatable::DataValue;
+    let mut type_counts = std::collections::HashMap::new();
+    let mut null_count = 0;
+    let sample_size = std::cmp::min(100, table.row_count());
+
+    for row_idx in 0..sample_size {
+        if let Some(value) = table.get_value(row_idx, column_idx) {
+            match value {
+                DataValue::Null => null_count += 1,
+                DataValue::Integer(_) => *type_counts.entry("INTEGER").or_insert(0) += 1,
+                DataValue::Float(_) => *type_counts.entry("FLOAT").or_insert(0) += 1,
+                DataValue::String(_) | DataValue::InternedString(_) => {
+                    *type_counts.entry("STRING").or_insert(0) += 1
+                }
+                DataValue::Boolean(_) => *type_counts.entry("BOOLEAN").or_insert(0) += 1,
+                DataValue::DateTime(_) => *type_counts.entry("DATETIME").or_insert(0) += 1,
+            }
+        }
+    }
+
+    (type_counts, null_count)
+}
+
+/// Output schema in JSON format
+fn output_schema_json(table: &sql_cli::data::datatable::DataTable) -> io::Result<()> {
+    let mut schema = serde_json::json!({
+        "table": table.name,
+        "rows": table.row_count(),
+        "columns": []
+    });
+
+    let mut columns = Vec::new();
+    for (idx, column) in table.columns.iter().enumerate() {
+        let (type_counts, null_count) = analyze_column_types(table, idx);
+        let sample_size = std::cmp::min(100, table.row_count());
+
+        // Determine primary type
+        let primary_type = type_counts
+            .iter()
+            .max_by_key(|(_, count)| *count)
+            .map(|(type_name, _)| *type_name)
+            .unwrap_or("UNKNOWN");
+
+        columns.push(serde_json::json!({
+            "name": column.name,
+            "type": primary_type,
+            "nullable": null_count > 0,
+            "null_percentage": if sample_size > 0 { (null_count * 100) / sample_size } else { 0 }
+        }));
+    }
+
+    schema["columns"] = serde_json::json!(columns);
+    println!("{}", serde_json::to_string_pretty(&schema).unwrap());
+    Ok(())
+}
+
+/// Output schema in colored terminal format
+fn output_schema_colored(table: &sql_cli::data::datatable::DataTable) -> io::Result<()> {
+    use crossterm::style::Stylize;
+
+    println!("{}", "Table Schema".blue().bold());
+    println!("{}", "═".repeat(60));
+    println!("Table: {}", table.name);
+    println!("Rows: {}", table.row_count());
+    println!("Columns: {}", table.column_count());
+    println!();
+    println!("{}", "Column Information:".yellow());
+    println!("{}", "─".repeat(60));
+
+    for (idx, column) in table.columns.iter().enumerate() {
+        let (type_counts, null_count) = analyze_column_types(table, idx);
+        let sample_size = std::cmp::min(100, table.row_count());
+
+        // Determine primary type
+        let primary_type = type_counts
+            .iter()
+            .max_by_key(|(_, count)| *count)
+            .map(|(type_name, _)| *type_name)
+            .unwrap_or("UNKNOWN");
+
+        println!(
+            "  {:3}. {:<30} {:<10} {}",
+            idx + 1,
+            column.name.clone().green(),
+            primary_type.cyan(),
+            if null_count > 0 {
+                format!("({}% NULL)", null_count * 100 / sample_size)
+                    .red()
+                    .to_string()
+            } else {
+                "".to_string()
+            }
+        );
+    }
+
+    println!();
+    println!("{}", "Note: Types inferred from first 100 rows".italic());
+    Ok(())
+}
+
 /// Check if we're in non-interactive mode (has -q or -f flags)
 pub fn is_non_interactive(args: &[String]) -> bool {
     args.iter()
