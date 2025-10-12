@@ -249,6 +249,125 @@ def graphql():
         }
     })
 
+@app.route('/fix/executions', methods=['POST'])
+def fix_executions():
+    """
+    FIX execution report endpoint with pipe-delimited repeated groups.
+    Simulates parsing FIX messages from a log file.
+
+    Expects POST body with:
+    {
+        "tags": ["35", "52", "11", "55", "54", "79", "80"],  // FIX tags to extract
+        "filters": {
+            "Symbol": "AAPL",  // Optional filters
+            "Side": "1"
+        }
+    }
+
+    Returns executions with pipe-delimited allocation groups:
+    {
+        "Result": [
+            {
+                "MsgType": "8",
+                "SendingTime": "2024-01-15T09:30:15.123",
+                "ClOrdID": "ORD-2024-001",
+                "Symbol": "AAPL",
+                "Side": "1",
+                "AllocAccount": "FUND-A|FUND-B|FUND-C",
+                "AllocQty": "400|300|300"
+            },
+            ...
+        ]
+    }
+    """
+    body = request.get_json() or {}
+
+    # Load FIX executions from CSV
+    csv_file = 'data/fix_executions.csv'
+    executions = []
+
+    if os.path.exists(csv_file):
+        with open(csv_file, 'r') as f:
+            reader = csv.DictReader(f)
+            for row in reader:
+                executions.append(row)
+    else:
+        # Fallback to hardcoded data if file doesn't exist
+        executions = [
+            {
+                'MsgSeqNum': '1001',
+                'SendingTime': '2024-01-15T09:30:15.123',
+                'MsgType': '8',
+                'ClOrdID': 'ORD-2024-001',
+                'Symbol': 'AAPL',
+                'Side': '1',
+                'ExecType': 'F',
+                'LastQty': '1000',
+                'LastPx': '175.50',
+                'AvgPx': '175.50',
+                'ExecID': 'EXEC-001',
+                'AllocAccount': 'FUND-A|FUND-B|FUND-C',
+                'AllocQty': '400|300|300'
+            },
+            {
+                'MsgSeqNum': '1003',
+                'SendingTime': '2024-01-15T09:32:30.789',
+                'MsgType': '8',
+                'ClOrdID': 'ORD-2024-004',
+                'Symbol': 'GOOGL',
+                'Side': '1',
+                'ExecType': 'F',
+                'LastQty': '500',
+                'LastPx': '140.75',
+                'AvgPx': '140.75',
+                'ExecID': 'EXEC-002',
+                'AllocAccount': 'FUND-D|FUND-E',
+                'AllocQty': '250|250'
+            }
+        ]
+
+    # Apply filters if provided
+    if 'filters' in body:
+        filters = body['filters']
+        filtered = []
+        for exec in executions:
+            match = True
+            for key, value in filters.items():
+                if exec.get(key) != str(value):
+                    match = False
+                    break
+            if match:
+                filtered.append(exec)
+        executions = filtered
+
+    # If specific tags requested, filter columns
+    if 'tags' in body:
+        # Map FIX tags to field names (simplified mapping)
+        tag_map = {
+            '35': 'MsgType',
+            '52': 'SendingTime',
+            '11': 'ClOrdID',
+            '55': 'Symbol',
+            '54': 'Side',
+            '150': 'ExecType',
+            '32': 'LastQty',
+            '31': 'LastPx',
+            '6': 'AvgPx',
+            '17': 'ExecID',
+            '79': 'AllocAccount',
+            '80': 'AllocQty'
+        }
+
+        requested_fields = [tag_map.get(tag, tag) for tag in body['tags']]
+        filtered_execs = []
+        for exec in executions:
+            filtered_exec = {field: exec.get(field, '') for field in requested_fields if field in exec}
+            if filtered_exec:
+                filtered_execs.append(filtered_exec)
+        executions = filtered_execs
+
+    return jsonify({'Result': executions})
+
 @app.route('/health', methods=['GET'])
 def health():
     """Health check endpoint."""
@@ -313,6 +432,7 @@ if __name__ == '__main__':
 ║                                                              ║
 ║  Endpoints:                                                  ║
 ║    GET/POST /trades           - Trading data                ║
+║    POST     /fix/executions   - FIX execution reports       ║
 ║    GET      /nested/data      - Nested JSON                 ║
 ║    POST     /api/v2/market-data - Advanced filtering        ║
 ║    GET      /csv-data         - CSV as JSON                 ║
