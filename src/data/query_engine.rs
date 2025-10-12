@@ -1070,7 +1070,7 @@ impl QueryEngine {
     }
 
     /// Materialize a DataView into a new DataTable
-    fn materialize_view(&self, view: DataView) -> Result<DataTable> {
+    pub fn materialize_view(&self, view: DataView) -> Result<DataTable> {
         let source = view.source();
         let mut result_table = DataTable::new("derived");
 

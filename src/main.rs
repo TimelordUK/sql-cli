@@ -794,7 +794,6 @@ fn handle_execute_statement(
     println!();
 
     // Use the non-interactive executor to run the minimal set of statements
-    use sql_cli::data::data_view::DataView;
     use sql_cli::data::datatable_loaders::load_csv_to_datatable;
     use sql_cli::data::query_engine::QueryEngine;
     use sql_cli::data::temp_table_registry::TempTableRegistry;
@@ -830,10 +829,13 @@ fn handle_execute_statement(
             io::Error::other(format!("Failed to parse statement #{}: {}", stmt_num, e))
         })?;
 
+        // Check if this statement has an INTO clause (creates a temp table)
+        let into_table_name = parsed_stmt.into_table.as_ref().map(|it| it.name.clone());
+
         match engine.execute_statement_with_temp_tables(
             table_arc.clone(),
             parsed_stmt,
-            Some(&mut temp_tables),
+            Some(&temp_tables),
         ) {
             Ok(result) => {
                 println!(
@@ -841,6 +843,17 @@ fn handle_execute_statement(
                     stmt_num,
                     result.row_count()
                 );
+
+                // If this statement creates a temp table, register it
+                if let Some(temp_name) = into_table_name {
+                    // Materialize the result into a DataTable
+                    let temp_table = engine.materialize_view(result.clone()).map_err(|e| {
+                        io::Error::other(format!("Failed to materialize temp table: {}", e))
+                    })?;
+                    temp_tables.insert(temp_name.clone(), Arc::new(temp_table));
+                    println!("  → Temp table {} created", temp_name);
+                }
+
                 if *stmt_num == target_statement {
                     last_result = Some(result);
                 }
@@ -909,13 +922,10 @@ fn output_dataview<W: Write>(
     format: OutputFormat,
     writer: &mut W,
     max_col_width: Option<usize>,
-    col_sample_rows: usize,
-    exec_time_ms: f64,
+    _col_sample_rows: usize,
+    _exec_time_ms: f64,
     table_style: TableStyle,
 ) -> anyhow::Result<()> {
-    use sql_cli::data::datatable::DataValue;
-    use sql_cli::non_interactive::{OutputFormat, TableStyle};
-
     match format {
         OutputFormat::Csv => output_csv_helper(dataview, writer, ','),
         OutputFormat::Tsv => output_csv_helper(dataview, writer, '\t'),
@@ -932,8 +942,6 @@ fn output_csv_helper<W: Write>(
     writer: &mut W,
     delimiter: char,
 ) -> anyhow::Result<()> {
-    use sql_cli::data::datatable::DataValue;
-
     let columns = dataview.column_names();
     for (i, col) in columns.iter().enumerate() {
         if i > 0 {
@@ -959,8 +967,6 @@ fn output_csv_helper<W: Write>(
 }
 
 fn output_json_helper<W: Write>(dataview: &DataView, writer: &mut W) -> anyhow::Result<()> {
-    use serde_json::json;
-
     let columns = dataview.column_names();
     let mut rows = Vec::new();
 
