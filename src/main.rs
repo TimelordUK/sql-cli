@@ -565,6 +565,159 @@ fn handle_config_generation(args: &[String]) -> Option<io::Result<()>> {
     }
 }
 
+/// Handle enhanced TUI mode launch
+/// Launches the enhanced TUI with single or multiple data files
+fn launch_enhanced_tui(data_file: Option<String>, data_files: Vec<String>) -> io::Result<()> {
+    if let Some(file_path) = &data_file {
+        let file_type = if file_path.ends_with(".json") {
+            "JSON"
+        } else {
+            "CSV"
+        };
+        println!("Starting enhanced TUI in {file_type} mode with file: {file_path}");
+    } else {
+        println!("Starting enhanced TUI mode... (use --simple for basic TUI, --classic for CLI)");
+    }
+
+    let api_url =
+        std::env::var("TRADE_API_URL").unwrap_or_else(|_| "http://localhost:5000".to_string());
+
+    // Use the enhanced TUI with either single or multiple files
+    let result = if data_files.len() > 1 {
+        let file_refs: Vec<&str> = data_files.iter().map(std::string::String::as_str).collect();
+        sql_cli::ui::enhanced_tui::run_enhanced_tui_multi(&api_url, file_refs)
+    } else {
+        sql_cli::ui::enhanced_tui::run_enhanced_tui(&api_url, data_file.as_deref())
+    };
+
+    if let Err(e) = result {
+        // Ensure terminal is restored in case of error
+        let _ = crossterm::terminal::disable_raw_mode();
+        let _ = crossterm::execute!(
+            std::io::stdout(),
+            crossterm::terminal::LeaveAlternateScreen,
+            crossterm::event::DisableMouseCapture,
+            crossterm::cursor::Show
+        );
+
+        eprintln!("Enhanced TUI Error: {e}");
+        eprintln!("Falling back to classic CLI mode...");
+        eprintln!();
+        // Return error so caller can handle fallback
+        return Err(e);
+    }
+
+    Ok(())
+}
+
+/// Run classic console mode with Reedline-based SQL editor
+/// This is the original CLI interface with history, completion, and validation
+fn run_classic_console_mode() -> io::Result<()> {
+    // Print help first
+    print_help();
+
+    // Set up history
+    let history_file = AppPaths::history_file()
+        .unwrap_or_else(|_| dirs::home_dir().unwrap().join(".sql_cli_history"));
+    let history = Box::new(
+        FileBackedHistory::with_file(50, history_file).expect("Error configuring history"),
+    );
+
+    // Set up SQL completion
+    let completer = Box::new(SqlCompleter::new());
+    let completion_menu = Box::new(
+        ColumnarMenu::default()
+            .with_name("sql_completion")
+            .with_columns(1)
+            .with_column_width(None)
+            .with_column_padding(2),
+    );
+
+    // Configure keybindings
+    let mut keybindings = default_emacs_keybindings();
+    keybindings.add_binding(
+        KeyModifiers::NONE,
+        KeyCode::Tab,
+        ReedlineEvent::Menu("sql_completion".to_string()),
+    );
+    let edit_mode = Box::new(Emacs::new(keybindings));
+
+    // Create line editor
+    let mut line_editor = Reedline::create()
+        .with_completer(completer)
+        .with_menu(ReedlineMenu::EngineCompleter(completion_menu))
+        .with_validator(Box::new(SqlValidator))
+        .with_history(history)
+        .with_edit_mode(edit_mode);
+
+    let prompt = SqlPrompt;
+
+    // Initialize API client
+    let api_url =
+        std::env::var("TRADE_API_URL").unwrap_or_else(|_| "http://localhost:5000".to_string());
+    let api_client = ApiClient::new(&api_url);
+    println!("{}", format!("Connected to API: {api_url}").cyan());
+
+    let mut last_results: Option<Vec<serde_json::Value>> = None;
+
+    // Main REPL loop
+    loop {
+        let sig = line_editor.read_line(&prompt)?;
+        match sig {
+            Signal::Success(buffer) => {
+                let trimmed = buffer.trim();
+                if trimmed.is_empty() {
+                    continue;
+                }
+
+                // Handle special commands
+                if trimmed == "\\help" {
+                    print_help();
+                    continue;
+                }
+
+                if trimmed == "\\clear" {
+                    print!("{esc}[2J{esc}[1;1H", esc = 27 as char);
+                    continue;
+                }
+
+                if trimmed.starts_with("\\export") {
+                    let parts: Vec<&str> = trimmed.split_whitespace().collect();
+                    if parts.len() < 2 {
+                        eprintln!("{}", "Usage: \\export <filename>".red());
+                        continue;
+                    }
+
+                    if let Some(ref results) = last_results {
+                        match export_to_csv(results, &["*".to_string()], parts[1]) {
+                            Ok(()) => {}
+                            Err(e) => eprintln!("{}", format!("Export error: {e}").red()),
+                        }
+                    } else {
+                        eprintln!("{}", "No results to export. Run a query first.".red());
+                    }
+                    continue;
+                }
+
+                // Execute query
+                match api_client.query_trades(&buffer) {
+                    Ok(response) => {
+                        display_results(&response.data, &response.query.select);
+                        last_results = Some(response.data);
+                    }
+                    Err(e) => eprintln!("{}", format!("Error: {e}").red()),
+                }
+            }
+            Signal::CtrlD | Signal::CtrlC => {
+                println!("\nGoodbye!");
+                break;
+            }
+        }
+    }
+
+    Ok(())
+}
+
 /// Handle non-interactive query mode
 /// Executes queries from command line or file and outputs results
 fn handle_non_interactive_query(
@@ -859,148 +1012,15 @@ fn main() -> io::Result<()> {
                 std::process::exit(1);
             }
         } else {
-            if let Some(file_path) = &data_file {
-                let file_type = if file_path.ends_with(".json") {
-                    "JSON"
-                } else {
-                    "CSV"
-                };
-                println!("Starting enhanced TUI in {file_type} mode with file: {file_path}");
-            } else {
-                println!(
-                    "Starting enhanced TUI mode... (use --simple for basic TUI, --classic for CLI)"
-                );
-            }
-            let api_url = std::env::var("TRADE_API_URL")
-                .unwrap_or_else(|_| "http://localhost:5000".to_string());
-
-            // Use the enhanced TUI by default
-            let result = if data_files.len() > 1 {
-                let file_refs: Vec<&str> =
-                    data_files.iter().map(std::string::String::as_str).collect();
-                sql_cli::ui::enhanced_tui::run_enhanced_tui_multi(&api_url, file_refs)
-            } else {
-                sql_cli::ui::enhanced_tui::run_enhanced_tui(&api_url, data_file.as_deref())
-            };
-
-            if let Err(e) = result {
-                // Ensure terminal is restored in case of error
-                let _ = crossterm::terminal::disable_raw_mode();
-                let _ = crossterm::execute!(
-                    std::io::stdout(),
-                    crossterm::terminal::LeaveAlternateScreen,
-                    crossterm::event::DisableMouseCapture,
-                    crossterm::cursor::Show
-                );
-
-                eprintln!("Enhanced TUI Error: {e}");
-                eprintln!("Falling back to classic CLI mode...");
-                eprintln!();
-                // Don't exit, fall through to classic mode
-            } else {
+            // Launch enhanced TUI - on error, fall through to classic mode
+            if launch_enhanced_tui(data_file.clone(), data_files.clone()).is_ok() {
                 return Ok(());
             }
+            // Error already printed by launch_enhanced_tui, just fall through
         }
         return Ok(());
     }
 
-    // Classic mode (original interface)
-    print_help();
-
-    let history_file = AppPaths::history_file()
-        .unwrap_or_else(|_| dirs::home_dir().unwrap().join(".sql_cli_history"));
-    let history = Box::new(
-        FileBackedHistory::with_file(50, history_file).expect("Error configuring history"),
-    );
-
-    let completer = Box::new(SqlCompleter::new());
-
-    let completion_menu = Box::new(
-        ColumnarMenu::default()
-            .with_name("sql_completion")
-            .with_columns(1)
-            .with_column_width(None)
-            .with_column_padding(2),
-    );
-
-    let mut keybindings = default_emacs_keybindings();
-    keybindings.add_binding(
-        KeyModifiers::NONE,
-        KeyCode::Tab,
-        ReedlineEvent::Menu("sql_completion".to_string()),
-    );
-
-    let edit_mode = Box::new(Emacs::new(keybindings));
-
-    let mut line_editor = Reedline::create()
-        .with_completer(completer)
-        .with_menu(ReedlineMenu::EngineCompleter(completion_menu))
-        .with_validator(Box::new(SqlValidator))
-        .with_history(history)
-        .with_edit_mode(edit_mode);
-
-    let prompt = SqlPrompt;
-
-    // Initialize API client
-    let api_url =
-        std::env::var("TRADE_API_URL").unwrap_or_else(|_| "http://localhost:5000".to_string());
-    let api_client = ApiClient::new(&api_url);
-
-    println!("{}", format!("Connected to API: {api_url}").cyan());
-
-    let mut last_results: Option<Vec<serde_json::Value>> = None;
-
-    loop {
-        let sig = line_editor.read_line(&prompt)?;
-        match sig {
-            Signal::Success(buffer) => {
-                let trimmed = buffer.trim();
-                if trimmed.is_empty() {
-                    continue;
-                }
-
-                if trimmed == "\\help" {
-                    print_help();
-                    continue;
-                }
-
-                if trimmed == "\\clear" {
-                    print!("{esc}[2J{esc}[1;1H", esc = 27 as char);
-                    continue;
-                }
-
-                if trimmed.starts_with("\\export") {
-                    let parts: Vec<&str> = trimmed.split_whitespace().collect();
-                    if parts.len() < 2 {
-                        eprintln!("{}", "Usage: \\export <filename>".red());
-                        continue;
-                    }
-
-                    if let Some(ref results) = last_results {
-                        match export_to_csv(results, &["*".to_string()], parts[1]) {
-                            Ok(()) => {}
-                            Err(e) => eprintln!("{}", format!("Export error: {e}").red()),
-                        }
-                    } else {
-                        eprintln!("{}", "No results to export. Run a query first.".red());
-                    }
-                    continue;
-                }
-
-                match api_client.query_trades(&buffer) {
-                    Ok(response) => {
-                        display_results(&response.data, &response.query.select);
-                        last_results = Some(response.data);
-                    }
-                    Err(e) => eprintln!("{}", format!("Error: {e}").red()),
-                }
-            }
-            Signal::CtrlD | Signal::CtrlC => {
-                println!("\nGoodbye!");
-                break;
-            }
-        }
-    }
-
-    Ok(())
+    // Classic console mode (Reedline-based SQL editor)
+    run_classic_console_mode()
 }
