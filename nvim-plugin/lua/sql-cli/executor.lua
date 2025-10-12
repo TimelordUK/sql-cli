@@ -487,18 +487,38 @@ function M.execute_statement_at_cursor(config, state)
   local statement_num = 1
   local current_stmt_start = 1
 
+  -- Debug: show cursor position
+  if vim.g.sql_cli_debug then
+    vim.notify(string.format("DEBUG: Cursor at line %d, total lines: %d", cursor_line, #lines), vim.log.levels.INFO)
+  end
+
   for i = 1, #lines do
-    if lines[i]:match("^%s*GO%s*$") then
+    -- Match GO case-insensitively
+    if lines[i]:upper():match("^%s*GO%s*$") then
       -- Found a GO terminator
+      if vim.g.sql_cli_debug then
+        vim.notify(string.format("DEBUG: Found GO at line %d", i), vim.log.levels.INFO)
+      end
+
       if i < cursor_line then
         -- GO is before cursor, so cursor is in next statement
         statement_num = statement_num + 1
         current_stmt_start = i + 1
+        if vim.g.sql_cli_debug then
+          vim.notify(string.format("DEBUG: GO at line %d < cursor %d, statement_num now: %d", i, cursor_line, statement_num), vim.log.levels.INFO)
+        end
       else
         -- GO is at or after cursor, so cursor is in current statement
+        if vim.g.sql_cli_debug then
+          vim.notify(string.format("DEBUG: GO at line %d >= cursor %d, staying at statement_num: %d", i, cursor_line, statement_num), vim.log.levels.INFO)
+        end
         break
       end
     end
+  end
+
+  if vim.g.sql_cli_debug then
+    vim.notify(string.format("DEBUG: Final statement_num = %d, starts at line %d", statement_num, current_stmt_start), vim.log.levels.INFO)
   end
 
   -- Auto-detect data file if needed

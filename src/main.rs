@@ -800,7 +800,7 @@ fn handle_execute_statement(
     use sql_cli::data::temp_table_registry::TempTableRegistry;
     use std::sync::Arc;
 
-    // Load the data source if provided
+    // Load the data source if provided, otherwise use DUAL table
     let data_table = if !data_file.is_empty() {
         load_csv_to_datatable(
             std::path::Path::new(data_file),
@@ -808,9 +808,9 @@ fn handle_execute_statement(
         )
         .map_err(|e| io::Error::other(format!("Failed to load data file: {}", e)))?
     } else {
-        return Err(io::Error::other(
-            "No data file provided. Use a positional argument like: sql-cli data.csv -f script.sql --execute-statement 3"
-        ));
+        // No data file provided, use DUAL table (allows WEB CTEs and queries without data files)
+        use sql_cli::data::datatable::DataTable;
+        DataTable::dual()
     };
 
     let table_arc = Arc::new(data_table);
