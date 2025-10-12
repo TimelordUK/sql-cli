@@ -759,6 +759,16 @@ impl Parser {
             None
         };
 
+        // Parse INTO clause (alternative position - SQL Server also supports INTO after all clauses)
+        // This handles: SELECT * FROM table WHERE x > 5 INTO #temp
+        // If INTO was already parsed after SELECT, this will be None (can't have two INTOs)
+        let into_table = if into_table.is_none() && matches!(self.current_token, Token::Into) {
+            self.advance();
+            Some(self.parse_into_clause()?)
+        } else {
+            into_table // Keep the one from after SELECT if it exists
+        };
+
         // Parse UNION/INTERSECT/EXCEPT operations
         let set_operations = self.parse_set_operations()?;
 

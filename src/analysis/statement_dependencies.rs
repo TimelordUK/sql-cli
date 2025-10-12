@@ -130,25 +130,17 @@ impl DependencyAnalyzer {
         for (idx, sql) in statements.iter().enumerate() {
             let number = idx + 1; // 1-based numbering for user display
 
-            // Check if this creates a temp table
-            let creates_temp_table = Self::is_temp_table_creation(sql);
-
-            // Extract the SELECT portion for parsing
-            let select_sql = if creates_temp_table {
-                // For CREATE TEMP TABLE, extract the SELECT part after "AS"
-                Self::extract_select_from_create_temp_table(sql)?
-            } else {
-                sql.clone()
-            };
-
-            // Parse the SELECT statement
-            let mut parser = Parser::new(&select_sql);
+            // Parse the SQL statement directly - parser handles all syntaxes
+            let mut parser = Parser::new(sql);
             let ast = parser
                 .parse()
                 .map_err(|e| anyhow!("Failed to parse statement {}: {}", number, e))?;
 
-            // Extract table references
-            let references = Self::extract_table_references(&ast, sql)?;
+            // Check if this creates a temp table using AST
+            let creates_temp_table = ast.into_table.is_some() || Self::is_create_temp_table(sql);
+
+            // Extract table references from the AST
+            let references = Self::extract_table_references(&ast)?;
 
             analyzed.push(DependencyStatement {
                 number,
@@ -162,14 +154,12 @@ impl DependencyAnalyzer {
     }
 
     /// Extract table references from a parsed AST
-    fn extract_table_references(ast: &SelectStatement, sql: &str) -> Result<TableReferences> {
+    fn extract_table_references(ast: &SelectStatement) -> Result<TableReferences> {
         let mut refs = TableReferences::new();
 
-        // Check for CREATE TEMP TABLE (write operation)
-        if Self::is_temp_table_creation(sql) {
-            if let Some(table_name) = Self::extract_temp_table_name(sql) {
-                refs.add_write(table_name);
-            }
+        // Check for SELECT INTO (write operation) - parser extracts this for us!
+        if let Some(ref into_table) = ast.into_table {
+            refs.add_write(into_table.name.clone());
         }
 
         // Extract FROM clause tables (read operations)
@@ -179,7 +169,7 @@ impl DependencyAnalyzer {
 
         // Extract from subquery if present
         if let Some(subquery) = &ast.from_subquery {
-            let subquery_refs = Self::extract_table_references(subquery, "")?;
+            let subquery_refs = Self::extract_table_references(subquery)?;
             for table in subquery_refs.reads {
                 refs.add_read(table);
             }
@@ -199,7 +189,7 @@ impl DependencyAnalyzer {
         for cte in &ast.ctes {
             match &cte.cte_type {
                 crate::sql::parser::ast::CTEType::Standard(stmt) => {
-                    let cte_refs = Self::extract_table_references(stmt, "")?;
+                    let cte_refs = Self::extract_table_references(stmt)?;
                     for table in cte_refs.reads {
                         refs.add_read(table);
                     }
@@ -228,7 +218,7 @@ impl DependencyAnalyzer {
                 refs.add_read(name.clone());
             }
             TableSource::DerivedTable { query, .. } => {
-                let subquery_refs = Self::extract_table_references(query, "")?;
+                let subquery_refs = Self::extract_table_references(query)?;
                 for table in subquery_refs.reads {
                     refs.add_read(table);
                 }
@@ -241,7 +231,7 @@ impl DependencyAnalyzer {
     fn extract_from_expression(expr: &SqlExpression, refs: &mut TableReferences) -> Result<()> {
         match expr {
             SqlExpression::ScalarSubquery { query } => {
-                let subquery_refs = Self::extract_table_references(query, "")?;
+                let subquery_refs = Self::extract_table_references(query)?;
                 for table in subquery_refs.reads {
                     refs.add_read(table);
                 }
@@ -251,7 +241,7 @@ impl DependencyAnalyzer {
                 subquery,
             } => {
                 Self::extract_from_expression(inner_expr, refs)?;
-                let subquery_refs = Self::extract_table_references(subquery, "")?;
+                let subquery_refs = Self::extract_table_references(subquery)?;
                 for table in subquery_refs.reads {
                     refs.add_read(table);
                 }
@@ -261,7 +251,7 @@ impl DependencyAnalyzer {
                 subquery,
             } => {
                 Self::extract_from_expression(inner_expr, refs)?;
-                let subquery_refs = Self::extract_table_references(subquery, "")?;
+                let subquery_refs = Self::extract_table_references(subquery)?;
                 for table in subquery_refs.reads {
                     refs.add_read(table);
                 }
@@ -296,113 +286,10 @@ impl DependencyAnalyzer {
         Ok(())
     }
 
-    /// Check if SQL creates a temp table
-    fn is_temp_table_creation(sql: &str) -> bool {
+    /// Check if SQL uses CREATE TEMP TABLE syntax (not SELECT INTO, which is handled by AST)
+    fn is_create_temp_table(sql: &str) -> bool {
         let sql_lower = sql.to_lowercase();
-        sql_lower.contains("create temp table")
-            || sql_lower.contains("create temporary table")
-            || sql_lower.contains("into #") // SELECT ... INTO #temp_table syntax (can have newline before)
-    }
-
-    /// Extract the SELECT portion from a CREATE TEMP TABLE statement
-    /// Example: "CREATE TEMP TABLE foo AS SELECT * FROM bar" -> "SELECT * FROM bar"
-    /// Also handles: "SELECT * INTO #foo FROM bar" -> "SELECT * FROM bar"
-    fn extract_select_from_create_temp_table(sql: &str) -> Result<String> {
-        let sql_lower = sql.to_lowercase();
-
-        // Check if this is SELECT ... INTO #temp syntax
-        if sql_lower.contains("into #") {
-            // For SELECT INTO, we need to remove the "INTO #table_name" part
-            // Pattern: SELECT ... INTO #table_name FROM ...
-            // We want: SELECT ... FROM ...
-
-            let into_pos = sql_lower
-                .find("into #")
-                .ok_or_else(|| anyhow!("Could not find INTO # in statement"))?;
-
-            // Find the start of the line containing INTO (to handle newlines)
-            let before_into = &sql_lower[..into_pos];
-            let line_start = before_into.rfind('\n').map(|p| p + 1).unwrap_or(0);
-
-            // Skip any whitespace before INTO on the same line
-            let into_line_start = sql_lower[line_start..into_pos]
-                .trim_start()
-                .is_empty()
-                .then_some(line_start)
-                .unwrap_or(into_pos);
-
-            // Find the end of the table name (next whitespace after INTO #)
-            let after_into = &sql_lower[into_pos + 6..]; // skip "into #" (6 chars)
-            let table_end = after_into
-                .find(char::is_whitespace)
-                .ok_or_else(|| anyhow!("Could not find end of table name in SELECT INTO"))?;
-
-            let from_start_in_remaining = into_pos + 6 + table_end;
-
-            // Reconstruct: SELECT ... (before INTO line) + (after table name)
-            let select_part = sql[..into_line_start].trim();
-            let from_part = sql[from_start_in_remaining..].trim();
-
-            Ok(format!("{} {}", select_part, from_part))
-        } else {
-            // Original CREATE TEMP TABLE AS SELECT syntax
-            // Find the position of "AS" keyword
-            let as_pos = sql_lower
-                .find(" as ")
-                .ok_or_else(|| anyhow!("CREATE TEMP TABLE statement must have AS keyword"))?;
-
-            // Extract everything after "AS"
-            let select_start = as_pos + 4; // " as " is 4 characters
-            let select_sql = sql[select_start..].trim();
-
-            if select_sql.is_empty() {
-                return Err(anyhow!(
-                    "CREATE TEMP TABLE statement has no SELECT after AS"
-                ));
-            }
-
-            Ok(select_sql.to_string())
-        }
-    }
-
-    /// Extract temp table name from CREATE TEMP TABLE statement or SELECT INTO
-    fn extract_temp_table_name(sql: &str) -> Option<String> {
-        let sql_lower = sql.to_lowercase();
-
-        // Check for SELECT ... INTO #table syntax first
-        if sql_lower.contains("into #") {
-            let into_pos = sql_lower.find("into #")?;
-            let after_into = &sql[into_pos + 6..]; // skip "into #" (6 chars)
-
-            // Extract table name (everything until next whitespace)
-            let table_name = after_into
-                .split_whitespace()
-                .next()?
-                .trim_end_matches(|c: char| c == '(' || c == ';');
-
-            return Some(format!("#{}", table_name)); // Include the # prefix
-        }
-
-        // Find "create temp table" or "create temporary table"
-        let start_pattern = if sql_lower.contains("create temp table") {
-            "create temp table"
-        } else if sql_lower.contains("create temporary table") {
-            "create temporary table"
-        } else {
-            return None;
-        };
-
-        // Find the position after the pattern
-        let start_idx = sql_lower.find(start_pattern)? + start_pattern.len();
-
-        // Extract the table name (next word after the pattern)
-        let remaining = sql[start_idx..].trim();
-        let table_name = remaining
-            .split_whitespace()
-            .next()?
-            .trim_end_matches(|c: char| c == '(' || c == ';');
-
-        Some(table_name.to_string())
+        sql_lower.contains("create temp table") || sql_lower.contains("create temporary table")
     }
 
     /// Compute execution plan for a target statement
@@ -503,58 +390,40 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_extract_temp_table_name() {
-        let sql1 = "CREATE TEMP TABLE foo AS SELECT * FROM bar";
-        assert_eq!(
-            DependencyAnalyzer::extract_temp_table_name(sql1),
-            Some("foo".to_string())
-        );
-
-        let sql2 = "CREATE TEMPORARY TABLE my_temp AS SELECT 1";
-        assert_eq!(
-            DependencyAnalyzer::extract_temp_table_name(sql2),
-            Some("my_temp".to_string())
-        );
-
-        let sql3 = "SELECT * FROM baz";
-        assert_eq!(DependencyAnalyzer::extract_temp_table_name(sql3), None);
-    }
-
-    #[test]
     fn test_simple_dependency() {
         let statements = vec![
-            "CREATE TEMP TABLE raw_data AS SELECT * FROM sales".to_string(),
+            "SELECT * FROM sales INTO #raw_data".to_string(),
             "SELECT COUNT(*) FROM customers".to_string(),
-            "SELECT * FROM raw_data WHERE amount > 100".to_string(),
+            "SELECT * FROM #raw_data WHERE amount > 100".to_string(),
         ];
 
         let analyzed = DependencyAnalyzer::analyze_statements(&statements).unwrap();
         assert_eq!(analyzed.len(), 3);
 
-        // Statement 1: creates raw_data, reads sales
-        assert_eq!(analyzed[0].references.writes, vec!["raw_data"]);
+        // Statement 1: creates #raw_data, reads sales
+        assert_eq!(analyzed[0].references.writes, vec!["#raw_data"]);
         assert_eq!(analyzed[0].references.reads, vec!["sales"]);
 
         // Statement 2: reads customers (independent)
         assert_eq!(analyzed[1].references.reads, vec!["customers"]);
         assert!(analyzed[1].references.writes.is_empty());
 
-        // Statement 3: reads raw_data
-        assert_eq!(analyzed[2].references.reads, vec!["raw_data"]);
+        // Statement 3: reads #raw_data
+        assert_eq!(analyzed[2].references.reads, vec!["#raw_data"]);
     }
 
     #[test]
     fn test_execution_plan() {
         let statements = vec![
-            "CREATE TEMP TABLE raw_data AS SELECT * FROM sales".to_string(),
+            "SELECT * FROM sales INTO #raw_data".to_string(),
             "SELECT COUNT(*) FROM customers".to_string(),
-            "SELECT * FROM raw_data WHERE amount > 100".to_string(),
+            "SELECT * FROM #raw_data WHERE amount > 100".to_string(),
         ];
 
         let analyzed = DependencyAnalyzer::analyze_statements(&statements).unwrap();
         let plan = DependencyAnalyzer::compute_execution_plan(&analyzed, 3).unwrap();
 
-        // Should execute statement 1 (creates raw_data) and 3 (target)
+        // Should execute statement 1 (creates #raw_data) and 3 (target)
         // Should skip statement 2 (independent)
         assert_eq!(plan.statements_to_execute, vec![1, 3]);
         assert_eq!(plan.statements_to_skip, vec![2]);
@@ -564,11 +433,11 @@ mod tests {
     #[test]
     fn test_transitive_dependencies() {
         let statements = vec![
-            "CREATE TEMP TABLE t1 AS SELECT * FROM base".to_string(),
-            "CREATE TEMP TABLE t2 AS SELECT * FROM t1".to_string(),
-            "CREATE TEMP TABLE t3 AS SELECT * FROM t2".to_string(),
+            "SELECT * FROM base INTO #t1".to_string(),
+            "SELECT * FROM #t1 INTO #t2".to_string(),
+            "SELECT * FROM #t2 INTO #t3".to_string(),
             "SELECT * FROM unrelated".to_string(),
-            "SELECT * FROM t3".to_string(),
+            "SELECT * FROM #t3".to_string(),
         ];
 
         let analyzed = DependencyAnalyzer::analyze_statements(&statements).unwrap();
