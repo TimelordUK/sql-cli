@@ -78,7 +78,7 @@ See [nvim-plugin/README.md](nvim-plugin/README.md) for installation and full fea
 ### 🚀 **Non-Interactive Query Mode**
 Execute SQL queries directly from the command line - perfect for scripting and automation:
 
-![Description](docs/images/screenshot-20251012-182203.png)
+![Description](docs/images/screenshot-20251012-192832.png)
 
 ![Description](docs/images/screenshot-20250920-212340.png)
 

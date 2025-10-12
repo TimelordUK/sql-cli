@@ -1461,31 +1461,6 @@ fn output_table<W: Write>(
 
     // Set column headers
     let columns = dataview.column_names();
-    table.set_header(&columns);
-
-    // Add data rows
-    for row_idx in 0..dataview.row_count() {
-        if let Some(row) = dataview.get_row(row_idx) {
-            let row_strings: Vec<String> = row
-                .values
-                .iter()
-                .map(|v| {
-                    let s = format_value(v);
-                    // Apply max width truncation if specified
-                    if let Some(max_width) = max_col_width {
-                        if s.len() > max_width {
-                            format!("{}...", &s[..max_width.saturating_sub(3)])
-                        } else {
-                            s
-                        }
-                    } else {
-                        s
-                    }
-                })
-                .collect();
-            table.add_row(row_strings);
-        }
-    }
 
     // Apply color styling if requested
     if styled {
@@ -1504,14 +1479,56 @@ fn output_table<W: Write>(
             // Convert DataView rows to Vec<Vec<String>> for styling
             let rows: Vec<Vec<String>> = (0..dataview.row_count())
                 .filter_map(|i| {
-                    dataview
-                        .get_row(i)
-                        .map(|row| row.values.iter().map(|v| format_value(v)).collect())
+                    dataview.get_row(i).map(|row| {
+                        row.values
+                            .iter()
+                            .map(|v| {
+                                let s = format_value(v);
+                                // Apply max width truncation if specified
+                                if let Some(max_width) = max_col_width {
+                                    if s.len() > max_width {
+                                        format!("{}...", &s[..max_width.saturating_sub(3)])
+                                    } else {
+                                        s
+                                    }
+                                } else {
+                                    s
+                                }
+                            })
+                            .collect()
+                    })
                 })
                 .collect();
 
             if let Err(e) = apply_styles_to_table(&mut table, &columns, &rows, &config) {
                 eprintln!("Warning: Failed to apply styles: {}", e);
+            }
+        }
+    } else {
+        // No styling - add headers and rows normally
+        table.set_header(&columns);
+
+        // Add data rows
+        for row_idx in 0..dataview.row_count() {
+            if let Some(row) = dataview.get_row(row_idx) {
+                let row_strings: Vec<String> = row
+                    .values
+                    .iter()
+                    .map(|v| {
+                        let s = format_value(v);
+                        // Apply max width truncation if specified
+                        if let Some(max_width) = max_col_width {
+                            if s.len() > max_width {
+                                format!("{}...", &s[..max_width.saturating_sub(3)])
+                            } else {
+                                s
+                            }
+                        } else {
+                            s
+                        }
+                    })
+                    .collect();
+                table.add_row(row_strings);
             }
         }
     }
