@@ -199,6 +199,8 @@ pub struct NonInteractiveConfig {
     pub max_col_width: Option<usize>, // Maximum column width for table output (None = unlimited)
     pub col_sample_rows: usize,       // Number of rows to sample for column width (0 = all rows)
     pub table_style: TableStyle,      // Table styling preset (only affects table output format)
+    pub styled: bool,                 // Whether to apply color styling rules
+    pub style_file: Option<String>,   // Path to YAML style configuration file
 }
 
 /// Execute a query in non-interactive mode
@@ -620,6 +622,8 @@ pub fn execute_non_interactive(config: NonInteractiveConfig) -> Result<()> {
             config.col_sample_rows,
             exec_time_ms,
             config.table_style,
+            config.styled,
+            config.style_file.as_deref(),
         )?;
         info!("Results written to: {}", path);
         Ok(())
@@ -632,6 +636,8 @@ pub fn execute_non_interactive(config: NonInteractiveConfig) -> Result<()> {
             config.col_sample_rows,
             exec_time_ms,
             config.table_style,
+            config.styled,
+            config.style_file.as_deref(),
         )?;
         Ok(())
     };
@@ -982,6 +988,8 @@ pub fn execute_script(config: NonInteractiveConfig) -> Result<()> {
                             config.max_col_width,
                             config.col_sample_rows,
                             config.table_style,
+                            config.styled,
+                            config.style_file.as_deref(),
                         )?;
                         writeln!(
                             &mut statement_output,
@@ -1128,6 +1136,8 @@ fn output_results<W: Write>(
     col_sample_rows: usize,
     exec_time_ms: f64,
     table_style: TableStyle,
+    styled: bool,
+    style_file: Option<&str>,
 ) -> Result<()> {
     match format {
         OutputFormat::Csv => output_csv(dataview, writer, ','),
@@ -1140,6 +1150,8 @@ fn output_results<W: Write>(
             max_col_width,
             col_sample_rows,
             table_style,
+            styled,
+            style_file,
         ),
     }
 }
@@ -1392,6 +1404,8 @@ fn output_table<W: Write>(
     max_col_width: Option<usize>,
     _col_sample_rows: usize, // Not needed with comfy-table
     style: TableStyle,
+    styled: bool,
+    style_file: Option<&str>,
 ) -> Result<()> {
     let mut table = Table::new();
 
@@ -1470,6 +1484,35 @@ fn output_table<W: Write>(
                 })
                 .collect();
             table.add_row(row_strings);
+        }
+    }
+
+    // Apply color styling if requested
+    if styled {
+        use crate::output::styled_table::{apply_styles_to_table, StyleConfig};
+        use std::path::PathBuf;
+
+        // Load style configuration
+        let style_config = if let Some(file_path) = style_file {
+            let path = PathBuf::from(file_path);
+            StyleConfig::from_file(&path).ok()
+        } else {
+            StyleConfig::load_default()
+        };
+
+        if let Some(config) = style_config {
+            // Convert DataView rows to Vec<Vec<String>> for styling
+            let rows: Vec<Vec<String>> = (0..dataview.row_count())
+                .filter_map(|i| {
+                    dataview
+                        .get_row(i)
+                        .map(|row| row.values.iter().map(|v| format_value(v)).collect())
+                })
+                .collect();
+
+            if let Err(e) = apply_styles_to_table(&mut table, &columns, &rows, &config) {
+                eprintln!("Warning: Failed to apply styles: {}", e);
+            }
         }
     }
 

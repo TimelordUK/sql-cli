@@ -188,6 +188,14 @@ fn print_help() {
         "--col-sample-rows".green()
     );
     println!(
+        "  {}        - Apply color styling rules to table output",
+        "--styled".green()
+    );
+    println!(
+        "  {} <file> - Path to YAML style configuration file",
+        "--style-file".green()
+    );
+    println!(
         "  {} - Case-insensitive matching",
         "--case-insensitive".green()
     );
@@ -417,6 +425,8 @@ struct NonInteractiveArgs {
     query_at_position_arg: Option<String>,
     execute_statement_arg: Option<usize>,
     dry_run_arg: bool,
+    styled_arg: bool,
+    style_file_arg: Option<String>,
 }
 
 /// Parse command-line arguments into a structured context object
@@ -513,6 +523,14 @@ fn parse_non_interactive_args(args: &[String]) -> NonInteractiveArgs {
             .and_then(|s| s.parse::<usize>().ok()),
 
         dry_run_arg: args.iter().any(|arg| arg == "--dry-run"),
+
+        styled_arg: args.iter().any(|arg| arg == "--styled"),
+
+        style_file_arg: args
+            .iter()
+            .position(|arg| arg == "--style-file")
+            .and_then(|pos| args.get(pos + 1))
+            .map(std::string::ToString::to_string),
     }
 }
 
@@ -1266,6 +1284,8 @@ fn handle_non_interactive_query(
         col_sample_rows,
         table_style: sql_cli::non_interactive::TableStyle::from_str(&parsed_args.table_style_arg)
             .map_err(io::Error::other)?,
+        styled: parsed_args.styled_arg,
+        style_file: parsed_args.style_file_arg.clone(),
     };
 
     // Use script executor if GO separator is detected, otherwise normal execution

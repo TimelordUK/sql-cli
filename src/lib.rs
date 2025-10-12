@@ -12,6 +12,7 @@ pub mod debug_trace;
 pub mod execution_plan;
 pub mod handlers;
 pub mod non_interactive;
+pub mod output;
 pub mod query_plan;
 pub mod redis_cache_module;
 pub mod refactoring;

@@ -84,6 +84,7 @@ hex = "0.4"
 figlet-rs = "0.1"
 redis = { version = "0.23", optional = true }
 rmp-serde = "1.1"
+serde_yaml = "0.9"
 
 [features]
 default = ["redis-cache"]

@@ -6,7 +6,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use crate::data::datatable::DataValue;
-use crate::sql::parser::ast::{ColumnRef, SqlExpression, WindowSpec};
+use crate::sql::parser::ast::{SqlExpression, WindowSpec};
 use crate::sql::window_context::WindowContext;
 
 /// Window function computation trait
@@ -746,6 +746,7 @@ impl WindowFunction for PercentChangeFunction {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::sql::parser::ast::ColumnRef;
 
     #[test]
     fn test_registry_creation() {

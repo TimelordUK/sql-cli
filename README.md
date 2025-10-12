@@ -78,6 +78,8 @@ See [nvim-plugin/README.md](nvim-plugin/README.md) for installation and full fea
 ### 🚀 **Non-Interactive Query Mode**
 Execute SQL queries directly from the command line - perfect for scripting and automation:
 
+![Description](docs/images/screenshot-20251012-182203.png)
+
 ![Description](docs/images/screenshot-20250920-212340.png)
 
 ![Description](docs/images/screenshot-20250921-104620.png)
@@ -112,6 +114,9 @@ sql-cli data.csv -q "SELECT * FROM data" -o json -l 100
 - `-o, --output <format>` - Output format: `csv`, `json`, `table`, `tsv` (default: csv)
 - `-O, --output-file <file>` - Write results to file
 - `-l, --limit <n>` - Limit output to n rows
+- `--styled` - Apply color styling to table output (uses ~/.config/sql-cli/styles.yaml)
+- `--style-file <file>` - Custom YAML style configuration file
+- `--table-style <style>` - Table border style (default, ascii, utf8, markdown, etc.)
 - `--case-insensitive` - Case-insensitive string matching
 - `--auto-hide-empty` - Auto-hide empty columns
 
@@ -898,6 +903,189 @@ Ready-to-use chart examples are in the `scripts/` directory:
 - **Time Series Support**: Automatic timestamp parsing and time-based X-axis
 - **Interactive Navigation**: Pan and zoom to explore your data
 - **Terminal Native**: Pure terminal graphics, no GUI dependencies
+
+## 🎨 Styled Table Output (NEW!)
+
+SQL CLI now supports **terminal-colored table output** with customizable YAML styling rules. Perfect for financial data, trading systems, and any scenario where color coding helps identify patterns at a glance.
+
+### Quick Start
+
+```bash
+# Enable colored output with default style file
+sql-cli data.csv -q "SELECT * FROM data" -o table --styled
+
+# Use custom style configuration
+sql-cli trades.csv -q "SELECT * FROM trades" -o table --styled --style-file my-styles.yaml
+```
+
+### Style Configuration
+
+Create a YAML file (default: `~/.config/sql-cli/styles.yaml`) to define your color rules:
+
+```yaml
+version: 1
+
+# Color cells based on exact values
+columns:
+  Side:
+    - value: "Buy"
+      fg_color: blue
+      bold: true
+    - value: "Sell"
+      fg_color: red
+      bold: true
+
+  Status:
+    - value: "Active"
+      fg_color: green
+    - value: "Inactive"
+      fg_color: dark_grey
+
+# Color cells based on numeric ranges
+numeric_ranges:
+  LatencyMs:
+    - condition: "< 100"
+      fg_color: green
+    - condition: ">= 100 AND < 300"
+      fg_color: yellow
+    - condition: ">= 300"
+      fg_color: red
+      bold: true
+
+  ExecutionPrice:
+    - condition: "> 400"
+      fg_color: cyan
+      bold: true
+    - condition: "<= 300"
+      fg_color: dark_cyan
+
+# Color cells based on regex patterns
+patterns:
+  - regex: "^ERROR"
+    fg_color: red
+    bold: true
+  - regex: "^WARN"
+    fg_color: yellow
+
+# Default header styling
+defaults:
+  header_color: white
+  header_bold: true
+```
+
+### Rule Types
+
+**1. Column Rules** - Exact value matching:
+```yaml
+columns:
+  Status:
+    - value: "Filled"
+      fg_color: green
+    - value: "Rejected"
+      fg_color: red
+      bold: true
+```
+
+**2. Numeric Range Rules** - Condition-based styling:
+```yaml
+numeric_ranges:
+  PnL:
+    - condition: "> 0"
+      fg_color: green
+      bold: true
+    - condition: "< 0"
+      fg_color: red
+      bold: true
+    - condition: "== 0"
+      fg_color: dark_grey
+```
+
+**3. Pattern Rules** - Regex matching:
+```yaml
+patterns:
+  - regex: "ALGO-[0-9]+"
+    fg_color: cyan
+  - regex: "^INFO"
+    fg_color: blue
+```
+
+### Available Colors
+
+**Basic Colors**: red, green, blue, yellow, cyan, magenta, white, black
+
+**Dark Variants**: dark_red, dark_green, dark_blue, dark_yellow, dark_cyan, dark_magenta
+
+**Grays**: dark_grey, dark_gray, grey, gray
+
+### Real-World Examples
+
+**Financial Trading Dashboard**:
+```bash
+# Color-code buy/sell orders with latency thresholds
+sql-cli executions.csv -q "
+  SELECT Side, ExecutionPrice, LatencyMs, Status
+  FROM executions
+  WHERE trade_date = TODAY()
+" -o table --styled --table-style utf8
+```
+
+With appropriate styling rules:
+- **Buy orders**: Blue text, bold
+- **Sell orders**: Red text, bold
+- **Low latency** (< 100ms): Green
+- **Medium latency** (100-300ms): Yellow
+- **High latency** (> 300ms): Red, bold
+
+**Log Analysis**:
+```bash
+# Highlight errors and warnings
+sql-cli app.log -q "
+  SELECT timestamp, level, message
+  FROM app
+  WHERE level IN ('ERROR', 'WARN', 'INFO')
+" -o table --styled
+```
+
+**Performance Monitoring**:
+```yaml
+numeric_ranges:
+  ResponseTimeMs:
+    - condition: "< 100"
+      fg_color: green
+    - condition: ">= 500"
+      fg_color: red
+      bold: true
+
+  SuccessRate:
+    - condition: ">= 0.95"
+      fg_color: green
+      bold: true
+    - condition: "< 0.80"
+      fg_color: red
+```
+
+### Features
+
+- **Composable Rules**: Multiple rules can apply (column → numeric → pattern priority)
+- **YAML Configuration**: Easy to edit, version control, and share
+- **Works with All Table Styles**: Compatible with ASCII, UTF8, Markdown, etc.
+- **Non-Breaking**: Opt-in via `--styled` flag
+- **Flexible Conditions**: Supports `<`, `<=`, `>`, `>=`, `==`, and compound conditions with `AND`
+- **Case-Insensitive Colors**: `red`, `Red`, `RED` all work
+
+### CLI Options
+
+- `--styled` - Enable color styling (uses `~/.config/sql-cli/styles.yaml` by default)
+- `--style-file <PATH>` - Use custom style configuration file
+- `--table-style <style>` - Choose table border style (works with styling)
+
+### Tips
+
+1. **Start Simple**: Begin with column rules for categorical data
+2. **Use Numeric Ranges**: Perfect for KPIs, latencies, prices
+3. **Combine with Table Styles**: Try `--table-style utf8` for beautiful Unicode borders
+4. **Version Control**: Check your styles.yaml into git for team consistency
+5. **Multiple Files**: Create different style files for different use cases
 
 ## 🔄 Unit Conversions
 

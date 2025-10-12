@@ -493,6 +493,8 @@ pub fn handle_distinct_column_flag(args: &[String]) -> Option<io::Result<()>> {
         max_col_width: None,
         col_sample_rows: 100,
         table_style: sql_cli::non_interactive::TableStyle::Default,
+        styled: false,
+        style_file: None,
     };
 
     // Execute using the non-interactive interface
