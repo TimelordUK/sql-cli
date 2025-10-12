@@ -148,6 +148,138 @@ def counterparty_trades():
     """Counterparty trades for reconciliation"""
     return jsonify({"Result": generate_trades()})
 
+@app.route('/securities', methods=['GET', 'POST'])
+def securities():
+    """Securities master data - instrument details"""
+    securities_data = [
+        {"Ticker": "AAPL", "SecurityName": "Apple Inc.", "Sector": "Technology", "Currency": "USD", "Exchange": "NASDAQ", "ISIN": "US0378331005", "Multiplier": 1},
+        {"Ticker": "GOOGL", "SecurityName": "Alphabet Inc.", "Sector": "Technology", "Currency": "USD", "Exchange": "NASDAQ", "ISIN": "US02079K3059", "Multiplier": 1},
+        {"Ticker": "MSFT", "SecurityName": "Microsoft Corp.", "Sector": "Technology", "Currency": "USD", "Exchange": "NASDAQ", "ISIN": "US5949181045", "Multiplier": 1},
+        {"Ticker": "TSLA", "SecurityName": "Tesla Inc.", "Sector": "Automotive", "Currency": "USD", "Exchange": "NASDAQ", "ISIN": "US88160R1014", "Multiplier": 1},
+        {"Ticker": "AMZN", "SecurityName": "Amazon.com Inc.", "Sector": "Consumer Discretionary", "Currency": "USD", "Exchange": "NASDAQ", "ISIN": "US0231351067", "Multiplier": 1},
+        {"Ticker": "JPM", "SecurityName": "JPMorgan Chase", "Sector": "Financials", "Currency": "USD", "Exchange": "NYSE", "ISIN": "US46625H1005", "Multiplier": 1},
+        {"Ticker": "GS", "SecurityName": "Goldman Sachs", "Sector": "Financials", "Currency": "USD", "Exchange": "NYSE", "ISIN": "US38141G1040", "Multiplier": 1},
+    ]
+
+    # Filter by ticker if requested
+    if request.method == 'POST':
+        body = request.get_json()
+        where_clause = body.get('Where', '').upper()
+        if 'TICKER' in where_clause:
+            import re
+            match = re.search(r'TICKER.*IN.*\((.*?)\)', where_clause)
+            if match:
+                tickers = [t.strip().strip('"').strip("'") for t in match.group(1).split(',')]
+                securities_data = [s for s in securities_data if s['Ticker'] in tickers]
+
+    return jsonify({"Result": securities_data})
+
+@app.route('/fix_messages', methods=['GET', 'POST'])
+def fix_messages():
+    """Simulated FIX protocol messages with timing data"""
+    base_time = datetime.now()
+
+    fix_data = []
+    for i in range(20):
+        send_time = base_time + timedelta(seconds=i*2 + random.uniform(-0.5, 0.5))
+        exec_time = send_time + timedelta(milliseconds=random.randint(50, 500))
+
+        msg = {
+            "MsgSeqNum": i + 1,
+            "MsgType": "8",  # Tag 35: Execution Report
+            "ExecType": random.choice(["0", "1", "2"]),  # Tag 150: New, Partial, Fill
+            "OrdStatus": random.choice(["0", "1", "2"]),  # Tag 39: New, Partial, Filled
+            "ClOrdID": f"CLO{i+1:05d}",  # Tag 11: Client Order ID
+            "OrderID": f"ORD{random.randint(100000, 999999)}",  # Tag 37: Order ID
+            "Symbol": random.choice(["AAPL", "GOOGL", "MSFT", "TSLA", "AMZN"]),  # Tag 55
+            "Side": random.choice(["1", "2"]),  # Tag 54: Buy(1), Sell(2)
+            "OrderQty": random.randint(100, 5000),  # Tag 38
+            "LastQty": random.randint(100, 1000),  # Tag 32: Last executed quantity
+            "LastPx": round(random.uniform(100.0, 500.0), 2),  # Tag 31: Last price
+            "SendingTime": send_time.strftime("%Y%m%d-%H:%M:%S.%f")[:-3],  # Tag 52
+            "TransactTime": exec_time.strftime("%Y%m%d-%H:%M:%S.%f")[:-3],  # Tag 60
+            "AllocAccount": f"ACC{random.randint(1000, 9999)}",  # Tag 79
+            "LatencyMs": int((exec_time - send_time).total_seconds() * 1000)
+        }
+        fix_data.append(msg)
+
+    # Filter by tags if requested
+    if request.method == 'POST':
+        body = request.get_json()
+        tags = body.get('tags', [])
+        if tags:
+            # Map FIX tag numbers to field names
+            tag_map = {
+                "35": "MsgType", "8": "MsgSeqNum", "79": "AllocAccount",
+                "52": "SendingTime", "60": "TransactTime", "11": "ClOrdID",
+                "37": "OrderID", "55": "Symbol", "54": "Side",
+                "38": "OrderQty", "31": "LastPx", "32": "LastQty"
+            }
+
+            filtered_data = []
+            for msg in fix_data:
+                filtered_msg = {}
+                for tag in tags:
+                    field_name = tag_map.get(tag, tag)
+                    if field_name in msg:
+                        filtered_msg[field_name] = msg[field_name]
+                # Always include computed fields
+                filtered_msg["LatencyMs"] = msg["LatencyMs"]
+                filtered_data.append(filtered_msg)
+            fix_data = filtered_data
+
+    return jsonify({"Result": fix_data})
+
+@app.route('/parent_orders', methods=['GET', 'POST'])
+def parent_orders():
+    """Parent orders with child executions for VWAP calculation"""
+    parent_orders = []
+
+    for parent_id in range(1, 6):
+        parent_ticker = random.choice(["AAPL", "GOOGL", "MSFT"])
+        parent_qty = random.randint(5000, 20000)
+        child_count = random.randint(5, 15)
+
+        base_price = random.uniform(100.0, 500.0)
+        base_time = datetime.now() - timedelta(hours=2) + timedelta(minutes=parent_id*10)
+
+        # Create parent order
+        parent = {
+            "ParentOrderID": f"PARENT{parent_id:03d}",
+            "Ticker": parent_ticker,
+            "TotalQuantity": parent_qty,
+            "Side": random.choice(["Buy", "Sell"]),
+            "OrderTime": base_time.strftime("%Y-%m-%d %H:%M:%S"),
+            "Status": "Completed",
+            "ChildExecutions": []
+        }
+
+        remaining_qty = parent_qty
+        for child_id in range(child_count):
+            child_qty = min(remaining_qty, random.randint(100, 1000))
+            remaining_qty -= child_qty
+
+            # Price walks randomly
+            child_price = base_price + random.uniform(-5.0, 5.0)
+            child_time = base_time + timedelta(seconds=child_id*30 + random.randint(0, 20))
+
+            child = {
+                "ChildOrderID": f"CHILD{parent_id:03d}_{child_id+1:02d}",
+                "ParentOrderID": f"PARENT{parent_id:03d}",
+                "Ticker": parent_ticker,
+                "Quantity": child_qty,
+                "Price": round(child_price, 2),
+                "ExecutionTime": child_time.strftime("%Y-%m-%d %H:%M:%S"),
+                "Venue": random.choice(["NASDAQ", "NYSE", "ARCA", "BATS"])
+            }
+            parent["ChildExecutions"].append(child)
+            parent_orders.append(child)  # Also add to flat list
+
+            if remaining_qty <= 0:
+                break
+
+    return jsonify({"Result": parent_orders})
+
 @app.route('/token', methods=['GET'])
 def get_token():
     """Generate a test token that expires in 15 minutes"""
@@ -192,28 +324,31 @@ def protected_data():
 
 if __name__ == '__main__':
     print("""
-╔══════════════════════════════════════════════════════════════╗
-║           Test Trade Server for SQL-CLI Templates           ║
-╠══════════════════════════════════════════════════════════════╣
-║  Running on: http://localhost:5001                          ║
-║                                                              ║
-║  Endpoints:                                                  ║
-║    GET  /token          - Get test JWT token (15 min expiry)║
-║    POST /trades         - Trade data (select/where body)    ║
-║    GET  /trades         - All trades                        ║
-║    POST /counterparty_trades - For reconciliation           ║
-║    GET  /health         - Health check                      ║
-║    GET  /protected/data - Requires Bearer token             ║
-║                                                              ║
-║  Test token refresh:                                         ║
-║    curl http://localhost:5001/token                         ║
-║                                                              ║
-║  Configure Neovim:                                          ║
-║    token = {                                                ║
-║      token_endpoint = 'http://localhost:5001/token'        ║
-║      auto_refresh = true                                    ║
-║    }                                                         ║
-╚══════════════════════════════════════════════════════════════╝
+╔════════════════════════════════════════════════════════════════╗
+║         Test Trade Server for SQL-CLI Temp Tables Demo        ║
+╠════════════════════════════════════════════════════════════════╣
+║  Running on: http://localhost:5001                            ║
+║                                                                ║
+║  Endpoints:                                                    ║
+║    GET  /token               - Test JWT token (15 min expiry) ║
+║    POST /trades              - Trade data (select/where body) ║
+║    GET  /trades              - All trades                     ║
+║    POST /counterparty_trades - Counterparty trades            ║
+║    POST /securities          - Securities master data         ║
+║    POST /fix_messages        - FIX protocol messages          ║
+║    POST /parent_orders       - Parent/child order executions  ║
+║    GET  /health              - Health check                   ║
+║    GET  /protected/data      - Requires Bearer token          ║
+║                                                                ║
+║  Test Examples:                                                ║
+║    examples/cte_flask_dependency.sql - Multi-stage analysis   ║
+║                                                                ║
+║  Usage:                                                        ║
+║    sql-cli -f examples/cte_flask_dependency.sql               ║
+║    sql-cli -f examples/cte_flask_dependency.sql --execute-statement 4 ║
+║                                                                ║
+║  In Neovim: \\sq (all) or \\sx (statement at cursor)          ║
+╚════════════════════════════════════════════════════════════════╝
     """)
 
     # Run on port 5001
