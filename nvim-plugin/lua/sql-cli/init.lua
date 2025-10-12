@@ -117,6 +117,10 @@ function M.create_commands()
     executor.execute_at_cursor(M.config, M.state)
   end, { desc = "Execute SQL query at cursor" })
 
+  vim.api.nvim_create_user_command("SqlCliExecuteStatementAtCursor", function()
+    executor.execute_statement_at_cursor(M.config, M.state)
+  end, { desc = "Execute statement at cursor with dependencies" })
+
   vim.api.nvim_create_user_command("SqlCliSetDataFile", function(opts)
     M.set_data_file(opts.args)
   end, { nargs = 1, complete = "file", desc = "Set data file for SQL queries" })
@@ -279,6 +283,12 @@ function M.setup_keymaps()
     vim.keymap.set("n", keymaps.execute_at_cursor, function()
       executor.execute_at_cursor(M.config, M.state)
     end, { desc = "Execute SQL at cursor", silent = true })
+  end
+
+  if keymaps.execute_statement_at_cursor then
+    vim.keymap.set("n", keymaps.execute_statement_at_cursor, function()
+      executor.execute_statement_at_cursor(M.config, M.state)
+    end, { desc = "Execute statement with dependencies", silent = true })
   end
 
   if keymaps.execute_with_plan then

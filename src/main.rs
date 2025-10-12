@@ -4,7 +4,11 @@ use reedline::{
     MenuBuilder, Prompt, PromptEditMode, PromptHistorySearch, PromptHistorySearchStatus, Reedline,
     ReedlineEvent, ReedlineMenu, Signal, ValidationResult, Validator,
 };
+use sql_cli::data::data_view::DataView;
+use sql_cli::data::datatable::DataValue;
+use sql_cli::non_interactive::{OutputFormat, TableStyle};
 use sql_cli::utils::app_paths::AppPaths;
+use std::io::Write;
 use std::{borrow::Cow, io};
 
 mod completer;
@@ -236,6 +240,22 @@ fn print_help() {
     );
 
     println!();
+    println!(
+        "{}",
+        "Script Execution (for IDE/plugin integration):".yellow()
+    );
+    println!(
+        "  {} <n> - Execute statement N from script with dependencies",
+        "--execute-statement".green()
+    );
+    println!("    Example: sql-cli -f script.sql --execute-statement 3");
+    println!("    Only executes statement #3 and its dependencies (temp tables, CTEs)");
+    println!(
+        "  {}       - Show dependency analysis without execution",
+        "--dry-run".green()
+    );
+
+    println!();
     println!("{}", "SQL Formatting:".yellow());
     println!(
         "  {}, {} [file|-]   - Format SQL query (stdin if - or no file)",
@@ -395,6 +415,8 @@ struct NonInteractiveArgs {
     expand_star_arg: bool,
     extract_cte_arg: Option<String>,
     query_at_position_arg: Option<String>,
+    execute_statement_arg: Option<usize>,
+    dry_run_arg: bool,
 }
 
 /// Parse command-line arguments into a structured context object
@@ -483,6 +505,14 @@ fn parse_non_interactive_args(args: &[String]) -> NonInteractiveArgs {
             .position(|arg| arg == "-l" || arg == "--limit")
             .and_then(|pos| args.get(pos + 1))
             .and_then(|s| s.parse::<usize>().ok()),
+
+        execute_statement_arg: args
+            .iter()
+            .position(|arg| arg == "--execute-statement")
+            .and_then(|pos| args.get(pos + 1))
+            .and_then(|s| s.parse::<usize>().ok()),
+
+        dry_run_arg: args.iter().any(|arg| arg == "--dry-run"),
     }
 }
 
@@ -603,8 +633,8 @@ fn launch_enhanced_tui(data_file: Option<String>, data_files: Vec<String>) -> io
         eprintln!("Enhanced TUI Error: {e}");
         eprintln!("Falling back to classic CLI mode...");
         eprintln!();
-        // Return error so caller can handle fallback
-        return Err(e);
+        // Return error so caller can handle fallback - convert anyhow::Error to io::Error
+        return Err(io::Error::other(e));
     }
 
     Ok(())
@@ -718,6 +748,349 @@ fn run_classic_console_mode() -> io::Result<()> {
     Ok(())
 }
 
+/// Handle --execute-statement flag with dependency-aware execution
+/// Analyzes dependencies and executes only the minimal subset of statements needed
+fn handle_execute_statement(
+    script: &str,
+    data_file: &str,
+    target_statement: usize,
+    dry_run: bool,
+    parsed_args: &NonInteractiveArgs,
+) -> io::Result<()> {
+    use sql_cli::analysis::statement_dependencies::DependencyAnalyzer;
+    use sql_cli::sql::recursive_parser::Parser;
+    use sql_cli::sql::script_parser::ScriptParser;
+
+    // Parse the script into statements
+    let parser = ScriptParser::new(script);
+    let statements = parser.parse_statements();
+
+    if statements.is_empty() {
+        eprintln!("Error: No statements found in script");
+        std::process::exit(1);
+    }
+
+    // Analyze dependencies
+    let analyzed = DependencyAnalyzer::analyze_statements(&statements)
+        .map_err(|e| io::Error::other(format!("Dependency analysis failed: {}", e)))?;
+
+    // Compute execution plan
+    let plan = DependencyAnalyzer::compute_execution_plan(&analyzed, target_statement)
+        .map_err(|e| io::Error::other(format!("Failed to compute execution plan: {}", e)))?;
+
+    // If dry-run, just show the plan and exit
+    if dry_run {
+        println!("{}", plan.format_debug_trace(&analyzed));
+        return Ok(());
+    }
+
+    // Execute the plan
+    println!(
+        "Executing statement #{} with {} dependencies...",
+        target_statement,
+        plan.statements_to_execute.len() - 1
+    );
+    println!("Execution order: {:?}", plan.statements_to_execute);
+    println!();
+
+    // Use the non-interactive executor to run the minimal set of statements
+    use sql_cli::data::data_view::DataView;
+    use sql_cli::data::datatable_loaders::load_csv_to_datatable;
+    use sql_cli::data::query_engine::QueryEngine;
+    use sql_cli::data::temp_table_registry::TempTableRegistry;
+    use std::sync::Arc;
+
+    // Load the data source if provided
+    let data_table = if !data_file.is_empty() {
+        load_csv_to_datatable(
+            std::path::Path::new(data_file),
+            &format!("data_{}", target_statement),
+        )
+        .map_err(|e| io::Error::other(format!("Failed to load data file: {}", e)))?
+    } else {
+        return Err(io::Error::other(
+            "No data file provided. Use a positional argument like: sql-cli data.csv -f script.sql --execute-statement 3"
+        ));
+    };
+
+    let table_arc = Arc::new(data_table);
+    let engine = QueryEngine::new();
+    let mut temp_tables = TempTableRegistry::new();
+
+    // Execute statements in order from the plan
+    let mut last_result = None;
+    for stmt_num in &plan.statements_to_execute {
+        let stmt_sql = &statements[stmt_num - 1]; // Convert to 0-based index
+
+        println!("Executing statement #{}...", stmt_num);
+
+        // Parse the SQL statement into an AST
+        let mut stmt_parser = Parser::new(stmt_sql);
+        let parsed_stmt = stmt_parser.parse().map_err(|e| {
+            io::Error::other(format!("Failed to parse statement #{}: {}", stmt_num, e))
+        })?;
+
+        match engine.execute_statement_with_temp_tables(
+            table_arc.clone(),
+            parsed_stmt,
+            Some(&mut temp_tables),
+        ) {
+            Ok(result) => {
+                println!(
+                    "  ✓ Statement #{} completed ({} rows)",
+                    stmt_num,
+                    result.row_count()
+                );
+                if *stmt_num == target_statement {
+                    last_result = Some(result);
+                }
+            }
+            Err(e) => {
+                eprintln!("  ✗ Statement #{} failed: {}", stmt_num, e);
+                std::process::exit(1);
+            }
+        }
+    }
+
+    // Output the results from the target statement
+    if let Some(result_view) = last_result {
+        println!();
+        println!("=== Results from statement #{} ===", target_statement);
+        println!();
+
+        // Use the configured output format - build a NonInteractiveConfig to reuse execute_non_interactive logic
+        // But we'll inline the output logic here since we already have the results
+        use std::io::Write;
+
+        let output_format =
+            sql_cli::non_interactive::OutputFormat::from_str(&parsed_args.output_format_arg)
+                .map_err(io::Error::other)?;
+
+        let table_style =
+            sql_cli::non_interactive::TableStyle::from_str(&parsed_args.table_style_arg)
+                .map_err(io::Error::other)?;
+
+        // Output to file or stdout
+        if let Some(ref output_file) = parsed_args.output_file_arg {
+            let mut file = std::fs::File::create(output_file)
+                .map_err(|e| io::Error::other(format!("Failed to create output file: {}", e)))?;
+            output_dataview(
+                &result_view,
+                output_format,
+                &mut file,
+                None,
+                100,
+                0.0,
+                table_style,
+            )
+            .map_err(|e| io::Error::other(format!("Output failed: {}", e)))?;
+        } else {
+            let mut stdout = io::stdout();
+            output_dataview(
+                &result_view,
+                output_format,
+                &mut stdout,
+                None,
+                100,
+                0.0,
+                table_style,
+            )
+            .map_err(|e| io::Error::other(format!("Output failed: {}", e)))?;
+        }
+    }
+
+    Ok(())
+}
+
+/// Helper function to output DataView results
+/// This is a simplified version that calls the non_interactive module's private functions
+fn output_dataview<W: Write>(
+    dataview: &DataView,
+    format: OutputFormat,
+    writer: &mut W,
+    max_col_width: Option<usize>,
+    col_sample_rows: usize,
+    exec_time_ms: f64,
+    table_style: TableStyle,
+) -> anyhow::Result<()> {
+    use sql_cli::data::datatable::DataValue;
+    use sql_cli::non_interactive::{OutputFormat, TableStyle};
+
+    match format {
+        OutputFormat::Csv => output_csv_helper(dataview, writer, ','),
+        OutputFormat::Tsv => output_csv_helper(dataview, writer, '\t'),
+        OutputFormat::Json => output_json_helper(dataview, writer),
+        OutputFormat::Table => output_table_helper(dataview, writer, max_col_width, table_style),
+        _ => Err(anyhow::anyhow!(
+            "Output format not supported in this context"
+        )),
+    }
+}
+
+fn output_csv_helper<W: Write>(
+    dataview: &DataView,
+    writer: &mut W,
+    delimiter: char,
+) -> anyhow::Result<()> {
+    use sql_cli::data::datatable::DataValue;
+
+    let columns = dataview.column_names();
+    for (i, col) in columns.iter().enumerate() {
+        if i > 0 {
+            write!(writer, "{delimiter}")?;
+        }
+        write!(writer, "{}", col)?;
+    }
+    writeln!(writer)?;
+
+    for row_idx in 0..dataview.row_count() {
+        if let Some(row) = dataview.get_row(row_idx) {
+            for (i, value) in row.values.iter().enumerate() {
+                if i > 0 {
+                    write!(writer, "{delimiter}")?;
+                }
+                let s = format_datavalue(value);
+                write!(writer, "{}", s)?;
+            }
+            writeln!(writer)?;
+        }
+    }
+    Ok(())
+}
+
+fn output_json_helper<W: Write>(dataview: &DataView, writer: &mut W) -> anyhow::Result<()> {
+    use serde_json::json;
+
+    let columns = dataview.column_names();
+    let mut rows = Vec::new();
+
+    for row_idx in 0..dataview.row_count() {
+        if let Some(row) = dataview.get_row(row_idx) {
+            let mut json_row = serde_json::Map::new();
+            for (col_idx, value) in row.values.iter().enumerate() {
+                if col_idx < columns.len() {
+                    json_row.insert(columns[col_idx].clone(), datavalue_to_json(value));
+                }
+            }
+            rows.push(serde_json::Value::Object(json_row));
+        }
+    }
+
+    let json = serde_json::to_string_pretty(&rows)?;
+    writeln!(writer, "{json}")?;
+    Ok(())
+}
+
+fn output_table_helper<W: Write>(
+    dataview: &DataView,
+    writer: &mut W,
+    max_col_width: Option<usize>,
+    _style: TableStyle,
+) -> anyhow::Result<()> {
+    let columns = dataview.column_names();
+    let mut widths = vec![0; columns.len()];
+
+    for (i, col) in columns.iter().enumerate() {
+        widths[i] = col.len();
+    }
+
+    for row_idx in 0..dataview.row_count() {
+        if let Some(row) = dataview.get_row(row_idx) {
+            for (i, value) in row.values.iter().enumerate() {
+                if i < widths.len() {
+                    let value_str = format_datavalue(value);
+                    widths[i] = widths[i].max(value_str.len());
+                }
+            }
+        }
+    }
+
+    if let Some(max_width) = max_col_width {
+        for width in &mut widths {
+            *width = (*width).min(max_width);
+        }
+    }
+
+    write!(writer, "+")?;
+    for width in &widths {
+        write!(writer, "{}", "-".repeat(*width + 2))?;
+        write!(writer, "+")?;
+    }
+    writeln!(writer)?;
+
+    write!(writer, "|")?;
+    for (i, col) in columns.iter().enumerate() {
+        write!(writer, " {:^width$} |", col, width = widths[i])?;
+    }
+    writeln!(writer)?;
+
+    write!(writer, "+")?;
+    for width in &widths {
+        write!(writer, "{}", "-".repeat(*width + 2))?;
+        write!(writer, "+")?;
+    }
+    writeln!(writer)?;
+
+    for row_idx in 0..dataview.row_count() {
+        if let Some(row) = dataview.get_row(row_idx) {
+            write!(writer, "|")?;
+            for (i, value) in row.values.iter().enumerate() {
+                if i < widths.len() {
+                    let value_str = format_datavalue(value);
+                    let truncated = if value_str.len() > widths[i] {
+                        format!("{}...", &value_str[..widths[i].saturating_sub(3)])
+                    } else {
+                        value_str
+                    };
+                    write!(writer, " {:<width$} |", truncated, width = widths[i])?;
+                }
+            }
+            writeln!(writer)?;
+        }
+    }
+
+    write!(writer, "+")?;
+    for width in &widths {
+        write!(writer, "{}", "-".repeat(*width + 2))?;
+        write!(writer, "+")?;
+    }
+    writeln!(writer)?;
+
+    Ok(())
+}
+
+fn format_datavalue(value: &DataValue) -> String {
+    use sql_cli::data::datatable::DataValue;
+    match value {
+        DataValue::Null => String::new(),
+        DataValue::Integer(i) => i.to_string(),
+        DataValue::Float(f) => f.to_string(),
+        DataValue::String(s) => s.clone(),
+        DataValue::InternedString(s) => s.to_string(),
+        DataValue::Boolean(b) => b.to_string(),
+        DataValue::DateTime(dt) => dt.to_string(),
+    }
+}
+
+fn datavalue_to_json(value: &DataValue) -> serde_json::Value {
+    use sql_cli::data::datatable::DataValue;
+    match value {
+        DataValue::Null => serde_json::Value::Null,
+        DataValue::Integer(i) => serde_json::Value::Number((*i).into()),
+        DataValue::Float(f) => {
+            if let Some(n) = serde_json::Number::from_f64(*f) {
+                serde_json::Value::Number(n)
+            } else {
+                serde_json::Value::Null
+            }
+        }
+        DataValue::String(s) => serde_json::Value::String(s.clone()),
+        DataValue::InternedString(s) => serde_json::Value::String(s.to_string()),
+        DataValue::Boolean(b) => serde_json::Value::Bool(*b),
+        DataValue::DateTime(dt) => serde_json::Value::String(dt.clone()),
+    }
+}
+
 /// Handle non-interactive query mode
 /// Executes queries from command line or file and outputs results
 fn handle_non_interactive_query(
@@ -730,7 +1103,7 @@ fn handle_non_interactive_query(
         std::fs::read_to_string(file)
             .map_err(|e| io::Error::other(format!("Failed to read query file {file}: {e}")))?
     } else {
-        parsed_args.query_arg.unwrap()
+        parsed_args.query_arg.clone().unwrap()
     };
 
     // Check if this is a multi-statement script (contains GO separator)
@@ -745,6 +1118,25 @@ fn handle_non_interactive_query(
         .find(|arg| arg.ends_with(".csv") || arg.ends_with(".json"))
         .cloned()
         .unwrap_or_default(); // Use empty string if no data file
+
+    // Handle --execute-statement flag (dependency-aware execution)
+    if let Some(target_stmt) = parsed_args.execute_statement_arg {
+        if !is_script {
+            eprintln!(
+                "Error: --execute-statement requires a multi-statement script with GO separators"
+            );
+            eprintln!("Use -f to provide a script file, or add GO between statements");
+            std::process::exit(1);
+        }
+
+        return handle_execute_statement(
+            &query,
+            &data_file,
+            target_stmt,
+            parsed_args.dry_run_arg,
+            &parsed_args,
+        );
+    }
 
     // Parse max column width (0 = unlimited, default = 50)
     let max_col_width = if let Some(pos) = args.iter().position(|arg| arg == "--max-col-width") {

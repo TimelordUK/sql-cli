@@ -1,6 +1,8 @@
 // Analysis module - Provides structured query analysis for IDE/plugin integration
 // This enables tools to understand SQL structure without manual text parsing
 
+pub mod statement_dependencies;
+
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 

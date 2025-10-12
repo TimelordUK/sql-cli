@@ -359,6 +359,17 @@ function M.execute_at_cursor(config, state)
   local cursor_line = vim.fn.line('.')
   local lines = vim.api.nvim_buf_get_lines(bufnr, 0, -1, false)
 
+  -- Check if this is a script with GO separators
+  local script_text = table.concat(lines, "\n")
+  local has_go_separator = script_text:match("%sGO%s") or script_text:match("^GO%s") or script_text:match("%sGO$") or script_text:match("^GO$")
+
+  -- If we have GO separators, delegate to execute_statement_at_cursor for proper dependency handling
+  if has_go_separator then
+    vim.notify("Script with GO separators detected - using dependency-aware execution", vim.log.levels.INFO)
+    M.execute_statement_at_cursor(config, state)
+    return
+  end
+
   -- Find query boundaries
   local start_line, end_line = utils.find_query_at_cursor(lines, cursor_line)
 
@@ -431,6 +442,328 @@ function M.execute_at_cursor(config, state)
 
   -- Skip parameter resolution for quick execution at cursor
   M.execute_query(query, config, state, true)
+end
+
+-- Execute statement at cursor with dependency awareness (\sx command)
+-- Uses --execute-statement flag to run only the target statement and its dependencies
+function M.execute_statement_at_cursor(config, state)
+  -- Save current window and cursor position to restore later
+  local original_win = vim.api.nvim_get_current_win()
+  local original_cursor = vim.api.nvim_win_get_cursor(original_win)
+
+  local bufnr = vim.api.nvim_get_current_buf()
+  local cursor_line = vim.fn.line('.')
+  local lines = vim.api.nvim_buf_get_lines(bufnr, 0, -1, false)
+
+  -- Check if this is a script with GO separators
+  local script_text = table.concat(lines, "\n")
+  local has_go_separator = script_text:match("%sGO%s") or script_text:match("^GO%s") or script_text:match("%sGO$") or script_text:match("^GO$")
+
+  if not has_go_separator then
+    -- Not a script, this shouldn't happen since execute_at_cursor delegates to us
+    -- But handle it gracefully anyway
+    vim.notify("No GO separators found - executing as single query", vim.log.levels.INFO)
+    -- Fall back to normal query execution (avoiding circular call)
+    local start_line, end_line = utils.find_query_at_cursor(lines, cursor_line)
+    if start_line then
+      local query_lines = {}
+      for i = start_line, end_line do
+        table.insert(query_lines, lines[i])
+      end
+      local query = table.concat(query_lines, "\n")
+      state.original_win = original_win
+      state.original_cursor = original_cursor
+      M.execute_query(query, config, state, true)
+    else
+      vim.notify("No SQL statement found at cursor", vim.log.levels.WARN)
+    end
+    return
+  end
+
+  -- Count statement number at cursor by counting GO separators before cursor
+  local statement_num = 1
+  for i = 1, cursor_line - 1 do
+    if lines[i]:match("^%s*GO%s*$") then
+      statement_num = statement_num + 1
+    end
+  end
+
+  -- Auto-detect data file if needed
+  if config.auto_detect.data_hints and not state:get_data_file() then
+    local buf_path = vim.api.nvim_buf_get_name(bufnr)
+    local buf_dir = nil
+    if buf_path and buf_path ~= "" then
+      buf_dir = vim.fn.fnamemodify(buf_path, ":h")
+    end
+    local data_file = utils.detect_data_hint(lines, buf_dir)
+    if data_file then
+      state:set_data_file(data_file)
+      if config.load_schema_callback then
+        config.load_schema_callback()
+      end
+    end
+  end
+
+  -- Auto-detect if current buffer is a CSV
+  if config.auto_detect.csv_files and not state:get_data_file() then
+    local filename = vim.api.nvim_buf_get_name(bufnr)
+    if filename:match("%.csv$") then
+      state:set_data_file(filename)
+      if config.load_schema_callback then
+        config.load_schema_callback()
+      end
+    end
+  end
+
+  -- Store the original window and cursor to restore after execution
+  state.original_win = original_win
+  state.original_cursor = original_cursor
+
+  -- Notify user which statement we're executing
+  vim.notify(string.format("Executing statement #%d with dependencies...", statement_num), vim.log.levels.INFO)
+
+  -- Execute using --execute-statement flag
+  M.run_statement_with_dependencies(script_text, statement_num, config, state)
+end
+
+-- Run a specific statement from a script with dependency analysis
+function M.run_statement_with_dependencies(script, statement_num, config, state)
+  local ui_callbacks = config.ui_callbacks or {}
+
+  -- Create output window if needed
+  if ui_callbacks.is_output_window_valid and not ui_callbacks.is_output_window_valid() then
+    if ui_callbacks.create_output_window then
+      ui_callbacks.create_output_window()
+    else
+      vim.notify("No output window callback available", vim.log.levels.ERROR)
+      return
+    end
+  end
+
+  -- Clear output if configured
+  local output_buf = state:get_output_buf()
+  if config.output.clear_on_run and output_buf then
+    -- Clear table navigation state if active on this buffer
+    local table_nav = require('sql-cli.table_nav')
+    if table_nav.is_active() then
+      table_nav.clear_navigation()
+    end
+
+    -- Make buffer modifiable to clear it
+    vim.bo[output_buf].modifiable = true
+    vim.bo[output_buf].readonly = false
+    vim.api.nvim_buf_set_lines(output_buf, 0, -1, false, {})
+  end
+
+  -- Save script to temp file
+  local temp_file = vim.fn.tempname() .. ".sql"
+  local file = io.open(temp_file, "w")
+  if not file then
+    vim.notify("Failed to create temporary file", vim.log.levels.ERROR)
+    return
+  end
+  file:write(script)
+  file:close()
+
+  -- Build command with --execute-statement flag
+  local command_path, err = utils.get_command_path(config.command)
+  if not command_path then
+    vim.notify(err, vim.log.levels.ERROR)
+    return
+  end
+
+  local cmd_parts = { command_path }
+
+  -- Add data file if set
+  local data_file = state:get_data_file()
+  if data_file then
+    table.insert(cmd_parts, vim.fn.shellescape(data_file))
+  end
+
+  -- Add script file
+  table.insert(cmd_parts, "-f")
+  table.insert(cmd_parts, vim.fn.shellescape(temp_file))
+
+  -- Add --execute-statement flag
+  table.insert(cmd_parts, "--execute-statement")
+  table.insert(cmd_parts, tostring(statement_num))
+
+  -- Add output format
+  table.insert(cmd_parts, "-o")
+  table.insert(cmd_parts, config.output_format)
+
+  -- Add table output settings if using table format
+  if config.output_format == "table" and config.table_output then
+    if config.table_output.style then
+      table.insert(cmd_parts, "--table-style")
+      table.insert(cmd_parts, config.table_output.style)
+    end
+    if config.table_output.max_col_width then
+      table.insert(cmd_parts, "--max-col-width")
+      table.insert(cmd_parts, tostring(config.table_output.max_col_width))
+    end
+    if config.table_output.col_sample_rows then
+      table.insert(cmd_parts, "--col-sample-rows")
+      table.insert(cmd_parts, tostring(config.table_output.col_sample_rows))
+    end
+    if config.table_output.auto_hide_empty then
+      table.insert(cmd_parts, "--auto-hide-empty")
+    end
+  end
+
+  local cmd = table.concat(cmd_parts, " ")
+  if vim.g.sql_cli_debug then
+    vim.notify(string.format("Executing command: %s", cmd:sub(1, 500)), vim.log.levels.INFO)
+  end
+
+  -- Add header
+  local header = {
+    "-- SQL CLI Output (Statement #" .. statement_num .. " with dependencies) --",
+    "-- Command: " .. cmd,
+    "-- " .. os.date("%Y-%m-%d %H:%M:%S"),
+    string.rep("-", 60),
+    "",
+  }
+  if output_buf then
+    vim.bo[output_buf].modifiable = true
+    vim.bo[output_buf].readonly = false
+    vim.api.nvim_buf_set_lines(output_buf, 0, 0, false, header)
+  end
+
+  -- Run command asynchronously
+  local output_lines = {}
+  local csv_lines = {}
+
+  local job_id = vim.fn.jobstart(cmd, {
+    stdout_buffered = true,
+    stderr_buffered = true,
+    on_stdout = function(_, data)
+      if data then
+        for _, line in ipairs(data) do
+          if line ~= "" then
+            table.insert(output_lines, line)
+            -- Try to detect CSV format
+            if line:match("^[^|]*,[^|]*") or line:match("^%d+,") or line:match('^"[^"]*",') then
+              table.insert(csv_lines, line)
+            end
+          end
+        end
+      end
+    end,
+    on_stderr = function(_, data)
+      if data then
+        for _, line in ipairs(data) do
+          if line ~= "" then
+            if line:match("^#") or line:match("Executing statement") or line:match("completed") then
+              -- Informational output
+              table.insert(output_lines, line)
+            elseif line:match("^Error:") or line:match("^ERROR:") then
+              table.insert(output_lines, "ERROR: " .. line)
+            else
+              table.insert(output_lines, line)
+            end
+          end
+        end
+      end
+    end,
+    on_exit = function(_, exit_code)
+      vim.schedule(function()
+        -- Append output
+        if output_buf then
+          vim.bo[output_buf].modifiable = true
+          vim.bo[output_buf].readonly = false
+          vim.api.nvim_buf_set_lines(output_buf, -1, -1, false, output_lines)
+        end
+
+        -- Store results
+        if #csv_lines > 0 then
+          state:set_last_results(csv_lines)
+        else
+          state:set_last_results(output_lines)
+        end
+
+        -- Add footer
+        local footer = {
+          "",
+          string.rep("-", 60),
+          "-- Exit code: " .. exit_code,
+        }
+        if output_buf then
+          vim.bo[output_buf].modifiable = true
+          vim.bo[output_buf].readonly = false
+          vim.api.nvim_buf_set_lines(output_buf, -1, -1, false, footer)
+        end
+
+        -- Scroll to top
+        local output_win = state:get_output_win()
+        if output_win and vim.api.nvim_win_is_valid(output_win) then
+          vim.api.nvim_win_set_cursor(output_win, {1, 0})
+          vim.api.nvim_win_call(output_win, function()
+            vim.cmd('normal! zt')
+          end)
+        end
+
+        -- Focus output window if configured
+        if config.output.focus_on_run and ui_callbacks.is_output_window_valid and ui_callbacks.is_output_window_valid() and output_win then
+          vim.api.nvim_set_current_win(output_win)
+
+          -- Restore original window after a delay
+          if state.original_win and vim.api.nvim_win_is_valid(state.original_win) then
+            vim.defer_fn(function()
+              vim.api.nvim_set_current_win(state.original_win)
+              if state.original_cursor then
+                vim.api.nvim_win_set_cursor(state.original_win, state.original_cursor)
+              end
+              state.original_win = nil
+              state.original_cursor = nil
+            end, 100)
+          end
+        end
+
+        -- Notify completion
+        if exit_code == 0 then
+          vim.notify(string.format("Statement #%d executed successfully", statement_num), vim.log.levels.INFO)
+
+          -- Enable table navigation
+          if output_buf and vim.api.nvim_buf_is_valid(output_buf) then
+            vim.defer_fn(function()
+              if not vim.api.nvim_buf_is_valid(output_buf) then
+                return
+              end
+
+              local table_nav = require('sql-cli.table_nav')
+              if config.table_navigation and config.table_navigation.enabled_by_default then
+                local lines = vim.api.nvim_buf_get_lines(output_buf, 0, -1, false)
+                if #lines > 5 then
+                  if table_nav.is_active() then
+                    table_nav.clear_navigation()
+                  end
+
+                  local nav_output_win = state:get_output_win()
+                  if table_nav.init_navigation(output_buf, nav_output_win) then
+                    table_nav.setup_keymaps(output_buf, config)
+                    if nav_output_win and vim.api.nvim_win_is_valid(nav_output_win) then
+                      vim.api.nvim_win_set_cursor(nav_output_win, {1, 0})
+                    end
+                    local nav_keys = config.table_navigation and config.table_navigation.hijack_hjkl == false and "arrow keys" or "h/j/k/l"
+                    vim.notify("Table navigation enabled (" .. nav_keys .. " to move)", vim.log.levels.INFO)
+                  end
+                end
+              else
+                vim.notify("Use <leader>sn to enable table navigation", vim.log.levels.INFO)
+              end
+            end, 500)
+          end
+        else
+          vim.notify(string.format("Statement #%d failed with exit code: %d", statement_num, exit_code), vim.log.levels.ERROR)
+        end
+      end)
+    end,
+  })
+
+  if job_id <= 0 then
+    vim.notify("Failed to start SQL CLI", vim.log.levels.ERROR)
+  end
 end
 
 -- Execute query at cursor with execution plan
