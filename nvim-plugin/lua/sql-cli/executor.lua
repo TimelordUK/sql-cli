@@ -480,11 +480,24 @@ function M.execute_statement_at_cursor(config, state)
     return
   end
 
-  -- Count statement number at cursor by counting GO separators before cursor
+  -- Count statement number at cursor by finding which statement block contains the cursor
+  -- Statement blocks are separated by GO terminators
+  -- Statement 1 starts at line 1 and ends at the first GO
+  -- Statement 2 starts after the first GO and ends at the second GO, etc.
   local statement_num = 1
-  for i = 1, cursor_line - 1 do
+  local current_stmt_start = 1
+
+  for i = 1, #lines do
     if lines[i]:match("^%s*GO%s*$") then
-      statement_num = statement_num + 1
+      -- Found a GO terminator
+      if i < cursor_line then
+        -- GO is before cursor, so cursor is in next statement
+        statement_num = statement_num + 1
+        current_stmt_start = i + 1
+      else
+        -- GO is at or after cursor, so cursor is in current statement
+        break
+      end
     end
   end
 
