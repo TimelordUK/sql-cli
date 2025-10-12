@@ -44,14 +44,16 @@ ORDER BY trade_count DESC
 LIMIT 10;
 GO
 
--- Stage 4: Find largest trades by quantity
+-- Stage 4: Calculate absolute notional values and find largest
 SELECT
     Source,
     BloomberTicker,
     BuySell,
     SignedQuantity,
-    Price
+    Price,
+    (SignedQuantity * Price) as notional_value,
+    ABS(SignedQuantity * Price) as abs_notional
 FROM #bloomberg_trades
-ORDER BY SignedQuantity DESC
-LIMIT 5;
+ORDER BY abs_notional DESC
+LIMIT 10;
 GO
