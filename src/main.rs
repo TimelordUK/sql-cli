@@ -486,6 +486,85 @@ fn parse_non_interactive_args(args: &[String]) -> NonInteractiveArgs {
     }
 }
 
+/// Handle action debugger mode (--keys and --keys-simple)
+/// Launches either the action_debugger or action_logger binary
+fn handle_key_debugger_mode(args: &[String]) -> Option<io::Result<()>> {
+    if !args.contains(&"--keys".to_string()) && !args.contains(&"--keys-simple".to_string()) {
+        return None;
+    }
+
+    let use_simple = args.contains(&"--keys-simple".to_string());
+
+    if use_simple {
+        println!("Launching Action System Logger (Simple Version)...");
+        println!("This tool shows how keys map to actions in real-time.\n");
+    } else {
+        println!("Launching Action System Debugger...");
+        println!("This interactive TUI shows key mappings, history, and state.\n");
+    }
+
+    use std::process::Command;
+
+    let binary_name = if use_simple {
+        "action_logger"
+    } else {
+        "action_debugger"
+    };
+
+    let status = Command::new(
+        std::env::current_exe()
+            .ok()?
+            .parent()
+            .unwrap()
+            .join(binary_name),
+    )
+    .status();
+
+    match status {
+        Ok(exit_status) if exit_status.success() => Some(Ok(())),
+        Ok(_) => {
+            eprintln!("{binary_name} exited with error");
+            std::process::exit(1);
+        }
+        Err(e) => {
+            eprintln!("Failed to launch {binary_name}: {e}");
+            eprintln!("Make sure it's built with: cargo build --bin {binary_name}");
+            std::process::exit(1);
+        }
+    }
+}
+
+/// Handle config file generation (--generate-config)
+/// Creates a default configuration file with comments
+fn handle_config_generation(args: &[String]) -> Option<io::Result<()>> {
+    if !args.contains(&"--generate-config".to_string()) {
+        return None;
+    }
+
+    match sql_cli::config::config::Config::get_config_path() {
+        Ok(path) => {
+            let config_content = sql_cli::config::config::Config::create_default_with_comments();
+            if let Some(parent) = path.parent() {
+                if let Err(e) = std::fs::create_dir_all(parent) {
+                    eprintln!("Error creating config directory: {e}");
+                    std::process::exit(1);
+                }
+            }
+            if let Err(e) = std::fs::write(&path, config_content) {
+                eprintln!("Error writing config file: {e}");
+                std::process::exit(1);
+            }
+            println!("Configuration file created at: {path:?}");
+            println!("Edit this file to customize your SQL CLI experience.");
+            Some(Ok(()))
+        }
+        Err(e) => {
+            eprintln!("Error determining config path: {e}");
+            std::process::exit(1);
+        }
+    }
+}
+
 /// Handle non-interactive query mode
 /// Executes queries from command line or file and outputs results
 fn handle_non_interactive_query(
@@ -718,7 +797,7 @@ fn main() -> io::Result<()> {
         return handle_non_interactive_query(&args, parsed_args);
     }
 
-    // Check for config initialization
+    // Handle config initialization wizard
     if args.contains(&"--init-config".to_string()) {
         match sql_cli::config::config::Config::init_wizard() {
             Ok(config) => {
@@ -735,71 +814,14 @@ fn main() -> io::Result<()> {
         }
     }
 
-    // Check for action debugger mode
-    if args.contains(&"--keys".to_string()) || args.contains(&"--keys-simple".to_string()) {
-        let use_simple = args.contains(&"--keys-simple".to_string());
-
-        if use_simple {
-            println!("Launching Action System Logger (Simple Version)...");
-            println!("This tool shows how keys map to actions in real-time.\n");
-        } else {
-            println!("Launching Action System Debugger...");
-            println!("This interactive TUI shows key mappings, history, and state.\n");
-        }
-
-        // Import what we need for the debugger
-        use std::process::Command;
-
-        // Choose which binary to run
-        let binary_name = if use_simple {
-            "action_logger"
-        } else {
-            "action_debugger"
-        };
-
-        // Run the selected binary
-        let status =
-            Command::new(std::env::current_exe()?.parent().unwrap().join(binary_name)).status();
-
-        match status {
-            Ok(exit_status) if exit_status.success() => return Ok(()),
-            Ok(_) => {
-                eprintln!("{binary_name} exited with error");
-                std::process::exit(1);
-            }
-            Err(e) => {
-                eprintln!("Failed to launch {binary_name}: {e}");
-                eprintln!("Make sure it's built with: cargo build --bin {binary_name}");
-                std::process::exit(1);
-            }
-        }
+    // Handle action debugger mode (--keys and --keys-simple)
+    if let Some(result) = handle_key_debugger_mode(&args) {
+        return result;
     }
 
-    // Check for config file generation
-    if args.contains(&"--generate-config".to_string()) {
-        match sql_cli::config::config::Config::get_config_path() {
-            Ok(path) => {
-                let config_content =
-                    sql_cli::config::config::Config::create_default_with_comments();
-                if let Some(parent) = path.parent() {
-                    if let Err(e) = std::fs::create_dir_all(parent) {
-                        eprintln!("Error creating config directory: {e}");
-                        std::process::exit(1);
-                    }
-                }
-                if let Err(e) = std::fs::write(&path, config_content) {
-                    eprintln!("Error writing config file: {e}");
-                    std::process::exit(1);
-                }
-                println!("Configuration file created at: {path:?}");
-                println!("Edit this file to customize your SQL CLI experience.");
-                return Ok(());
-            }
-            Err(e) => {
-                eprintln!("Error determining config path: {e}");
-                std::process::exit(1);
-            }
-        }
+    // Handle config file generation (--generate-config)
+    if let Some(result) = handle_config_generation(&args) {
+        return result;
     }
 
     // Don't launch TUI if we're just checking schema
