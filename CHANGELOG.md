@@ -5,6 +5,115 @@ All notable changes to SQL CLI will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.60.0] - 2025-10-12
+
+### 🚀 Dependency-Aware Script Execution & Multi-Stage Analysis
+
+This release introduces powerful dependency-aware script execution with comprehensive support for multi-stage SQL pipelines, mimicking real-world hedge fund trading workflows.
+
+### ✨ New Features
+
+#### **Dependency-Aware `--execute-statement` Feature**
+- **Smart statement execution** - `--execute-statement N` analyzes dependencies and executes only required statements
+- **Temp table tracking** - Automatically detects `SELECT ... INTO #table` and registers temp tables for subsequent queries
+- **Minimal execution** - Only runs statements needed to produce target result (skips unrelated statements)
+- **DUAL table fallback** - WEB CTEs work without CSV files, using DUAL table when no data file provided
+- **Case-insensitive GO** - Script parser now handles `GO`, `go`, and `Go` separators
+
+#### **Neovim Plugin `\sx` Enhancement**
+- **Case-insensitive GO support** - `\sx` (execute at cursor) now works with both uppercase and lowercase GO
+- **Correct statement counting** - Fixed bug where statement numbers were off by one
+- **No data file errors fixed** - WEB CTEs no longer require CSV data files
+
+#### **Comprehensive Hedge Fund Analysis Example**
+- **8-stage analysis pipeline** (`examples/hedge_fund_execution_analysis.sql`)
+  1. Parse FIX Messages - Fetch execution reports via HTTP
+  2. Compute Timing Metrics - Rolling VWAP, cumulative volume, LAG analysis
+  3. Fetch Trade Database - Query internal trade records
+  4. Enrich Securities Master - Add instrument details (sector, ISIN)
+  5. Join Full Dataset - Combine all data sources
+  6. Execution Quality by Sector - Latency and volume analysis
+  7. Symbol-Level VWAP - Top 10 by volume with rolling averages
+  8. Latency Distribution - Bucket analysis of execution speeds
+
+#### **Enhanced Flask Test Server**
+- **`/securities` endpoint** - Securities master data (ticker, sector, exchange, ISIN)
+- **`/fix_messages` endpoint** - Simulated FIX execution reports with timing/latency data
+- **`/parent_orders` endpoint** - Parent/child order hierarchy (ready for future examples)
+
+### 🔧 Technical Improvements
+
+#### **Temp Table Registration**
+- `execute_statement_with_temp_tables()` now properly registers temp tables after execution
+- Uses `materialize_view()` to convert DataView to DataTable
+- Made `materialize_view()` public in QueryEngine (was private)
+- Temp tables accessible to all subsequent statements in execution chain
+
+#### **WEB CTE Enhancements**
+- Fixed "Column not found" errors - WEB CTEs must SELECT FROM the CTE name
+- Added empty BODY '{}' support for endpoints that don't need parameters
+- Proper error handling for HTTP endpoints
+
+#### **GROUP BY with CASE Expressions**
+- Fixed "must appear in GROUP BY clause" errors
+- GROUP BY now supports full CASE expressions (not just column aliases)
+- Repeated CASE expression in GROUP BY clause for proper aggregation
+
+### 📊 Performance
+
+Multi-stage pipeline execution is extremely fast:
+```
+8 statements (5 dependencies analyzed, 3 skipped)
+Total execution time: 105.96ms
+✅ All temp tables properly created and chained
+```
+
+### 🐛 Bug Fixes
+
+**Nvim Plugin (`nvim-plugin/lua/sql-cli/executor.lua`)**:
+- Fixed statement counting logic - was counting GOs before cursor instead of finding which block contains cursor
+- Added case-insensitive GO matching with `.upper()` method
+- Fixed "executing statement #1" when cursor was actually on statement #2
+
+**Main CLI (`src/main.rs`)**:
+- Fixed "no data file provided" error for WEB CTE queries
+- Use DUAL table when no data file specified (lines 803-814)
+- Fixed temp tables not being registered (lines 833-856)
+- Capture `into_table` name and register after successful execution
+
+**Query Engine (`src/data/query_engine.rs`)**:
+- Made `materialize_view()` public (line 1073) for temp table creation
+
+### 📚 Examples & Testing
+
+**Usage**:
+```bash
+# Run complete analysis pipeline
+./target/release/sql-cli -f examples/hedge_fund_execution_analysis.sql
+
+# Execute specific stage with dependencies
+./target/release/sql-cli -f examples/hedge_fund_execution_analysis.sql --execute-statement 8
+
+# In Neovim: \sq (run all) or \sx (run statement at cursor)
+```
+
+**Features Demonstrated**:
+- WEB CTEs for HTTP data fetching
+- Multi-stage temp table pipeline (`#fix_messages` → `#enriched_fix` → `#full_dataset`)
+- Window functions (LAG, AVG OVER, SUM OVER, ROW_NUMBER)
+- Complex joins and aggregations
+- CASE expressions in SELECT and GROUP BY
+- Dependency analysis and optimal execution order
+
+### 🎉 User Feedback
+
+Real user validation:
+> "mind blowing! so i have a query file where end query has 5 intermediary steps, 5 dependencies... and the final query works!"
+
+> "this is amazing"
+
+The feature has been tested with real production queries involving complex multi-stage pipelines with temp table dependencies.
+
 ## [1.59.0] - 2025-10-11
 
 ### 🚀 Critical Performance Fix & Infrastructure Improvements
