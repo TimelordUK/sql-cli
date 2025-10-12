@@ -1,0 +1,93 @@
+version: 1
+
+# Financial data styling configuration
+# This file demonstrates terminal color styling for SQL CLI table output
+# Use with: sql-cli -f query.sql -o table --styled
+
+# Column-based rules: Style cells based on exact value matches
+columns:
+  Side:
+    - value: "Buy"
+      fg_color: blue
+      bold: true
+    - value: "Sell"
+      fg_color: red
+      bold: true
+
+  Status:
+    - value: "Active"
+      fg_color: green
+    - value: "Inactive"
+      fg_color: dark_grey
+    - value: "Pending"
+      fg_color: yellow
+
+  ExecutionStatus:
+    - value: "Filled"
+      fg_color: green
+    - value: "PartialFill"
+      fg_color: yellow
+    - value: "Rejected"
+      fg_color: red
+      bold: true
+
+# Numeric range rules: Style cells based on numeric conditions
+numeric_ranges:
+  LatencyMs:
+    - condition: "< 100"
+      fg_color: green
+    - condition: ">= 100 AND < 300"
+      fg_color: yellow
+    - condition: ">= 300"
+      fg_color: red
+      bold: true
+
+  ExecutionPrice:
+    - condition: "> 400"
+      fg_color: cyan
+      bold: true
+    - condition: "> 300 AND <= 400"
+      fg_color: blue
+    - condition: "<= 300"
+      fg_color: dark_cyan
+
+  PnL:
+    - condition: "> 0"
+      fg_color: green
+      bold: true
+    - condition: "< 0"
+      fg_color: red
+      bold: true
+    - condition: "== 0"
+      fg_color: dark_grey
+
+  FillRate:
+    - condition: ">= 0.95"
+      fg_color: green
+      bold: true
+    - condition: ">= 0.80 AND < 0.95"
+      fg_color: blue
+    - condition: "< 0.80"
+      fg_color: red
+
+# Pattern rules: Style cells based on regex patterns
+patterns:
+  - regex: "^ERROR"
+    fg_color: red
+    bold: true
+  - regex: "^WARN"
+    fg_color: yellow
+  - regex: "^INFO"
+    fg_color: blue
+  - regex: "ALGO-[0-9]+"
+    fg_color: cyan
+
+# Default styles for table headers
+defaults:
+  header_color: white
+  header_bold: true
+
+# Available colors:
+# - red, green, blue, yellow, cyan, magenta, white, black
+# - dark_red, dark_green, dark_blue, dark_yellow, dark_cyan, dark_magenta
+# - dark_grey/dark_gray, grey/gray
