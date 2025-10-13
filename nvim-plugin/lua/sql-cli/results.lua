@@ -818,4 +818,188 @@ function M.sync_columns_to_query_buffer(query_bufnr, columns, config)
   end)
 end
 
+-- Expand * with dependency-aware execution for scripts with temp tables
+-- Uses the CLI --get-columns-at flag to analyze dependencies and get columns
+function M.expand_star_with_dependencies(config, state)
+  local log = get_logger()
+
+  if log then
+    log.info('expand_star', '=== expand_star_with_dependencies called ===')
+  end
+
+  -- Get current buffer and cursor position
+  local bufnr = vim.api.nvim_get_current_buf()
+  local cursor_line = vim.fn.line('.')
+  local lines = vim.api.nvim_buf_get_lines(bufnr, 0, -1, false)
+
+  -- Check if cursor line has SELECT *
+  local current_line_text = lines[cursor_line]
+  local has_select_star = current_line_text:match("SELECT%s+%*") or
+                          current_line_text:lower():match("select%s+%*") or
+                          current_line_text:match("^%s*%*%s*$")
+
+  if not has_select_star then
+    if log then
+      log.warn('expand_star', 'No SELECT * found on current line')
+    end
+    vim.notify("No SELECT * found on current line", vim.log.levels.WARN)
+    return
+  end
+
+  -- Get script text
+  local script = table.concat(lines, "\n")
+
+  -- Check if this is a script with GO separators
+  local has_go_separator = script:match("%sGO%s") or
+                          script:match("^GO%s") or
+                          script:match("%sGO$") or
+                          script:match("^GO$")
+
+  if not has_go_separator then
+    if log then
+      log.info('expand_star', 'No GO separators detected, falling back to smart expansion')
+    end
+    -- Fall back to regular smart expansion
+    M.expand_star_smart(config, state)
+    return
+  end
+
+  if log then
+    log.info('expand_star', string.format('Script with GO separators detected, using dependency-aware expansion at line %d', cursor_line))
+  end
+
+  vim.notify("Analyzing script dependencies...", vim.log.levels.INFO)
+
+  -- Save script to temp file
+  local temp_file = vim.fn.tempname() .. ".sql"
+  local file = io.open(temp_file, "w")
+  if not file then
+    vim.notify("Failed to create temporary file", vim.log.levels.ERROR)
+    return
+  end
+  file:write(script)
+  file:close()
+
+  if log then
+    log.debug('expand_star', 'Saved script to temp file: ' .. temp_file)
+  end
+
+  -- Build command
+  local command_path, err = utils.get_command_path(config.command)
+  if not command_path then
+    if log then
+      log.error('expand_star', 'Failed to get command path: ' .. (err or 'unknown error'))
+    end
+    vim.notify(err, vim.log.levels.ERROR)
+    return
+  end
+
+  local args = {}
+
+  -- Add data file if set
+  local data_file = state:get_data_file()
+  if data_file then
+    if log then
+      log.info('expand_star', 'Using data file: ' .. data_file)
+    end
+    table.insert(args, data_file)
+  else
+    if log then
+      log.warn('expand_star', 'No data file set')
+    end
+  end
+
+  -- Add script file and --get-columns-at flag
+  table.insert(args, '-f')
+  table.insert(args, temp_file)
+  table.insert(args, '--get-columns-at')
+  table.insert(args, tostring(cursor_line))
+
+  if log then
+    log.debug('expand_star', 'CLI args: ' .. vim.inspect(args))
+    log.info('expand_star', 'Executing CLI to get columns...')
+  end
+
+  -- Execute CLI command
+  Job:new({
+    command = command_path,
+    args = args,
+    on_exit = function(j, return_val)
+      vim.schedule(function()
+        local log = get_logger()
+
+        -- Clean up temp file
+        vim.fn.delete(temp_file)
+
+        if return_val == 0 then
+          if log then
+            log.info('expand_star', 'CLI execution successful (exit code 0)')
+          end
+
+          local result = table.concat(j:result(), '\n')
+
+          if log then
+            log.debug('expand_star', 'Raw result: ' .. result)
+          end
+
+          -- Parse CSV result (columns should be on first non-empty line)
+          local columns = {}
+          for col in result:gmatch("[^,]+") do
+            -- Trim whitespace
+            col = col:match("^%s*(.-)%s*$")
+            if col and col ~= "" then
+              table.insert(columns, col)
+            end
+          end
+
+          if #columns > 0 then
+            if log then
+              log.info('expand_star', string.format('Extracted %d columns: %s',
+                #columns, table.concat(columns, ', ')))
+            end
+
+            -- Store columns in state
+            state:set_last_query_columns(columns)
+
+            -- Perform the replacement
+            M.replace_star_with_columns(columns)
+
+            -- Add column hint comment
+            M.add_column_hint_comment(columns, config)
+
+            if log then
+              log.info('expand_star', '=== expand_star_with_dependencies completed successfully ===')
+            end
+          else
+            if log then
+              log.error('expand_star', 'No columns extracted from CLI output')
+            end
+            vim.notify("No columns returned from CLI", vim.log.levels.WARN)
+
+            -- Fall back to smart expansion
+            if log then
+              log.info('expand_star', 'Falling back to smart expansion')
+            end
+            M.expand_star_smart(config, state)
+          end
+        else
+          local err_msg = table.concat(j:stderr_result(), '\n')
+          if log then
+            log.error('expand_star', string.format('CLI execution failed with exit code %d', return_val))
+            log.error('expand_star', 'Error message: ' .. err_msg)
+          end
+          vim.notify("Column expansion failed: " .. err_msg, vim.log.levels.ERROR)
+
+          -- Fall back to smart expansion
+          if log then
+            log.info('expand_star', 'Falling back to smart expansion after CLI failure')
+          end
+          vim.notify("Falling back to regular expansion...", vim.log.levels.INFO)
+          M.expand_star_smart(config, state)
+        end
+      end)
+    end
+  }):start()
+end
+
 return M

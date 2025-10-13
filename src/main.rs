@@ -259,6 +259,12 @@ fn print_help() {
     println!("    Example: sql-cli -f script.sql --execute-statement 3");
     println!("    Only executes statement #3 and its dependencies (temp tables, CTEs)");
     println!(
+        "  {} <line> - Get available columns at specific line",
+        "--get-columns-at".green()
+    );
+    println!("    Example: sql-cli -f script.sql --get-columns-at 25");
+    println!("    Returns CSV of columns available at that line (for \\sX expansion)");
+    println!(
         "  {}       - Show dependency analysis without execution",
         "--dry-run".green()
     );
@@ -424,6 +430,7 @@ struct NonInteractiveArgs {
     extract_cte_arg: Option<String>,
     query_at_position_arg: Option<String>,
     execute_statement_arg: Option<usize>,
+    get_columns_at_arg: Option<usize>,
     dry_run_arg: bool,
     styled_arg: bool,
     style_file_arg: Option<String>,
@@ -519,6 +526,12 @@ fn parse_non_interactive_args(args: &[String]) -> NonInteractiveArgs {
         execute_statement_arg: args
             .iter()
             .position(|arg| arg == "--execute-statement")
+            .and_then(|pos| args.get(pos + 1))
+            .and_then(|s| s.parse::<usize>().ok()),
+
+        get_columns_at_arg: args
+            .iter()
+            .position(|arg| arg == "--get-columns-at")
             .and_then(|pos| args.get(pos + 1))
             .and_then(|s| s.parse::<usize>().ok()),
 
@@ -891,7 +904,7 @@ fn handle_execute_statement(
 
         // Use the configured output format - build a NonInteractiveConfig to reuse execute_non_interactive logic
         // But we'll inline the output logic here since we already have the results
-        use std::io::Write;
+        
 
         let output_format =
             sql_cli::non_interactive::OutputFormat::from_str(&parsed_args.output_format_arg)
@@ -930,6 +943,140 @@ fn handle_execute_statement(
         }
     }
 
+    Ok(())
+}
+
+/// Handle --get-columns-at flag for IDE/plugin integration
+/// Returns available columns at a specific line in the script
+fn handle_get_columns_at(
+    script: &str,
+    data_file: &str,
+    target_line: usize,
+) -> io::Result<()> {
+    use sql_cli::analysis::statement_dependencies::DependencyAnalyzer;
+    use sql_cli::sql::recursive_parser::Parser;
+    use sql_cli::sql::script_parser::ScriptParser;
+
+    // Parse the script into statements
+    let parser = ScriptParser::new(script);
+    let statements = parser.parse_statements();
+
+    if statements.is_empty() {
+        eprintln!("Error: No statements found in script");
+        std::process::exit(1);
+    }
+
+    // Find which statement contains the target line
+    // Count lines to find statement number
+    let mut current_line = 1;
+    let mut target_statement = 0;
+
+    for (idx, stmt) in statements.iter().enumerate() {
+        let stmt_lines = stmt.lines().count();
+        if current_line <= target_line && target_line < current_line + stmt_lines {
+            target_statement = idx + 1; // 1-based numbering
+            break;
+        }
+        current_line += stmt_lines + 1; // +1 for GO separator
+    }
+
+    if target_statement == 0 {
+        eprintln!("Error: Line {} not found in script", target_line);
+        std::process::exit(1);
+    }
+
+    // Analyze dependencies
+    let analyzed = DependencyAnalyzer::analyze_statements(&statements)
+        .map_err(|e| io::Error::other(format!("Dependency analysis failed: {}", e)))?;
+
+    // Compute execution plan for the target statement
+    let plan = DependencyAnalyzer::compute_execution_plan(&analyzed, target_statement)
+        .map_err(|e| io::Error::other(format!("Failed to compute execution plan: {}", e)))?;
+
+    // Load the data source if provided
+    use sql_cli::data::datatable_loaders::load_csv_to_datatable;
+    use sql_cli::data::query_engine::QueryEngine;
+    use sql_cli::data::temp_table_registry::TempTableRegistry;
+    use std::sync::Arc;
+
+    let data_table = if !data_file.is_empty() {
+        load_csv_to_datatable(
+            std::path::Path::new(data_file),
+            "data",
+        )
+        .map_err(|e| io::Error::other(format!("Failed to load data file: {}", e)))?
+    } else {
+        use sql_cli::data::datatable::DataTable;
+        DataTable::dual()
+    };
+
+    let table_arc = Arc::new(data_table);
+    let engine = QueryEngine::new();
+    let mut temp_tables = TempTableRegistry::new();
+
+    // Execute all dependent statements to materialize temp tables
+    for stmt_num in &plan.statements_to_execute {
+        if *stmt_num >= target_statement {
+            break; // Only execute dependencies, not the target itself
+        }
+
+        let stmt_sql = &statements[stmt_num - 1];
+        let mut stmt_parser = Parser::new(stmt_sql);
+        let parsed_stmt = stmt_parser.parse().map_err(|e| {
+            io::Error::other(format!("Failed to parse statement #{}: {}", stmt_num, e))
+        })?;
+
+        let into_table_name = parsed_stmt.into_table.as_ref().map(|it| it.name.clone());
+
+        match engine.execute_statement_with_temp_tables(
+            table_arc.clone(),
+            parsed_stmt,
+            Some(&temp_tables),
+        ) {
+            Ok(result) => {
+                if let Some(temp_name) = into_table_name {
+                    let temp_table = engine.materialize_view(result).map_err(|e| {
+                        io::Error::other(format!("Failed to materialize temp table: {}", e))
+                    })?;
+                    temp_tables.insert(temp_name.clone(), Arc::new(temp_table));
+                }
+            }
+            Err(e) => {
+                eprintln!("Error executing statement #{}: {}", stmt_num, e);
+                std::process::exit(1);
+            }
+        }
+    }
+
+    // Now determine columns available at target line
+    // Parse the target statement to see what table it's querying
+    let target_sql = &statements[target_statement - 1];
+    let mut target_parser = Parser::new(target_sql);
+    let target_ast = target_parser.parse().map_err(|e| {
+        io::Error::other(format!("Failed to parse target statement: {}", e))
+    })?;
+
+    // Check if querying a temp table
+    let columns = if let Some(from_table) = &target_ast.from_table {
+        if from_table.starts_with('#') {
+            // Temp table - get columns from temp table registry
+            if let Some(temp_table) = temp_tables.get(from_table) {
+                temp_table.column_names()
+            } else {
+                eprintln!("Error: Temp table {} not found", from_table);
+                std::process::exit(1);
+            }
+        } else {
+            // Base table - get from data source
+            table_arc.column_names()
+        }
+    } else {
+        // No FROM clause, return empty
+        vec![]
+    };
+
+    // Output columns as CSV (one line, comma-separated)
+    println!("{}", columns.join(","));
     Ok(())
 }
 
@@ -1160,6 +1307,19 @@ fn handle_non_interactive_query(
             parsed_args.dry_run_arg,
             &parsed_args,
         );
+    }
+
+    // Handle --get-columns-at flag (for IDE/plugin integration)
+    if let Some(target_line) = parsed_args.get_columns_at_arg {
+        if !is_script {
+            eprintln!(
+                "Error: --get-columns-at requires a multi-statement script with GO separators"
+            );
+            eprintln!("Use -f to provide a script file");
+            std::process::exit(1);
+        }
+
+        return handle_get_columns_at(&query, &data_file, target_line);
     }
 
     // Parse max column width (0 = unlimited, default = 50)

@@ -198,8 +198,8 @@ function M.create_commands()
   end, { desc = "Open query results in new buffer" })
 
   vim.api.nvim_create_user_command("SqlCliExpandStar", function()
-    results.expand_star_smart(M.config, M.state)
-  end, { desc = "Expand SELECT * to column names (smart)" })
+    results.expand_star_with_dependencies(M.config, M.state)
+  end, { desc = "Expand SELECT * to column names (with dependencies)" })
 
   vim.api.nvim_create_user_command("SqlCliToggleTableNav", function()
     table_nav.toggle_navigation(nil, M.config)
@@ -529,8 +529,8 @@ function M.setup_keymaps()
 
   if keymaps.expand_star then
     vim.keymap.set("n", keymaps.expand_star, function()
-      results.expand_star_smart(M.config, M.state)
-    end, { desc = "Expand SELECT * (smart)", silent = true })
+      results.expand_star_with_dependencies(M.config, M.state)
+    end, { desc = "Expand SELECT * (with dependencies)", silent = true })
 
     vim.keymap.set("v", keymaps.expand_star, function()
       results.expand_star_visual(M.config, M.state)

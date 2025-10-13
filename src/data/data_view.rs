@@ -221,6 +221,11 @@ impl DataView {
     }
 
     /// Detect columns that are entirely empty (NULL or empty string) in visible rows
+    ///
+    /// IMPORTANT: This now checks ALL visible rows to ensure accuracy for sparse columns.
+    /// In real-world trading scenarios (e.g., FIX messages), a column might have only
+    /// a few non-NULL values among thousands of rows. We cannot afford to miss these
+    /// due to sampling limitations.
     pub fn detect_empty_columns(&self) -> Vec<usize> {
         let mut empty_columns = Vec::new();
 
@@ -235,11 +240,15 @@ impl DataView {
             let mut is_empty = true;
             let mut sample_values = Vec::new();
 
-            // Sample rows to check if column has any non-empty values
-            // Check all visible rows up to a reasonable limit for performance
-            let rows_to_check = self.visible_rows.len().min(1000);
-
-            for &row_idx in self.visible_rows.iter().take(rows_to_check) {
+            // CRITICAL FIX: Check ALL visible rows to catch sparse columns
+            // Previous version only checked first 1000 rows, causing sparse columns
+            // (like FIX message tags that appear only in certain message types)
+            // to be incorrectly classified as all-NULL.
+            //
+            // Performance note: This iterates through all rows but exits early
+            // as soon as we find a non-NULL value, so it's still fast for
+            // truly empty columns.
+            for &row_idx in self.visible_rows.iter() {
                 if let Some(value) = self.source.get_value(row_idx, col_idx) {
                     // Collect first few values for debugging
                     if sample_values.len() < 3 {
@@ -255,8 +264,9 @@ impl DataView {
                         DataValue::String(s) if s == "nil" => continue,  // Handle "nil" strings
                         DataValue::String(s) if s == "undefined" => continue, // Handle "undefined" strings
                         _ => {
+                            // Found a non-NULL value - this column is NOT empty
                             is_empty = false;
-                            break;
+                            break; // Early exit for performance
                         }
                     }
                 }
@@ -264,9 +274,10 @@ impl DataView {
 
             if is_empty {
                 tracing::debug!(
-                    "Column '{}' (idx {}) detected as empty. Sample values: {:?}",
+                    "Column '{}' (idx {}) detected as empty across all {} visible rows. Sample values: {:?}",
                     column_name,
                     col_idx,
+                    self.visible_rows.len(),
                     sample_values
                 );
                 empty_columns.push(col_idx);
@@ -281,9 +292,10 @@ impl DataView {
         }
 
         tracing::info!(
-            "Detected {} empty columns out of {} visible columns",
+            "Detected {} empty columns out of {} visible columns (checked {} rows)",
             empty_columns.len(),
-            self.visible_columns.len()
+            self.visible_columns.len(),
+            self.visible_rows.len()
         );
         empty_columns
     }
