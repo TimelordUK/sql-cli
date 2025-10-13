@@ -1049,31 +1049,26 @@ fn handle_get_columns_at(
     }
 
     // Now determine columns available at target line
-    // Parse the target statement to see what table it's querying
+    // Execute the target statement to get its schema (this handles CTEs, subqueries, etc.)
     let target_sql = &statements[target_statement - 1];
     let mut target_parser = Parser::new(target_sql);
     let target_ast = target_parser.parse().map_err(|e| {
         io::Error::other(format!("Failed to parse target statement: {}", e))
     })?;
 
-    // Check if querying a temp table
-    let columns = if let Some(from_table) = &target_ast.from_table {
-        if from_table.starts_with('#') {
-            // Temp table - get columns from temp table registry
-            if let Some(temp_table) = temp_tables.get(from_table) {
-                temp_table.column_names()
-            } else {
-                eprintln!("Error: Temp table {} not found", from_table);
-                std::process::exit(1);
-            }
-        } else {
-            // Base table - get from data source
-            table_arc.column_names()
-        }
-    } else {
-        // No FROM clause, return empty
-        vec![]
-    };
+    // Execute with LIMIT 0 to get just the schema (no data)
+    let mut limited_ast = target_ast.clone();
+    limited_ast.limit = Some(0);
+
+    // Execute to get schema
+    let result = engine
+        .execute_statement_with_temp_tables(table_arc.clone(), limited_ast, Some(&temp_tables))
+        .map_err(|e| {
+            io::Error::other(format!("Failed to execute target statement for schema: {}", e))
+        })?;
+
+    // Get column names from the result
+    let columns = result.column_names();
 
     // Output columns as CSV (one line, comma-separated)
     println!("{}", columns.join(","));
