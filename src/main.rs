@@ -904,7 +904,6 @@ fn handle_execute_statement(
 
         // Use the configured output format - build a NonInteractiveConfig to reuse execute_non_interactive logic
         // But we'll inline the output logic here since we already have the results
-        
 
         let output_format =
             sql_cli::non_interactive::OutputFormat::from_str(&parsed_args.output_format_arg)
@@ -948,11 +947,7 @@ fn handle_execute_statement(
 
 /// Handle --get-columns-at flag for IDE/plugin integration
 /// Returns available columns at a specific line in the script
-fn handle_get_columns_at(
-    script: &str,
-    data_file: &str,
-    target_line: usize,
-) -> io::Result<()> {
+fn handle_get_columns_at(script: &str, data_file: &str, target_line: usize) -> io::Result<()> {
     use sql_cli::analysis::statement_dependencies::DependencyAnalyzer;
     use sql_cli::sql::recursive_parser::Parser;
     use sql_cli::sql::script_parser::ScriptParser;
@@ -1000,11 +995,8 @@ fn handle_get_columns_at(
     use std::sync::Arc;
 
     let data_table = if !data_file.is_empty() {
-        load_csv_to_datatable(
-            std::path::Path::new(data_file),
-            "data",
-        )
-        .map_err(|e| io::Error::other(format!("Failed to load data file: {}", e)))?
+        load_csv_to_datatable(std::path::Path::new(data_file), "data")
+            .map_err(|e| io::Error::other(format!("Failed to load data file: {}", e)))?
     } else {
         use sql_cli::data::datatable::DataTable;
         DataTable::dual()
@@ -1052,9 +1044,9 @@ fn handle_get_columns_at(
     // Execute the target statement to get its schema (this handles CTEs, subqueries, etc.)
     let target_sql = &statements[target_statement - 1];
     let mut target_parser = Parser::new(target_sql);
-    let target_ast = target_parser.parse().map_err(|e| {
-        io::Error::other(format!("Failed to parse target statement: {}", e))
-    })?;
+    let target_ast = target_parser
+        .parse()
+        .map_err(|e| io::Error::other(format!("Failed to parse target statement: {}", e)))?;
 
     // Execute with LIMIT 0 to get just the schema (no data)
     let mut limited_ast = target_ast.clone();
@@ -1064,7 +1056,10 @@ fn handle_get_columns_at(
     let result = engine
         .execute_statement_with_temp_tables(table_arc.clone(), limited_ast, Some(&temp_tables))
         .map_err(|e| {
-            io::Error::other(format!("Failed to execute target statement for schema: {}", e))
+            io::Error::other(format!(
+                "Failed to execute target statement for schema: {}",
+                e
+            ))
         })?;
 
     // Get column names from the result
