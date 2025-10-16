@@ -961,22 +961,70 @@ fn handle_get_columns_at(script: &str, data_file: &str, target_line: usize) -> i
         std::process::exit(1);
     }
 
-    // Find which statement contains the target line
-    // Count lines to find statement number
-    let mut current_line = 1;
+    // Find which statement contains the target line by scanning the original script
+    // We need to map line numbers in the original file to statement indices
+    let script_lines: Vec<&str> = script.lines().collect();
     let mut target_statement = 0;
 
-    for (idx, stmt) in statements.iter().enumerate() {
-        let stmt_lines = stmt.lines().count();
-        if current_line <= target_line && target_line < current_line + stmt_lines {
-            target_statement = idx + 1; // 1-based numbering
+    // Build a map of line ranges to statement indices
+    // by scanning for GO separators in the original script
+    let mut statement_ranges: Vec<(usize, usize)> = Vec::new(); // (start_line, end_line) for each statement
+    let mut stmt_start_line = 1; // 1-based line numbering
+    let mut in_statement = false;
+    let mut last_non_empty_line = 1;
+
+    for (line_idx, line) in script_lines.iter().enumerate() {
+        let line_num = line_idx + 1; // Convert to 1-based
+        let trimmed = line.trim();
+
+        // Check if this is a GO separator
+        if trimmed.eq_ignore_ascii_case("go") {
+            // End current statement (if we have one)
+            if in_statement {
+                statement_ranges.push((stmt_start_line, last_non_empty_line));
+                in_statement = false;
+            }
+            // Next statement starts after the GO
+            stmt_start_line = line_num + 1;
+        } else if !trimmed.is_empty() {
+            // Non-empty, non-GO line - we're in a statement
+            if !in_statement {
+                in_statement = true;
+                stmt_start_line = line_num;
+            }
+            last_non_empty_line = line_num;
+        }
+    }
+
+    // Don't forget the last statement if we're still in one
+    if in_statement {
+        statement_ranges.push((stmt_start_line, script_lines.len()));
+    }
+
+    // Validate we found the same number of statements
+    if statement_ranges.len() != statements.len() {
+        eprintln!(
+            "Warning: Found {} statement ranges but ScriptParser returned {} statements",
+            statement_ranges.len(),
+            statements.len()
+        );
+    }
+
+    // Find which statement contains the target line
+    for (idx, (start, end)) in statement_ranges.iter().enumerate() {
+        if target_line >= *start && target_line <= *end {
+            target_statement = idx + 1; // 1-based statement numbering
             break;
         }
-        current_line += stmt_lines + 1; // +1 for GO separator
     }
 
     if target_statement == 0 {
         eprintln!("Error: Line {} not found in script", target_line);
+        eprintln!("Script has {} lines total", script_lines.len());
+        eprintln!("Found {} statements with ranges:", statement_ranges.len());
+        for (idx, (start, end)) in statement_ranges.iter().enumerate() {
+            eprintln!("  Statement {}: lines {}-{}", idx + 1, start, end);
+        }
         std::process::exit(1);
     }
 

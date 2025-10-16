@@ -866,6 +866,8 @@ function M.expand_star_with_dependencies(config, state)
 
   if log then
     log.info('expand_star', string.format('Script with GO separators detected, using dependency-aware expansion at line %d', cursor_line))
+    log.info('expand_star', string.format('Buffer has %d lines total, script length: %d chars', #lines, #script))
+    log.debug('expand_star', string.format('Line %d content: "%s"', cursor_line, current_line_text))
   end
 
   vim.notify("Analyzing script dependencies...", vim.log.levels.INFO)
@@ -882,6 +884,19 @@ function M.expand_star_with_dependencies(config, state)
 
   if log then
     log.debug('expand_star', 'Saved script to temp file: ' .. temp_file)
+    -- Log first and last 3 lines of script for debugging
+    local script_lines = vim.split(script, '\n')
+    local preview_lines = {}
+    for i = 1, math.min(3, #script_lines) do
+      table.insert(preview_lines, string.format('  [%d] %s', i, script_lines[i]))
+    end
+    if #script_lines > 6 then
+      table.insert(preview_lines, '  ...')
+    end
+    for i = math.max(4, #script_lines - 2), #script_lines do
+      table.insert(preview_lines, string.format('  [%d] %s', i, script_lines[i]))
+    end
+    log.debug('expand_star', 'Script preview:\n' .. table.concat(preview_lines, '\n'))
   end
 
   -- Build command
@@ -892,6 +907,10 @@ function M.expand_star_with_dependencies(config, state)
     end
     vim.notify(err, vim.log.levels.ERROR)
     return
+  end
+
+  if log then
+    log.info('expand_star', 'Command path: ' .. command_path)
   end
 
   local args = {}
@@ -917,7 +936,11 @@ function M.expand_star_with_dependencies(config, state)
 
   if log then
     log.debug('expand_star', 'CLI args: ' .. vim.inspect(args))
-    log.info('expand_star', 'Executing CLI to get columns...')
+    local full_command = command_path .. ' ' .. table.concat(vim.tbl_map(function(arg)
+      return vim.fn.shellescape(arg)
+    end, args), ' ')
+    log.info('expand_star', 'Full command: ' .. full_command)
+    log.info('expand_star', 'Executing CLI to get columns at line ' .. cursor_line .. '...')
   end
 
   -- Execute CLI command
@@ -928,28 +951,46 @@ function M.expand_star_with_dependencies(config, state)
       vim.schedule(function()
         local log = get_logger()
 
+        if log then
+          log.debug('expand_star', string.format('Job completed with exit code %d', return_val))
+        end
+
         -- Clean up temp file
         vim.fn.delete(temp_file)
+        if log then
+          log.debug('expand_star', 'Cleaned up temp file: ' .. temp_file)
+        end
 
         if return_val == 0 then
           if log then
             log.info('expand_star', 'CLI execution successful (exit code 0)')
           end
 
-          local result = table.concat(j:result(), '\n')
+          local stdout_lines = j:result()
+          local result = table.concat(stdout_lines, '\n')
 
           if log then
+            log.debug('expand_star', string.format('Stdout has %d lines, total length: %d', #stdout_lines, #result))
             log.debug('expand_star', 'Raw result: ' .. result)
           end
 
           -- Parse CSV result (columns should be on first non-empty line)
           local columns = {}
+          local col_count = 0
           for col in result:gmatch("[^,]+") do
             -- Trim whitespace
             col = col:match("^%s*(.-)%s*$")
             if col and col ~= "" then
+              col_count = col_count + 1
               table.insert(columns, col)
+              if log and col_count <= 10 then
+                log.debug('expand_star', string.format('Parsed column %d: "%s"', col_count, col))
+              end
             end
+          end
+
+          if log and col_count > 10 then
+            log.debug('expand_star', string.format('... and %d more columns', col_count - 10))
           end
 
           if #columns > 0 then
@@ -983,10 +1024,17 @@ function M.expand_star_with_dependencies(config, state)
             M.expand_star_smart(config, state)
           end
         else
-          local err_msg = table.concat(j:stderr_result(), '\n')
+          local stderr_lines = j:stderr_result()
+          local stdout_lines = j:result()
+          local err_msg = table.concat(stderr_lines, '\n')
+          local stdout_msg = table.concat(stdout_lines, '\n')
+
           if log then
             log.error('expand_star', string.format('CLI execution failed with exit code %d', return_val))
-            log.error('expand_star', 'Error message: ' .. err_msg)
+            log.error('expand_star', string.format('Stderr (%d lines): %s', #stderr_lines, err_msg))
+            if #stdout_lines > 0 then
+              log.debug('expand_star', string.format('Stdout (%d lines): %s', #stdout_lines, stdout_msg))
+            end
           end
           vim.notify("Column expansion failed: " .. err_msg, vim.log.levels.ERROR)
 
