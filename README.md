@@ -349,6 +349,8 @@ WHERE name.Contains('manager')
 
 Make your terminal output beautiful with ANSI color and formatting functions! Perfect for highlighting errors, warnings, status indicators, and creating visually stunning data presentations.
 
+![Description](docs/images/screenshot-20251018-235353.png)
+
 ```sql
 -- Rainbow colors demonstration 🌈
 SELECT
