@@ -430,7 +430,7 @@ function M.open_fuzzy_finder(bufnr)
 
   -- Initial title showing total rows and match mode
   local mode_indicator = M.config.match_mode == 'exact' and '[EXACT]' or '[FUZZY]'
-  local initial_title = string.format(' %s Filter %d rows (ESC: close, C-l: clear, C-t: toggle) ',
+  local initial_title = string.format(' %s Filter %d rows (CR: lock, ESC: clear, C-j/k: scroll, C-t: toggle) ',
     mode_indicator, #data.rows)
 
   local filter_win = vim.api.nvim_open_win(filter_buf, true, {
@@ -469,11 +469,41 @@ function M.open_fuzzy_finder(bufnr)
     cache = {}
   end, opts)
 
-  -- Apply filter and close
+  -- Lock filter (keep results, close input, enable navigation)
   vim.keymap.set('n', '<CR>', function()
     vim.api.nvim_win_close(filter_win, true)
-    -- Keep filtered content
-    vim.notify("Filter applied", vim.log.levels.INFO)
+    -- Keep filtered content but make it navigable
+    local visible_count = 0
+    for _, row in ipairs(data.rows) do
+      if row.visible then
+        visible_count = visible_count + 1
+      end
+    end
+    vim.notify(string.format("Filter locked - %d/%d rows visible (/ to reopen, ESC to clear)",
+      visible_count, #data.rows), vim.log.levels.INFO)
+
+    -- Focus back on the results buffer and make it modifiable for navigation
+    if vim.api.nvim_win_is_valid(vim.fn.win_getid()) then
+      vim.api.nvim_set_current_win(vim.fn.bufwinid(bufnr))
+    end
+  end, opts)
+
+  vim.keymap.set('i', '<CR>', function()
+    vim.api.nvim_win_close(filter_win, true)
+    -- Keep filtered content but make it navigable
+    local visible_count = 0
+    for _, row in ipairs(data.rows) do
+      if row.visible then
+        visible_count = visible_count + 1
+      end
+    end
+    vim.notify(string.format("Filter locked - %d/%d rows visible (/ to reopen, ESC to clear)",
+      visible_count, #data.rows), vim.log.levels.INFO)
+
+    -- Focus back on the results buffer
+    if vim.api.nvim_win_is_valid(vim.fn.win_getid()) then
+      vim.api.nvim_set_current_win(vim.fn.bufwinid(bufnr))
+    end
   end, opts)
 
   -- Clear filter
@@ -523,6 +553,46 @@ function M.open_fuzzy_finder(bufnr)
       vim.notify("Filtering column " .. i, vim.log.levels.INFO)
     end, opts)
   end
+
+  -- Navigate results while filter is open (Ctrl+j/k)
+  vim.keymap.set('i', '<C-j>', function()
+    -- Move cursor down in results buffer
+    local win = vim.fn.bufwinid(bufnr)
+    if win ~= -1 then
+      vim.api.nvim_win_call(win, function()
+        vim.cmd('normal! j')
+      end)
+    end
+  end, opts)
+
+  vim.keymap.set('i', '<C-k>', function()
+    -- Move cursor up in results buffer
+    local win = vim.fn.bufwinid(bufnr)
+    if win ~= -1 then
+      vim.api.nvim_win_call(win, function()
+        vim.cmd('normal! k')
+      end)
+    end
+  end, opts)
+
+  -- Page down/up in results while filter is open
+  vim.keymap.set('i', '<C-d>', function()
+    local win = vim.fn.bufwinid(bufnr)
+    if win ~= -1 then
+      vim.api.nvim_win_call(win, function()
+        vim.cmd('normal! \\<C-d>')
+      end)
+    end
+  end, opts)
+
+  vim.keymap.set('i', '<C-u>', function()
+    local win = vim.fn.bufwinid(bufnr)
+    if win ~= -1 then
+      vim.api.nvim_win_call(win, function()
+        vim.cmd('normal! \\<C-u>')
+      end)
+    end
+  end, opts)
 
   -- Start in insert mode
   vim.cmd('startinsert!')
