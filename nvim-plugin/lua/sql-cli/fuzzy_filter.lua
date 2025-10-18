@@ -30,7 +30,8 @@ local cache = {
 local debounce_timer = nil
 
 -- Parse table data from buffer
-local function parse_table_from_buffer(bufnr)
+-- If table_bounds is provided, only parse that specific table
+local function parse_table_from_buffer(bufnr, table_bounds)
   local lines = vim.api.nvim_buf_get_lines(bufnr, 0, -1, false)
 
   -- Find table boundaries
@@ -39,22 +40,31 @@ local function parse_table_from_buffer(bufnr)
   local header_line = nil
   local separator_line = nil
 
-  for i, line in ipairs(lines) do
-    -- Look for ASCII table style
-    if line:match("^%+%-") then
-      if not table_start then
-        table_start = i
-        -- Next line should be header
-        if i < #lines and lines[i + 1]:match("^|") then
-          header_line = i + 1
-          -- Check for separator
-          if i + 2 <= #lines and lines[i + 2]:match("^%+%-") then
-            separator_line = i + 2
+  -- If specific table bounds provided, use them directly
+  if table_bounds then
+    table_start = table_bounds.start_line
+    table_end = table_bounds.end_line
+    header_line = table_bounds.header_line
+    separator_line = table_bounds.separator_line
+  else
+    -- Search for first table in buffer (old behavior)
+    for i, line in ipairs(lines) do
+      -- Look for ASCII table style
+      if line:match("^%+%-") then
+        if not table_start then
+          table_start = i
+          -- Next line should be header
+          if i < #lines and lines[i + 1]:match("^|") then
+            header_line = i + 1
+            -- Check for separator
+            if i + 2 <= #lines and lines[i + 2]:match("^%+%-") then
+              separator_line = i + 2
+            end
           end
+        elseif separator_line and i > separator_line then
+          table_end = i
+          break
         end
-      elseif separator_line and i > separator_line then
-        table_end = i
-        break
       end
     end
   end
@@ -372,8 +382,28 @@ function M.open_fuzzy_finder(bufnr)
     log.debug('fuzzy_filter', 'Opening fuzzy finder for buffer ' .. bufnr)
   end
 
-  -- Parse table data
-  local data = parse_table_from_buffer(bufnr)
+  -- Check if table navigation is active to determine which table to filter
+  local table_bounds = nil
+  local table_nav = require('sql-cli.table_nav')
+  if table_nav.is_active and table_nav.is_active() then
+    -- Get current table info from active navigation
+    local table_info = table_nav.get_table_info and table_nav.get_table_info()
+    if table_info then
+      table_bounds = {
+        start_line = table_info.header_row and (table_info.header_row - 1) or nil,
+        end_line = table_info.data_end and (table_info.data_end + 1) or nil,
+        header_line = table_info.header_row,
+        separator_line = table_info.separator_row
+      }
+      if log then
+        log.debug('fuzzy_filter', string.format('Using active table navigation bounds: lines %d-%d',
+          table_bounds.start_line or 0, table_bounds.end_line or 0))
+      end
+    end
+  end
+
+  -- Parse table data (either specific table or first table in buffer)
+  local data = parse_table_from_buffer(bufnr, table_bounds)
   if not data then
     vim.notify("No table found in buffer", vim.log.levels.WARN)
     if log then
