@@ -482,10 +482,15 @@ function M.open_fuzzy_finder(bufnr)
     vim.notify(string.format("Filter locked - %d/%d rows visible (/ to reopen, ESC to clear)",
       visible_count, #data.rows), vim.log.levels.INFO)
 
-    -- Focus back on the results buffer and make it modifiable for navigation
+    -- Focus back on the results buffer
     if vim.api.nvim_win_is_valid(vim.fn.win_getid()) then
       vim.api.nvim_set_current_win(vim.fn.bufwinid(bufnr))
     end
+
+    -- Set up buffer-local ESC handler to clear filter
+    vim.keymap.set('n', '<Esc>', function()
+      M.reset_filter(bufnr)
+    end, { buffer = bufnr, noremap = true, silent = true })
   end, opts)
 
   vim.keymap.set('i', '<CR>', function()
@@ -500,10 +505,16 @@ function M.open_fuzzy_finder(bufnr)
     vim.notify(string.format("Filter locked - %d/%d rows visible (/ to reopen, ESC to clear)",
       visible_count, #data.rows), vim.log.levels.INFO)
 
-    -- Focus back on the results buffer
+    -- Focus back on the results buffer and return to normal mode
     if vim.api.nvim_win_is_valid(vim.fn.win_getid()) then
       vim.api.nvim_set_current_win(vim.fn.bufwinid(bufnr))
+      vim.cmd('stopinsert')  -- Exit insert mode
     end
+
+    -- Set up buffer-local ESC handler to clear filter
+    vim.keymap.set('n', '<Esc>', function()
+      M.reset_filter(bufnr)
+    end, { buffer = bufnr, noremap = true, silent = true })
   end, opts)
 
   -- Clear filter
