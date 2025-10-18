@@ -174,7 +174,7 @@ pub fn analyze_query(ast: &SelectStatement, _sql: &str) -> QueryAnalysis {
 
     // Check for SELECT * in main query
     for item in &ast.select_items {
-        if matches!(item, SelectItem::Star) {
+        if matches!(item, SelectItem::Star { .. }) {
             analysis.has_star = true;
             analysis.star_locations.push(StarLocation {
                 line: 1, // TODO: Track actual line when parser supports it
@@ -221,7 +221,10 @@ pub fn analyze_query(ast: &SelectStatement, _sql: &str) -> QueryAnalysis {
 
     // Extract explicitly named columns from SELECT
     for item in &ast.select_items {
-        if let SelectItem::Column(col_ref) = item {
+        if let SelectItem::Column {
+            column: col_ref, ..
+        } = item
+        {
             if !analysis.columns.contains(&col_ref.name) {
                 analysis.columns.push(col_ref.name.clone());
             }
@@ -244,7 +247,7 @@ fn analyze_cte(cte: &CTE) -> CteAnalysis {
         CTEType::Standard(stmt) => {
             // Check if CTE query has SELECT *
             for item in &stmt.select_items {
-                if matches!(item, SelectItem::Star) {
+                if matches!(item, SelectItem::Star { .. }) {
                     has_star = true;
                     break;
                 }
@@ -469,11 +472,11 @@ fn format_select_statement(stmt: &SelectStatement) -> String {
         for (i, item) in stmt.select_items.iter().enumerate() {
             let prefix = if i == 0 { "    " } else { "  , " };
             match item {
-                SelectItem::Star => parts.push(format!("{}*", prefix)),
-                SelectItem::Column(col) => {
+                SelectItem::Star { .. } => parts.push(format!("{}*", prefix)),
+                SelectItem::Column { column: col, .. } => {
                     parts.push(format!("{}{}", prefix, col.name));
                 }
-                SelectItem::Expression { expr, alias } => {
+                SelectItem::Expression { expr, alias, .. } => {
                     let expr_str = format_expr(expr);
                     parts.push(format!("{}{} AS {}", prefix, expr_str, alias));
                 }

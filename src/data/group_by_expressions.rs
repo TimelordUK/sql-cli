@@ -168,7 +168,7 @@ impl GroupByExpressions for QueryEngine {
 
             // Look for a matching SELECT item with an alias
             for item in select_items {
-                if let SelectItem::Expression { expr, alias } = item {
+                if let SelectItem::Expression { expr, alias, .. } = item {
                     if !contains_aggregate(expr) && expressions_match(expr, group_expr) {
                         found_alias = Some(alias.clone());
                         break;
@@ -189,7 +189,7 @@ impl GroupByExpressions for QueryEngine {
         // Now process SELECT items to find aggregates and validate non-aggregates
         for item in select_items {
             match item {
-                SelectItem::Expression { expr, alias } => {
+                SelectItem::Expression { expr, alias, .. } => {
                     if contains_aggregate(expr) {
                         // Aggregate expression
                         result_table.add_column(DataColumn::new(alias));
@@ -226,7 +226,9 @@ impl GroupByExpressions for QueryEngine {
                         }
                     }
                 }
-                SelectItem::Column(col_ref) => {
+                SelectItem::Column {
+                    column: col_ref, ..
+                } => {
                     // Check if this column is in a GROUP BY expression
                     let in_group_by = group_by_exprs.iter().any(
                         |expr| matches!(expr, SqlExpression::Column(name) if name.name == col_ref.name),
@@ -239,7 +241,7 @@ impl GroupByExpressions for QueryEngine {
                         ));
                     }
                 }
-                SelectItem::Star => {
+                SelectItem::Star { .. } => {
                     // For GROUP BY queries, * includes GROUP BY columns
                     // Already handled by adding group_by_aliases columns
                 }

@@ -114,6 +114,8 @@ impl InOperatorLifter {
             stmt.select_items.push(SelectItem::Expression {
                 expr: lift.original_expr.clone(),
                 alias: lift.alias.clone(),
+                leading_comments: vec![],
+                trailing_comment: None,
             });
         }
     }
@@ -125,13 +127,18 @@ impl InOperatorLifter {
         lifted: &[LiftedInExpression],
         cte_name: String,
     ) -> CTE {
-        let mut select_items = vec![SelectItem::Star];
+        let mut select_items = vec![SelectItem::Star {
+            leading_comments: vec![],
+            trailing_comment: None,
+        }];
 
         // Add each lifted expression as a computed column
         for lift in lifted {
             select_items.push(SelectItem::Expression {
                 expr: lift.original_expr.clone(),
                 alias: lift.alias.clone(),
+                leading_comments: vec![],
+                trailing_comment: None,
             });
         }
 
@@ -153,6 +160,8 @@ impl InOperatorLifter {
             ctes: Vec::new(),
             into_table: None,
             set_operations: Vec::new(),
+            leading_comments: vec![],
+            trailing_comment: None,
         };
 
         CTE {

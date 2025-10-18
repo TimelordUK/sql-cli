@@ -84,7 +84,7 @@ impl QueryRewriter {
     /// Check SELECT items for expressions that need hoisting
     fn analyze_select_items(&mut self, stmt: &SelectStatement) {
         for item in &stmt.select_items {
-            if let crate::sql::parser::ast::SelectItem::Expression { expr, alias } = item {
+            if let crate::sql::parser::ast::SelectItem::Expression { expr, alias, .. } = item {
                 self.check_expression_for_hoisting(expr, Some(alias));
             }
         }

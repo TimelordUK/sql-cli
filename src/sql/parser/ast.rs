@@ -3,6 +3,35 @@
 //! This module contains all the data structures that represent
 //! the parsed SQL query structure.
 
+// ===== Comment Types =====
+
+/// Represents a SQL comment (line or block)
+#[derive(Debug, Clone, PartialEq)]
+pub struct Comment {
+    /// The comment text (without delimiters like -- or /* */)
+    pub text: String,
+    /// True for line comments (--), false for block comments (/* */)
+    pub is_line_comment: bool,
+}
+
+impl Comment {
+    /// Create a new line comment
+    pub fn line(text: String) -> Self {
+        Self {
+            text,
+            is_line_comment: true,
+        }
+    }
+
+    /// Create a new block comment
+    pub fn block(text: String) -> Self {
+        Self {
+            text,
+            is_line_comment: false,
+        }
+    }
+}
+
 // ===== Expression Types =====
 
 /// Quote style for identifiers (column names, table names, etc.)
@@ -297,11 +326,23 @@ pub enum SetOperation {
 #[derive(Debug, Clone)]
 pub enum SelectItem {
     /// Simple column reference: "`column_name`"
-    Column(ColumnRef),
+    Column {
+        column: ColumnRef,
+        leading_comments: Vec<Comment>,
+        trailing_comment: Option<Comment>,
+    },
     /// Computed expression with alias: "expr AS alias"
-    Expression { expr: SqlExpression, alias: String },
+    Expression {
+        expr: SqlExpression,
+        alias: String,
+        leading_comments: Vec<Comment>,
+        trailing_comment: Option<Comment>,
+    },
     /// Star selector: "*"
-    Star,
+    Star {
+        leading_comments: Vec<Comment>,
+        trailing_comment: Option<Comment>,
+    },
 }
 
 #[derive(Debug, Clone)]
@@ -323,6 +364,10 @@ pub struct SelectStatement {
     pub ctes: Vec<CTE>,                // Common Table Expressions (WITH clause)
     pub into_table: Option<IntoTable>, // INTO clause for temporary tables
     pub set_operations: Vec<(SetOperation, Box<SelectStatement>)>, // UNION/INTERSECT/EXCEPT operations
+
+    // Comment preservation
+    pub leading_comments: Vec<Comment>, // Comments before the SELECT keyword
+    pub trailing_comment: Option<Comment>, // Trailing comment at end of statement
 }
 
 /// INTO clause for creating temporary tables

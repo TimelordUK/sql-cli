@@ -87,17 +87,38 @@ impl SubqueryExecutor {
         let mut new_select_items = Vec::new();
         for item in &statement.select_items {
             match item {
-                SelectItem::Column(col) => {
-                    new_select_items.push(SelectItem::Column(col.clone()));
+                SelectItem::Column {
+                    column: col,
+                    leading_comments,
+                    trailing_comment,
+                } => {
+                    new_select_items.push(SelectItem::Column {
+                        column: col.clone(),
+                        leading_comments: leading_comments.clone(),
+                        trailing_comment: trailing_comment.clone(),
+                    });
                 }
-                SelectItem::Expression { expr, alias } => {
+                SelectItem::Expression {
+                    expr,
+                    alias,
+                    leading_comments,
+                    trailing_comment,
+                } => {
                     new_select_items.push(SelectItem::Expression {
                         expr: self.process_expression(expr)?,
                         alias: alias.clone(),
+                        leading_comments: leading_comments.clone(),
+                        trailing_comment: trailing_comment.clone(),
                     });
                 }
-                SelectItem::Star => {
-                    new_select_items.push(SelectItem::Star);
+                SelectItem::Star {
+                    leading_comments,
+                    trailing_comment,
+                } => {
+                    new_select_items.push(SelectItem::Star {
+                        leading_comments: leading_comments.clone(),
+                        trailing_comment: trailing_comment.clone(),
+                    });
                 }
             }
         }

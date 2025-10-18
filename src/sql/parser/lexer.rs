@@ -3,6 +3,21 @@
 //! This module handles the conversion of raw SQL text into tokens
 //! that can be consumed by the parser.
 
+/// Lexer mode - controls whether comments are preserved or skipped
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum LexerMode {
+    /// Standard mode - skip comments (current default behavior)
+    SkipComments,
+    /// Preserve mode - tokenize comments as tokens
+    PreserveComments,
+}
+
+impl Default for LexerMode {
+    fn default() -> Self {
+        LexerMode::SkipComments
+    }
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub enum Token {
     // Keywords
@@ -215,17 +230,25 @@ pub struct Lexer {
     input: Vec<char>,
     position: usize,
     current_char: Option<char>,
+    mode: LexerMode,
 }
 
 impl Lexer {
     #[must_use]
     pub fn new(input: &str) -> Self {
+        Self::with_mode(input, LexerMode::default())
+    }
+
+    /// Create a new lexer with specified mode
+    #[must_use]
+    pub fn with_mode(input: &str, mode: LexerMode) -> Self {
         let chars: Vec<char> = input.chars().collect();
         let current = chars.first().copied();
         Self {
             input: chars,
             position: 0,
             current_char: current,
+            mode,
         }
     }
 
@@ -586,9 +609,16 @@ impl Lexer {
         }
     }
 
-    /// Get next token (backwards compatible - skips comments)
-    /// This is the old behavior for existing parser
+    /// Get next token - dispatches based on lexer mode
     pub fn next_token(&mut self) -> Token {
+        match self.mode {
+            LexerMode::SkipComments => self.next_token_skip_comments(),
+            LexerMode::PreserveComments => self.next_token_with_comments(),
+        }
+    }
+
+    /// Get next token skipping comments (original behavior)
+    fn next_token_skip_comments(&mut self) -> Token {
         self.skip_whitespace_and_comments();
 
         match self.current_char {
@@ -942,5 +972,119 @@ mod tests {
         // Should still parse correctly
         assert!(tokens.iter().any(|t| matches!(t, Token::Select)));
         assert!(tokens.iter().any(|t| matches!(t, Token::From)));
+    }
+
+    // ===== Dual-Mode Lexer Tests (Phase 1) =====
+
+    #[test]
+    fn test_lexer_mode_skip_comments() {
+        let sql = "SELECT id -- comment\nFROM table";
+
+        // SkipComments mode (default)
+        let mut lexer = Lexer::with_mode(sql, LexerMode::SkipComments);
+
+        assert_eq!(lexer.next_token(), Token::Select);
+        assert_eq!(lexer.next_token(), Token::Identifier("id".into()));
+        // Comment should be skipped
+        assert_eq!(lexer.next_token(), Token::From);
+        assert_eq!(lexer.next_token(), Token::Identifier("table".into()));
+        assert_eq!(lexer.next_token(), Token::Eof);
+    }
+
+    #[test]
+    fn test_lexer_mode_preserve_comments() {
+        let sql = "SELECT id -- comment\nFROM table";
+
+        // PreserveComments mode
+        let mut lexer = Lexer::with_mode(sql, LexerMode::PreserveComments);
+
+        assert_eq!(lexer.next_token(), Token::Select);
+        assert_eq!(lexer.next_token(), Token::Identifier("id".into()));
+
+        // Comment should be preserved as a token
+        let comment_tok = lexer.next_token();
+        assert!(matches!(comment_tok, Token::LineComment(_)));
+        if let Token::LineComment(text) = comment_tok {
+            assert_eq!(text.trim(), "comment");
+        }
+
+        assert_eq!(lexer.next_token(), Token::From);
+        assert_eq!(lexer.next_token(), Token::Identifier("table".into()));
+        assert_eq!(lexer.next_token(), Token::Eof);
+    }
+
+    #[test]
+    fn test_lexer_mode_default_is_skip() {
+        let sql = "SELECT id -- comment\nFROM table";
+
+        // Default (using new()) should skip comments
+        let mut lexer = Lexer::new(sql);
+
+        let mut tok_count = 0;
+        loop {
+            let tok = lexer.next_token();
+            if matches!(tok, Token::Eof) {
+                break;
+            }
+            // Should never see a comment token
+            assert!(!matches!(
+                tok,
+                Token::LineComment(_) | Token::BlockComment(_)
+            ));
+            tok_count += 1;
+        }
+
+        // SELECT, id, FROM, table = 4 tokens (no comment)
+        assert_eq!(tok_count, 4);
+    }
+
+    #[test]
+    fn test_lexer_mode_block_comments() {
+        let sql = "SELECT /* block */ id FROM table";
+
+        // Skip mode
+        let mut lexer_skip = Lexer::with_mode(sql, LexerMode::SkipComments);
+        assert_eq!(lexer_skip.next_token(), Token::Select);
+        assert_eq!(lexer_skip.next_token(), Token::Identifier("id".into()));
+        assert_eq!(lexer_skip.next_token(), Token::From);
+
+        // Preserve mode
+        let mut lexer_preserve = Lexer::with_mode(sql, LexerMode::PreserveComments);
+        assert_eq!(lexer_preserve.next_token(), Token::Select);
+
+        let comment_tok = lexer_preserve.next_token();
+        assert!(matches!(comment_tok, Token::BlockComment(_)));
+        if let Token::BlockComment(text) = comment_tok {
+            assert_eq!(text.trim(), "block");
+        }
+
+        assert_eq!(lexer_preserve.next_token(), Token::Identifier("id".into()));
+    }
+
+    #[test]
+    fn test_lexer_mode_mixed_comments() {
+        let sql = "-- leading\nSELECT /* inline */ id -- trailing\nFROM table";
+
+        let mut lexer = Lexer::with_mode(sql, LexerMode::PreserveComments);
+
+        // leading comment
+        assert!(matches!(lexer.next_token(), Token::LineComment(_)));
+
+        // SELECT
+        assert_eq!(lexer.next_token(), Token::Select);
+
+        // inline block comment
+        assert!(matches!(lexer.next_token(), Token::BlockComment(_)));
+
+        // id
+        assert_eq!(lexer.next_token(), Token::Identifier("id".into()));
+
+        // trailing comment
+        assert!(matches!(lexer.next_token(), Token::LineComment(_)));
+
+        // FROM table
+        assert_eq!(lexer.next_token(), Token::From);
+        assert_eq!(lexer.next_token(), Token::Identifier("table".into()));
+        assert_eq!(lexer.next_token(), Token::Eof);
     }
 }

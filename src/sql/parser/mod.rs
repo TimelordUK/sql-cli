@@ -18,7 +18,7 @@ pub use ast::{
     WhenBranch, WhereClause, WindowSpec, CTE,
 };
 
-pub use lexer::{Lexer, Token};
+pub use lexer::{Lexer, LexerMode, Token};
 
 // Re-export legacy types for backward compatibility
 pub use legacy::{ParseContext, ParseState, Schema, SqlParser, SqlToken, TableInfo};

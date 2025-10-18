@@ -92,12 +92,17 @@ impl IntoClauseRemover {
         item: crate::sql::parser::ast::SelectItem,
     ) -> crate::sql::parser::ast::SelectItem {
         match item {
-            crate::sql::parser::ast::SelectItem::Expression { expr, alias } => {
-                crate::sql::parser::ast::SelectItem::Expression {
-                    expr: Self::remove_from_expression(expr),
-                    alias,
-                }
-            }
+            crate::sql::parser::ast::SelectItem::Expression {
+                expr,
+                alias,
+                leading_comments,
+                trailing_comment,
+            } => crate::sql::parser::ast::SelectItem::Expression {
+                expr: Self::remove_from_expression(expr),
+                alias,
+                leading_comments,
+                trailing_comment,
+            },
             other => other,
         }
     }
@@ -220,6 +225,8 @@ mod tests {
                 name: "#temp".to_string(),
             }),
             set_operations: vec![],
+            leading_comments: vec![],
+            trailing_comment: None,
         };
 
         let result = IntoClauseRemover::remove_into_clause(stmt);
@@ -249,6 +256,8 @@ mod tests {
                 name: "#inner_temp".to_string(),
             }),
             set_operations: vec![],
+            leading_comments: vec![],
+            trailing_comment: None,
         };
 
         let stmt = SelectStatement {
@@ -271,6 +280,8 @@ mod tests {
                 name: "#outer_temp".to_string(),
             }),
             set_operations: vec![],
+            leading_comments: vec![],
+            trailing_comment: None,
         };
 
         let result = IntoClauseRemover::remove_into_clause(stmt);

@@ -139,10 +139,15 @@ impl ExpressionLifter {
                     distinct: false,
                     columns: vec!["*".to_string()],
                     select_items: vec![
-                        SelectItem::Star,
+                        SelectItem::Star {
+                            leading_comments: vec![],
+                            trailing_comment: None,
+                        },
                         SelectItem::Expression {
                             expr: lift_expr.expression.clone(),
                             alias: "lifted_value".to_string(),
+                            leading_comments: vec![],
+                            trailing_comment: None,
                         },
                     ],
                     from_table: stmt.from_table.clone(),
@@ -159,6 +164,8 @@ impl ExpressionLifter {
                     ctes: Vec::new(),
                     into_table: None,
                     set_operations: Vec::new(),
+                    leading_comments: vec![],
+                    trailing_comment: None,
                 };
 
                 let cte = CTE {
@@ -201,7 +208,7 @@ impl ExpressionLifter {
         // Extract all aliases defined in SELECT
         let mut aliases = std::collections::HashMap::new();
         for item in &stmt.select_items {
-            if let SelectItem::Expression { expr, alias } = item {
+            if let SelectItem::Expression { expr, alias, .. } = item {
                 aliases.insert(alias.clone(), expr.clone());
                 tracing::debug!("Found alias: {} -> {:?}", alias, expr);
             }
@@ -251,11 +258,16 @@ impl ExpressionLifter {
         let cte_name = self.next_cte_name();
 
         // Build CTE that computes the aliased columns
-        let mut cte_select_items = vec![SelectItem::Star];
+        let mut cte_select_items = vec![SelectItem::Star {
+            leading_comments: vec![],
+            trailing_comment: None,
+        }];
         for (alias, expr) in deps {
             cte_select_items.push(SelectItem::Expression {
                 expr: expr.clone(),
                 alias: alias.clone(),
+                leading_comments: vec![],
+                trailing_comment: None,
             });
         }
 
@@ -277,17 +289,23 @@ impl ExpressionLifter {
             ctes: Vec::new(),
             into_table: None,
             set_operations: Vec::new(),
+            leading_comments: vec![],
+            trailing_comment: None,
         };
 
         // Update the main query to use simple column references
         let mut new_select_items = Vec::new();
         for item in &stmt.select_items {
             match item {
-                SelectItem::Expression { expr: _, alias }
+                SelectItem::Expression { expr: _, alias, .. }
                     if deps.iter().any(|(a, _)| a == alias) =>
                 {
                     // Replace with simple column reference
-                    new_select_items.push(SelectItem::Column(ColumnRef::unquoted(alias.clone())));
+                    new_select_items.push(SelectItem::Column {
+                        column: ColumnRef::unquoted(alias.clone()),
+                        leading_comments: vec![],
+                        trailing_comment: None,
+                    });
                 }
                 _ => {
                     new_select_items.push(item.clone());

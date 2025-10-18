@@ -1271,7 +1271,7 @@ impl QueryEngine {
                 let has_non_star_items = statement
                     .select_items
                     .iter()
-                    .any(|item| !matches!(item, SelectItem::Star));
+                    .any(|item| !matches!(item, SelectItem::Star { .. }));
 
                 // Apply select items if:
                 // 1. We have computed expressions or explicit columns
@@ -1563,14 +1563,14 @@ impl QueryEngine {
         // 2. All other items are either aggregates or constants (aggregate-compatible)
         let has_aggregates = select_items.iter().any(|item| match item {
             SelectItem::Expression { expr, .. } => contains_aggregate(expr),
-            SelectItem::Column(_) => false,
-            SelectItem::Star => false,
+            SelectItem::Column { .. } => false,
+            SelectItem::Star { .. } => false,
         });
 
         let all_aggregate_compatible = select_items.iter().all(|item| match item {
             SelectItem::Expression { expr, .. } => is_aggregate_compatible(expr),
-            SelectItem::Column(_) => false, // Columns are not aggregate-compatible
-            SelectItem::Star => false,      // Star is not aggregate-compatible
+            SelectItem::Column { .. } => false, // Columns are not aggregate-compatible
+            SelectItem::Star { .. } => false,   // Star is not aggregate-compatible
         });
 
         if has_aggregates && all_aggregate_compatible && view.row_count() > 0 {
@@ -1611,12 +1611,14 @@ impl QueryEngine {
         let mut expanded_items = Vec::new();
         for item in select_items {
             match item {
-                SelectItem::Star => {
+                SelectItem::Star { .. } => {
                     // Expand * to all columns from source table
                     for col_name in source_table.column_names() {
-                        expanded_items.push(SelectItem::Column(ColumnRef::unquoted(
-                            col_name.to_string(),
-                        )));
+                        expanded_items.push(SelectItem::Column {
+                            column: ColumnRef::unquoted(col_name.to_string()),
+                            leading_comments: vec![],
+                            trailing_comment: None,
+                        });
                     }
                 }
                 _ => expanded_items.push(item.clone()),
@@ -1629,9 +1631,11 @@ impl QueryEngine {
 
         for item in &expanded_items {
             let base_name = match item {
-                SelectItem::Column(col_ref) => col_ref.name.clone(),
+                SelectItem::Column {
+                    column: col_ref, ..
+                } => col_ref.name.clone(),
                 SelectItem::Expression { alias, .. } => alias.clone(),
-                SelectItem::Star => unreachable!("Star should have been expanded"),
+                SelectItem::Star { .. } => unreachable!("Star should have been expanded"),
             };
 
             // Check if this column name has been used before
@@ -1670,7 +1674,9 @@ impl QueryEngine {
 
             for item in &expanded_items {
                 let value = match item {
-                    SelectItem::Column(col_ref) => {
+                    SelectItem::Column {
+                        column: col_ref, ..
+                    } => {
                         // Use evaluator for column resolution (handles aliases properly)
                         match evaluator.evaluate(&SqlExpression::Column(col_ref.clone()), row_idx) {
                             Ok(val) => val,
@@ -1685,9 +1691,9 @@ impl QueryEngine {
                     }
                     SelectItem::Expression { expr, .. } => {
                         // Computed expression
-                        evaluator.evaluate(expr, row_idx)?
+                        evaluator.evaluate(&expr, row_idx)?
                     }
-                    SelectItem::Star => unreachable!("Star should have been expanded"),
+                    SelectItem::Star { .. } => unreachable!("Star should have been expanded"),
                 };
                 row_values.push(value);
             }
@@ -1721,11 +1727,13 @@ impl QueryEngine {
         let mut expanded_items = Vec::new();
         for item in select_items {
             match item {
-                SelectItem::Star => {
+                SelectItem::Star { .. } => {
                     for col_name in source_table.column_names() {
-                        expanded_items.push(SelectItem::Column(ColumnRef::unquoted(
-                            col_name.to_string(),
-                        )));
+                        expanded_items.push(SelectItem::Column {
+                            column: ColumnRef::unquoted(col_name.to_string()),
+                            leading_comments: vec![],
+                            trailing_comment: None,
+                        });
                     }
                 }
                 _ => expanded_items.push(item.clone()),
@@ -1735,9 +1743,11 @@ impl QueryEngine {
         // Add columns to result table
         for item in &expanded_items {
             let column_name = match item {
-                SelectItem::Column(col_ref) => col_ref.name.clone(),
+                SelectItem::Column {
+                    column: col_ref, ..
+                } => col_ref.name.clone(),
                 SelectItem::Expression { alias, .. } => alias.clone(),
-                SelectItem::Star => unreachable!("Star should have been expanded"),
+                SelectItem::Star { .. } => unreachable!("Star should have been expanded"),
             };
             result_table.add_column(DataColumn::new(&column_name));
         }
@@ -1754,7 +1764,7 @@ impl QueryEngine {
             for (col_idx, item) in expanded_items.iter().enumerate() {
                 if let SelectItem::Expression { expr, .. } = item {
                     if let Some(expansion_result) = self.try_expand_unnest(
-                        expr,
+                        &expr,
                         source_table,
                         row_idx,
                         &mut evaluator,
@@ -1796,7 +1806,9 @@ impl QueryEngine {
                     } else {
                         // Regular column or non-UNNEST expression - replicate from input
                         match item {
-                            SelectItem::Column(col_ref) => {
+                            SelectItem::Column {
+                                column: col_ref, ..
+                            } => {
                                 let col_idx =
                                     source_table.get_column_index(&col_ref.name).ok_or_else(
                                         || anyhow::anyhow!("Column '{}' not found", col_ref.name),
@@ -1812,9 +1824,9 @@ impl QueryEngine {
                             }
                             SelectItem::Expression { expr, .. } => {
                                 // Non-UNNEST expression - evaluate once and replicate
-                                evaluator.evaluate(expr, row_idx)?
+                                evaluator.evaluate(&expr, row_idx)?
                             }
-                            SelectItem::Star => unreachable!(),
+                            SelectItem::Star { .. } => unreachable!(),
                         }
                     };
 
@@ -1953,7 +1965,9 @@ impl QueryEngine {
 
         for item in select_items {
             match item {
-                SelectItem::Column(col_ref) => {
+                SelectItem::Column {
+                    column: col_ref, ..
+                } => {
                     // Check if this has a table prefix
                     let index = if let Some(table_prefix) = &col_ref.table_prefix {
                         // For qualified references, ONLY try qualified lookup - no fallback
@@ -1991,7 +2005,7 @@ impl QueryEngine {
                     };
                     indices.push(index);
                 }
-                SelectItem::Star => {
+                SelectItem::Star { .. } => {
                     // Expand * to all column indices
                     for i in 0..table_columns.len() {
                         indices.push(i);

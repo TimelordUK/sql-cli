@@ -2,13 +2,13 @@
 
 // Re-exports for backward compatibility - these serve as both imports and re-exports
 pub use super::parser::ast::{
-    CTEType, Condition, DataFormat, FrameBound, FrameUnit, HttpMethod, IntoTable, JoinClause,
-    JoinCondition, JoinOperator, JoinType, LogicalOp, OrderByColumn, SelectItem, SelectStatement,
-    SetOperation, SingleJoinCondition, SortDirection, SqlExpression, TableFunction, TableSource,
-    WebCTESpec, WhenBranch, WhereClause, WindowFrame, WindowSpec, CTE,
+    CTEType, Comment, Condition, DataFormat, FrameBound, FrameUnit, HttpMethod, IntoTable,
+    JoinClause, JoinCondition, JoinOperator, JoinType, LogicalOp, OrderByColumn, SelectItem,
+    SelectStatement, SetOperation, SingleJoinCondition, SortDirection, SqlExpression,
+    TableFunction, TableSource, WebCTESpec, WhenBranch, WhereClause, WindowFrame, WindowSpec, CTE,
 };
 pub use super::parser::legacy::{ParseContext, ParseState, Schema, SqlParser, SqlToken, TableInfo};
-pub use super::parser::lexer::{Lexer, Token};
+pub use super::parser::lexer::{Lexer, LexerMode, Token};
 pub use super::parser::ParserConfig;
 
 // Re-export formatting functions for backward compatibility
@@ -223,6 +223,44 @@ impl Parser {
                 "{}  Advanced: {:?} → {:?}",
                 indent, old_token, self.current_token
             );
+        }
+    }
+
+    /// Collect all leading comments before a SQL construct
+    /// This consumes comment tokens and returns them as a Vec<Comment>
+    fn collect_leading_comments(&mut self) -> Vec<Comment> {
+        let mut comments = Vec::new();
+        loop {
+            match &self.current_token {
+                Token::LineComment(text) => {
+                    comments.push(Comment::line(text.clone()));
+                    self.advance();
+                }
+                Token::BlockComment(text) => {
+                    comments.push(Comment::block(text.clone()));
+                    self.advance();
+                }
+                _ => break,
+            }
+        }
+        comments
+    }
+
+    /// Collect a trailing inline comment (on the same line)
+    /// This consumes a single comment token if present
+    fn collect_trailing_comment(&mut self) -> Option<Comment> {
+        match &self.current_token {
+            Token::LineComment(text) => {
+                let comment = Some(Comment::line(text.clone()));
+                self.advance();
+                comment
+            }
+            Token::BlockComment(text) => {
+                let comment = Some(Comment::block(text.clone()));
+                self.advance();
+                comment
+            }
+            _ => None,
         }
     }
 
@@ -469,8 +507,10 @@ impl Parser {
         let columns = select_items
             .iter()
             .map(|item| match item {
-                SelectItem::Star => "*".to_string(),
-                SelectItem::Column(col_ref) => col_ref.name.clone(),
+                SelectItem::Star { .. } => "*".to_string(),
+                SelectItem::Column {
+                    column: col_ref, ..
+                } => col_ref.name.clone(),
                 SelectItem::Expression { alias, .. } => alias.clone(),
             })
             .collect();
@@ -790,6 +830,8 @@ impl Parser {
             ctes: Vec::new(), // Will be populated by WITH clause parser
             into_table,
             set_operations,
+            leading_comments: vec![],
+            trailing_comment: None,
         })
     }
 
@@ -855,7 +897,10 @@ impl Parser {
 
                 // For now, treat Star as SELECT * only if we're at the start or just after a comma
                 // and the star is not immediately followed by something that would make it multiplication
-                items.push(SelectItem::Star);
+                items.push(SelectItem::Star {
+                    leading_comments: vec![],
+                    trailing_comment: None,
+                });
                 self.advance();
             } else {
                 // Parse expression or column
@@ -889,11 +934,20 @@ impl Parser {
                 let item = match expr {
                     SqlExpression::Column(col_ref) if alias == col_ref.name => {
                         // Simple column reference without alias
-                        SelectItem::Column(col_ref)
+                        SelectItem::Column {
+                            column: col_ref,
+                            leading_comments: vec![],
+                            trailing_comment: None,
+                        }
                     }
                     _ => {
                         // Computed expression or column with different alias
-                        SelectItem::Expression { expr, alias }
+                        SelectItem::Expression {
+                            expr,
+                            alias,
+                            leading_comments: vec![],
+                            trailing_comment: None,
+                        }
                     }
                 };
 

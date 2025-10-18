@@ -513,7 +513,7 @@ impl<'a> AstFormatter<'a> {
         // Count non-star items for formatting decision
         let _non_star_count = items
             .iter()
-            .filter(|i| !matches!(i, SelectItem::Star))
+            .filter(|i| !matches!(i, SelectItem::Star { .. }))
             .count();
 
         // Check if any item is complex (function calls, CASE expressions, etc.)
@@ -527,9 +527,9 @@ impl<'a> AstFormatter<'a> {
             .iter()
             .map(|item| {
                 match item {
-                    SelectItem::Star => 1,
-                    SelectItem::Column(col) => col.name.len(),
-                    SelectItem::Expression { expr, alias } => {
+                    SelectItem::Star { .. } => 1,
+                    SelectItem::Column { column: col, .. } => col.name.len(),
+                    SelectItem::Expression { expr, alias, .. } => {
                         self.format_expression(expr).len() + 4 + alias.len() // " AS " = 4
                     }
                 }
@@ -586,9 +586,9 @@ impl<'a> AstFormatter<'a> {
 
     fn format_select_item(&self, result: &mut String, item: &SelectItem) {
         match item {
-            SelectItem::Star => write!(result, "*").unwrap(),
-            SelectItem::Column(col) => write!(result, "{}", col.to_sql()).unwrap(),
-            SelectItem::Expression { expr, alias } => {
+            SelectItem::Star { .. } => write!(result, "*").unwrap(),
+            SelectItem::Column { column: col, .. } => write!(result, "{}", col.to_sql()).unwrap(),
+            SelectItem::Expression { expr, alias, .. } => {
                 write!(
                     result,
                     "{} {} {}",

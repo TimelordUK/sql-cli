@@ -107,9 +107,16 @@ impl CTEHoister {
     /// Hoist CTEs from a SELECT item (for subqueries in expressions)
     fn hoist_from_select_item(&mut self, item: SelectItem) -> SelectItem {
         match item {
-            SelectItem::Expression { expr, alias } => SelectItem::Expression {
+            SelectItem::Expression {
+                expr,
+                alias,
+                leading_comments,
+                trailing_comment,
+            } => SelectItem::Expression {
                 expr: self.hoist_from_expression(expr),
                 alias,
+                leading_comments,
+                trailing_comment,
             },
             other => other,
         }
@@ -429,6 +436,8 @@ mod tests {
             ctes: vec![],
             into_table: None,
             set_operations: vec![],
+            leading_comments: vec![],
+            trailing_comment: None,
         };
 
         let nested_query = SelectStatement {
@@ -457,6 +466,8 @@ mod tests {
                 offset: None,
                 into_table: None,
                 set_operations: vec![],
+                leading_comments: vec![],
+                trailing_comment: None,
             })),
             from_table: None,
             from_function: None,
@@ -471,6 +482,8 @@ mod tests {
             ctes: vec![],
             into_table: None,
             set_operations: vec![],
+            leading_comments: vec![],
+            trailing_comment: None,
         };
 
         let result = CTEHoister::hoist_ctes(nested_query);

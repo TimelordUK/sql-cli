@@ -14,7 +14,7 @@ fn test_parse_star_comma_expression() {
             assert_eq!(stmt.select_items.len(), 2, "Expected 2 select items");
 
             // First should be Star
-            assert!(matches!(stmt.select_items[0], SelectItem::Star));
+            assert!(matches!(stmt.select_items[0], SelectItem::Star { .. }));
 
             // Second should be Expression with alias "total"
             match &stmt.select_items[1] {
@@ -51,7 +51,7 @@ fn test_parse_expression_comma_star() {
             }
 
             // Second should be Star
-            assert!(matches!(stmt.select_items[1], SelectItem::Star));
+            assert!(matches!(stmt.select_items[1], SelectItem::Star { .. }));
         }
         Err(e) => {
             panic!("Parser failed: {e}");
