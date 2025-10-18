@@ -345,6 +345,98 @@ WHERE name.Contains('manager')
 - `SUBSTRING(text, start, length)` - Extract substring
 - `REPLACE(text, old, new)` - Replace all occurrences
 
+#### 🌈 **Terminal Color & Formatting Functions** (NEW!)
+
+Make your terminal output beautiful with ANSI color and formatting functions! Perfect for highlighting errors, warnings, status indicators, and creating visually stunning data presentations.
+
+```sql
+-- Rainbow colors demonstration 🌈
+SELECT
+    ANSI_RGB(255, 0, 0, '● Red') || ', ' ||
+    ANSI_RGB(255, 127, 0, '● Orange') || ', ' ||
+    ANSI_RGB(255, 255, 0, '● Yellow') || ', ' ||
+    ANSI_RGB(0, 255, 0, '● Green') || ', ' ||
+    ANSI_RGB(0, 0, 255, '● Blue') || ', ' ||
+    ANSI_RGB(75, 0, 130, '● Indigo') || ', ' ||
+    ANSI_RGB(148, 0, 211, '● Violet') as rainbow;
+
+-- Named colors for quick formatting
+SELECT
+    ANSI_COLOR('red', 'ERROR') as red_text,
+    ANSI_COLOR('green', 'SUCCESS') as green_text,
+    ANSI_COLOR('yellow', 'WARNING') as yellow_text,
+    ANSI_COLOR('bright_blue', 'INFO') as info_text;
+
+-- Background colors for emphasis
+SELECT
+    ANSI_BG('red', ' CRITICAL ') as alert,
+    ANSI_BG('green', ' ACTIVE ') as status,
+    ANSI_BG('yellow', ' PENDING ') as warning;
+
+-- Text formatting
+SELECT
+    ANSI_BOLD('Bold Text') as bold,
+    ANSI_ITALIC('Italic Text') as italic,
+    ANSI_UNDERLINE('Important') as underline,
+    ANSI_STRIKETHROUGH('Deprecated') as deprecated;
+```
+
+**Practical Example - Conditional Coloring:**
+```sql
+-- Color-code data based on values
+SELECT
+    order_id,
+    CASE
+        WHEN status = 'Active' THEN ANSI_COLOR('green', status)
+        WHEN status = 'Warning' THEN ANSI_COLOR('yellow', status)
+        WHEN status = 'Error' THEN ANSI_COLOR('red', status)
+        ELSE status
+    END as colored_status,
+    CASE
+        WHEN score >= 90 THEN ANSI_COLOR('bright_green', score)
+        WHEN score >= 70 THEN ANSI_COLOR('yellow', score)
+        ELSE ANSI_COLOR('red', score)
+    END as colored_score
+FROM data;
+
+-- Combine formatting for emphasis
+SELECT
+    ANSI_BOLD(ANSI_COLOR('red', 'CRITICAL ERROR')) as alert,
+    ANSI_ITALIC(ANSI_COLOR('blue', 'Note: Check logs')) as note;
+
+-- Create visual separators
+SELECT
+    ANSI_RGB(255, 0, 0, '━') || ANSI_RGB(255, 127, 0, '━') ||
+    ANSI_RGB(255, 255, 0, '━') || ANSI_RGB(0, 255, 0, '━') ||
+    ANSI_RGB(0, 0, 255, '━') || ANSI_RGB(75, 0, 130, '━') ||
+    ANSI_RGB(148, 0, 211, '━') as rainbow_divider;
+```
+
+**Available Color Functions:**
+- `ANSI_COLOR(color_name, text)` - Apply foreground color
+- `ANSI_BG(color_name, text)` - Apply background color
+- `ANSI_RGB(r, g, b, text)` - True color RGB (0-255 each)
+- `ANSI_RGB_BG(r, g, b, text)` - RGB background color
+
+**Named Colors:** black, red, green, yellow, blue, magenta/purple, cyan, white, bright_* variants, gray/grey
+
+**Formatting Functions:**
+- `ANSI_BOLD(text)` - Bold text
+- `ANSI_ITALIC(text)` - Italic text
+- `ANSI_UNDERLINE(text)` - Underlined text
+- `ANSI_BLINK(text)` - Blinking text
+- `ANSI_REVERSE(text)` - Reverse video (swap fg/bg)
+- `ANSI_STRIKETHROUGH(text)` - Strikethrough text
+
+**Try it out:**
+```bash
+# Simple rainbow test
+sql-cli -q "SELECT ANSI_RGB(255, 0, 0, '●') || ' ' || ANSI_RGB(255, 127, 0, '●') || ' ' || ANSI_RGB(255, 255, 0, '●') || ' ' || ANSI_RGB(0, 255, 0, '●') || ' ' || ANSI_RGB(0, 0, 255, '●') || ' ' || ANSI_RGB(75, 0, 130, '●') || ' ' || ANSI_RGB(148, 0, 211, '●') as rainbow" -o csv
+
+# Full demo with all color features
+sql-cli -f examples/ansi_colors_demo.sql
+```
+
 ### 📊 **GROUP BY and Aggregation Support** (NEW!)
 
 SQL CLI now supports GROUP BY queries with powerful aggregate functions, enabling complex data analysis and summarization:
