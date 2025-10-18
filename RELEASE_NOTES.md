@@ -1,12 +1,14 @@
-# SQL CLI v1.60.0
+# SQL CLI v1.61.0
 
-**Release Date:** October 12, 2025
+**Release Date:** October 18, 2025
 
 ## 📊 Release Overview
-- **Commits in this release:** 30
-- **Files updated:** 39
+- **Commits in this release:** 15
+- **Files updated:** 49
 
 ## ✨ Highlights
+
+### 🎨 Visual Improvements
 
 ### 🔍 Enhanced Debugging
 - **Better Diagnostics**: Improved error messages and state dumps
@@ -14,71 +16,37 @@
 ## 📝 Changes by Category
 
 ### 🚀 New Features
-- Add comprehensive hedge fund execution analysis example
-- Add FIX execution endpoint to mock API server
-- Add dependency-aware statement execution for scripts
-- Add PI_DIGIT(n) function for Nth decimal digit lookup
-- Add PI_DIGITS() function for arbitrary precision π
-- Add script dependency analyzer for temp table tracking
+- Make fuzzy filter interactive with navigation and lock mode
+- Add opt-in comment preservation foundation (Phase 1)
+- Add dependency-aware column expansion for \sX with temp tables
+- Add terminal colored table output with YAML style configuration
 
 ### 🐛 Bug Fixes
-- Register temp tables after executing INTO statements
-- Fix statement counting and case-insensitive GO matching for \sx
-- Correct statement number counting in Neovim plugin for dependency-aware execution
-- Support alternative SQL Server INTO syntax and refactor to AST-based dependency analysis
-- Only show 'rows affected' message for table output format
-- Add missing ColumnRef import in window_functions/mod.rs
-
-### 🔧 Refactoring
-- Extract classic console mode to function (~98 lines)
-- Extract key debugger and config generation handlers (115 lines)
-- Create argument parsing context object (Python argparse style)
-- Extract non-interactive query mode to local function (132 lines removed)
-- Extract schema handlers to main_handlers.rs (174 lines removed)
-- Extract benchmark handler to main_handlers.rs (87 lines removed)
-- Extract distinct column handler to main_handlers.rs (113 lines removed)
-- Extract documentation handlers to main_handlers.rs (255 lines removed)
-- Extract handler functions from main() (92 lines removed)
-- Extract CLI handlers to organized cli module (299 lines removed from main.rs)
-
-### 📚 Documentation
-- Move WEB CTE temp tables test to examples with ABS demo
-- Add π digits example to README showcasing RANGE query
-- Add --execute-statement feature plan
+- Exit insert mode and add persistent ESC handler for locked filters
+- Fuzzy filter now filters currently focused table, not first table
+- Remove cursor jump when navigating between tables with \sTn
+- Improve table navigation UX with nearest table and smooth scrolling
+- Fix line number mapping in --get-columns-at for \sE expansion
+- Execute target statement to get schema in --get-columns-at
 
 <details>
 <summary>📋 View all commits</summary>
 
-- chore: Bump version to 1.60.0 (TimelordUK)
-- feat: Add comprehensive hedge fund execution analysis example (TimelordUK)
-- feat: Add FIX execution endpoint to mock API server (TimelordUK)
-- docs: Move WEB CTE temp tables test to examples with ABS demo (TimelordUK)
-- test: Add WEB CTE with temp tables integration test (TimelordUK)
-- fix: Register temp tables after executing INTO statements (TimelordUK)
-- fix: Fix statement counting and case-insensitive GO matching for \sx (TimelordUK)
-- fix: Correct statement number counting in Neovim plugin for dependency-aware execution (TimelordUK)
-- fix: Support alternative SQL Server INTO syntax and refactor to AST-based dependency analysis (TimelordUK)
-- feat: Add dependency-aware statement execution for scripts (TimelordUK)
-- refactor: Extract classic console mode to function (~98 lines) (TimelordUK)
-- refactor: Extract key debugger and config generation handlers (115 lines) (TimelordUK)
-- add a temp chart examples (TimelordUK)
-- first 10k places of PI and find nth place of pi (TimelordUK)
-- docs: Add π digits example to README showcasing RANGE query (TimelordUK)
-- feat: Add PI_DIGIT(n) function for Nth decimal digit lookup (TimelordUK)
-- feat: Add PI_DIGITS() function for arbitrary precision π (TimelordUK)
-- add prime examples (TimelordUK)
-- docs: Add --execute-statement feature plan (TimelordUK)
-- refactor: Create argument parsing context object (Python argparse style) (TimelordUK)
-- refactor: Extract non-interactive query mode to local function (132 lines removed) (TimelordUK)
-- refactor: Extract schema handlers to main_handlers.rs (174 lines removed) (TimelordUK)
-- refactor: Extract benchmark handler to main_handlers.rs (87 lines removed) (TimelordUK)
-- refactor: Extract distinct column handler to main_handlers.rs (113 lines removed) (TimelordUK)
-- refactor: Extract documentation handlers to main_handlers.rs (255 lines removed) (TimelordUK)
-- refactor: Extract handler functions from main() (92 lines removed) (TimelordUK)
-- refactor: Extract CLI handlers to organized cli module (299 lines removed from main.rs) (TimelordUK)
-- feat: Add script dependency analyzer for temp table tracking (TimelordUK)
-- fix: Only show 'rows affected' message for table output format (TimelordUK)
-- fix: Add missing ColumnRef import in window_functions/mod.rs (TimelordUK)
+- chore: Bump version to 1.61.0 with Neovim plugin UX improvements (TimelordUK)
+- fix(nvim): Exit insert mode and add persistent ESC handler for locked filters (TimelordUK)
+- feat(nvim): Make fuzzy filter interactive with navigation and lock mode (TimelordUK)
+- fix(nvim): Fuzzy filter now filters currently focused table, not first table (TimelordUK)
+- fix(nvim): Remove cursor jump when navigating between tables with \sTn (TimelordUK)
+- fix(nvim): Improve table navigation UX with nearest table and smooth scrolling (TimelordUK)
+- feat: Add opt-in comment preservation foundation (Phase 1) (TimelordUK)
+- fix: Fix line number mapping in --get-columns-at for \sE expansion (TimelordUK)
+- format (TimelordUK)
+- fix: Execute target statement to get schema in --get-columns-at (TimelordUK)
+- feat: Add dependency-aware column expansion for \sX with temp tables (TimelordUK)
+- correct README (TimelordUK)
+- move test files from root (TimelordUK)
+- styled example (TimelordUK)
+- feat: Add terminal colored table output with YAML style configuration (TimelordUK)
 
 </details>
 
