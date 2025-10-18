@@ -5,6 +5,57 @@ All notable changes to SQL CLI will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.61.0] - 2025-10-18
+
+### 🎯 Neovim Plugin UX Enhancements
+
+This release focuses on improving the user experience of the Neovim plugin's table navigation and fuzzy filtering features, making it production-ready for analyzing large multi-table result sets.
+
+### ✨ Improvements
+
+#### **Smart Table Navigation**
+- **Nearest table focus** - `\sTt` now jumps to the NEAREST table instead of always jumping to first table
+  - Critical for workflows with 8+ result tables where cursor may be near table 5
+  - Calculates distance above/below each table and selects minimum
+- **Smooth navigation** - Eliminated cursor jumping during cell navigation in large tables (5k-10k rows, 40+ columns)
+  - Replaced complex viewport management with simple `zz` centering
+  - Predictable, smooth behavior when navigating cells with h/j/k/l
+- **Fixed next/prev table jumps** - `\sTn`/`\sTp` no longer cause temporary cursor jumps to top of buffer
+  - Same viewport fix applied to multi-table navigation
+
+#### **Context-Aware Fuzzy Filtering**
+- **Filters focused table** - Fuzzy filter (`/`) now filters the currently focused table, not always first table
+  - Integrates with table navigation mode (`\sTt`)
+  - Shows accurate row counts for the table you're viewing
+  - Perfect for multi-table workflows
+
+#### **Interactive Fuzzy Filter**
+- **Lock mode** - Press Enter to lock filtered results while keeping them visible
+  - Closes filter input window
+  - Returns to normal mode (not insert mode)
+  - Enables free navigation of filtered results
+  - Shows: "Filter locked - 12/1000 rows visible (/ to reopen, ESC to clear)"
+- **Navigate while filtering** - New keybindings for exploring results without closing filter
+  - `Ctrl+j/k` - Scroll results up/down while typing filter pattern
+  - `Ctrl+d/u` - Page down/up in results
+  - See live updates as you refine your filter
+- **Persistent ESC handler** - Press ESC in locked filter mode to restore full table
+  - Buffer-local keymap that persists after filter window closes
+  - Clean workflow: filter → lock → navigate → ESC to restore
+
+### 🔧 Bug Fixes
+- Fixed buffer entering insert mode after locking fuzzy filter
+- Fixed ESC not clearing filter after lock mode enabled
+- Fixed fuzzy filter always operating on first table in multi-table buffers
+
+### 📝 Use Case
+Perfect for FIX message log analysis with ~10k rows and 40 columns across multiple result tables:
+- Navigate between 8+ tables with `\sTn`/`\sTp` (smooth, no jumps)
+- Focus specific table with `\sTt` (finds nearest table)
+- Filter 10k rows to 50 matches with `/` (filters current table)
+- Lock filter with Enter and navigate freely
+- ESC to restore full table, `/` to refine filter
+
 ## [1.60.0] - 2025-10-12
 
 ### 🚀 Dependency-Aware Script Execution & Multi-Stage Analysis
