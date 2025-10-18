@@ -5,6 +5,7 @@ use std::sync::Arc;
 
 use crate::data::datatable::DataValue;
 
+pub mod ansi;
 pub mod astronomy;
 pub mod base_conversion;
 pub mod bigint;
@@ -58,6 +59,7 @@ pub enum FunctionCategory {
     BigNumber,     // Arbitrary precision arithmetic
     TableFunction, // Table-generating functions
     Bitwise,       // Bitwise operations and binary visualization
+    Terminal,      // Terminal formatting (ANSI colors, styles)
 }
 
 impl fmt::Display for FunctionCategory {
@@ -75,6 +77,7 @@ impl fmt::Display for FunctionCategory {
             FunctionCategory::BigNumber => write!(f, "BigNumber"),
             FunctionCategory::TableFunction => write!(f, "TableFunction"),
             FunctionCategory::Bitwise => write!(f, "Bitwise"),
+            FunctionCategory::Terminal => write!(f, "Terminal"),
         }
     }
 }
@@ -184,6 +187,7 @@ impl FunctionRegistry {
         registry.register_type_checking_functions();
         registry.register_utility_functions();
         registry.register_bitwise_functions();
+        registry.register_ansi_functions();
 
         registry
     }
@@ -833,6 +837,29 @@ impl FunctionRegistry {
         self.register(Box::new(bitwise_string::BitShiftLeft));
         self.register(Box::new(bitwise_string::BitShiftRight));
         self.register(Box::new(bitwise_string::HammingDistance));
+    }
+
+    /// Register ANSI terminal formatting functions
+    fn register_ansi_functions(&mut self) {
+        use ansi::{
+            AnsiBgFunction, AnsiBlinkFunction, AnsiBoldFunction, AnsiColorFunction,
+            AnsiItalicFunction, AnsiReverseFunction, AnsiRgbBgFunction, AnsiRgbFunction,
+            AnsiStrikethroughFunction, AnsiUnderlineFunction,
+        };
+
+        // Color functions
+        self.register(Box::new(AnsiColorFunction));
+        self.register(Box::new(AnsiBgFunction));
+        self.register(Box::new(AnsiRgbFunction));
+        self.register(Box::new(AnsiRgbBgFunction));
+
+        // Formatting functions
+        self.register(Box::new(AnsiBoldFunction));
+        self.register(Box::new(AnsiItalicFunction));
+        self.register(Box::new(AnsiUnderlineFunction));
+        self.register(Box::new(AnsiBlinkFunction));
+        self.register(Box::new(AnsiReverseFunction));
+        self.register(Box::new(AnsiStrikethroughFunction));
     }
 }
 
