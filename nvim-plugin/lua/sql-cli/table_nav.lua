@@ -335,8 +335,50 @@ function M.init_navigation(bufnr, window)
       style = current_registry_table.style or "ascii"
     }
   else
-    -- Fallback to old behavior if no table found at cursor
-    nav_state.table_info = parse_table_structure(lines)
+    -- Cursor is not in a table - find the NEAREST table instead of first table
+    if #registry.tables > 0 then
+      -- Find the nearest table to cursor
+      local nearest_table = nil
+      local min_distance = math.huge
+
+      for _, tbl in ipairs(registry.tables) do
+        local distance
+        if cursor_line < tbl.start_line then
+          -- Cursor is above table
+          distance = tbl.start_line - cursor_line
+        elseif cursor_line > tbl.end_line then
+          -- Cursor is below table
+          distance = cursor_line - tbl.end_line
+        else
+          -- Should not happen (already handled above), but just in case
+          distance = 0
+        end
+
+        if distance < min_distance then
+          min_distance = distance
+          nearest_table = tbl
+        end
+      end
+
+      if nearest_table then
+        -- Convert registry format to nav_state format
+        nav_state.table_info = {
+          header_row = nearest_table.header_line,
+          separator_row = nearest_table.separator_line,
+          data_start = nearest_table.data_start,
+          data_end = nearest_table.data_end,
+          columns = nearest_table.column_names,
+          column_positions = nearest_table.column_positions,
+          style = nearest_table.style or "ascii"
+        }
+      else
+        -- Fallback to old parsing if no tables in registry
+        nav_state.table_info = parse_table_structure(lines)
+      end
+    else
+      -- No tables in registry, fallback to old behavior
+      nav_state.table_info = parse_table_structure(lines)
+    end
   end
 
   if nav_state.table_info.data_start then
@@ -492,48 +534,11 @@ function M.highlight_current_cell()
       -- Set cursor position
       vim.api.nvim_win_set_cursor(nav_state.window, {line_num, col_pos.start})
 
-      -- Ensure header remains visible by managing the viewport
-      local header_line = nav_state.table_info.header_row
-      if header_line then
-        local win_height = vim.api.nvim_win_get_height(nav_state.window)
-        local current_top = vim.fn.line('w0', nav_state.window)
-
-        -- If header is above the viewport, scroll up to show it
-        if header_line < current_top then
-          -- Calculate how many lines to show above header (for context)
-          local context_lines = 2
-          local target_top = math.max(1, header_line - context_lines)
-
-          -- Scroll window to show header with some context
-          vim.api.nvim_win_call(nav_state.window, function()
-            vim.cmd('normal! ' .. target_top .. 'zt')
-            -- Then move cursor back to the data cell
-            vim.api.nvim_win_set_cursor(nav_state.window, {line_num, col_pos.start})
-          end)
-        elseif line_num > current_top + win_height - 3 then
-          -- If cursor would go below visible area, scroll but keep header visible
-          local max_scroll = header_line + win_height - 5  -- Keep some buffer
-          if line_num <= max_scroll then
-            -- Normal scrolling - cursor in middle of window
-            vim.api.nvim_win_call(nav_state.window, function()
-              vim.cmd('normal! zz')
-            end)
-          else
-            -- We're at the limit - ensure header stays visible
-            vim.api.nvim_win_call(nav_state.window, function()
-              vim.cmd('normal! ' .. header_line .. 'zt')
-              -- Scroll down as much as possible while keeping header
-              local lines_to_scroll = math.min(line_num - header_line - 2, win_height - 5)
-              if lines_to_scroll > 0 then
-                vim.cmd('normal! ' .. lines_to_scroll .. 'j')
-                vim.cmd('normal! zt')
-              end
-              -- Set cursor to actual position
-              vim.api.nvim_win_set_cursor(nav_state.window, {line_num, col_pos.start})
-            end)
-          end
-        end
-      end
+      -- Simple smooth scrolling - just center the cursor
+      -- Let Neovim handle the viewport - don't try to be clever
+      vim.api.nvim_win_call(nav_state.window, function()
+        vim.cmd('normal! zz')  -- Center cursor in window
+      end)
     end
   end
 end
