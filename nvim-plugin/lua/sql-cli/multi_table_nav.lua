@@ -152,11 +152,10 @@ local function navigate_to_table(state, table_idx, registry)
     vim.api.nvim_win_set_cursor(win, {target_table.data_start or target_table.start_line + 2, 0})
   end
 
-  -- Center the table in the viewport for better visibility
+  -- Simple smooth scrolling - just center the cursor
+  -- Let Neovim handle the viewport positioning
   vim.api.nvim_win_call(win, function()
-    -- Scroll so table header is visible near top with some context
-    local scroll_target = math.max(1, target_table.start_line - 3)
-    vim.fn.winrestview({topline = scroll_target})
+    vim.cmd('normal! zz')  -- Center cursor in window
   end)
 
   -- Clear any existing single-table navigation state to prevent jumping back
