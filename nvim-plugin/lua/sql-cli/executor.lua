@@ -6,15 +6,45 @@ local table_nav = require('sql-cli.table_nav')
 
 local M = {}
 
--- Helper function to expand environment variables in text
-local function expand_env_variables(text)
-  -- Replace ${VAR_NAME} patterns with environment variable values
+-- Helper function to extract file-level variables from buffer lines
+-- Looks for comments like: -- @SET VAR_NAME = value
+local function extract_file_variables(lines)
+  local vars = {}
+
+  for _, line in ipairs(lines) do
+    -- Match: -- @SET VAR_NAME = value
+    -- Supports both single and multi-word values
+    local var_name, value = line:match("^%s*%-%-%s*@SET%s+([%w_]+)%s*=%s*(.+)%s*$")
+    if var_name and value then
+      -- Trim whitespace from value
+      value = value:gsub("^%s+", ""):gsub("%s+$", "")
+      -- Remove quotes if present
+      value = value:gsub('^"(.*)"$', '%1'):gsub("^'(.*)'$", '%1')
+      vars[var_name] = value
+    end
+  end
+
+  return vars
+end
+
+-- Helper function to expand environment variables and file-level variables in text
+-- File-level variables take precedence over environment variables
+local function expand_env_variables(text, file_vars)
+  file_vars = file_vars or {}
+
+  -- Replace ${VAR_NAME} patterns with file-level or environment variable values
   local expanded = text:gsub('%${([%w_]+)}', function(var)
+    -- Check file-level variables first
+    if file_vars[var] then
+      return file_vars[var]
+    end
+
+    -- Fall back to environment variables
     local value = vim.env[var]
     if value then
       return value
     else
-      -- Keep the original placeholder if no env var found
+      -- Keep the original placeholder if no var found
       return '${' .. var .. '}'
     end
   end)
@@ -23,11 +53,16 @@ end
 
 -- Execute query from buffer or provided string
 function M.execute_query(query, config, state, skip_params)
+  local file_vars = {}
+
   -- Get query from buffer if not provided
   if not query or query == "" then
     local bufnr = vim.api.nvim_get_current_buf()
     local lines = vim.api.nvim_buf_get_lines(bufnr, 0, -1, false)
     query = table.concat(lines, "\n")
+
+    -- Extract file-level variables
+    file_vars = extract_file_variables(lines)
 
     -- Auto-detect data file from hints
     if config.auto_detect.data_hints and not state:get_data_file() then
@@ -100,8 +135,8 @@ function M.execute_query(query, config, state, skip_params)
           -- Set up keymaps for the preview window
           local function close_and_execute()
             vim.api.nvim_win_close(win, true)
-            -- Expand environment variables (for tokens like ${JWT_TOKEN})
-            resolved_query = expand_env_variables(resolved_query)
+            -- Expand environment variables and file-level vars (for tokens like ${JWT_TOKEN})
+            resolved_query = expand_env_variables(resolved_query, file_vars)
             -- Save the resolved query
             state:set_last_query(resolved_query)
             -- Add to history for recall
@@ -163,8 +198,8 @@ function M.execute_query(query, config, state, skip_params)
     end
   end
 
-  -- Expand environment variables (for tokens like ${JWT_TOKEN})
-  query = expand_env_variables(query)
+  -- Expand environment variables and file-level vars (for tokens like ${JWT_TOKEN})
+  query = expand_env_variables(query, file_vars)
 
   -- Save the query
   state:set_last_query(query)
@@ -178,11 +213,16 @@ end
 
 -- Execute query with execution plan
 function M.execute_query_with_plan(query, config, state, skip_params)
+  local file_vars = {}
+
   -- Get query from buffer if not provided
   if not query or query == "" then
     local bufnr = vim.api.nvim_get_current_buf()
     local lines = vim.api.nvim_buf_get_lines(bufnr, 0, -1, false)
     query = table.concat(lines, "\n")
+
+    -- Extract file-level variables
+    file_vars = extract_file_variables(lines)
 
     -- Auto-detect data file from hints
     if config.auto_detect.data_hints and not state:get_data_file() then
@@ -250,8 +290,8 @@ function M.execute_query_with_plan(query, config, state, skip_params)
 
           local function close_and_execute()
             vim.api.nvim_win_close(win, true)
-            -- Expand environment variables (for tokens like ${JWT_TOKEN})
-            resolved_query = expand_env_variables(resolved_query)
+            -- Expand environment variables and file-level vars (for tokens like ${JWT_TOKEN})
+            resolved_query = expand_env_variables(resolved_query, file_vars)
             state:set_last_query(resolved_query)
             -- Add to history for recall
             require('sql-cli.query_history').add_to_history(resolved_query)
@@ -309,8 +349,8 @@ function M.execute_query_with_plan(query, config, state, skip_params)
     end
   end
 
-  -- Expand environment variables (for tokens like ${JWT_TOKEN})
-  query = expand_env_variables(query)
+  -- Expand environment variables and file-level vars (for tokens like ${JWT_TOKEN})
+  query = expand_env_variables(query, file_vars)
 
   -- Save the query
   state:set_last_query(query)
@@ -358,6 +398,9 @@ function M.execute_at_cursor(config, state)
   local bufnr = vim.api.nvim_get_current_buf()
   local cursor_line = vim.fn.line('.')
   local lines = vim.api.nvim_buf_get_lines(bufnr, 0, -1, false)
+
+  -- Extract file-level variables
+  local file_vars = extract_file_variables(lines)
 
   -- Check if this is a script with GO separators
   local script_text = table.concat(lines, "\n")
@@ -409,6 +452,9 @@ function M.execute_at_cursor(config, state)
 
   local query = table.concat(query_lines, "\n")
 
+  -- Expand file-level variables in the query
+  query = expand_env_variables(query, file_vars)
+
   -- Auto-detect data file if needed
   if config.auto_detect.data_hints and not state:get_data_file() then
     local buf_path = vim.api.nvim_buf_get_name(bufnr)
@@ -455,8 +501,14 @@ function M.execute_statement_at_cursor(config, state)
   local cursor_line = vim.fn.line('.')
   local lines = vim.api.nvim_buf_get_lines(bufnr, 0, -1, false)
 
+  -- Extract file-level variables
+  local file_vars = extract_file_variables(lines)
+
   -- Check if this is a script with GO separators
   local script_text = table.concat(lines, "\n")
+
+  -- Expand file-level variables in the script
+  script_text = expand_env_variables(script_text, file_vars)
   local has_go_separator = script_text:match("%sGO%s") or script_text:match("^GO%s") or script_text:match("%sGO$") or script_text:match("^GO$")
 
   if not has_go_separator then
@@ -809,6 +861,9 @@ function M.execute_at_cursor_with_plan(config, state)
   local cursor_line = vim.fn.line('.')
   local lines = vim.api.nvim_buf_get_lines(bufnr, 0, -1, false)
 
+  -- Extract file-level variables
+  local file_vars = extract_file_variables(lines)
+
   -- Find query boundaries
   local start_line, end_line = utils.find_query_at_cursor(lines, cursor_line)
 
@@ -847,6 +902,9 @@ function M.execute_at_cursor_with_plan(config, state)
   end
 
   local query = table.concat(query_lines, "\n")
+
+  -- Expand file-level variables in the query
+  query = expand_env_variables(query, file_vars)
 
   -- Auto-detect data file if needed
   if config.auto_detect.data_hints and not state:get_data_file() then
