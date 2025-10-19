@@ -323,18 +323,18 @@ mod tests {
         // This simulates what we'd get from yanking a complex query from the TUI debug view
         // Strip comments from the yanked query since our parser doesn't handle SQL comments yet
         let yanked_query_session = r"
-        SELECT 
+        SELECT
             trader,
             COUNT(*) as trade_count,
             SUM(quantity * price) as total_value,
             AVG(commission) as avg_commission,
             MAX(tradeDate) as last_trade_date
-        FROM data 
-        WHERE status = 'Completed' 
+        FROM data
+        WHERE status = 'Completed'
             AND counterpartyCountry IN ('US', 'JP')
             AND quantity > 500
-        GROUP BY trader 
-        HAVING COUNT(*) >= 1
+        GROUP BY trader
+        HAVING trade_count >= 1
         ORDER BY total_value DESC
         "
         .trim();

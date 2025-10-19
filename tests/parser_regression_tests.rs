@@ -437,18 +437,18 @@ fn test_100_trades_comprehensive_parser_validation() -> anyhow::Result<()> {
     let perf_start = std::time::Instant::now();
 
     let performance_query = r"
-        SELECT 
+        SELECT
             book,
             counterparty,
             COUNT(*) as trade_count,
             AVG(commission) as avg_commission,
             SUM(quantity * price) as total_value
-        FROM trades 
+        FROM trades
         WHERE NOT confirmationStatus.Contains('pend')
-        AND NOT confirmationStatus.Contains('reject') 
+        AND NOT confirmationStatus.Contains('reject')
         AND commission BETWEEN 20 AND 150
         GROUP BY book, counterparty
-        HAVING COUNT(*) >= 1
+        HAVING trade_count >= 1
         ORDER BY total_value DESC
         LIMIT 15
     ";

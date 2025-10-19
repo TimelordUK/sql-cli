@@ -323,7 +323,7 @@ fn test_complex_query_scenarios() -> anyhow::Result<()> {
 
     // Test HAVING clause
     let frequent_traders_response = csv_client.query_csv(
-        "SELECT trader, COUNT(*) as trades FROM data GROUP BY trader HAVING COUNT(*) >= 1",
+        "SELECT trader, COUNT(*) as trades FROM data GROUP BY trader HAVING trades >= 1",
     )?;
     assert_eq!(
         frequent_traders_response.data.len(),
