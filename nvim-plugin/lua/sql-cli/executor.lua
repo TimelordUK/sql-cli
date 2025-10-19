@@ -1373,4 +1373,8 @@ function M.execute_from_history(config, state)
   end)
 end
 
+-- Export helper functions for use by other modules
+M.extract_file_variables = extract_file_variables
+M.expand_env_variables = expand_env_variables
+
 return M

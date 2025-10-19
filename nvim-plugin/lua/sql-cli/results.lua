@@ -323,6 +323,11 @@ function M.get_query_for_expansion()
 
   local query = table.concat(query_lines, '\n')
 
+  -- Extract and expand file-level variables (for @SET directives)
+  local executor = require('sql-cli.executor')
+  local file_vars = executor.extract_file_variables(lines)
+  query = executor.expand_env_variables(query, file_vars)
+
   if log then
     log.info('expand_star', string.format('Extracted query from lines %d-%d (%d lines)',
       start_line, end_line, #query_lines))
@@ -848,6 +853,11 @@ function M.expand_star_with_dependencies(config, state)
 
   -- Get script text
   local script = table.concat(lines, "\n")
+
+  -- Extract and expand file-level variables (for @SET directives)
+  local executor = require('sql-cli.executor')
+  local file_vars = executor.extract_file_variables(lines)
+  script = executor.expand_env_variables(script, file_vars)
 
   -- Check if this is a script with GO separators
   local has_go_separator = script:match("%sGO%s") or
