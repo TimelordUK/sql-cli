@@ -1,0 +1,51 @@
+version: '3.8'
+
+services:
+  flask-app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: flask-kerberos-demo
+    ports:
+      - "5000:5000"
+    volumes:
+      # Mount your keytab file (read-only for security)
+      # IMPORTANT: Create this file before running docker-compose up
+      - ./secrets/app.keytab:/etc/krb5.keytab:ro
+
+      # Mount Kerberos config from host (if you have custom config)
+      # Comment out if using default config
+      - /etc/krb5.conf:/etc/krb5.conf:ro
+
+      # Persist Kerberos ticket cache
+      - krb5_cache:/tmp
+
+      # Mount logs directory to view renewal logs on host
+      - ./logs:/var/log
+
+    environment:
+      # Kerberos configuration
+      - KRB5_PRINCIPAL=your_username@YOUR.REALM.COM
+      - KRB5_KEYTAB=/etc/krb5.keytab
+      - KRB5_LOGFILE=/var/log/krb5_renew.log
+
+      # Renewal interval in seconds (default: 25200 = 7 hours)
+      # Adjust based on your ticket lifetime
+      - KRB5_RENEWAL_INTERVAL=25200
+
+      # Kerberos ticket cache location
+      - KRB5CCNAME=/tmp/krb5cc_flask
+
+    restart: unless-stopped
+
+    # Health check using the Flask /health endpoint
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+volumes:
+  krb5_cache:
+    driver: local

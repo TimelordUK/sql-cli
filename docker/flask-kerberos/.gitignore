@@ -1,0 +1,21 @@
+# Kerberos sensitive files
+secrets/
+*.keytab
+krb5.conf
+
+# Logs
+logs/
+*.log
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+ENV/
+
+# Docker
+.env
