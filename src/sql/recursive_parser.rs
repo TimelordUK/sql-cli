@@ -42,6 +42,22 @@ use std::sync::Arc;
 
 // Import Web CTE parser
 use super::parser::web_cte_parser::WebCteParser;
+
+/// Parser mode - controls whether comments are preserved in AST
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum ParserMode {
+    /// Standard parsing - skip comments (current behavior, backward compatible)
+    Standard,
+    /// Preserve comments in AST (opt-in for formatters)
+    PreserveComments,
+}
+
+impl Default for ParserMode {
+    fn default() -> Self {
+        ParserMode::Standard
+    }
+}
+
 pub struct Parser {
     lexer: Lexer,
     pub current_token: Token,    // Made public for web_cte_parser access
@@ -54,12 +70,25 @@ pub struct Parser {
     trace_depth: usize,          // Track recursion depth for indented trace
     function_registry: Arc<FunctionRegistry>, // Function registry for validation
     generator_registry: Arc<GeneratorRegistry>, // Generator registry for table functions
+    mode: ParserMode,            // Parser mode for comment preservation
 }
 
 impl Parser {
     #[must_use]
     pub fn new(input: &str) -> Self {
-        let mut lexer = Lexer::new(input);
+        Self::with_mode(input, ParserMode::default())
+    }
+
+    /// Create a new parser with explicit mode for comment preservation
+    #[must_use]
+    pub fn with_mode(input: &str, mode: ParserMode) -> Self {
+        // Choose lexer mode based on parser mode
+        let lexer_mode = match mode {
+            ParserMode::Standard => LexerMode::SkipComments,
+            ParserMode::PreserveComments => LexerMode::PreserveComments,
+        };
+
+        let mut lexer = Lexer::with_mode(input, lexer_mode);
         let current_token = lexer.next_token();
         Self {
             lexer,
@@ -73,6 +102,7 @@ impl Parser {
             trace_depth: 0,
             function_registry: Arc::new(FunctionRegistry::new()),
             generator_registry: Arc::new(GeneratorRegistry::new()),
+            mode,
         }
     }
 
@@ -92,6 +122,7 @@ impl Parser {
             trace_depth: 0,
             function_registry: Arc::new(FunctionRegistry::new()),
             generator_registry: Arc::new(GeneratorRegistry::new()),
+            mode: ParserMode::default(),
         }
     }
 
@@ -490,6 +521,13 @@ impl Parser {
     }
 
     fn parse_select_statement_inner(&mut self) -> Result<SelectStatement, String> {
+        // Collect leading comments ONLY in PreserveComments mode
+        let leading_comments = if self.mode == ParserMode::PreserveComments {
+            self.collect_leading_comments()
+        } else {
+            vec![]
+        };
+
         self.consume(Token::Select)?;
 
         // Check for DISTINCT keyword
@@ -812,6 +850,13 @@ impl Parser {
         // Parse UNION/INTERSECT/EXCEPT operations
         let set_operations = self.parse_set_operations()?;
 
+        // Collect trailing comment ONLY in PreserveComments mode
+        let trailing_comment = if self.mode == ParserMode::PreserveComments {
+            self.collect_trailing_comment()
+        } else {
+            None
+        };
+
         Ok(SelectStatement {
             distinct,
             columns,
@@ -830,8 +875,8 @@ impl Parser {
             ctes: Vec::new(), // Will be populated by WITH clause parser
             into_table,
             set_operations,
-            leading_comments: vec![],
-            trailing_comment: None,
+            leading_comments,
+            trailing_comment,
         })
     }
 
@@ -2374,4 +2419,113 @@ fn is_sql_keyword(word: &str) -> bool {
 
     // Check if it's a keyword token (not an identifier)
     !matches!(token, Token::Identifier(_) | Token::Eof)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Test that Parser::new() defaults to Standard mode (backward compatible)
+    #[test]
+    fn test_parser_mode_default_is_standard() {
+        let sql = "-- Leading comment\nSELECT * FROM users";
+        let mut parser = Parser::new(sql);
+        let stmt = parser.parse().unwrap();
+
+        // In Standard mode, comments should be empty
+        assert!(stmt.leading_comments.is_empty());
+        assert!(stmt.trailing_comment.is_none());
+    }
+
+    /// Test that PreserveComments mode collects leading comments
+    #[test]
+    fn test_parser_mode_preserve_leading_comments() {
+        let sql = "-- Important query\n-- Author: Alice\nSELECT id, name FROM users";
+        let mut parser = Parser::with_mode(sql, ParserMode::PreserveComments);
+        let stmt = parser.parse().unwrap();
+
+        // Should have 2 leading comments
+        assert_eq!(stmt.leading_comments.len(), 2);
+        assert!(stmt.leading_comments[0].is_line_comment);
+        assert!(stmt.leading_comments[0].text.contains("Important query"));
+        assert!(stmt.leading_comments[1].text.contains("Author: Alice"));
+    }
+
+    /// Test that PreserveComments mode collects trailing comments
+    #[test]
+    fn test_parser_mode_preserve_trailing_comment() {
+        let sql = "SELECT * FROM users -- Fetch all users";
+        let mut parser = Parser::with_mode(sql, ParserMode::PreserveComments);
+        let stmt = parser.parse().unwrap();
+
+        // Should have trailing comment
+        assert!(stmt.trailing_comment.is_some());
+        let comment = stmt.trailing_comment.unwrap();
+        assert!(comment.is_line_comment);
+        assert!(comment.text.contains("Fetch all users"));
+    }
+
+    /// Test that PreserveComments mode handles block comments
+    #[test]
+    fn test_parser_mode_preserve_block_comments() {
+        let sql = "/* Query explanation */\nSELECT * FROM users";
+        let mut parser = Parser::with_mode(sql, ParserMode::PreserveComments);
+        let stmt = parser.parse().unwrap();
+
+        // Should have leading block comment
+        assert_eq!(stmt.leading_comments.len(), 1);
+        assert!(!stmt.leading_comments[0].is_line_comment); // It's a block comment
+        assert!(stmt.leading_comments[0].text.contains("Query explanation"));
+    }
+
+    /// Test that PreserveComments mode collects both leading and trailing
+    #[test]
+    fn test_parser_mode_preserve_both_comments() {
+        let sql = "-- Leading\nSELECT * FROM users -- Trailing";
+        let mut parser = Parser::with_mode(sql, ParserMode::PreserveComments);
+        let stmt = parser.parse().unwrap();
+
+        // Should have both
+        assert_eq!(stmt.leading_comments.len(), 1);
+        assert!(stmt.leading_comments[0].text.contains("Leading"));
+        assert!(stmt.trailing_comment.is_some());
+        assert!(stmt.trailing_comment.unwrap().text.contains("Trailing"));
+    }
+
+    /// Test that Standard mode has zero performance overhead (no comment parsing)
+    #[test]
+    fn test_parser_mode_standard_ignores_comments() {
+        let sql = "-- Comment 1\n/* Comment 2 */\nSELECT * FROM users -- Comment 3";
+        let mut parser = Parser::with_mode(sql, ParserMode::Standard);
+        let stmt = parser.parse().unwrap();
+
+        // Comments should be completely ignored
+        assert!(stmt.leading_comments.is_empty());
+        assert!(stmt.trailing_comment.is_none());
+
+        // But query should still parse correctly
+        assert_eq!(stmt.select_items.len(), 1);
+        assert_eq!(stmt.from_table, Some("users".to_string()));
+    }
+
+    /// Test backward compatibility - existing code using Parser::new() unchanged
+    #[test]
+    fn test_parser_backward_compatibility() {
+        let sql = "SELECT id, name FROM users WHERE active = true";
+
+        // Old way (still works, defaults to Standard mode)
+        let mut parser1 = Parser::new(sql);
+        let stmt1 = parser1.parse().unwrap();
+
+        // Explicit Standard mode (same behavior)
+        let mut parser2 = Parser::with_mode(sql, ParserMode::Standard);
+        let stmt2 = parser2.parse().unwrap();
+
+        // Both should produce identical ASTs (comments are empty in both)
+        assert_eq!(stmt1.select_items.len(), stmt2.select_items.len());
+        assert_eq!(stmt1.from_table, stmt2.from_table);
+        assert_eq!(stmt1.where_clause.is_some(), stmt2.where_clause.is_some());
+        assert!(stmt1.leading_comments.is_empty());
+        assert!(stmt2.leading_comments.is_empty());
+    }
 }

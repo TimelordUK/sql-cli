@@ -6,18 +6,27 @@ This document outlines a **safe, incremental approach** to adding comment preser
 
 The key principle: **Never break existing functionality**. Each phase is independent and can be tested/committed separately.
 
-## Current Status (as of 2025-10-18)
+## Current Status (as of 2025-10-19)
 
-### ✅ Completed
+### ✅ Phase 1 Completed (2025-10-18)
 1. Lexer has comment tokenization (`Token::LineComment`, `Token::BlockComment`)
-2. AST structures have comment fields (breaking change already handled)
-3. Comment collection helper methods exist in parser
-4. All compilation errors from AST changes are fixed
+2. Dual-mode lexer (`LexerMode::SkipComments`, `LexerMode::PreserveComments`)
+3. AST structures have comment fields (breaking change already handled)
+4. Comment collection helper methods exist in parser
+5. All compilation errors from AST changes are fixed
+6. 5 lexer mode tests passing
 
-### ⚠️ Current Problem
-- Parser uses `next_token()` which skips comments
-- Comment collection methods can't see comments
-- Need strategy to make parser comment-aware without breaking it
+### ✅ Phase 2 Completed (2025-10-19)
+1. Added `ParserMode` enum (Standard, PreserveComments)
+2. Added `Parser::with_mode()` constructor
+3. `Parser::new()` defaults to Standard mode (backward compatible)
+4. Comment collection guarded by mode checks in `parse_select_statement_inner()`
+5. 7 parser mode tests passing
+6. All 450 existing tests still passing (457 total)
+
+### 🎯 Next: Phase 3 - Formatter Integration
+- Make AST formatter emit comments when present
+- Estimated time: 1 hour
 
 ## The Tree-Sitter Approach
 
