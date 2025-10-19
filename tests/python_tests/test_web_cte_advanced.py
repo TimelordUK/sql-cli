@@ -140,7 +140,7 @@ def test_combined_features():
         COUNT(*) as post_count
     FROM posts
     GROUP BY userId
-    HAVING COUNT(*) >= 10
+    HAVING post_count >= 10
     ORDER BY userId
     LIMIT 5
     """
