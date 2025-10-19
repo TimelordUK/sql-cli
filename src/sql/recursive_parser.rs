@@ -521,6 +521,107 @@ impl Parser {
         }
     }
 
+    /// Check if an expression contains aggregate functions (COUNT, SUM, AVG, etc.)
+    /// This is used to detect unsupported patterns in HAVING clause
+    fn contains_aggregate_function(expr: &SqlExpression) -> bool {
+        match expr {
+            SqlExpression::FunctionCall { name, args, .. } => {
+                // Check if this is an aggregate function
+                let upper_name = name.to_uppercase();
+                let is_aggregate = matches!(
+                    upper_name.as_str(),
+                    "COUNT" | "SUM" | "AVG" | "MIN" | "MAX" | "GROUP_CONCAT" | "STRING_AGG"
+                );
+
+                // If this is an aggregate, return true
+                // Otherwise, recursively check arguments
+                is_aggregate || args.iter().any(Self::contains_aggregate_function)
+            }
+            // Recursively check nested expressions
+            SqlExpression::BinaryOp { left, right, .. } => {
+                Self::contains_aggregate_function(left) || Self::contains_aggregate_function(right)
+            }
+            SqlExpression::Not { expr } => Self::contains_aggregate_function(expr),
+            SqlExpression::MethodCall { args, .. } => {
+                args.iter().any(Self::contains_aggregate_function)
+            }
+            SqlExpression::ChainedMethodCall { base, args, .. } => {
+                Self::contains_aggregate_function(base)
+                    || args.iter().any(Self::contains_aggregate_function)
+            }
+            SqlExpression::CaseExpression {
+                when_branches,
+                else_branch,
+            } => {
+                when_branches.iter().any(|branch| {
+                    Self::contains_aggregate_function(&branch.condition)
+                        || Self::contains_aggregate_function(&branch.result)
+                }) || else_branch
+                    .as_ref()
+                    .map_or(false, |e| Self::contains_aggregate_function(e))
+            }
+            SqlExpression::SimpleCaseExpression {
+                expr,
+                when_branches,
+                else_branch,
+            } => {
+                Self::contains_aggregate_function(expr)
+                    || when_branches.iter().any(|branch| {
+                        Self::contains_aggregate_function(&branch.value)
+                            || Self::contains_aggregate_function(&branch.result)
+                    })
+                    || else_branch
+                        .as_ref()
+                        .map_or(false, |e| Self::contains_aggregate_function(e))
+            }
+            SqlExpression::ScalarSubquery { query } => {
+                // Subqueries can have their own aggregates, but that's fine
+                // We're only checking the outer HAVING clause
+                query
+                    .having
+                    .as_ref()
+                    .map_or(false, |h| Self::contains_aggregate_function(h))
+            }
+            // Leaf nodes - no aggregates
+            SqlExpression::Column(_)
+            | SqlExpression::StringLiteral(_)
+            | SqlExpression::NumberLiteral(_)
+            | SqlExpression::BooleanLiteral(_)
+            | SqlExpression::Null
+            | SqlExpression::DateTimeConstructor { .. }
+            | SqlExpression::DateTimeToday { .. } => false,
+
+            // Window functions contain aggregates by definition
+            SqlExpression::WindowFunction { .. } => true,
+
+            // Between has three parts to check
+            SqlExpression::Between { expr, lower, upper } => {
+                Self::contains_aggregate_function(expr)
+                    || Self::contains_aggregate_function(lower)
+                    || Self::contains_aggregate_function(upper)
+            }
+
+            // IN list - check expr and all values
+            SqlExpression::InList { expr, values } | SqlExpression::NotInList { expr, values } => {
+                Self::contains_aggregate_function(expr)
+                    || values.iter().any(Self::contains_aggregate_function)
+            }
+
+            // IN subquery - check expr and subquery
+            SqlExpression::InSubquery { expr, subquery }
+            | SqlExpression::NotInSubquery { expr, subquery } => {
+                Self::contains_aggregate_function(expr)
+                    || subquery
+                        .having
+                        .as_ref()
+                        .map_or(false, |h| Self::contains_aggregate_function(h))
+            }
+
+            // UNNEST - check column expression
+            SqlExpression::Unnest { column, .. } => Self::contains_aggregate_function(column),
+        }
+    }
+
     fn parse_select_statement(&mut self) -> Result<SelectStatement, String> {
         self.trace_enter("parse_select_statement");
         let result = self.parse_select_statement_inner()?;
@@ -807,7 +908,19 @@ impl Parser {
                 return Err("HAVING clause requires GROUP BY".to_string());
             }
             self.advance();
-            Some(self.parse_expression()?)
+            let having_expr = self.parse_expression()?;
+
+            // Check if HAVING contains aggregate functions (not supported - use aliases instead)
+            if Self::contains_aggregate_function(&having_expr) {
+                return Err(
+                    "HAVING clause with aggregate functions is not supported. \
+                    Use an alias in SELECT for the aggregate and reference it in HAVING.\n\
+                    Example: SELECT trader, COUNT(*) as trade_count FROM trades GROUP BY trader HAVING trade_count > 1"
+                    .to_string()
+                );
+            }
+
+            Some(having_expr)
         } else {
             None
         };
