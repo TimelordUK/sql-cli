@@ -56,9 +56,15 @@ end
 
 -- Export to HTML table (works great in Outlook/Teams)
 function M.yank_as_html(bufnr, table_info, open_browser)
-  -- Try to get clean data from sql-cli first
-  local csv_str = M.get_clean_export_data("csv")
   local data = { headers = {}, rows = {} }
+
+  -- Check if we're in table navigation mode (focused on a specific table)
+  local table_nav = require('sql-cli.table_nav')
+  local use_clean_export = not table_nav.is_active()
+
+  -- Try to get clean data from sql-cli only if NOT in table navigation mode
+  -- (i.e., when exporting the entire/only result, not a specific table from multi-table results)
+  local csv_str = use_clean_export and M.get_clean_export_data("csv") or nil
 
   if csv_str then
     -- Parse CSV to get structured data (handle quoted fields properly)
@@ -319,8 +325,12 @@ function M.yank_as_tsv(bufnr, table_info)
     return tsv_str
   end
 
-  -- Get clean TSV data by running query with TSV output
-  local tsv_str = M.get_clean_export_data("tsv")
+  -- Check if we're in table navigation mode (focused on a specific table)
+  local table_nav = require('sql-cli.table_nav')
+  local use_clean_export = not table_nav.is_active()
+
+  -- Get clean TSV data by running query with TSV output (only if not in table nav mode)
+  local tsv_str = use_clean_export and M.get_clean_export_data("tsv") or nil
 
   if tsv_str then
     -- Convert line endings for Windows clipboard
@@ -604,8 +614,12 @@ function M.yank_as_csv(bufnr, table_info)
     return csv_str
   end
 
-  -- Get clean CSV data by running query with CSV output
-  local csv_str = M.get_clean_export_data("csv")
+  -- Check if we're in table navigation mode (focused on a specific table)
+  local table_nav = require('sql-cli.table_nav')
+  local use_clean_export = not table_nav.is_active()
+
+  -- Get clean CSV data by running query with CSV output (only if not in table nav mode)
+  local csv_str = use_clean_export and M.get_clean_export_data("csv") or nil
 
   if csv_str then
     -- Convert line endings for Windows clipboard
