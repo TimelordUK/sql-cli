@@ -128,6 +128,7 @@ impl InOperatorLifter {
         cte_name: String,
     ) -> CTE {
         let mut select_items = vec![SelectItem::Star {
+            table_prefix: None,
             leading_comments: vec![],
             trailing_comment: None,
         }];

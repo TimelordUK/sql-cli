@@ -338,8 +338,9 @@ pub enum SelectItem {
         leading_comments: Vec<Comment>,
         trailing_comment: Option<Comment>,
     },
-    /// Star selector: "*"
+    /// Star selector: "*" or "table.*"
     Star {
+        table_prefix: Option<String>, // e.g., Some("p") for "p.*"
         leading_comments: Vec<Comment>,
         trailing_comment: Option<Comment>,
     },

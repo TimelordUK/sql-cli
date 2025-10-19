@@ -112,10 +112,12 @@ impl SubqueryExecutor {
                     });
                 }
                 SelectItem::Star {
+                    table_prefix,
                     leading_comments,
                     trailing_comment,
                 } => {
                     new_select_items.push(SelectItem::Star {
+                        table_prefix: table_prefix.clone(),
                         leading_comments: leading_comments.clone(),
                         trailing_comment: trailing_comment.clone(),
                     });

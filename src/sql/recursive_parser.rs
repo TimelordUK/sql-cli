@@ -1078,17 +1078,46 @@ impl Parser {
         let mut items = Vec::new();
 
         loop {
-            // Check for * only at the beginning of a select item
-            // After a comma, * could be either SELECT * or part of multiplication
-            if matches!(self.current_token, Token::Star) {
-                // Determine if this is SELECT * or multiplication
-                // SELECT * is only valid:
-                // 1. As the first item in SELECT
-                // 2. Right after a comma (but not if followed by something that makes it multiplication)
+            // Check for qualified star (table.*) or unqualified star (*)
+            // First check if we have identifier.* pattern
+            if let Token::Identifier(name) = &self.current_token.clone() {
+                // Peek ahead to check for .* pattern
+                let saved_pos = self.lexer.clone();
+                let saved_token = self.current_token.clone();
+                let table_name = name.clone();
 
-                // For now, treat Star as SELECT * only if we're at the start or just after a comma
-                // and the star is not immediately followed by something that would make it multiplication
+                self.advance();
+
+                if matches!(self.current_token, Token::Dot) {
+                    self.advance();
+                    if matches!(self.current_token, Token::Star) {
+                        // This is table.* pattern
+                        items.push(SelectItem::Star {
+                            table_prefix: Some(table_name),
+                            leading_comments: vec![],
+                            trailing_comment: None,
+                        });
+                        self.advance();
+
+                        // Continue to next item or end
+                        if matches!(self.current_token, Token::Comma) {
+                            self.advance();
+                            continue;
+                        } else {
+                            break;
+                        }
+                    }
+                }
+
+                // Not table.*, restore position and continue with normal parsing
+                self.lexer = saved_pos;
+                self.current_token = saved_token;
+            }
+
+            // Check for unqualified *
+            if matches!(self.current_token, Token::Star) {
                 items.push(SelectItem::Star {
+                    table_prefix: None,
                     leading_comments: vec![],
                     trailing_comment: None,
                 });

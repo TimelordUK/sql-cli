@@ -140,6 +140,7 @@ impl ExpressionLifter {
                     columns: vec!["*".to_string()],
                     select_items: vec![
                         SelectItem::Star {
+                            table_prefix: None,
                             leading_comments: vec![],
                             trailing_comment: None,
                         },
@@ -259,6 +260,7 @@ impl ExpressionLifter {
 
         // Build CTE that computes the aliased columns
         let mut cte_select_items = vec![SelectItem::Star {
+            table_prefix: None,
             leading_comments: vec![],
             trailing_comment: None,
         }];
