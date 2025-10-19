@@ -1488,6 +1488,19 @@ FROM employees
 LEFT JOIN projects ON employees.id = projects.assigned_to
 ORDER BY employees.name;
 
+-- CROSS JOIN - Cartesian product (every row with every row)
+-- Perfect for stress testing, scenario analysis, parameter sweeps
+WITH trades AS (
+  SELECT 'AAPL' as symbol, 100 as quantity, 150.0 as price
+  UNION ALL SELECT 'MSFT', 200, 300.0
+),
+risk_scenarios AS (
+  SELECT 'Base' as scenario, 1.0 as shock
+  UNION ALL SELECT 'Stressed', 0.9
+)
+SELECT symbol, quantity, price, scenario, price * shock as stressed_price
+FROM trades CROSS JOIN risk_scenarios;
+
 -- Multiple JOINs with qualified column names
 SELECT
     orders.id,
