@@ -299,12 +299,26 @@ fn test_parse_case_when() {
 
 #[test]
 fn test_parse_having_clause() {
-    let query = "SELECT category, COUNT(*) FROM products GROUP BY category HAVING COUNT(*) > 5";
+    // Test with alias-based HAVING (the supported pattern)
+    let query =
+        "SELECT category, COUNT(*) as count FROM products GROUP BY category HAVING count > 5";
     let mut parser = Parser::new(query);
     let result = parser.parse();
     assert!(result.is_ok());
     let stmt = result.unwrap();
     assert!(stmt.having.is_some());
+}
+
+#[test]
+fn test_parse_having_clause_with_aggregate_error() {
+    // Test that HAVING with aggregate functions produces helpful error
+    let query = "SELECT category, COUNT(*) FROM products GROUP BY category HAVING COUNT(*) > 5";
+    let mut parser = Parser::new(query);
+    let result = parser.parse();
+    assert!(result.is_err());
+    let err = result.unwrap_err();
+    assert!(err.contains("HAVING clause with aggregate functions is not supported"));
+    assert!(err.contains("Use an alias"));
 }
 
 #[test]
