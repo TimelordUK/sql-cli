@@ -452,6 +452,21 @@ function M.get_clean_export_data(format)
     return nil
   end
 
+  -- Remove diagnostic messages that should not be in export
+  -- These appear when using Redis caching or executing scripts with dependencies
+
+  -- Remove "Building context from X dependencies..." messages
+  output = output:gsub("Building%s+context%s+from.-\n", "")
+
+  -- Remove "Using cached query result for..." messages
+  output = output:gsub("Using%s+cached%s+query%s+result.-\n", "")
+
+  -- Remove "Cache hit for..." messages
+  output = output:gsub("Cache%s+hit%s+for.-\n", "")
+
+  -- Remove "Cached query X" messages
+  output = output:gsub("Cached%s+query.-\n", "")
+
   -- Remove the timing line at the end (e.g., "# Query completed: 4 rows in 27.877807ms")
   -- This appears in stderr but sometimes gets mixed into output
   output = output:gsub("#%s*Query%s+completed:.-\n?$", "")
