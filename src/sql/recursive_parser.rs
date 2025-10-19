@@ -434,7 +434,18 @@ impl Parser {
                     self.advance();
                     Ok(Some(alias))
                 }
-                _ => Err("Expected alias name after AS".to_string()),
+                token => {
+                    // Check if it's a reserved keyword - provide helpful error
+                    if let Some(keyword) = token.as_keyword_str() {
+                        Err(format!(
+                            "Reserved keyword '{}' cannot be used as column alias. Use a different name or quote it with double quotes: \"{}\"",
+                            keyword,
+                            keyword.to_lowercase()
+                        ))
+                    } else {
+                        Err("Expected alias name after AS".to_string())
+                    }
+                }
             }
         } else if let Token::Identifier(name) = &self.current_token {
             // AS is optional for table aliases
@@ -562,113 +573,188 @@ impl Parser {
         };
 
         // Parse FROM clause - can be a table name, subquery, or table function
-        let (from_table, from_subquery, from_function, from_alias) =
-            if matches!(self.current_token, Token::From) {
-                self.advance();
+        let (from_table, from_subquery, from_function, from_alias) = if matches!(
+            self.current_token,
+            Token::From
+        ) {
+            self.advance();
 
-                // Check for table function like RANGE()
-                if let Token::Identifier(name) = &self.current_token.clone() {
-                    // Check if this is a table function by consulting the registry
-                    // We need to lookahead to see if there's a parenthesis to distinguish
-                    // between a function call and a table with the same name
-                    let has_paren = self.peek_token() == Some(Token::LeftParen);
+            // Check for table function like RANGE()
+            if let Token::Identifier(name) = &self.current_token.clone() {
+                // Check if this is a table function by consulting the registry
+                // We need to lookahead to see if there's a parenthesis to distinguish
+                // between a function call and a table with the same name
+                let has_paren = self.peek_token() == Some(Token::LeftParen);
+                if self.debug_trace {
+                    eprintln!(
+                        "  Checking {} for table function, has_paren={}",
+                        name, has_paren
+                    );
+                }
+
+                // Check if it's a known table function or generator
+                // In FROM clause context, prioritize generators over scalar functions
+                let is_table_function = if has_paren {
+                    // First check generator registry (for FROM clause context)
                     if self.debug_trace {
-                        eprintln!(
-                            "  Checking {} for table function, has_paren={}",
-                            name, has_paren
-                        );
+                        eprintln!("  Checking generator registry for {}", name.to_uppercase());
                     }
-
-                    // Check if it's a known table function or generator
-                    // In FROM clause context, prioritize generators over scalar functions
-                    let is_table_function = if has_paren {
-                        // First check generator registry (for FROM clause context)
+                    if let Some(_gen) = self.generator_registry.get(&name.to_uppercase()) {
                         if self.debug_trace {
-                            eprintln!("  Checking generator registry for {}", name.to_uppercase());
+                            eprintln!("  Found {} in generator registry", name);
                         }
-                        if let Some(_gen) = self.generator_registry.get(&name.to_uppercase()) {
-                            if self.debug_trace {
-                                eprintln!("  Found {} in generator registry", name);
-                            }
-                            self.trace_token(&format!("Found generator: {}", name));
-                            true
-                        } else {
-                            // Then check if it's a table function in the function registry
-                            if let Some(func) = self.function_registry.get(&name.to_uppercase()) {
-                                let sig = func.signature();
-                                let is_table_fn = sig.category == FunctionCategory::TableFunction;
-                                if self.debug_trace {
-                                    eprintln!(
-                                        "  Found {} in function registry, is_table_function={}",
-                                        name, is_table_fn
-                                    );
-                                }
-                                if is_table_fn {
-                                    self.trace_token(&format!(
-                                        "Found table function in function registry: {}",
-                                        name
-                                    ));
-                                }
-                                is_table_fn
-                            } else {
-                                if self.debug_trace {
-                                    eprintln!("  {} not found in either registry", name);
-                                    self.trace_token(&format!(
-                                        "Not found as generator or table function: {}",
-                                        name
-                                    ));
-                                }
-                                false
-                            }
-                        }
+                        self.trace_token(&format!("Found generator: {}", name));
+                        true
                     } else {
-                        if self.debug_trace {
-                            eprintln!("  No parenthesis after {}, treating as table", name);
+                        // Then check if it's a table function in the function registry
+                        if let Some(func) = self.function_registry.get(&name.to_uppercase()) {
+                            let sig = func.signature();
+                            let is_table_fn = sig.category == FunctionCategory::TableFunction;
+                            if self.debug_trace {
+                                eprintln!(
+                                    "  Found {} in function registry, is_table_function={}",
+                                    name, is_table_fn
+                                );
+                            }
+                            if is_table_fn {
+                                self.trace_token(&format!(
+                                    "Found table function in function registry: {}",
+                                    name
+                                ));
+                            }
+                            is_table_fn
+                        } else {
+                            if self.debug_trace {
+                                eprintln!("  {} not found in either registry", name);
+                                self.trace_token(&format!(
+                                    "Not found as generator or table function: {}",
+                                    name
+                                ));
+                            }
+                            false
                         }
-                        false
+                    }
+                } else {
+                    if self.debug_trace {
+                        eprintln!("  No parenthesis after {}, treating as table", name);
+                    }
+                    false
+                };
+
+                if is_table_function {
+                    // Parse table function
+                    let function_name = name.clone();
+                    self.advance(); // Skip function name
+
+                    // Parse arguments
+                    self.consume(Token::LeftParen)?;
+                    let args = self.parse_argument_list()?;
+                    self.consume(Token::RightParen)?;
+
+                    // Optional alias
+                    let alias = if matches!(self.current_token, Token::As) {
+                        self.advance();
+                        match &self.current_token {
+                            Token::Identifier(name) => {
+                                let alias = name.clone();
+                                self.advance();
+                                Some(alias)
+                            }
+                            token => {
+                                if let Some(keyword) = token.as_keyword_str() {
+                                    return Err(format!(
+                                            "Reserved keyword '{}' cannot be used as column alias. Use a different name or quote it with double quotes: \"{}\"",
+                                            keyword,
+                                            keyword.to_lowercase()
+                                        ));
+                                } else {
+                                    return Err("Expected alias name after AS".to_string());
+                                }
+                            }
+                        }
+                    } else if let Token::Identifier(name) = &self.current_token {
+                        let alias = name.clone();
+                        self.advance();
+                        Some(alias)
+                    } else {
+                        None
                     };
 
-                    if is_table_function {
-                        // Parse table function
-                        let function_name = name.clone();
-                        self.advance(); // Skip function name
+                    (
+                        None,
+                        None,
+                        Some(TableFunction::Generator {
+                            name: function_name,
+                            args,
+                        }),
+                        alias,
+                    )
+                } else {
+                    // Not a RANGE, SPLIT, or generator function, so it's a regular table name
+                    let table_name = name.clone();
+                    self.advance();
 
-                        // Parse arguments
-                        self.consume(Token::LeftParen)?;
-                        let args = self.parse_argument_list()?;
-                        self.consume(Token::RightParen)?;
+                    // Check for optional alias
+                    let alias = self.parse_optional_alias()?;
 
-                        // Optional alias
-                        let alias = if matches!(self.current_token, Token::As) {
-                            self.advance();
-                            match &self.current_token {
-                                Token::Identifier(name) => {
-                                    let alias = name.clone();
-                                    self.advance();
-                                    Some(alias)
-                                }
-                                _ => return Err("Expected alias name after AS".to_string()),
-                            }
-                        } else if let Token::Identifier(name) = &self.current_token {
+                    (Some(table_name), None, None, alias)
+                }
+            } else if matches!(self.current_token, Token::LeftParen) {
+                // Check for subquery: FROM (SELECT ...) or FROM (WITH ... SELECT ...)
+                self.advance();
+
+                // Parse the subquery - it might start with WITH
+                let subquery = if matches!(self.current_token, Token::With) {
+                    self.parse_with_clause_inner()?
+                } else {
+                    self.parse_select_statement_inner()?
+                };
+
+                self.consume(Token::RightParen)?;
+
+                // Subqueries must have an alias
+                let alias = if matches!(self.current_token, Token::As) {
+                    self.advance();
+                    match &self.current_token {
+                        Token::Identifier(name) => {
                             let alias = name.clone();
                             self.advance();
-                            Some(alias)
-                        } else {
-                            None
-                        };
+                            alias
+                        }
+                        token => {
+                            if let Some(keyword) = token.as_keyword_str() {
+                                return Err(format!(
+                                        "Reserved keyword '{}' cannot be used as subquery alias. Use a different name or quote it with double quotes: \"{}\"",
+                                        keyword,
+                                        keyword.to_lowercase()
+                                    ));
+                            } else {
+                                return Err("Expected alias name after AS".to_string());
+                            }
+                        }
+                    }
+                } else {
+                    // AS is optional, but alias is required
+                    match &self.current_token {
+                        Token::Identifier(name) => {
+                            let alias = name.clone();
+                            self.advance();
+                            alias
+                        }
+                        _ => {
+                            return Err(
+                                "Subquery in FROM must have an alias (e.g., AS t)".to_string()
+                            )
+                        }
+                    }
+                };
 
-                        (
-                            None,
-                            None,
-                            Some(TableFunction::Generator {
-                                name: function_name,
-                                args,
-                            }),
-                            alias,
-                        )
-                    } else {
-                        // Not a RANGE, SPLIT, or generator function, so it's a regular table name
-                        let table_name = name.clone();
+                (None, Some(Box::new(subquery)), None, Some(alias))
+            } else {
+                // Regular table name
+                match &self.current_token {
+                    Token::Identifier(table) => {
+                        let table_name = table.clone();
                         self.advance();
 
                         // Check for optional alias
@@ -676,75 +762,22 @@ impl Parser {
 
                         (Some(table_name), None, None, alias)
                     }
-                } else if matches!(self.current_token, Token::LeftParen) {
-                    // Check for subquery: FROM (SELECT ...) or FROM (WITH ... SELECT ...)
-                    self.advance();
-
-                    // Parse the subquery - it might start with WITH
-                    let subquery = if matches!(self.current_token, Token::With) {
-                        self.parse_with_clause_inner()?
-                    } else {
-                        self.parse_select_statement_inner()?
-                    };
-
-                    self.consume(Token::RightParen)?;
-
-                    // Subqueries must have an alias
-                    let alias = if matches!(self.current_token, Token::As) {
+                    Token::QuotedIdentifier(table) => {
+                        // Handle quoted table names
+                        let table_name = table.clone();
                         self.advance();
-                        match &self.current_token {
-                            Token::Identifier(name) => {
-                                let alias = name.clone();
-                                self.advance();
-                                alias
-                            }
-                            _ => return Err("Expected alias name after AS".to_string()),
-                        }
-                    } else {
-                        // AS is optional, but alias is required
-                        match &self.current_token {
-                            Token::Identifier(name) => {
-                                let alias = name.clone();
-                                self.advance();
-                                alias
-                            }
-                            _ => {
-                                return Err(
-                                    "Subquery in FROM must have an alias (e.g., AS t)".to_string()
-                                )
-                            }
-                        }
-                    };
 
-                    (None, Some(Box::new(subquery)), None, Some(alias))
-                } else {
-                    // Regular table name
-                    match &self.current_token {
-                        Token::Identifier(table) => {
-                            let table_name = table.clone();
-                            self.advance();
+                        // Check for optional alias
+                        let alias = self.parse_optional_alias()?;
 
-                            // Check for optional alias
-                            let alias = self.parse_optional_alias()?;
-
-                            (Some(table_name), None, None, alias)
-                        }
-                        Token::QuotedIdentifier(table) => {
-                            // Handle quoted table names
-                            let table_name = table.clone();
-                            self.advance();
-
-                            // Check for optional alias
-                            let alias = self.parse_optional_alias()?;
-
-                            (Some(table_name), None, None, alias)
-                        }
-                        _ => return Err("Expected table name or subquery after FROM".to_string()),
+                        (Some(table_name), None, None, alias)
                     }
+                    _ => return Err("Expected table name or subquery after FROM".to_string()),
                 }
-            } else {
-                (None, None, None, None)
-            };
+            }
+        } else {
+            (None, None, None, None)
+        };
 
         // Parse JOIN clauses
         let mut joins = Vec::new();
@@ -965,7 +998,17 @@ impl Parser {
                             self.advance();
                             alias
                         }
-                        _ => return Err("Expected alias name after AS".to_string()),
+                        token => {
+                            if let Some(keyword) = token.as_keyword_str() {
+                                return Err(format!(
+                                    "Reserved keyword '{}' cannot be used as column alias. Use a different name or quote it with double quotes: \"{}\"",
+                                    keyword,
+                                    keyword.to_lowercase()
+                                ));
+                            } else {
+                                return Err("Expected alias name after AS".to_string());
+                            }
+                        }
                     }
                 } else {
                     // Generate default alias based on expression

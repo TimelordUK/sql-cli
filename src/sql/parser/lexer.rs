@@ -208,6 +208,7 @@ impl Token {
     }
 
     /// Get the string representation of a keyword token
+    /// Returns the keyword as it would appear in SQL (uppercase)
     pub fn as_keyword_str(&self) -> Option<&'static str> {
         match self {
             Token::Select => Some("SELECT"),
@@ -216,10 +217,48 @@ impl Token {
             Token::With => Some("WITH"),
             Token::And => Some("AND"),
             Token::Or => Some("OR"),
+            Token::In => Some("IN"),
+            Token::Not => Some("NOT"),
+            Token::Between => Some("BETWEEN"),
+            Token::Like => Some("LIKE"),
+            Token::Is => Some("IS"),
+            Token::Null => Some("NULL"),
             Token::OrderBy => Some("ORDER BY"),
             Token::GroupBy => Some("GROUP BY"),
             Token::Having => Some("HAVING"),
-            // Add more as needed
+            Token::As => Some("AS"),
+            Token::Asc => Some("ASC"),
+            Token::Desc => Some("DESC"),
+            Token::Limit => Some("LIMIT"),
+            Token::Offset => Some("OFFSET"),
+            Token::Into => Some("INTO"),
+            Token::Distinct => Some("DISTINCT"),
+            Token::Case => Some("CASE"),
+            Token::When => Some("WHEN"),
+            Token::Then => Some("THEN"),
+            Token::Else => Some("ELSE"),
+            Token::End => Some("END"),
+            Token::Join => Some("JOIN"),
+            Token::Inner => Some("INNER"),
+            Token::Left => Some("LEFT"),
+            Token::Right => Some("RIGHT"),
+            Token::Full => Some("FULL"),
+            Token::Cross => Some("CROSS"),
+            Token::On => Some("ON"),
+            Token::Union => Some("UNION"),
+            Token::Intersect => Some("INTERSECT"),
+            Token::Except => Some("EXCEPT"),
+            Token::Over => Some("OVER"),
+            Token::Partition => Some("PARTITION"),
+            Token::By => Some("BY"),
+            Token::Rows => Some("ROWS"),
+            Token::Range => Some("RANGE"),
+            Token::Preceding => Some("PRECEDING"),
+            Token::Following => Some("FOLLOWING"),
+            Token::Current => Some("CURRENT"),
+            Token::Row => Some("ROW"),
+            Token::Unbounded => Some("UNBOUNDED"),
+            Token::DateTime => Some("DATETIME"),
             _ => None,
         }
     }
