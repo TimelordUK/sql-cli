@@ -1,6 +1,9 @@
 -- Example: Multi-stage analysis with WEB CTE and temp tables
 -- Test with: \sq to run all, or \sx to run statement at cursor
 
+exit;
+go
+
 -- Stage 1: Fetch trade data from Flask API into temp table
 WITH WEB trades_data AS (
     URL 'http://localhost:5001/trades'

@@ -48,8 +48,9 @@ function M.format_query_at_cursor(config, state)
     end
   end
 
-  -- Extract the query (from the first non-comment line)
-  local query_lines = vim.list_slice(lines, actual_query_start, end_line)
+  -- Extract the FULL query including comments (not from actual_query_start)
+  -- We'll let the CLI handle comment preservation
+  local query_lines = vim.list_slice(lines, start_line, end_line)
   local query = table.concat(query_lines, "\n")
 
   -- Debug output
@@ -82,13 +83,8 @@ function M.format_query_at_cursor(config, state)
     table.insert(new_lines, "GO")
   end
 
-  -- Prepend preserved comments back to the formatted query
-  if #preserved_comments > 0 then
-    -- Add preserved comments at the beginning
-    for i = #preserved_comments, 1, -1 do
-      table.insert(new_lines, 1, preserved_comments[i])
-    end
-  end
+  -- Note: No need to manually prepend preserved comments anymore
+  -- The CLI now handles comment preservation with --preserve-comments flag
 
   -- Replace the lines in the buffer
   vim.api.nvim_buf_set_lines(bufnr, start_line - 1, end_line, false, new_lines)
@@ -108,6 +104,9 @@ function M.format_sql(query, config)
 
   -- Build format command with options
   local format_cmd = {command, "--format"}
+
+  -- Add comment preservation flag (enabled by default for better UX)
+  table.insert(format_cmd, "--preserve-comments")
 
   -- Add user preferences
   if config.format and config.format.lowercase then
@@ -150,63 +149,76 @@ end
 
 -- Simple fallback formatter (original regex-based)
 function M.format_sql_simple(query)
-  -- Remove extra whitespace and normalize
-  query = query:gsub("%s+", " "):gsub("^%s+", ""):gsub("%s+$", "")
+  -- Separate comment lines from SQL to preserve them
+  local lines = vim.split(query, "\n")
+  local comment_lines = {}
+  local sql_lines = {}
 
-  -- First, handle SELECT clause - put columns on separate lines
-  query = query:gsub("([Ss][Ee][Ll][Ee][Cc][Tt])%s+", "%1\n    ")
-
-  -- Handle commas in SELECT clause (before FROM)
-  local select_part, rest = query:match("^(.-)%s+([Ff][Rr][Oo][Mm].*)$")
-  if select_part then
-    -- Add newline after commas in SELECT, maintaining indentation
-    select_part = select_part:gsub(",%s*", ",\n    ")
-    query = select_part .. "\n" .. rest
+  for _, line in ipairs(lines) do
+    if line:match("^%s*%-%-") then
+      -- Preserve comment lines as-is
+      table.insert(comment_lines, line)
+    else
+      table.insert(sql_lines, line)
+    end
   end
 
+  -- Join SQL lines and normalize whitespace
+  local sql = table.concat(sql_lines, " ")
+  sql = sql:gsub("%s+", " "):gsub("^%s+", ""):gsub("%s+$", "")
+
   -- Put major clauses on new lines
-  query = query:gsub("%s+([Ff][Rr][Oo][Mm])%s+", "\nFROM ")
-  query = query:gsub("%s+([Ww][Hh][Ee][Rr][Ee])%s+", "\nWHERE ")
-  query = query:gsub("%s+([Gg][Rr][Oo][Uu][Pp]%s+[Bb][Yy])%s+", "\nGROUP BY ")
-  query = query:gsub("%s+([Hh][Aa][Vv][Ii][Nn][Gg])%s+", "\nHAVING ")
-  query = query:gsub("%s+([Oo][Rr][Dd][Ee][Rr]%s+[Bb][Yy])%s+", "\nORDER BY ")
-  query = query:gsub("%s+([Ll][Ii][Mm][Ii][Tt])%s+", "\nLIMIT ")
-  query = query:gsub("%s+([Oo][Ff][Ff][Ss][Ee][Tt])%s+", "\nOFFSET ")
+  sql = sql:gsub("%s+([Ww][Ii][Tt][Hh])%s+", "\nWITH ")
+  sql = sql:gsub("%s+([Ss][Ee][Ll][Ee][Cc][Tt])%s+", "\nSELECT ")
+  sql = sql:gsub("%s+([Ff][Rr][Oo][Mm])%s+", "\nFROM ")
+  sql = sql:gsub("%s+([Ww][Hh][Ee][Rr][Ee])%s+", "\nWHERE ")
+  sql = sql:gsub("%s+([Gg][Rr][Oo][Uu][Pp]%s+[Bb][Yy])%s+", "\nGROUP BY ")
+  sql = sql:gsub("%s+([Hh][Aa][Vv][Ii][Nn][Gg])%s+", "\nHAVING ")
+  sql = sql:gsub("%s+([Oo][Rr][Dd][Ee][Rr]%s+[Bb][Yy])%s+", "\nORDER BY ")
+  sql = sql:gsub("%s+([Ll][Ii][Mm][Ii][Tt])%s+", "\nLIMIT ")
+  sql = sql:gsub("%s+([Oo][Ff][Ff][Ss][Ee][Tt])%s+", "\nOFFSET ")
 
   -- Handle JOIN clauses (must be before single JOIN to avoid breaking compound joins)
-  query = query:gsub("%s+([Ff][Uu][Ll][Ll]%s+[Oo][Uu][Tt][Ee][Rr]%s+[Jj][Oo][Ii][Nn])%s+", "\nFULL OUTER JOIN ")
-  query = query:gsub("%s+([Ll][Ee][Ff][Tt]%s+[Jj][Oo][Ii][Nn])%s+", "\nLEFT JOIN ")
-  query = query:gsub("%s+([Rr][Ii][Gg][Hh][Tt]%s+[Jj][Oo][Ii][Nn])%s+", "\nRIGHT JOIN ")
-  query = query:gsub("%s+([Ii][Nn][Nn][Ee][Rr]%s+[Jj][Oo][Ii][Nn])%s+", "\nINNER JOIN ")
-  query = query:gsub("%s+([Cc][Rr][Oo][Ss][Ss]%s+[Jj][Oo][Ii][Nn])%s+", "\nCROSS JOIN ")
+  sql = sql:gsub("%s+([Ff][Uu][Ll][Ll]%s+[Oo][Uu][Tt][Ee][Rr]%s+[Jj][Oo][Ii][Nn])%s+", "\nFULL OUTER JOIN ")
+  sql = sql:gsub("%s+([Ll][Ee][Ff][Tt]%s+[Jj][Oo][Ii][Nn])%s+", "\nLEFT JOIN ")
+  sql = sql:gsub("%s+([Rr][Ii][Gg][Hh][Tt]%s+[Jj][Oo][Ii][Nn])%s+", "\nRIGHT JOIN ")
+  sql = sql:gsub("%s+([Ii][Nn][Nn][Ee][Rr]%s+[Jj][Oo][Ii][Nn])%s+", "\nINNER JOIN ")
+  sql = sql:gsub("%s+([Cc][Rr][Oo][Ss][Ss]%s+[Jj][Oo][Ii][Nn])%s+", "\nCROSS JOIN ")
   -- Only convert standalone JOIN if it wasn't already part of a compound JOIN
-  query = query:gsub("([^%w])([Jj][Oo][Ii][Nn])%s+", "%1\nJOIN ")
+  sql = sql:gsub("([^%w])([Jj][Oo][Ii][Nn])%s+", "%1\nJOIN ")
 
   -- Indent ON clauses for JOINs
-  query = query:gsub("%s+([Oo][Nn])%s+", "\n    ON ")
+  sql = sql:gsub("%s+([Oo][Nn])%s+", "\n    ON ")
 
   -- Handle AND/OR in WHERE clause with proper indentation
-  query = query:gsub("%s+([Aa][Nn][Dd])%s+", "\n    AND ")
-  query = query:gsub("%s+([Oo][Rr])%s+", "\n    OR ")
+  sql = sql:gsub("%s+([Aa][Nn][Dd])%s+", "\n    AND ")
+  sql = sql:gsub("%s+([Oo][Rr])%s+", "\n    OR ")
 
   -- Handle CASE statements
-  query = query:gsub("%s+([Cc][Aa][Ss][Ee])%s+", "\n    CASE ")
-  query = query:gsub("%s+([Ww][Hh][Ee][Nn])%s+", "\n        WHEN ")
-  query = query:gsub("%s+([Tt][Hh][Ee][Nn])%s+", " THEN ")
-  query = query:gsub("%s+([Ee][Ll][Ss][Ee])%s+", "\n        ELSE ")
-  query = query:gsub("%s+([Ee][Nn][Dd])%s+", "\n    END ")
+  sql = sql:gsub("%s+([Cc][Aa][Ss][Ee])%s+", "\n    CASE ")
+  sql = sql:gsub("%s+([Ww][Hh][Ee][Nn])%s+", "\n        WHEN ")
+  sql = sql:gsub("%s+([Tt][Hh][Ee][Nn])%s+", " THEN ")
+  sql = sql:gsub("%s+([Ee][Ll][Ss][Ee])%s+", "\n        ELSE ")
+  sql = sql:gsub("%s+([Ee][Nn][Dd])%s+", "\n    END ")
 
   -- Clean up any double newlines
-  query = query:gsub("\n\n+", "\n")
+  sql = sql:gsub("\n\n+", "\n")
 
   -- Remove trailing semicolon or GO for reformatting
-  query = query:gsub(";%s*$", "")
-  query = query:gsub("%s+[Gg][Oo]%s*$", "")
+  sql = sql:gsub(";%s*$", "")
+  sql = sql:gsub("%s+[Gg][Oo]%s*$", "")
 
   -- Trim final whitespace
-  query = query:gsub("^%s+", ""):gsub("%s+$", "")
+  sql = sql:gsub("^%s+", ""):gsub("%s+$", "")
 
-  return query
+  -- Reassemble: comments first, then formatted SQL
+  local result_lines = {}
+  for _, comment in ipairs(comment_lines) do
+    table.insert(result_lines, comment)
+  end
+  table.insert(result_lines, sql)
+
+  return table.concat(result_lines, "\n")
 end
 
 -- Test the formatter directly (for debugging)

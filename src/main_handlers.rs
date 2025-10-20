@@ -85,7 +85,8 @@ pub fn handle_format_flags(args: &[String]) -> Option<io::Result<()>> {
         return None;
     }
 
-    use sql_cli::sql::recursive_parser::FormatConfig;
+    use sql_cli::sql::parser::ast_formatter::format_select_with_config;
+    use sql_cli::sql::recursive_parser::{FormatConfig, Parser, ParserMode};
     use std::io::Read;
 
     // Check if query is provided via stdin or file
@@ -135,8 +136,20 @@ pub fn handle_format_flags(args: &[String]) -> Option<io::Result<()>> {
         }
     };
 
-    match sql_cli::sql::recursive_parser::format_sql_ast_with_config(&query.trim(), &config) {
-        Ok(formatted) => {
+    // Check if comment preservation is requested
+    let preserve_comments = args.contains(&"--preserve-comments".to_string());
+
+    // Parse with appropriate mode
+    let parser_mode = if preserve_comments {
+        ParserMode::PreserveComments
+    } else {
+        ParserMode::Standard
+    };
+
+    let mut parser = Parser::with_mode(&query.trim(), parser_mode);
+    match parser.parse() {
+        Ok(stmt) => {
+            let formatted = format_select_with_config(&stmt, &config);
             println!("{}", formatted);
             Some(Ok(()))
         }

@@ -310,15 +310,37 @@ impl Parser {
     pub fn parse(&mut self) -> Result<SelectStatement, String> {
         self.trace_enter("parse");
 
-        // Check for WITH clause at the beginning
-        let result = if matches!(self.current_token, Token::With) {
-            self.parse_with_clause()
+        // Collect leading comments FIRST (before checking for WITH or SELECT)
+        // This allows comments before WITH clauses to be preserved
+        let leading_comments = if self.mode == ParserMode::PreserveComments {
+            self.collect_leading_comments()
         } else {
-            self.parse_select_statement()
+            vec![]
         };
 
-        self.trace_exit("parse", &result);
-        result
+        // Now check for WITH clause (after consuming comments)
+        let mut result = if matches!(self.current_token, Token::With) {
+            let mut stmt = self.parse_with_clause()?;
+            // Attach the leading comments we collected
+            stmt.leading_comments = leading_comments;
+            stmt
+        } else {
+            // For SELECT without WITH, pass comments to inner parser
+            let stmt = self.parse_select_statement_with_comments_public(leading_comments)?;
+            self.check_balanced_parentheses()?;
+            stmt
+        };
+
+        self.trace_exit("parse", &Ok(&result));
+        Ok(result)
+    }
+
+    /// Public wrapper that accepts pre-collected comments and checks parens
+    fn parse_select_statement_with_comments_public(
+        &mut self,
+        comments: Vec<Comment>,
+    ) -> Result<SelectStatement, String> {
+        self.parse_select_statement_with_comments(comments)
     }
 
     fn parse_with_clause(&mut self) -> Result<SelectStatement, String> {
@@ -326,7 +348,7 @@ impl Parser {
         let ctes = self.parse_cte_list()?;
 
         // Parse the main SELECT statement - use inner version since we're already tracking parens
-        let mut main_query = self.parse_select_statement_inner()?;
+        let mut main_query = self.parse_select_statement_inner_no_comments()?;
         main_query.ctes = ctes;
 
         // Check for balanced parentheses at the end of parsing
@@ -640,6 +662,20 @@ impl Parser {
             vec![]
         };
 
+        self.parse_select_statement_with_comments(leading_comments)
+    }
+
+    /// Parse SELECT statement without collecting leading comments
+    /// Used when comments were already collected (e.g., before WITH clause)
+    fn parse_select_statement_inner_no_comments(&mut self) -> Result<SelectStatement, String> {
+        self.parse_select_statement_with_comments(vec![])
+    }
+
+    /// Core SELECT parsing logic - takes pre-collected comments
+    fn parse_select_statement_with_comments(
+        &mut self,
+        leading_comments: Vec<Comment>,
+    ) -> Result<SelectStatement, String> {
         self.consume(Token::Select)?;
 
         // Check for DISTINCT keyword

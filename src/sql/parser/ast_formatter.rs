@@ -74,6 +74,11 @@ impl<'a> AstFormatter<'a> {
         let mut result = String::new();
         let indent = self.indent(indent_level);
 
+        // Emit leading comments if present
+        for comment in &stmt.leading_comments {
+            self.format_comment(&mut result, comment, &indent);
+        }
+
         // CTEs (WITH clause)
         if !stmt.ctes.is_empty() {
             writeln!(&mut result, "{}{}", indent, self.keyword("WITH")).unwrap();
@@ -83,8 +88,12 @@ impl<'a> AstFormatter<'a> {
             }
         }
 
-        // SELECT clause
-        write!(&mut result, "{}{}", indent, self.keyword("SELECT")).unwrap();
+        // SELECT clause (with newline if we had leading comments OR CTEs)
+        if !stmt.leading_comments.is_empty() || !stmt.ctes.is_empty() {
+            writeln!(&mut result, "{}{}", indent, self.keyword("SELECT")).unwrap();
+        } else {
+            write!(&mut result, "{}{}", indent, self.keyword("SELECT")).unwrap();
+        }
         if stmt.distinct {
             write!(&mut result, " {}", self.keyword("DISTINCT")).unwrap();
         }
@@ -209,7 +218,32 @@ impl<'a> AstFormatter<'a> {
             .unwrap();
         }
 
+        // Emit trailing comment if present
+        if let Some(ref comment) = stmt.trailing_comment {
+            write!(&mut result, "  ").unwrap();
+            self.format_inline_comment(&mut result, comment);
+        }
+
         result
+    }
+
+    /// Format a comment on its own line with proper indentation
+    fn format_comment(&self, result: &mut String, comment: &Comment, indent: &str) {
+        if comment.is_line_comment {
+            writeln!(result, "{}-- {}", indent, comment.text.trim()).unwrap();
+        } else {
+            // Block comments
+            writeln!(result, "{}/* {} */", indent, comment.text.trim()).unwrap();
+        }
+    }
+
+    /// Format an inline trailing comment (on the same line as SQL)
+    fn format_inline_comment(&self, result: &mut String, comment: &Comment) {
+        if comment.is_line_comment {
+            write!(result, "-- {}", comment.text.trim()).unwrap();
+        } else {
+            write!(result, "/* {} */", comment.text.trim()).unwrap();
+        }
     }
 
     fn format_cte(&self, result: &mut String, cte: &CTE, indent_level: usize, is_last: bool) {

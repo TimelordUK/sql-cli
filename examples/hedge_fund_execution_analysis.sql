@@ -13,6 +13,12 @@
 --   Run stage 5: ./target/release/sql-cli -f examples/hedge_fund_execution_analysis.sql --execute-statement 5
 --   In Neovim:   \sq (all) or \sx (statement at cursor)
 
+-- need to run the python test server for this example to work
+-- uv run python tests/test_trade_server.py
+
+exit;
+go
+
 -- ============================================================================
 -- Stage 1: Parse FIX Messages (simulates FIX log parsing)
 -- ============================================================================

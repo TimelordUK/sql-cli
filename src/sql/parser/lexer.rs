@@ -639,7 +639,20 @@ impl Lexer {
             }
             Some(ch) if ch.is_alphabetic() || ch == '_' => {
                 let ident = self.read_identifier();
-                Token::from_keyword(&ident).unwrap_or_else(|| Token::Identifier(ident))
+                // Handle multi-word keywords like GROUP BY and ORDER BY
+                match ident.to_uppercase().as_str() {
+                    "ORDER" if self.peek_keyword("BY") => {
+                        self.skip_whitespace();
+                        self.read_identifier(); // consume "BY"
+                        Token::OrderBy
+                    }
+                    "GROUP" if self.peek_keyword("BY") => {
+                        self.skip_whitespace();
+                        self.read_identifier(); // consume "BY"
+                        Token::GroupBy
+                    }
+                    _ => Token::from_keyword(&ident).unwrap_or_else(|| Token::Identifier(ident)),
+                }
             }
             Some(ch) => {
                 self.advance();

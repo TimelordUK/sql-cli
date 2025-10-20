@@ -280,6 +280,10 @@ fn print_help() {
         "  {}       - Format SQL from file",
         "--format-sql <file>".green()
     );
+    println!(
+        "  {}  - Preserve comments when formatting (use with -F/--format)",
+        "--preserve-comments".green()
+    );
 
     println!();
     println!("{}", "Data Inspection:".yellow());

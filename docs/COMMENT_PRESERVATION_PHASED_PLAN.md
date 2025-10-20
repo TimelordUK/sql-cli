@@ -24,9 +24,23 @@ The key principle: **Never break existing functionality**. Each phase is indepen
 5. 7 parser mode tests passing
 6. All 450 existing tests still passing (457 total)
 
-### 🎯 Next: Phase 3 - Formatter Integration
-- Make AST formatter emit comments when present
-- Estimated time: 1 hour
+### ✅ Phase 3 Completed (2025-10-20)
+1. Added `format_comment()` and `format_inline_comment()` helper methods to AstFormatter
+2. AST formatter now emits leading comments before SELECT keyword
+3. AST formatter now emits trailing comments at end of statement
+4. 6 new comment preservation tests passing (all green)
+5. All 457 tests passing (zero regressions)
+6. Backward compatibility verified - Standard mode unchanged
+
+### ✅ Phase 4 Completed (2025-10-20)
+1. Added `--preserve-comments` CLI flag to `--format` command
+2. Updated `handle_format_flags()` in `src/main_handlers.rs` to use `ParserMode::PreserveComments`
+3. Updated Neovim plugin `formatter.lua` to pass `--preserve-comments` flag by default
+4. Removed manual comment preservation workaround from Neovim plugin
+5. Tested end-to-end: `\sf` now preserves SQL comments automatically
+
+### 🎉 Implementation Complete!
+All 4 phases are complete. Comment preservation is fully functional in both CLI and Neovim plugin.
 
 ## The Tree-Sitter Approach
 

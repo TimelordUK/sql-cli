@@ -1,8 +1,11 @@
+-- #! ../data/sales_data.csv
+
 -- Qualified Names and Table Aliases
 -- Demonstrates table alias support across SQL clauses (WHERE, SELECT, ORDER BY, GROUP BY)
 
 -- Example 1: Basic CTE with alias in WHERE and SELECT
 -- Shows qualified column references (t.column_name)
+
 WITH data AS (
     SELECT value as id, value * 10 as amount, value % 3 as category
     FROM RANGE(1, 10)
@@ -104,7 +107,7 @@ SELECT
     SUM(t.transaction_amount) as total_amount
 FROM transactions t
 GROUP BY t.customer_id
-HAVING COUNT(*) >= 10
+HAVING transaction_count >= 10
 ORDER BY total_amount DESC;
 GO
 
