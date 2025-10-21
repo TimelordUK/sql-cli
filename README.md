@@ -4,6 +4,34 @@
 
 **A vim-inspired SQL query tool for CSV and JSON files. Features both an interactive terminal UI for data exploration and a non-interactive CLI mode for scripting and automation.**
 
+### ✨ Try it now - Copy and paste this into your terminal:
+
+```bash
+sql-cli -q "WITH lines AS (SELECT line, ROW_NUMBER() OVER () as n, COUNT(*) OVER () as total FROM ASCII_ART('sql-cli')) SELECT ANSI_RGB(255 - (255 * (n - 1) / (total - 1)), 0 + (255 * (n - 1) / (total - 1)), 255, line) FROM lines" -o tsv
+```
+![Description](docs/images/screenshot-20251021-194821.png)
+
+<details>
+<summary>🌈 Click to see more gradient options</summary>
+
+```bash
+# Cyan-to-Blue (professional/tech)
+sql-cli -q "WITH lines AS (SELECT line, ROW_NUMBER() OVER () as n, COUNT(*) OVER () as total FROM ASCII_ART('sql-cli')) SELECT ANSI_RGB(0, 255 - (255 * (n - 1) / (total - 1)), 255, line) FROM lines" -o tsv
+
+# Fire gradient (red-to-yellow)
+sql-cli -q "WITH lines AS (SELECT line, ROW_NUMBER() OVER () as n, COUNT(*) OVER () as total FROM ASCII_ART('sql-cli')) SELECT ANSI_RGB(255, 0 + (255 * (n - 1) / (total - 1)), 0, line) FROM lines" -o tsv
+
+# Ocean gradient (deep blue to cyan)
+sql-cli -q "WITH lines AS (SELECT line, ROW_NUMBER() OVER () as n, COUNT(*) OVER () as total FROM ASCII_ART('sql-cli')) SELECT ANSI_RGB(0, ROUND(128 + (127 * (n - 1) / (total - 1))), ROUND(200 + (55 * (n - 1) / (total - 1))), line) FROM lines" -o tsv
+
+# Green Matrix (hacker aesthetic)
+sql-cli -q "WITH lines AS (SELECT line, ROW_NUMBER() OVER () as n, COUNT(*) OVER () as total FROM ASCII_ART('sql-cli')) SELECT ANSI_RGB(0, ROUND(150 + (105 * (n - 1) / (total - 1))), 0, line) FROM lines" -o tsv
+```
+
+</details>
+
+---
+
 ![SQL-CLI Overview](sql-cli/demos/overview.gif)
 
 ## 🚀 Why SQL CLI?
