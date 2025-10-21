@@ -1611,14 +1611,32 @@ impl QueryEngine {
         let mut expanded_items = Vec::new();
         for item in select_items {
             match item {
-                SelectItem::Star { .. } => {
-                    // Expand * to all columns from source table
-                    for col_name in source_table.column_names() {
-                        expanded_items.push(SelectItem::Column {
-                            column: ColumnRef::unquoted(col_name.to_string()),
-                            leading_comments: vec![],
-                            trailing_comment: None,
-                        });
+                SelectItem::Star { table_prefix, .. } => {
+                    if let Some(prefix) = table_prefix {
+                        // Scoped expansion: table.* expands only columns from that table
+                        debug!(
+                            "QueryEngine::apply_select_items - expanding {}.*",
+                            prefix
+                        );
+                        for col in &source_table.columns {
+                            if Self::column_matches_table(col, prefix) {
+                                expanded_items.push(SelectItem::Column {
+                                    column: ColumnRef::unquoted(col.name.clone()),
+                                    leading_comments: vec![],
+                                    trailing_comment: None,
+                                });
+                            }
+                        }
+                    } else {
+                        // Unscoped expansion: * expands to all columns
+                        debug!("QueryEngine::apply_select_items - expanding *");
+                        for col_name in source_table.column_names() {
+                            expanded_items.push(SelectItem::Column {
+                                column: ColumnRef::unquoted(col_name.to_string()),
+                                leading_comments: vec![],
+                                trailing_comment: None,
+                            });
+                        }
                     }
                 }
                 _ => expanded_items.push(item.clone()),
@@ -1727,13 +1745,32 @@ impl QueryEngine {
         let mut expanded_items = Vec::new();
         for item in select_items {
             match item {
-                SelectItem::Star { .. } => {
-                    for col_name in source_table.column_names() {
-                        expanded_items.push(SelectItem::Column {
-                            column: ColumnRef::unquoted(col_name.to_string()),
-                            leading_comments: vec![],
-                            trailing_comment: None,
-                        });
+                SelectItem::Star { table_prefix, .. } => {
+                    if let Some(prefix) = table_prefix {
+                        // Scoped expansion: table.* expands only columns from that table
+                        debug!(
+                            "QueryEngine::apply_select_with_row_expansion - expanding {}.*",
+                            prefix
+                        );
+                        for col in &source_table.columns {
+                            if Self::column_matches_table(col, prefix) {
+                                expanded_items.push(SelectItem::Column {
+                                    column: ColumnRef::unquoted(col.name.clone()),
+                                    leading_comments: vec![],
+                                    trailing_comment: None,
+                                });
+                            }
+                        }
+                    } else {
+                        // Unscoped expansion: * expands to all columns
+                        debug!("QueryEngine::apply_select_with_row_expansion - expanding *");
+                        for col_name in source_table.column_names() {
+                            expanded_items.push(SelectItem::Column {
+                                column: ColumnRef::unquoted(col_name.to_string()),
+                                leading_comments: vec![],
+                                trailing_comment: None,
+                            });
+                        }
                     }
                 }
                 _ => expanded_items.push(item.clone()),
@@ -1954,6 +1991,37 @@ impl QueryEngine {
         Ok(DataView::new(Arc::new(result_table)))
     }
 
+    /// Check if a column belongs to a specific table based on source_table or qualified_name
+    ///
+    /// This is used for table-scoped star expansion (e.g., `SELECT user.*`)
+    /// to filter which columns should be included.
+    ///
+    /// # Arguments
+    /// * `col` - The column to check
+    /// * `table_name` - The table name or alias to match against
+    ///
+    /// # Returns
+    /// `true` if the column belongs to the specified table
+    fn column_matches_table(col: &DataColumn, table_name: &str) -> bool {
+        // First, check the source_table field
+        if let Some(ref source) = col.source_table {
+            // Direct match or matches with schema qualification
+            if source == table_name || source.ends_with(&format!(".{}", table_name)) {
+                return true;
+            }
+        }
+
+        // Second, check the qualified_name field
+        if let Some(ref qualified) = col.qualified_name {
+            // Check if qualified name starts with "table_name."
+            if qualified.starts_with(&format!("{}.", table_name)) {
+                return true;
+            }
+        }
+
+        false
+    }
+
     /// Resolve `SelectItem` columns to indices (for simple column projections only)
     fn resolve_select_columns(
         &self,
@@ -2005,10 +2073,19 @@ impl QueryEngine {
                     };
                     indices.push(index);
                 }
-                SelectItem::Star { .. } => {
-                    // Expand * to all column indices
-                    for i in 0..table_columns.len() {
-                        indices.push(i);
+                SelectItem::Star { table_prefix, .. } => {
+                    if let Some(prefix) = table_prefix {
+                        // Scoped expansion: table.* expands only columns from that table
+                        for (i, col) in table.columns.iter().enumerate() {
+                            if Self::column_matches_table(col, prefix) {
+                                indices.push(i);
+                            }
+                        }
+                    } else {
+                        // Unscoped expansion: * expands to all column indices
+                        for i in 0..table_columns.len() {
+                            indices.push(i);
+                        }
                     }
                 }
                 SelectItem::Expression { .. } => {
