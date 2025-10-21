@@ -1614,10 +1614,7 @@ impl QueryEngine {
                 SelectItem::Star { table_prefix, .. } => {
                     if let Some(prefix) = table_prefix {
                         // Scoped expansion: table.* expands only columns from that table
-                        debug!(
-                            "QueryEngine::apply_select_items - expanding {}.*",
-                            prefix
-                        );
+                        debug!("QueryEngine::apply_select_items - expanding {}.*", prefix);
                         for col in &source_table.columns {
                             if Self::column_matches_table(col, prefix) {
                                 expanded_items.push(SelectItem::Column {
