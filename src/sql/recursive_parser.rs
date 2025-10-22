@@ -319,7 +319,7 @@ impl Parser {
         };
 
         // Now check for WITH clause (after consuming comments)
-        let mut result = if matches!(self.current_token, Token::With) {
+        let result = if matches!(self.current_token, Token::With) {
             let mut stmt = self.parse_with_clause()?;
             // Attach the leading comments we collected
             stmt.leading_comments = leading_comments;
@@ -1833,13 +1833,13 @@ impl Parser {
         };
         self.advance();
 
-        // Parse right column (can include table prefix)
-        let right_column = self.parse_column_reference()?;
+        // Parse right side as expression (supports functions, columns, etc.)
+        let right_expr = self.parse_expression()?;
 
         Ok(SingleJoinCondition {
             left_column,
             operator,
-            right_column,
+            right_expr,
         })
     }
 

@@ -1,5 +1,19 @@
 // Test file for JOIN parser functionality
-use sql_cli::sql::recursive_parser::{JoinOperator, JoinType, Parser, TableSource};
+use sql_cli::sql::recursive_parser::{JoinOperator, JoinType, Parser, SqlExpression, TableSource};
+
+// Helper function to extract column name from SqlExpression
+fn get_column_name(expr: &SqlExpression) -> String {
+    match expr {
+        SqlExpression::Column(col_ref) => {
+            if let Some(table_prefix) = &col_ref.table_prefix {
+                format!("{}.{}", table_prefix, col_ref.name)
+            } else {
+                col_ref.name.clone()
+            }
+        }
+        _ => panic!("Expected column reference, got: {:?}", expr),
+    }
+}
 
 #[test]
 fn test_simple_inner_join() {
@@ -22,7 +36,10 @@ fn test_simple_inner_join() {
         join.condition.conditions[0].operator,
         JoinOperator::Equal
     ));
-    assert_eq!(join.condition.conditions[0].right_column, "orders.user_id");
+    assert_eq!(
+        get_column_name(&join.condition.conditions[0].right_expr),
+        "orders.user_id"
+    );
 }
 
 #[test]
@@ -118,7 +135,7 @@ fn test_join_with_table_alias() {
     assert_eq!(stmt.joins[0].condition.conditions.len(), 1);
     assert_eq!(stmt.joins[0].condition.conditions[0].left_column, "u.id");
     assert_eq!(
-        stmt.joins[0].condition.conditions[0].right_column,
+        get_column_name(&stmt.joins[0].condition.conditions[0].right_expr),
         "o.user_id"
     );
 }

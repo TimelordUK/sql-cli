@@ -483,7 +483,7 @@ pub enum JoinOperator {
 pub struct SingleJoinCondition {
     pub left_column: String, // Column from left table (can include table prefix)
     pub operator: JoinOperator, // Join operator
-    pub right_column: String, // Column from right table (can include table prefix)
+    pub right_expr: SqlExpression, // Expression from right table (can be column, function call, etc.)
 }
 
 /// Join condition - can be multiple conditions connected by AND

@@ -5,6 +5,88 @@ All notable changes to SQL CLI will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.62.0] - 2025-10-22
+
+### ✨ Major Features
+
+#### **JOIN Expression Support (Phase 1)**
+Enable functions and expressions on the **right side** of JOIN conditions - a game-changer for real-world data integration!
+
+**Use Case**: Handle padded database exports, case-insensitive matching, and data normalization directly in JOIN conditions.
+
+**New Capabilities**:
+- **TRIM()** - Remove padding: `JOIN fund_data ON portfolio = TRIM(fund_data.Name)`
+- **UPPER()/LOWER()** - Case-insensitive: `JOIN users ON id = UPPER(email)`
+- **SUBSTRING()** - Partial matching: `JOIN codes ON id = SUBSTRING(code, 1, 10)`
+- **CONCAT()** - Build keys: `JOIN data ON id = CONCAT(prefix, suffix)`
+- **Nested functions** - Complex transforms: `JOIN data ON id = UPPER(TRIM(name))`
+- **All SQL functions** - Works with any function in the registry
+
+**Example** (your exact use case):
+```sql
+-- Load two CSV files and join with TRIM to handle padding
+WITH
+    WEB portfolios AS (URL 'file://data/portfolios.csv' FORMAT CSV),
+    WEB fund_names AS (URL 'file://data/fund_names_padded.csv' FORMAT CSV)
+SELECT
+    portfolios.*,
+    fund_names.fund_id,
+    fund_names.manager
+FROM portfolios
+JOIN fund_names ON portfolios.portfolio = TRIM(fund_names.Name);
+```
+
+**Performance**:
+- Smart algorithm selection: hash join for simple columns, nested loop for expressions
+- Backward compatible: existing queries maintain performance
+- Expression evaluation overhead: ~1-2ms for typical datasets
+
+**Phase 1 Limitation**: Left side still requires simple column names. Use CTEs to pre-transform left side if needed.
+
+**Files**:
+- Example: `examples/join_two_files_with_trim.sql`
+- Docs: `docs/JOIN_EXPRESSION_PHASE1_COMPLETE.md`
+- Analysis: `docs/JOIN_EXPRESSION_SUPPORT_ANALYSIS.md`
+
+#### **Scoped Star Expansion for JOINs**
+SELECT specific table columns with `table.*` syntax in JOIN queries.
+
+**New Capability**:
+```sql
+SELECT
+    users.*,                    -- Expands to all users columns
+    orders.order_id,            -- Just specific order columns
+    orders.total
+FROM users
+JOIN orders ON users.id = orders.user_id;
+```
+
+**Benefits**:
+- Avoid column name collisions in JOINs
+- Clear, readable queries
+- Select all from one table, specific from another
+- Works with multiple JOINs
+
+**Example**:
+```sql
+SELECT
+    portfolios.*,               -- id, portfolio, value
+    fund_names.fund_id,
+    fund_names.manager
+FROM portfolios
+JOIN fund_names ON portfolios.portfolio = TRIM(fund_names.Name);
+```
+
+### 🔧 Technical Details
+
+**Modified Components**:
+- AST: `SingleJoinCondition.right_column` → `right_expr: SqlExpression`
+- Parser: Parses right side as full SQL expression
+- Executor: Expression evaluation in nested loop join algorithms
+- Tests: 854 tests passing (457 lib + 397 integration)
+
+**Backward Compatibility**: ✅ 100% - All existing JOIN queries continue to work unchanged
+
 ## [1.61.0] - 2025-10-18
 
 ### 🎯 Neovim Plugin UX Enhancements

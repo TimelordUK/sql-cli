@@ -5,8 +5,10 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use tracing::{debug, info};
 
+use crate::data::arithmetic_evaluator::ArithmeticEvaluator;
 use crate::data::datatable::{DataColumn, DataRow, DataTable, DataValue};
 use crate::sql::parser::ast::{JoinClause, JoinOperator, JoinType};
+use crate::sql::recursive_parser::SqlExpression;
 
 /// Hash join executor for efficient JOIN operations
 pub struct HashJoinExecutor {
@@ -34,15 +36,27 @@ impl HashJoinExecutor {
         );
 
         // For multiple conditions, we need to track all column indices
+        // If any condition has a complex right expression, we must use nested loop
         let mut condition_indices = Vec::new();
         let mut all_equal = true;
+        let mut has_complex_expr = false;
 
         for single_condition in &join_clause.condition.conditions {
+            // Check if right side is a simple column reference
+            let right_col_name = Self::extract_simple_column_name(&single_condition.right_expr);
+
+            if right_col_name.is_none() {
+                // Complex expression - must use nested loop with expression evaluation
+                has_complex_expr = true;
+                all_equal = false; // Force nested loop
+                break;
+            }
+
             let (left_col_idx, right_col_idx) = self.resolve_join_columns(
                 &left_table,
                 &right_table,
                 &single_condition.left_column,
-                &single_condition.right_column,
+                &right_col_name.unwrap(),
             )?;
 
             if single_condition.operator != JoinOperator::Equal {
@@ -56,53 +70,63 @@ impl HashJoinExecutor {
             ));
         }
 
-        // Choose join algorithm based on operators - use hash join only if all conditions use equality
-        let use_hash_join = all_equal;
+        // Choose join algorithm based on operators - use hash join only if:
+        // 1. All conditions use equality
+        // 2. No complex expressions (all simple column references)
+        let use_hash_join = all_equal && !has_complex_expr;
 
         // Perform the appropriate join based on type and operator
         match join_clause.join_type {
             JoinType::Inner => {
                 if use_hash_join && condition_indices.len() == 1 {
-                    // Single equality condition - use optimized hash join
+                    // Single equality condition with simple columns - use optimized hash join
                     let (left_col_idx, right_col_idx, _) = condition_indices[0];
+                    let right_col_name = Self::extract_simple_column_name(
+                        &join_clause.condition.conditions[0].right_expr,
+                    )
+                    .expect("right_expr should be a simple column in hash join path");
                     self.hash_join_inner(
                         left_table,
                         right_table,
                         left_col_idx,
                         right_col_idx,
                         &join_clause.condition.conditions[0].left_column,
-                        &join_clause.condition.conditions[0].right_column,
+                        &right_col_name,
                         &join_clause.alias,
                     )
                 } else {
-                    // Multiple conditions or inequality - use nested loop join
+                    // Multiple conditions, inequality, or expressions - use nested loop join
                     self.nested_loop_join_inner_multi(
                         left_table,
                         right_table,
-                        condition_indices,
+                        &join_clause.condition.conditions,
                         &join_clause.alias,
                     )
                 }
             }
             JoinType::Left => {
                 if use_hash_join && condition_indices.len() == 1 {
-                    // Single equality condition - use optimized hash join
+                    // Single equality condition with simple columns - use optimized hash join
                     let (left_col_idx, right_col_idx, _) = condition_indices[0];
+                    let right_col_name = Self::extract_simple_column_name(
+                        &join_clause.condition.conditions[0].right_expr,
+                    )
+                    .expect("right_expr should be a simple column in hash join path");
                     self.hash_join_left(
                         left_table,
                         right_table,
                         left_col_idx,
                         right_col_idx,
                         &join_clause.condition.conditions[0].left_column,
-                        &join_clause.condition.conditions[0].right_column,
+                        &right_col_name,
                         &join_clause.alias,
                     )
                 } else {
-                    // Multiple conditions or inequality - use nested loop join
+                    // Multiple conditions, inequality, or expressions - use nested loop join
                     self.nested_loop_join_left_multi(
                         left_table,
                         right_table,
-                        condition_indices,
+                        &join_clause.condition.conditions,
                         &join_clause.alias,
                     )
                 }
@@ -117,21 +141,26 @@ impl HashJoinExecutor {
                 if use_hash_join && swapped_indices.len() == 1 {
                     // Right join is just a left join with tables swapped
                     let (right_col_idx, left_col_idx, _) = swapped_indices[0];
+                    let right_col_name = Self::extract_simple_column_name(
+                        &join_clause.condition.conditions[0].right_expr,
+                    )
+                    .expect("right_expr should be a simple column in hash join path");
                     self.hash_join_left(
                         right_table,
                         left_table,
                         right_col_idx,
                         left_col_idx,
-                        &join_clause.condition.conditions[0].right_column,
+                        &right_col_name,
                         &join_clause.condition.conditions[0].left_column,
                         &join_clause.alias,
                     )
                 } else {
                     // Right join is just a left join with tables swapped
+                    // Pass the original conditions - nested_loop_join_left_multi will handle the swap
                     self.nested_loop_join_left_multi(
                         right_table,
                         left_table,
-                        swapped_indices,
+                        &join_clause.condition.conditions,
                         &join_clause.alias,
                     )
                 }
@@ -140,6 +169,22 @@ impl HashJoinExecutor {
             JoinType::Full => {
                 return Err(anyhow!("FULL OUTER JOIN not yet implemented"));
             }
+        }
+    }
+
+    /// Extract column name from expression if it's a simple column reference
+    /// Returns None if the expression is complex (function, operation, etc.)
+    fn extract_simple_column_name(expr: &SqlExpression) -> Option<String> {
+        match expr {
+            SqlExpression::Column(col_ref) => {
+                // Build the full column name including table prefix if present
+                if let Some(table_prefix) = &col_ref.table_prefix {
+                    Some(format!("{}.{}", table_prefix, col_ref.name))
+                } else {
+                    Some(col_ref.name.clone())
+                }
+            }
+            _ => None, // Complex expression - cannot use fast path
         }
     }
 
@@ -743,7 +788,7 @@ impl HashJoinExecutor {
         &self,
         left_table: Arc<DataTable>,
         right_table: Arc<DataTable>,
-        conditions: Vec<(usize, usize, JoinOperator)>,
+        conditions: &[crate::sql::parser::ast::SingleJoinCondition],
         join_alias: &Option<String>,
     ) -> Result<DataTable> {
         let start = std::time::Instant::now();
@@ -811,17 +856,36 @@ impl HashJoinExecutor {
             }
         }
 
+        // Prepare left column indices (resolve once upfront)
+        let mut left_col_indices = Vec::new();
+        for condition in conditions {
+            let left_idx = self.find_column_index(&left_table, &condition.left_column)?;
+            left_col_indices.push(left_idx);
+        }
+
+        // Create evaluator for right side expressions
+        let mut right_evaluator = ArithmeticEvaluator::new(&right_table);
+
         // Nested loop join with multiple conditions
         let mut match_count = 0;
         for left_row in &left_table.rows {
-            for right_row in &right_table.rows {
+            for (right_row_idx, right_row) in right_table.rows.iter().enumerate() {
                 // Check all conditions - all must be true for a match
                 let mut all_conditions_met = true;
-                for (left_idx, right_idx, operator) in &conditions {
-                    let left_value = &left_row.values[*left_idx];
-                    let right_value = &right_row.values[*right_idx];
+                for (i, condition) in conditions.iter().enumerate() {
+                    let left_value = &left_row.values[left_col_indices[i]];
 
-                    if !self.compare_values(left_value, right_value, operator) {
+                    // Evaluate right expression for this row
+                    let right_value =
+                        match right_evaluator.evaluate(&condition.right_expr, right_row_idx) {
+                            Ok(val) => val,
+                            Err(_) => {
+                                all_conditions_met = false;
+                                break;
+                            }
+                        };
+
+                    if !self.compare_values(left_value, &right_value, &condition.operator) {
                         all_conditions_met = false;
                         break;
                     }
@@ -851,7 +915,7 @@ impl HashJoinExecutor {
         &self,
         left_table: Arc<DataTable>,
         right_table: Arc<DataTable>,
-        conditions: Vec<(usize, usize, JoinOperator)>,
+        conditions: &[crate::sql::parser::ast::SingleJoinCondition],
         join_alias: &Option<String>,
     ) -> Result<DataTable> {
         let start = std::time::Instant::now();
@@ -919,6 +983,16 @@ impl HashJoinExecutor {
             }
         }
 
+        // Prepare left column indices (resolve once upfront)
+        let mut left_col_indices = Vec::new();
+        for condition in conditions {
+            let left_idx = self.find_column_index(&left_table, &condition.left_column)?;
+            left_col_indices.push(left_idx);
+        }
+
+        // Create evaluator for right side expressions
+        let mut right_evaluator = ArithmeticEvaluator::new(&right_table);
+
         // Nested loop join with multiple conditions
         let mut match_count = 0;
         let mut null_count = 0;
@@ -926,14 +1000,23 @@ impl HashJoinExecutor {
         for left_row in &left_table.rows {
             let mut found_match = false;
 
-            for right_row in &right_table.rows {
+            for (right_row_idx, right_row) in right_table.rows.iter().enumerate() {
                 // Check all conditions - all must be true for a match
                 let mut all_conditions_met = true;
-                for (left_idx, right_idx, operator) in &conditions {
-                    let left_value = &left_row.values[*left_idx];
-                    let right_value = &right_row.values[*right_idx];
+                for (i, condition) in conditions.iter().enumerate() {
+                    let left_value = &left_row.values[left_col_indices[i]];
 
-                    if !self.compare_values(left_value, right_value, operator) {
+                    // Evaluate right expression for this row
+                    let right_value =
+                        match right_evaluator.evaluate(&condition.right_expr, right_row_idx) {
+                            Ok(val) => val,
+                            Err(_) => {
+                                all_conditions_met = false;
+                                break;
+                            }
+                        };
+
+                    if !self.compare_values(left_value, &right_value, &condition.operator) {
                         all_conditions_met = false;
                         break;
                     }

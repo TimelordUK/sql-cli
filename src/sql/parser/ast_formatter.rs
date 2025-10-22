@@ -1076,7 +1076,7 @@ impl<'a> AstFormatter<'a> {
                     " {} {} {}",
                     condition.left_column,
                     self.format_join_operator(&condition.operator),
-                    condition.right_column
+                    self.format_expression(&condition.right_expr)
                 )
                 .unwrap();
             }
