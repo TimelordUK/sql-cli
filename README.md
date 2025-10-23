@@ -108,9 +108,21 @@ Execute SQL queries directly from the command line - perfect for scripting and a
 
 ![Description](docs/images/screenshot-20251012-192832.png)
 
+```bash
+sql-cli -q "select value as day, DATEADD('day', value, DateTime()) as dt from range(1,10)" -o table
+```
+
 ![Description](docs/images/screenshot-20250920-212340.png)
 
+```bash
+sql-cli -q "with p as (select prime, prime + 2 as plus_2 from generate_primes(50)), pairs as (select *, is_prime(plus_2) as is_pair from p) select * from pairs where is_pair = true" -o table
+```
+
 ![Description](docs/images/screenshot-20250921-104620.png)
+
+```bash
+sql-cli -q "select ROUND(CONVERT(0, 'celsius', 'fahrenheit'), 2) as freezing_f" -o json
+```
 
 ![Description](docs/images/screenshot-20250921-110026.png)
 
