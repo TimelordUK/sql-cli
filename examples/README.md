@@ -17,7 +17,58 @@ Or test queries directly with sample data:
 sql-cli data/test_simple_math.csv -f examples/math_functions.sql
 ```
 
+## Running Specific Statements
+
+You can execute individual statements from a script using `--execute-statement`:
+
+```bash
+# Run statement #2 from the script
+sql-cli data.csv -f examples/script.sql --execute-statement 2 -o table
+```
+
+This automatically handles dependencies (temp tables, CTEs, etc.) and only executes the specified statement.
+
 ## Available Examples
+
+### 🎨 Colorful Number Classification (`color_numbers.sql`) ⭐ NEW!
+
+**ANSI Color Functions Demo** - Beautiful visualization of number theory with terminal colors!
+
+**Quick start:**
+```bash
+# Run all 6 demos
+./scripts/demo_colors.sh
+
+# Run specific demo (recommended!)
+./scripts/demo_colors.sh 2  # Twin Primes Showcase
+./scripts/demo_colors.sh 5  # Number Rainbow 1-100
+
+# Or directly with --execute-statement
+./target/release/sql-cli data/numbers_1_100.csv \
+  -f examples/color_numbers.sql --execute-statement 2 -o table
+```
+
+**Six visual demos:**
+1. **Comprehensive Classification** - All special numbers (twin primes, primes, squares) color-coded
+2. **Twin Primes Showcase** - Prime pairs (3&5, 11&13) with gap/sum/average stats
+3. **Prime Density Visualization** - Bar chart showing primes per decade (1-10, 11-20, etc)
+4. **Perfect Squares** - Elegant display with square roots and visual indicators
+5. **Number Rainbow (1-100)** - All 100 numbers color-coded by their primary property
+6. **Properties Matrix** - Compact multi-property checkmark table
+
+**Color scheme:**
+- 🔴 **RED (bold)** - Twin Primes (primes differing by 2)
+- 🟡 **GOLD** - Regular Primes
+- 🔵 **CYAN** - Perfect Squares (1, 4, 9, 16, 25...)
+- ⚫ **GRAY** - Even Numbers
+- ⚪ **WHITE** - Odd Composites
+
+**Functions demonstrated:**
+- `ANSI_RGB(r, g, b, text)` - 24-bit true color (16 million colors!)
+- `ANSI_COLOR(name, text)` - Named colors (red, cyan, green, etc)
+- `ANSI_BOLD(text)` - Bold text styling
+- `IS_PRIME(n)` - Prime number detection
+- Complex CTEs with multiple classification criteria
 
 ### 🔢 Prime Number Functions (`prime_numbers.sql`)
 - Check if numbers are prime with `IS_PRIME()`
