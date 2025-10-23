@@ -1194,6 +1194,35 @@ fn output_json_helper<W: Write>(dataview: &DataView, writer: &mut W) -> anyhow::
     Ok(())
 }
 
+/// Strip ANSI escape codes from a string and return the display width
+/// This handles ANSI SGR (Select Graphic Rendition) codes like colors and styles
+fn display_width(s: &str) -> usize {
+    let mut result = String::new();
+    let mut chars = s.chars().peekable();
+
+    while let Some(ch) = chars.next() {
+        if ch == '\x1b' {
+            // Check for ANSI escape sequence
+            if chars.peek() == Some(&'[') {
+                chars.next(); // consume '['
+                              // Skip until we find a letter (the command character)
+                while let Some(&next_ch) = chars.peek() {
+                    chars.next();
+                    if next_ch.is_ascii_alphabetic() {
+                        break;
+                    }
+                }
+            } else {
+                result.push(ch);
+            }
+        } else {
+            result.push(ch);
+        }
+    }
+
+    result.chars().count()
+}
+
 fn output_table_helper<W: Write>(
     dataview: &DataView,
     writer: &mut W,
@@ -1212,7 +1241,7 @@ fn output_table_helper<W: Write>(
             for (i, value) in row.values.iter().enumerate() {
                 if i < widths.len() {
                     let value_str = format_datavalue(value);
-                    widths[i] = widths[i].max(value_str.len());
+                    widths[i] = widths[i].max(display_width(&value_str));
                 }
             }
         }
@@ -1250,12 +1279,17 @@ fn output_table_helper<W: Write>(
             for (i, value) in row.values.iter().enumerate() {
                 if i < widths.len() {
                     let value_str = format_datavalue(value);
-                    let truncated = if value_str.len() > widths[i] {
-                        format!("{}...", &value_str[..widths[i].saturating_sub(3)])
+                    let display_len = display_width(&value_str);
+
+                    // For ANSI-colored strings, manual padding is needed
+                    // because format! uses byte length, not display width
+                    write!(writer, " {}", value_str)?;
+                    let padding_needed = if display_len < widths[i] {
+                        widths[i] - display_len
                     } else {
-                        value_str
+                        0
                     };
-                    write!(writer, " {:<width$} |", truncated, width = widths[i])?;
+                    write!(writer, "{} |", " ".repeat(padding_needed))?;
                 }
             }
             writeln!(writer)?;
