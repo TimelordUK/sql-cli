@@ -118,15 +118,25 @@ sql-cli -q "select value as day, DATEADD('day', value, DateTime()) as dt from ra
 sql-cli -q "with p as (select prime, prime + 2 as plus_2 from generate_primes(50)), pairs as (select *, is_prime(plus_2) as is_pair from p) select * from pairs where is_pair = true" -o table
 ```
 
+![Description](docs/images/screenshot-20251025-122226.png)
+
 ![Description](docs/images/screenshot-20250921-104620.png)
 
 ```bash
 sql-cli -q "select ROUND(CONVERT(0, 'celsius', 'fahrenheit'), 2) as freezing_f" -o json
 ```
-
 ![Description](docs/images/screenshot-20250921-110026.png)
 
+```bash
+sql-cli -q "select value as position, PI_DIGIT(value) FROM RANGE(1,20) as pi_digit" -o table --table-style markdown
+```
+
 ![Description](docs/images/screenshot-20251011-202603.png)
+
+```bash
+scripts/demo_colors.sh 7
+```
+![Description](docs/images/screenshot-20251025-125247.png)
 
 ```bash
 # Run a query and get CSV output
