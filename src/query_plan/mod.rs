@@ -5,6 +5,7 @@ mod query_plan;
 pub mod cte_hoister;
 pub mod dependency_analyzer;
 pub mod expression_lifter;
+pub mod having_alias_transformer;
 pub mod in_operator_lifter;
 pub mod into_clause_remover;
 pub mod pipeline;
@@ -20,6 +21,7 @@ pub use query_plan::{
 pub use cte_hoister::CTEHoister;
 pub use dependency_analyzer::{ScriptDependencyGraph, StatementNode};
 pub use expression_lifter::{ExpressionLifter, LiftableExpression};
+pub use having_alias_transformer::HavingAliasTransformer;
 pub use in_operator_lifter::{InOperatorLifter, LiftedInExpression};
 pub use into_clause_remover::IntoClauseRemover;
 
@@ -38,8 +40,9 @@ pub use transformer_adapters::{
 ///
 /// The transformers are applied in this order:
 /// 1. ExpressionLifter - Lifts column alias dependencies and window functions
-/// 2. CTEHoister - Hoists nested CTEs to top level
-/// 3. InOperatorLifter - Optimizes large IN expressions
+/// 2. HavingAliasTransformer - Adds aliases to aggregates and rewrites HAVING
+/// 3. CTEHoister - Hoists nested CTEs to top level
+/// 4. InOperatorLifter - Optimizes large IN expressions
 ///
 /// # Arguments
 /// * `verbose` - Whether to enable verbose logging
@@ -65,8 +68,10 @@ pub fn create_standard_pipeline(verbose: bool) -> PreprocessingPipeline {
 
     // Add transformers in the correct order
     // Order matters! ExpressionLifter must run before CTEHoister
+    // HavingAliasTransformer runs after ExpressionLifter to ensure proper aliases
     builder = builder
         .with_transformer(Box::new(ExpressionLifterTransformer::new()))
+        .with_transformer(Box::new(HavingAliasTransformer::new()))
         .with_transformer(Box::new(CTEHoisterTransformer::new()))
         .with_transformer(Box::new(InOperatorLifterTransformer::new()));
 

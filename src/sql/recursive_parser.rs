@@ -946,15 +946,9 @@ impl Parser {
             self.advance();
             let having_expr = self.parse_expression()?;
 
-            // Check if HAVING contains aggregate functions (not supported - use aliases instead)
-            if Self::contains_aggregate_function(&having_expr) {
-                return Err(
-                    "HAVING clause with aggregate functions is not supported. \
-                    Use an alias in SELECT for the aggregate and reference it in HAVING.\n\
-                    Example: SELECT trader, COUNT(*) as trade_count FROM trades GROUP BY trader HAVING trade_count > 1"
-                    .to_string()
-                );
-            }
+            // Note: Aggregate functions in HAVING are now supported via the
+            // HavingAliasTransformer preprocessing step, which automatically
+            // adds aliases and rewrites the HAVING clause to use them.
 
             Some(having_expr)
         } else {

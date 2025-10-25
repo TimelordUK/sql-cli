@@ -310,15 +310,19 @@ fn test_parse_having_clause() {
 }
 
 #[test]
-fn test_parse_having_clause_with_aggregate_error() {
-    // Test that HAVING with aggregate functions produces helpful error
+fn test_parse_having_clause_with_aggregate() {
+    // Test that HAVING with aggregate functions now parses successfully
+    // (will be rewritten by HavingAliasTransformer in preprocessing pipeline)
     let query = "SELECT category, COUNT(*) FROM products GROUP BY category HAVING COUNT(*) > 5";
     let mut parser = Parser::new(query);
     let result = parser.parse();
-    assert!(result.is_err());
-    let err = result.unwrap_err();
-    assert!(err.contains("HAVING clause with aggregate functions is not supported"));
-    assert!(err.contains("Use an alias"));
+    assert!(
+        result.is_ok(),
+        "Parser should accept aggregates in HAVING - they will be rewritten during preprocessing"
+    );
+
+    let stmt = result.unwrap();
+    assert!(stmt.having.is_some(), "HAVING clause should be parsed");
 }
 
 #[test]
