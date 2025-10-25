@@ -417,7 +417,9 @@ pub fn execute_non_interactive(config: NonInteractiveConfig) -> Result<()> {
         match parser.parse() {
             Ok(stmt) => {
                 // Check if query has a FROM clause - queries without FROM need special handling
-                let has_from_clause = stmt.from_table.is_some() || stmt.from_subquery.is_some() || stmt.from_function.is_some();
+                let has_from_clause = stmt.from_table.is_some()
+                    || stmt.from_subquery.is_some()
+                    || stmt.from_function.is_some();
 
                 // Only apply preprocessing if there's a FROM clause
                 // (queries without FROM have special row-iteration semantics in this tool)
@@ -450,34 +452,34 @@ pub fn execute_non_interactive(config: NonInteractiveConfig) -> Result<()> {
 
                     // Show statistics if requested
                     if config.show_preprocessing {
-                    eprintln!("\n{}", "=== Preprocessing Pipeline ===".to_string());
-                    eprintln!("{}", pipeline.stats().summary());
-                    for transform_stats in &pipeline.stats().transformations {
-                        eprintln!(
-                            "  {} - {:.2}ms{}",
-                            transform_stats.transformer_name,
-                            transform_stats.duration_micros as f64 / 1000.0,
-                            if transform_stats.modifications > 0 {
-                                format!(" ({} modification(s))", transform_stats.modifications)
-                            } else {
-                                String::new()
-                            }
-                        );
+                        eprintln!("\n{}", "=== Preprocessing Pipeline ===".to_string());
+                        eprintln!("{}", pipeline.stats().summary());
+                        for transform_stats in &pipeline.stats().transformations {
+                            eprintln!(
+                                "  {} - {:.2}ms{}",
+                                transform_stats.transformer_name,
+                                transform_stats.duration_micros as f64 / 1000.0,
+                                if transform_stats.modifications > 0 {
+                                    format!(" ({} modification(s))", transform_stats.modifications)
+                                } else {
+                                    String::new()
+                                }
+                            );
+                        }
+                        eprintln!();
                     }
-                    eprintln!();
-                }
 
                     // Check if any transformations were applied
                     let transformers_applied = pipeline.stats().transformers_applied > 0;
 
                     if transformers_applied {
-                    // Execute the rewritten AST directly using QueryEngine
-                    let engine = QueryEngine::with_case_insensitive(config.case_insensitive);
+                        // Execute the rewritten AST directly using QueryEngine
+                        let engine = QueryEngine::with_case_insensitive(config.case_insensitive);
 
-                    match engine.execute_statement(dataview.source_arc(), stmt) {
-                        Ok(result_view) => {
-                            // Create a QueryExecutionResult to match the expected type
-                            Ok(
+                        match engine.execute_statement(dataview.source_arc(), stmt) {
+                            Ok(result_view) => {
+                                // Create a QueryExecutionResult to match the expected type
+                                Ok(
                                 crate::services::query_execution_service::QueryExecutionResult {
                                     dataview: result_view,
                                     stats: crate::services::query_execution_service::QueryStats {
@@ -492,31 +494,31 @@ pub fn execute_non_interactive(config: NonInteractiveConfig) -> Result<()> {
                                     debug_trace: None,
                                 },
                             )
+                            }
+                            Err(e) => Err(e),
                         }
-                        Err(e) => Err(e),
-                    }
-                } else {
-                    // No lifting needed, execute normally
-                    let query_service =
-                        QueryExecutionService::with_behavior_config(behavior_config);
-                    if config.debug_trace {
-                        let debug_ctx = crate::debug_trace::DebugContext::new(
-                            crate::debug_trace::DebugLevel::Debug,
-                        );
-                        query_service.execute_with_debug(
-                            &config.query,
-                            Some(&dataview),
-                            Some(dataview.source()),
-                            Some(debug_ctx),
-                        )
                     } else {
-                        query_service.execute(
-                            &config.query,
-                            Some(&dataview),
-                            Some(dataview.source()),
-                        )
+                        // No lifting needed, execute normally
+                        let query_service =
+                            QueryExecutionService::with_behavior_config(behavior_config);
+                        if config.debug_trace {
+                            let debug_ctx = crate::debug_trace::DebugContext::new(
+                                crate::debug_trace::DebugLevel::Debug,
+                            );
+                            query_service.execute_with_debug(
+                                &config.query,
+                                Some(&dataview),
+                                Some(dataview.source()),
+                                Some(debug_ctx),
+                            )
+                        } else {
+                            query_service.execute(
+                                &config.query,
+                                Some(&dataview),
+                                Some(dataview.source()),
+                            )
+                        }
                     }
-                }
                 }
             }
             Err(_) => {
