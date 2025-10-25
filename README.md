@@ -38,12 +38,13 @@ sql-cli -q "WITH lines AS (SELECT line, ROW_NUMBER() OVER () as n, COUNT(*) OVER
 
 **Think `less` for CSV files, but with SQL superpowers:**
 - **🎯 Two Modes**: Interactive TUI for exploration, non-interactive for scripting & automation
-- **📁 Point & Query**: Drop any CSV/JSON file and immediately start querying  
+- **📁 Point & Query**: Drop any CSV/JSON file and immediately start querying
 - **⚡ Lightning Fast**: In-memory engine - 8ms SELECT on 100K rows ([benchmarks](PERFORMANCE.md))
 - **🎮 Vim-Inspired**: Modal editing, `hjkl` navigation, powerful keyboard shortcuts
 - **🧠 Smart Completion**: Context-aware SQL completion with fuzzy matching
 - **🔍 Advanced Filtering**: Regex, fuzzy search, complex WHERE clauses
-- **📊 Rich SQL Features**: Date functions, string manipulation, mathematical operations
+- **📊 Rich SQL Features**: Date functions, string manipulation, mathematical operations, bit strings
+- **🎨 Visual Patterns**: ANSI colors, binary gradients, fractal-like XOR patterns
 - **📤 Multiple Outputs**: CSV, JSON, TSV, or pretty tables - perfect for pipelines
 
 ![SQL-CLI CSV Demo](sql-cli/demos/overview-optimized.gif)
@@ -489,6 +490,87 @@ sql-cli -q "SELECT ANSI_RGB(255, 0, 0, '●') || ' ' || ANSI_RGB(255, 127, 0, '�
 sql-cli -f examples/ansi_colors_demo.sql
 ```
 
+### 🔢 **Bit String Operations & Visual Patterns** (NEW!)
+
+Work with binary data and create stunning visual patterns using bit manipulation functions. Perfect for teaching binary operations, creating visualizations, and exploring bitwise logic.
+
+![Description](docs/images/screenshot-20251025-122226.png)
+
+```sql
+-- Bit Density Gradient - Visual progression from 0% to 100%
+WITH density AS (
+    SELECT value FROM RANGE(0, 16)
+)
+SELECT
+    value as step,
+    LPAD(REPEAT('1', value), 16, '0') as gradient,
+    REPEAT('█', value) || REPEAT('░', 16 - value) as visual,
+    ROUND(value * 100.0 / 16, 1) || '%' as percent
+FROM density;
+```
+
+**Output:**
+```
+step  gradient          visual                percent
+0     0000000000000000  ░░░░░░░░░░░░░░░░      0%
+1     0000000000000001  █░░░░░░░░░░░░░░░      6.3%
+2     0000000000000011  ██░░░░░░░░░░░░░░      12.5%
+4     0000000000001111  ████░░░░░░░░░░░░      25%
+8     0000000011111111  ████████░░░░░░░░      50%
+16    1111111111111111  ████████████████      100%
+```
+
+**More Bit Pattern Examples:**
+
+```sql
+-- Walking bits - bits moving from both edges
+WITH positions AS (SELECT value FROM RANGE(0, 8))
+SELECT
+    value as frame,
+    BIT_ROTATE_LEFT('00000001', value) as walk_right,
+    BIT_ROTATE_LEFT('10000000', value) as walk_left,
+    BIT_OR_STR(
+        BIT_ROTATE_LEFT('00000001', value),
+        BIT_ROTATE_RIGHT('10000000', value)
+    ) as collision
+FROM positions;
+
+-- Binary counter with visual bar chart
+WITH counter AS (SELECT value FROM RANGE(0, 32))
+SELECT
+    value,
+    LPAD(TO_BINARY(value), 8, '0') as binary,
+    BIT_COUNT(TO_BINARY(value)) as density,
+    REPEAT('█', BIT_COUNT(TO_BINARY(value))) as bar_chart
+FROM counter;
+
+-- XOR multiplication table - creates fractal-like patterns!
+WITH nums AS (SELECT value FROM RANGE(0, 8)),
+     coords AS (SELECT a.value as x, b.value as y FROM nums a CROSS JOIN nums b)
+SELECT
+    x, y,
+    LPAD(BIT_XOR_STR(TO_BINARY(x), TO_BINARY(y)), 4, '0') as xor_result,
+    CASE WHEN BIT_COUNT(BIT_XOR_STR(TO_BINARY(x), TO_BINARY(y))) > 1
+         THEN '█' ELSE '░' END as pixel
+FROM coords;
+```
+
+**Available Bit String Functions:**
+- **Bitwise Operations**: `BIT_AND_STR()`, `BIT_OR_STR()`, `BIT_XOR_STR()`, `BIT_NOT_STR()`, `BIT_FLIP()`
+- **Bit Rotation**: `BIT_ROTATE_LEFT()`, `BIT_ROTATE_RIGHT()`
+- **Bit Shifting**: `BIT_SHIFT_LEFT()`, `BIT_SHIFT_RIGHT()`
+- **Analysis**: `BIT_COUNT()`, `HAMMING_DISTANCE()`
+- **Conversion**: `TO_BINARY()` - Convert numbers to binary strings
+
+**Try it out:**
+```bash
+# Beautiful density gradient
+sql-cli -q "WITH density AS (SELECT value FROM RANGE(0, 16)) SELECT value as step, REPEAT('█', value) || REPEAT('░', 16 - value) as visual, ROUND(value * 100.0 / 16, 1) || '%' as percent FROM density" -o table
+
+# Full bit string demo
+sql-cli -f examples/bit_string_math.sql
+```
+
 ### 📊 **GROUP BY and Aggregation Support** (NEW!)
 
 SQL CLI now supports GROUP BY queries with powerful aggregate functions, enabling complex data analysis and summarization:
@@ -822,6 +904,8 @@ JOIN api_prices a ON l.product_id = a.id;
 | **LINQ Methods** | ✅ `.Contains()`, `.StartsWith()` | ❌ | ❌ | ❌ |
 | **Date Functions** | ✅ `DATEDIFF`, `DATEADD`, `NOW()` | ❌ | Limited | ❌ |
 | **Math Functions** | ✅ `ROUND`, `SQRT`, `POWER`, Primes | ❌ | Basic | ❌ |
+| **Bit String Operations** | ✅ Full binary manipulation & visuals | ❌ | ❌ | ❌ |
+| **ANSI Color Output** | ✅ RGB colors & formatting | ❌ | ❌ | ❌ |
 | **GROUP BY & Aggregates** | ✅ Full support with COUNT, SUM, AVG | ❌ | Basic | Limited |
 | **Vim Navigation** | ✅ Full vim-style | Basic | ❌ | ❌ |
 | **Computed Columns** | ✅ `price * qty as total` | ❌ | ❌ | Limited |

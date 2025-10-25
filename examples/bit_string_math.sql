@@ -1,6 +1,17 @@
 -- Bitwise String Operations Examples
 -- Demonstrates string-based bitwise operations for binary visualization
 
+select BIT_ROTATE_LEFT('00000001', value) as pow_2 from range(0,7);
+go
+
+with shifts as (
+SELECT
+BIT_ROTATE_LEFT('00000001', value) as left_shift,
+BIT_ROTATE_RIGHT('10000000', value) as right_shift
+FROM range(0,7);
+) select *, BIT_OR_STR(left_shift, right_shift) as left_right_shift from shifts;
+go
+
 -- Basic bitwise AND operation on binary strings
 SELECT
     '1101' as a,
@@ -141,4 +152,101 @@ SELECT
     BIT_NOT_STR(a) as not_a,
     HAMMING_DISTANCE(a, b) as dist
 FROM input;
+GO
+
+-- Walking/Bouncing Bit Animation - bits moving from edges
+WITH positions AS (
+    SELECT value FROM RANGE(0, 15)
+)
+SELECT
+    value as frame,
+    BIT_ROTATE_LEFT('00000001', value) as walk_right,
+    BIT_ROTATE_LEFT('10000000', value) as walk_left,
+    BIT_OR_STR(
+        BIT_ROTATE_LEFT('00000001', value),
+        BIT_ROTATE_RIGHT('10000000', value)
+    ) as collision
+FROM positions;
+GO
+
+-- Binary Counter with Visual Bar Chart
+WITH counter AS (
+    SELECT value FROM RANGE(0, 32)
+)
+SELECT
+    value,
+    LPAD(TO_BINARY(value), 8, '0') as binary,
+    BIT_COUNT(TO_BINARY(value)) as density,
+    REPEAT('█', BIT_COUNT(TO_BINARY(value))) as bar_chart
+FROM counter;
+GO
+
+-- Bit Convergence/Zipper Pattern - two bits zipping together
+WITH frames AS (
+    SELECT value as n FROM RANGE(0, 8)
+)
+SELECT
+    n as frame,
+    BIT_OR_STR(
+        BIT_ROTATE_LEFT('00000001', n),
+        BIT_ROTATE_RIGHT('10000000', n)
+    ) as zipper_pattern
+FROM frames;
+GO
+
+-- Checkerboard and Repeating Patterns
+SELECT
+    value,
+    REPEAT('10', value) as alternating,
+    REPEAT('1100', value) as double_alt,
+    BIT_XOR_STR(REPEAT('10', value), REPEAT('01', value)) as xor_pattern
+FROM RANGE(1, 8);
+GO
+
+-- Bit Density Gradient - increasing bit density visualization
+WITH density AS (
+    SELECT value FROM RANGE(0, 16)
+)
+SELECT
+    value as step,
+    LPAD(REPEAT('1', value), 16, '0') as gradient,
+    REPEAT('█', value) || REPEAT('░', 16 - value) as visual,
+    ROUND(value * 100.0 / 16, 1) || '%' as percent
+FROM density;
+GO
+
+-- XOR Multiplication Table - creates fractal-like patterns!
+WITH nums AS (
+    SELECT value FROM RANGE(0, 8)
+),
+coords AS (
+    SELECT
+        a.value as x,
+        b.value as y
+    FROM nums a
+    CROSS JOIN nums b
+)
+SELECT
+    x,
+    y,
+    LPAD(TO_BINARY(x), 4, '0') as x_bin,
+    LPAD(TO_BINARY(y), 4, '0') as y_bin,
+    LPAD(BIT_XOR_STR(TO_BINARY(x), TO_BINARY(y)), 4, '0') as xor_result,
+    CASE WHEN BIT_COUNT(BIT_XOR_STR(TO_BINARY(x), TO_BINARY(y))) > 1 THEN '█' ELSE '░' END as pixel
+FROM coords;
+GO
+
+-- DNA Helix Pattern - complementary bit strands
+WITH sequence AS (
+    SELECT value FROM RANGE(0, 16)
+)
+SELECT
+    value as position,
+    BIT_ROTATE_LEFT('11000000', value) as strand_a,
+    BIT_NOT_STR(BIT_ROTATE_LEFT('11000000', value)) as strand_b_complement,
+    BIT_OR_STR(
+        BIT_ROTATE_LEFT('11000000', value),
+        BIT_NOT_STR(BIT_ROTATE_LEFT('11000000', value))
+    ) as both_strands
+FROM sequence;
 GO
