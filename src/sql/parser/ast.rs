@@ -371,6 +371,32 @@ pub struct SelectStatement {
     pub trailing_comment: Option<Comment>, // Trailing comment at end of statement
 }
 
+impl Default for SelectStatement {
+    fn default() -> Self {
+        SelectStatement {
+            distinct: false,
+            columns: Vec::new(),
+            select_items: Vec::new(),
+            from_table: None,
+            from_subquery: None,
+            from_function: None,
+            from_alias: None,
+            joins: Vec::new(),
+            where_clause: None,
+            order_by: None,
+            group_by: None,
+            having: None,
+            limit: None,
+            offset: None,
+            ctes: Vec::new(),
+            into_table: None,
+            set_operations: Vec::new(),
+            leading_comments: Vec::new(),
+            trailing_comment: None,
+        }
+    }
+}
+
 /// INTO clause for creating temporary tables
 #[derive(Debug, Clone, PartialEq)]
 pub struct IntoTable {

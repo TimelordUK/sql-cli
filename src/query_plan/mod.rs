@@ -7,6 +7,8 @@ pub mod dependency_analyzer;
 pub mod expression_lifter;
 pub mod in_operator_lifter;
 pub mod into_clause_remover;
+pub mod pipeline;
+pub mod transformer_adapters;
 
 // Re-export main types
 pub use query_plan::{
@@ -20,3 +22,53 @@ pub use dependency_analyzer::{ScriptDependencyGraph, StatementNode};
 pub use expression_lifter::{ExpressionLifter, LiftableExpression};
 pub use in_operator_lifter::{InOperatorLifter, LiftedInExpression};
 pub use into_clause_remover::IntoClauseRemover;
+
+// Re-export pipeline types
+pub use pipeline::{
+    ASTTransformer, PipelineBuilder, PipelineConfig, PreprocessingPipeline, PreprocessingStats,
+    TransformStats,
+};
+
+// Re-export transformer adapters
+pub use transformer_adapters::{
+    CTEHoisterTransformer, ExpressionLifterTransformer, InOperatorLifterTransformer,
+};
+
+/// Create a standard preprocessing pipeline with all default transformers
+///
+/// The transformers are applied in this order:
+/// 1. ExpressionLifter - Lifts column alias dependencies and window functions
+/// 2. CTEHoister - Hoists nested CTEs to top level
+/// 3. InOperatorLifter - Optimizes large IN expressions
+///
+/// # Arguments
+/// * `verbose` - Whether to enable verbose logging
+///
+/// # Example
+/// ```ignore
+/// let mut pipeline = create_standard_pipeline(false);
+/// let transformed = pipeline.process(statement)?;
+/// ```
+pub fn create_standard_pipeline(verbose: bool) -> PreprocessingPipeline {
+    let config = if verbose {
+        PipelineConfig {
+            enabled: true,
+            verbose_logging: true,
+            collect_stats: true,
+            debug_ast_changes: false,
+        }
+    } else {
+        PipelineConfig::default()
+    };
+
+    let mut builder = PipelineBuilder::with_config(config);
+
+    // Add transformers in the correct order
+    // Order matters! ExpressionLifter must run before CTEHoister
+    builder = builder
+        .with_transformer(Box::new(ExpressionLifterTransformer::new()))
+        .with_transformer(Box::new(CTEHoisterTransformer::new()))
+        .with_transformer(Box::new(InOperatorLifterTransformer::new()));
+
+    builder.build()
+}

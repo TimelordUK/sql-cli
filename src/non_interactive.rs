@@ -192,6 +192,7 @@ pub struct NonInteractiveConfig {
     pub query_plan: bool,
     pub show_work_units: bool,
     pub execution_plan: bool,
+    pub show_preprocessing: bool,
     pub cte_info: bool,
     pub rewrite_analysis: bool,
     pub lift_in_expressions: bool,
@@ -405,35 +406,42 @@ pub fn execute_non_interactive(config: NonInteractiveConfig) -> Result<()> {
         behavior_config.hide_empty_columns = true;
     }
 
-    // Parse and potentially rewrite the query
+    // Parse and potentially rewrite the query using preprocessing pipeline
     let exec_start = Instant::now();
     let result = if config.lift_in_expressions {
         use crate::data::query_engine::QueryEngine;
-        use crate::query_plan::{CTEHoister, InOperatorLifter};
         use crate::sql::recursive_parser::Parser;
 
         let mut parser = Parser::new(&config.query);
         match parser.parse() {
-            Ok(mut stmt) => {
-                // Apply expression lifting for column alias dependencies
-                use crate::query_plan::ExpressionLifter;
-                let mut expr_lifter = ExpressionLifter::new();
-                let lifted = expr_lifter.lift_expressions(&mut stmt);
-                if !lifted.is_empty() {
-                    info!(
-                        "Applied expression lifting - {} CTEs generated",
-                        lifted.len()
-                    );
+            Ok(stmt) => {
+                // Apply preprocessing pipeline with all transformers
+                let mut pipeline =
+                    crate::query_plan::create_standard_pipeline(config.show_preprocessing);
+                let stmt = pipeline.process(stmt)?;
+
+                // Show statistics if requested
+                if config.show_preprocessing {
+                    eprintln!("\n{}", "=== Preprocessing Pipeline ===".to_string());
+                    eprintln!("{}", pipeline.stats().summary());
+                    for transform_stats in &pipeline.stats().transformations {
+                        eprintln!(
+                            "  {} - {:.2}ms{}",
+                            transform_stats.transformer_name,
+                            transform_stats.duration_micros as f64 / 1000.0,
+                            if transform_stats.modifications > 0 {
+                                format!(" ({} modification(s))", transform_stats.modifications)
+                            } else {
+                                String::new()
+                            }
+                        );
+                    }
+                    eprintln!();
                 }
 
-                // Apply CTE hoisting to handle nested CTEs
-                stmt = CTEHoister::hoist_ctes(stmt);
-
-                // Try to rewrite the query with IN lifting
-                let mut lifter = InOperatorLifter::new();
-                if lifter.rewrite_query(&mut stmt) {
-                    info!("Applied IN expression lifting - query rewritten with CTEs");
-
+                // Check if any transformations were applied
+                let transformers_applied = pipeline.stats().transformers_applied > 0;
+                if transformers_applied {
                     // Execute the rewritten AST directly
                     let engine = QueryEngine::with_case_insensitive(config.case_insensitive);
 

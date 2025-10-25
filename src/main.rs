@@ -222,6 +222,10 @@ fn print_help() {
         "--execution-plan".green()
     );
     println!(
+        "  {} - Show AST preprocessing transformations",
+        "--show-preprocessing".green()
+    );
+    println!(
         "  {}  - Launch action system logger (console)",
         "--keys-simple".green()
     );
@@ -425,6 +429,7 @@ struct NonInteractiveArgs {
     query_plan_arg: bool,
     show_work_units_arg: bool,
     execution_plan_arg: bool,
+    show_preprocessing_arg: bool,
     cte_info_arg: bool,
     rewrite_analysis_arg: bool,
     lift_in_arg: bool,
@@ -509,6 +514,10 @@ fn parse_non_interactive_args(args: &[String]) -> NonInteractiveArgs {
         execution_plan_arg: args
             .iter()
             .any(|arg| arg == "--execution-plan" || arg == "--execution_plan"),
+
+        show_preprocessing_arg: args
+            .iter()
+            .any(|arg| arg == "--show-preprocessing" || arg == "--show_preprocessing"),
 
         cte_info_arg: args
             .iter()
@@ -1483,6 +1492,7 @@ fn handle_non_interactive_query(
         query_plan: parsed_args.query_plan_arg,
         show_work_units: parsed_args.show_work_units_arg,
         execution_plan: parsed_args.execution_plan_arg,
+        show_preprocessing: parsed_args.show_preprocessing_arg,
         cte_info: parsed_args.cte_info_arg,
         rewrite_analysis: parsed_args.rewrite_analysis_arg,
         lift_in_expressions: parsed_args.lift_in_arg,

@@ -498,6 +498,7 @@ pub fn handle_distinct_column_flag(args: &[String]) -> Option<io::Result<()>> {
         query_plan: false,
         show_work_units: false,
         execution_plan: false,
+        show_preprocessing: false,
         cte_info: false,
         rewrite_analysis: false,
         lift_in_expressions: false,
