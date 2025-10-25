@@ -406,22 +406,50 @@ pub fn execute_non_interactive(config: NonInteractiveConfig) -> Result<()> {
         behavior_config.hide_empty_columns = true;
     }
 
-    // Parse and potentially rewrite the query using preprocessing pipeline
+    // Parse and rewrite the query using preprocessing pipeline
+    // Preprocessing now runs by default (not just with --check-in-lifting)
     let exec_start = Instant::now();
-    let result = if config.lift_in_expressions {
+    let result = {
         use crate::data::query_engine::QueryEngine;
         use crate::sql::recursive_parser::Parser;
 
         let mut parser = Parser::new(&config.query);
         match parser.parse() {
             Ok(stmt) => {
-                // Apply preprocessing pipeline with all transformers
-                let mut pipeline =
-                    crate::query_plan::create_standard_pipeline(config.show_preprocessing);
-                let stmt = pipeline.process(stmt)?;
+                // Check if query has a FROM clause - queries without FROM need special handling
+                let has_from_clause = stmt.from_table.is_some() || stmt.from_subquery.is_some() || stmt.from_function.is_some();
 
-                // Show statistics if requested
-                if config.show_preprocessing {
+                // Only apply preprocessing if there's a FROM clause
+                // (queries without FROM have special row-iteration semantics in this tool)
+                if !has_from_clause {
+                    // Use legacy path for queries without FROM
+                    let query_service =
+                        QueryExecutionService::with_behavior_config(behavior_config);
+                    if config.debug_trace {
+                        let debug_ctx = crate::debug_trace::DebugContext::new(
+                            crate::debug_trace::DebugLevel::Debug,
+                        );
+                        query_service.execute_with_debug(
+                            &config.query,
+                            Some(&dataview),
+                            Some(dataview.source()),
+                            Some(debug_ctx),
+                        )
+                    } else {
+                        query_service.execute(
+                            &config.query,
+                            Some(&dataview),
+                            Some(dataview.source()),
+                        )
+                    }
+                } else {
+                    // Apply preprocessing pipeline with all transformers
+                    let mut pipeline =
+                        crate::query_plan::create_standard_pipeline(config.show_preprocessing);
+                    let stmt = pipeline.process(stmt)?;
+
+                    // Show statistics if requested
+                    if config.show_preprocessing {
                     eprintln!("\n{}", "=== Preprocessing Pipeline ===".to_string());
                     eprintln!("{}", pipeline.stats().summary());
                     for transform_stats in &pipeline.stats().transformations {
@@ -439,10 +467,11 @@ pub fn execute_non_interactive(config: NonInteractiveConfig) -> Result<()> {
                     eprintln!();
                 }
 
-                // Check if any transformations were applied
-                let transformers_applied = pipeline.stats().transformers_applied > 0;
-                if transformers_applied {
-                    // Execute the rewritten AST directly
+                    // Check if any transformations were applied
+                    let transformers_applied = pipeline.stats().transformers_applied > 0;
+
+                    if transformers_applied {
+                    // Execute the rewritten AST directly using QueryEngine
                     let engine = QueryEngine::with_case_insensitive(config.case_insensitive);
 
                     match engine.execute_statement(dataview.source_arc(), stmt) {
@@ -488,6 +517,7 @@ pub fn execute_non_interactive(config: NonInteractiveConfig) -> Result<()> {
                         )
                     }
                 }
+                }
             }
             Err(_) => {
                 // Parse failed, execute normally and let it fail with proper error
@@ -506,23 +536,6 @@ pub fn execute_non_interactive(config: NonInteractiveConfig) -> Result<()> {
                     query_service.execute(&config.query, Some(&dataview), Some(dataview.source()))
                 }
             }
-        }
-    } else {
-        // Normal execution without lifting
-        let query_service = QueryExecutionService::with_behavior_config(behavior_config);
-
-        // Create debug context if debug trace is enabled
-        if config.debug_trace {
-            let debug_ctx =
-                crate::debug_trace::DebugContext::new(crate::debug_trace::DebugLevel::Debug);
-            query_service.execute_with_debug(
-                &config.query,
-                Some(&dataview),
-                Some(dataview.source()),
-                Some(debug_ctx),
-            )
-        } else {
-            query_service.execute(&config.query, Some(&dataview), Some(dataview.source()))
         }
     }?;
     let exec_time = exec_start.elapsed();
