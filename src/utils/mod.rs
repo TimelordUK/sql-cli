@@ -12,3 +12,4 @@ pub mod dual_logging;
 pub mod logging;
 pub mod memory_audit;
 pub mod memory_tracker;
+pub mod string_utils;

@@ -1074,7 +1074,7 @@ impl<'a> AstFormatter<'a> {
                 write!(
                     result,
                     " {} {} {}",
-                    condition.left_column,
+                    self.format_expression(&condition.left_expr),
                     self.format_join_operator(&condition.operator),
                     self.format_expression(&condition.right_expr)
                 )

@@ -16,6 +16,7 @@ use crate::services::query_execution_service::QueryExecutionService;
 use crate::sql::parser::ast::{CTEType, TableSource, CTE};
 use crate::sql::recursive_parser::Parser;
 use crate::sql::script_parser::{ScriptParser, ScriptResult};
+use crate::utils::string_utils::display_width;
 
 /// Check if a query references temporary tables (starting with #)
 /// Temporary tables are only valid in script mode
@@ -1309,35 +1310,6 @@ fn output_json_structured<W: Write>(
     writeln!(writer, "{json}")?;
 
     Ok(())
-}
-
-/// Strip ANSI escape codes from a string and return the display width
-/// This handles ANSI SGR (Select Graphic Rendition) codes like colors and styles
-fn display_width(s: &str) -> usize {
-    let mut result = String::new();
-    let mut chars = s.chars().peekable();
-
-    while let Some(ch) = chars.next() {
-        if ch == '\x1b' {
-            // Check for ANSI escape sequence
-            if chars.peek() == Some(&'[') {
-                chars.next(); // consume '['
-                              // Skip until we find a letter (the command character)
-                while let Some(&next_ch) = chars.peek() {
-                    chars.next();
-                    if next_ch.is_ascii_alphabetic() {
-                        break;
-                    }
-                }
-            } else {
-                result.push(ch);
-            }
-        } else {
-            result.push(ch);
-        }
-    }
-
-    result.chars().count()
 }
 
 /// Output results using the old custom ASCII table format (for Nvim compatibility)

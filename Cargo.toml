@@ -1,6 +1,6 @@
 [package]
 name = "sql-cli"
-version = "1.62.0"
+version = "1.63.0"
 edition = "2021"
 autobins = false
 autoexamples = false
@@ -85,6 +85,7 @@ figlet-rs = "0.1"
 redis = { version = "0.23", optional = true }
 rmp-serde = "1.1"
 serde_yaml = "0.9"
+unicode-width = "0.1"
 
 [features]
 default = ["redis-cache"]

@@ -5,6 +5,84 @@ All notable changes to SQL CLI will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.63.0] - 2025-10-25
+
+### ✨ Major Features
+
+#### **JOIN Expression Support (Phase 2) - LEFT Side Expressions**
+Complete the JOIN expression support by enabling functions and expressions on the **LEFT side** of JOIN conditions! This mirrors Phase 1 functionality and enables expressions on **BOTH sides** simultaneously.
+
+**Phase 2 Capabilities**:
+- **LEFT-side TRIM()** - `JOIN table ON TRIM(table1.name) = table2.name`
+- **LEFT-side UPPER()/LOWER()** - `JOIN table ON UPPER(table1.code) = table2.CODE`
+- **LEFT-side SUBSTRING()** - `JOIN table ON SUBSTRING(table1.id, 0, 3) = table2.code`
+- **LEFT-side nested functions** - `JOIN table ON UPPER(TRIM(table1.name)) = table2.name`
+- **LEFT-side arithmetic** - `JOIN table ON table1.value / 10 = table2.bin_id`
+- **String concatenation** - `JOIN table ON table1.prefix || '-' || table1.suffix = table2.code`
+
+**BOTH Sides with Expressions** (Phase 1 + Phase 2 Combined!):
+```sql
+-- Normalize both sides for matching
+SELECT *
+FROM customers
+JOIN accounts ON LOWER(TRIM(customers.email)) = LOWER(TRIM(accounts.email));
+```
+
+**Real-World Examples**:
+```sql
+-- Case-insensitive matching with left-side normalization
+SELECT *
+FROM products
+JOIN inventory ON UPPER(products.code) = inventory.CODE;
+
+-- Extract prefix from left side for matching
+SELECT *
+FROM orders
+JOIN regions ON SUBSTRING(orders.order_id, 0, 3) = regions.code;
+
+-- Multi-condition with left-side expression
+SELECT *
+FROM sales
+JOIN pricing
+    ON TRIM(sales.product) = pricing.product
+    AND sales.region = pricing.region;
+```
+
+**Performance**:
+- Smart algorithm selection: hash join when both sides are simple columns
+- Nested loop with expression evaluation when either side has expressions
+- Expression evaluation: ~2-3ms for typical datasets with expressions on both sides
+
+**Files**:
+- Example: `examples/join_left_expression_demo.sql` (8 working examples)
+- Docs: `docs/JOIN_EXPRESSION_PHASE2_COMPLETE.md`
+- Plan: `docs/JOIN_EXPRESSION_PHASE2_PLAN.md`
+
+### 🔧 Technical Changes
+
+**AST Structure**:
+- Changed `SingleJoinCondition.left_column: String` → `left_expr: SqlExpression`
+- Both sides now support full expression trees
+
+**Parser**:
+- Updated to parse left side as expression using `parse_additive()`
+- Critical fix: use `parse_additive()` instead of `parse_expression()` to avoid consuming comparison operators
+
+**Executor**:
+- Updated algorithm selection to check both sides for complexity
+- Both `nested_loop_join_inner_multi` and `nested_loop_join_left_multi` now evaluate left expressions
+- Hash join only used when both sides are simple columns
+
+**Test Results**:
+- ✅ 457 library tests passing
+- ✅ 397 integration tests passing
+- ✅ All 8 demo examples working
+
+### 🐛 Bug Fixes
+- Fixed parser precedence issue where comparison operators were consumed too early
+
+---
+
 ## [1.62.0] - 2025-10-22
 
 ### ✨ Major Features

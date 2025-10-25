@@ -1818,8 +1818,9 @@ impl Parser {
     }
 
     fn parse_single_join_condition(&mut self) -> Result<SingleJoinCondition, String> {
-        // Parse left column (can include table prefix)
-        let left_column = self.parse_column_reference()?;
+        // Parse left side as additive expression (stops before comparison operators)
+        // This allows the comparison operator to be explicitly parsed by this function
+        let left_expr = self.parse_additive()?;
 
         // Parse operator
         let operator = match &self.current_token {
@@ -1833,11 +1834,11 @@ impl Parser {
         };
         self.advance();
 
-        // Parse right side as expression (supports functions, columns, etc.)
-        let right_expr = self.parse_expression()?;
+        // Parse right side as additive expression (stops before comparison operators)
+        let right_expr = self.parse_additive()?;
 
         Ok(SingleJoinCondition {
-            left_column,
+            left_expr,
             operator,
             right_expr,
         })

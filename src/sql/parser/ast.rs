@@ -481,8 +481,8 @@ pub enum JoinOperator {
 /// Single join condition
 #[derive(Debug, Clone)]
 pub struct SingleJoinCondition {
-    pub left_column: String, // Column from left table (can include table prefix)
-    pub operator: JoinOperator, // Join operator
+    pub left_expr: SqlExpression, // Expression from left table (can be column, function call, etc.)
+    pub operator: JoinOperator,   // Join operator
     pub right_expr: SqlExpression, // Expression from right table (can be column, function call, etc.)
 }
 
