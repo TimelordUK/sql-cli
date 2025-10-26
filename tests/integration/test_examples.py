@@ -224,12 +224,13 @@ def run_test(cli_path: str, sql_file: Path, expectations_dir: Path, result: Test
 
     # Determine test mode
     is_formal = expectation_file.exists()
-    test_mode = "FORMAL" if is_formal else "SMOKE"
 
     if is_formal:
         result.formal_tests += 1
+        test_mode = f"FORMAL (validating against expectations/{base_name}.json)"
     else:
         result.smoke_tests += 1
+        test_mode = "SMOKE"
 
     print(f"[{test_mode}] {base_name} ... ", end='', flush=True)
 
@@ -267,13 +268,13 @@ def run_test(cli_path: str, sql_file: Path, expectations_dir: Path, result: Test
         # Compare
         matches, diff = compare_json(expected_json, actual_json)
         if matches:
-            print(f"{Color.GREEN}✓ PASS{Color.NC}")
+            print(f"{Color.GREEN}✓ PASS (JSON validated){Color.NC}")
             result.passed += 1
             result.passed_tests.append(base_name)
         else:
-            print(f"{Color.RED}✗ FAIL - Output mismatch{Color.NC}")
+            print(f"{Color.RED}✗ FAIL - JSON output mismatch{Color.NC}")
             result.failed += 1
-            result.failed_tests.append((base_name, "Output mismatch"))
+            result.failed_tests.append((base_name, "JSON output mismatch"))
             if '--verbose' in sys.argv and diff:
                 print(f"{Color.YELLOW}{diff}{Color.NC}")
     else:
