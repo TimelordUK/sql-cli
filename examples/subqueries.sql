@@ -1,44 +1,64 @@
 -- #! ../data/periodic_table.csv
 -- SQL CLI Subquery Examples
-
 -- ============================================
 -- SCALAR SUBQUERIES (Return single value)
 -- ============================================
-
 -- Find elements discovered in the most recent year
-SELECT Element, Symbol, Year
+SELECT
+ Element, Symbol, Year
 FROM periodic_table
-WHERE Year = (SELECT MAX(Year) FROM periodic_table);
+WHERE Year = (
+    SELECT
+        MAX(Year) AS expr_1
+    FROM periodic_table
+);
 
 GO
 -- Find elements discovered in the earliest year
-SELECT Element, Symbol, Year
+SELECT
+Element, Symbol, Year
 FROM periodic_table
-WHERE Year = (SELECT MIN(Year) FROM periodic_table);
+WHERE Year = (
+    SELECT
+        MIN(Year) AS expr_1
+    FROM periodic_table
+);
 GO
 
 -- Find elements with atomic mass above average
-SELECT Element, Symbol, AtomicMass
+SELECT
+ Element, Symbol, AtomicMass
 FROM periodic_table
-WHERE AtomicMass > (SELECT AVG(AtomicMass) FROM periodic_table)
+WHERE AtomicMass > (
+    SELECT
+        AVG(AtomicMass) AS expr_1
+    FROM periodic_table
+)
 ORDER BY AtomicMass DESC
 LIMIT 10;
 GO
 
 -- Count elements discovered after median year
-SELECT COUNT(*) as modern_elements
+SELECT
+    COUNT('*') AS modern_elements
 FROM periodic_table
-WHERE Year > (SELECT AVG(Year) FROM periodic_table WHERE Year IS NOT NULL);
+WHERE Year > (
+    SELECT
+        AVG(Year) AS expr_1
+    FROM periodic_table
+    WHERE Year IS NOT NULL
+);
 GO
 
 -- ============================================
 -- IN SUBQUERIES (Check membership in set)
 -- ============================================
-
 -- Find all noble gases (Group 18 elements)
 SELECT Element, Symbol, AtomicNumber
 FROM periodic_table
-WHERE Element IN (SELECT Element FROM periodic_table WHERE Group = 18)
+WHERE Element IN (SELECT Element
+FROM periodic_table
+WHERE Group = 18)
 ORDER BY AtomicNumber;
 GO
 
@@ -54,10 +74,15 @@ ORDER BY Year DESC;
 GO
 
 -- Find elements in the same period as Gold
-SELECT Element, Symbol, Period
+SELECT
+ Element, Symbol, Period
 FROM periodic_table
-WHERE Period IN (SELECT Period FROM periodic_table WHERE Element = 'Gold')
-ORDER BY AtomicNumber;
+WHERE Period IN (
+    SELECT Period
+    FROM periodic_table
+    WHERE Element = 'Gold'
+)
+ORDER BY AtomicNumber ASC;
 GO
 
 -- ============================================
@@ -113,6 +138,7 @@ ORDER BY Year, AtomicNumber;
 GO
 
 -- Find the heaviest element from each period
+
 -- SELECT p1.Period, p1.Element, p1.AtomicMass
 -- FROM periodic_table p1
 -- WHERE p1.AtomicMass = (

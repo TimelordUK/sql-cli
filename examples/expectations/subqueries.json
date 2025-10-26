@@ -1,0 +1,858 @@
+[
+  [
+    {
+      "Element": "Moscovium",
+      "Symbol": "Mc",
+      "Year": 2010
+    },
+    {
+      "Element": "Tennessine",
+      "Symbol": "Ts",
+      "Year": 2010
+    }
+  ],
+  [
+    {
+      "Element": "Arsenic",
+      "Symbol": "As",
+      "Year": 1250
+    }
+  ],
+  [
+    {
+      "AtomicMass": 295.0,
+      "Element": "Tennessine",
+      "Symbol": "Ts"
+    },
+    {
+      "AtomicMass": 294.0,
+      "Element": "Oganesson",
+      "Symbol": "Og"
+    },
+    {
+      "AtomicMass": 292.0,
+      "Element": "Livermorium",
+      "Symbol": "Lv"
+    },
+    {
+      "AtomicMass": 289.0,
+      "Element": "Flerovium",
+      "Symbol": "Fl"
+    },
+    {
+      "AtomicMass": 288.0,
+      "Element": "Moscovium",
+      "Symbol": "Mc"
+    },
+    {
+      "AtomicMass": 285.0,
+      "Element": "Copernicium ",
+      "Symbol": "Cn "
+    },
+    {
+      "AtomicMass": 284.0,
+      "Element": "Nihonium",
+      "Symbol": "Nh"
+    },
+    {
+      "AtomicMass": 272.0,
+      "Element": "Roentgenium ",
+      "Symbol": "Rg "
+    },
+    {
+      "AtomicMass": 271.0,
+      "Element": "Darmstadtium ",
+      "Symbol": "Ds "
+    },
+    {
+      "AtomicMass": 268.0,
+      "Element": "Meitnerium",
+      "Symbol": "Mt"
+    }
+  ],
+  [
+    {
+      "modern_elements": 56
+    }
+  ],
+  [
+    {
+      "AtomicNumber": 2,
+      "Element": "Helium",
+      "Symbol": "He"
+    },
+    {
+      "AtomicNumber": 10,
+      "Element": "Neon",
+      "Symbol": "Ne"
+    },
+    {
+      "AtomicNumber": 18,
+      "Element": "Argon",
+      "Symbol": "Ar"
+    },
+    {
+      "AtomicNumber": 36,
+      "Element": "Krypton",
+      "Symbol": "Kr"
+    },
+    {
+      "AtomicNumber": 54,
+      "Element": "Xenon",
+      "Symbol": "Xe"
+    },
+    {
+      "AtomicNumber": 86,
+      "Element": "Radon",
+      "Symbol": "Rn"
+    },
+    {
+      "AtomicNumber": 118,
+      "Element": "Oganesson",
+      "Symbol": "Og"
+    }
+  ],
+  [
+    {
+      "Element": "Moscovium",
+      "Symbol": "Mc",
+      "Year": 2010
+    },
+    {
+      "Element": "Tennessine",
+      "Symbol": "Ts",
+      "Year": 2010
+    },
+    {
+      "Element": "Oganesson",
+      "Symbol": "Og",
+      "Year": 2006
+    },
+    {
+      "Element": "Nihonium",
+      "Symbol": "Nh",
+      "Year": 2004
+    }
+  ],
+  [
+    {
+      "Element": "Cesium",
+      "Period": 6,
+      "Symbol": "Cs"
+    },
+    {
+      "Element": "Barium",
+      "Period": 6,
+      "Symbol": "Ba"
+    },
+    {
+      "Element": "Lanthanum",
+      "Period": 6,
+      "Symbol": "La"
+    },
+    {
+      "Element": "Cerium",
+      "Period": 6,
+      "Symbol": "Ce"
+    },
+    {
+      "Element": "Praseodymium",
+      "Period": 6,
+      "Symbol": "Pr"
+    },
+    {
+      "Element": "Neodymium",
+      "Period": 6,
+      "Symbol": "Nd"
+    },
+    {
+      "Element": "Promethium",
+      "Period": 6,
+      "Symbol": "Pm"
+    },
+    {
+      "Element": "Samarium",
+      "Period": 6,
+      "Symbol": "Sm"
+    },
+    {
+      "Element": "Europium",
+      "Period": 6,
+      "Symbol": "Eu"
+    },
+    {
+      "Element": "Gadolinium",
+      "Period": 6,
+      "Symbol": "Gd"
+    },
+    {
+      "Element": "Terbium",
+      "Period": 6,
+      "Symbol": "Tb"
+    },
+    {
+      "Element": "Dysprosium",
+      "Period": 6,
+      "Symbol": "Dy"
+    },
+    {
+      "Element": "Holmium",
+      "Period": 6,
+      "Symbol": "Ho"
+    },
+    {
+      "Element": "Erbium",
+      "Period": 6,
+      "Symbol": "Er"
+    },
+    {
+      "Element": "Thulium",
+      "Period": 6,
+      "Symbol": "Tm"
+    },
+    {
+      "Element": "Ytterbium",
+      "Period": 6,
+      "Symbol": "Yb"
+    },
+    {
+      "Element": "Lutetium",
+      "Period": 6,
+      "Symbol": "Lu"
+    },
+    {
+      "Element": "Hafnium",
+      "Period": 6,
+      "Symbol": "Hf"
+    },
+    {
+      "Element": "Tantalum",
+      "Period": 6,
+      "Symbol": "Ta"
+    },
+    {
+      "Element": "Wolfram",
+      "Period": 6,
+      "Symbol": "W"
+    },
+    {
+      "Element": "Rhenium",
+      "Period": 6,
+      "Symbol": "Re"
+    },
+    {
+      "Element": "Osmium",
+      "Period": 6,
+      "Symbol": "Os"
+    },
+    {
+      "Element": "Iridium",
+      "Period": 6,
+      "Symbol": "Ir"
+    },
+    {
+      "Element": "Platinum",
+      "Period": 6,
+      "Symbol": "Pt"
+    },
+    {
+      "Element": "Gold",
+      "Period": 6,
+      "Symbol": "Au"
+    },
+    {
+      "Element": "Mercury",
+      "Period": 6,
+      "Symbol": "Hg"
+    },
+    {
+      "Element": "Thallium",
+      "Period": 6,
+      "Symbol": "Tl"
+    },
+    {
+      "Element": "Lead",
+      "Period": 6,
+      "Symbol": "Pb"
+    },
+    {
+      "Element": "Bismuth",
+      "Period": 6,
+      "Symbol": "Bi"
+    },
+    {
+      "Element": "Polonium",
+      "Period": 6,
+      "Symbol": "Po"
+    },
+    {
+      "Element": "Astatine",
+      "Period": 6,
+      "Symbol": "At"
+    },
+    {
+      "Element": "Radon",
+      "Period": 6,
+      "Symbol": "Rn"
+    }
+  ],
+  [
+    {
+      "stable_elements": 81
+    }
+  ],
+  [
+    {
+      "Element": "Arsenic",
+      "Symbol": "As",
+      "Year": 1250
+    },
+    {
+      "Element": "Phosphorus",
+      "Symbol": "P",
+      "Year": 1669
+    },
+    {
+      "Element": "Cobalt",
+      "Symbol": "Co",
+      "Year": 1735
+    },
+    {
+      "Element": "Platinum",
+      "Symbol": "Pt",
+      "Year": 1735
+    },
+    {
+      "Element": "Nickel",
+      "Symbol": "Ni",
+      "Year": 1751
+    },
+    {
+      "Element": "Bismuth",
+      "Symbol": "Bi",
+      "Year": 1753
+    },
+    {
+      "Element": "Magnesium",
+      "Symbol": "Mg",
+      "Year": 1755
+    },
+    {
+      "Element": "Hydrogen",
+      "Symbol": "H",
+      "Year": 1766
+    },
+    {
+      "Element": "Nitrogen",
+      "Symbol": "N",
+      "Year": 1772
+    },
+    {
+      "Element": "Oxygen",
+      "Symbol": "O",
+      "Year": 1774
+    },
+    {
+      "Element": "Chlorine",
+      "Symbol": "Cl",
+      "Year": 1774
+    },
+    {
+      "Element": "Manganese",
+      "Symbol": "Mn",
+      "Year": 1774
+    },
+    {
+      "Element": "Molybdenum",
+      "Symbol": "Mo",
+      "Year": 1778
+    },
+    {
+      "Element": "Tellurium",
+      "Symbol": "Te",
+      "Year": 1782
+    },
+    {
+      "Element": "Wolfram",
+      "Symbol": "W",
+      "Year": 1783
+    },
+    {
+      "Element": "Zirconium",
+      "Symbol": "Zr",
+      "Year": 1789
+    },
+    {
+      "Element": "Titanium",
+      "Symbol": "Ti",
+      "Year": 1791
+    },
+    {
+      "Element": "Yttrium",
+      "Symbol": "Y",
+      "Year": 1794
+    },
+    {
+      "Element": "Chromium",
+      "Symbol": "Cr",
+      "Year": 1797
+    },
+    {
+      "Element": "Beryllium",
+      "Symbol": "Be",
+      "Year": 1798
+    },
+    {
+      "Element": "Vanadium",
+      "Symbol": "V",
+      "Year": 1801
+    },
+    {
+      "Element": "Niobium",
+      "Symbol": "Nb",
+      "Year": 1801
+    },
+    {
+      "Element": "Tantalum",
+      "Symbol": "Ta",
+      "Year": 1801
+    },
+    {
+      "Element": "Rhodium",
+      "Symbol": "Rh",
+      "Year": 1803
+    },
+    {
+      "Element": "Palladium",
+      "Symbol": "Pd",
+      "Year": 1803
+    },
+    {
+      "Element": "Cerium",
+      "Symbol": "Ce",
+      "Year": 1803
+    },
+    {
+      "Element": "Osmium",
+      "Symbol": "Os",
+      "Year": 1803
+    },
+    {
+      "Element": "Iridium",
+      "Symbol": "Ir",
+      "Year": 1804
+    },
+    {
+      "Element": "Sodium",
+      "Symbol": "Na",
+      "Year": 1807
+    },
+    {
+      "Element": "Potassium",
+      "Symbol": "K",
+      "Year": 1807
+    },
+    {
+      "Element": "Boron",
+      "Symbol": "B",
+      "Year": 1808
+    },
+    {
+      "Element": "Calcium",
+      "Symbol": "Ca",
+      "Year": 1808
+    },
+    {
+      "Element": "Strontium",
+      "Symbol": "Sr",
+      "Year": 1808
+    },
+    {
+      "Element": "Barium",
+      "Symbol": "Ba",
+      "Year": 1808
+    },
+    {
+      "Element": "Iodine",
+      "Symbol": "I",
+      "Year": 1811
+    },
+    {
+      "Element": "Lithium",
+      "Symbol": "Li",
+      "Year": 1817
+    },
+    {
+      "Element": "Selenium",
+      "Symbol": "Se",
+      "Year": 1817
+    },
+    {
+      "Element": "Cadmium",
+      "Symbol": "Cd",
+      "Year": 1817
+    },
+    {
+      "Element": "Silicon",
+      "Symbol": "Si",
+      "Year": 1824
+    },
+    {
+      "Element": "Bromine",
+      "Symbol": "Br",
+      "Year": 1826
+    },
+    {
+      "Element": "Aluminum",
+      "Symbol": "Al",
+      "Year": 1827
+    },
+    {
+      "Element": "Thorium",
+      "Symbol": "Th",
+      "Year": 1828
+    },
+    {
+      "Element": "Lanthanum",
+      "Symbol": "La",
+      "Year": 1839
+    },
+    {
+      "Element": "Uranium",
+      "Symbol": "U",
+      "Year": 1841
+    },
+    {
+      "Element": "Terbium",
+      "Symbol": "Tb",
+      "Year": 1843
+    },
+    {
+      "Element": "Erbium",
+      "Symbol": "Er",
+      "Year": 1843
+    },
+    {
+      "Element": "Ruthenium",
+      "Symbol": "Ru",
+      "Year": 1844
+    },
+    {
+      "Element": "Cesium",
+      "Symbol": "Cs",
+      "Year": 1860
+    },
+    {
+      "Element": "Rubidium",
+      "Symbol": "Rb",
+      "Year": 1861
+    },
+    {
+      "Element": "Thallium",
+      "Symbol": "Tl",
+      "Year": 1861
+    },
+    {
+      "Element": "Indium",
+      "Symbol": "In",
+      "Year": 1863
+    },
+    {
+      "Element": "Helium",
+      "Symbol": "He",
+      "Year": 1868
+    },
+    {
+      "Element": "Gallium",
+      "Symbol": "Ga",
+      "Year": 1875
+    },
+    {
+      "Element": "Scandium",
+      "Symbol": "Sc",
+      "Year": 1878
+    },
+    {
+      "Element": "Holmium",
+      "Symbol": "Ho",
+      "Year": 1878
+    },
+    {
+      "Element": "Ytterbium",
+      "Symbol": "Yb",
+      "Year": 1878
+    },
+    {
+      "Element": "Samarium",
+      "Symbol": "Sm",
+      "Year": 1879
+    },
+    {
+      "Element": "Thulium",
+      "Symbol": "Tm",
+      "Year": 1879
+    },
+    {
+      "Element": "Gadolinium",
+      "Symbol": "Gd",
+      "Year": 1880
+    },
+    {
+      "Element": "Praseodymium",
+      "Symbol": "Pr",
+      "Year": 1885
+    },
+    {
+      "Element": "Neodymium",
+      "Symbol": "Nd",
+      "Year": 1885
+    },
+    {
+      "Element": "Fluorine",
+      "Symbol": "F",
+      "Year": 1886
+    },
+    {
+      "Element": "Germanium",
+      "Symbol": "Ge",
+      "Year": 1886
+    },
+    {
+      "Element": "Dysprosium",
+      "Symbol": "Dy",
+      "Year": 1886
+    },
+    {
+      "Element": "Argon",
+      "Symbol": "Ar",
+      "Year": 1894
+    },
+    {
+      "Element": "Neon",
+      "Symbol": "Ne",
+      "Year": 1898
+    },
+    {
+      "Element": "Krypton",
+      "Symbol": "Kr",
+      "Year": 1898
+    },
+    {
+      "Element": "Xenon",
+      "Symbol": "Xe",
+      "Year": 1898
+    },
+    {
+      "Element": "Polonium",
+      "Symbol": "Po",
+      "Year": 1898
+    },
+    {
+      "Element": "Radium",
+      "Symbol": "Ra",
+      "Year": 1898
+    },
+    {
+      "Element": "Actinium",
+      "Symbol": "Ac",
+      "Year": 1899
+    },
+    {
+      "Element": "Livermorium",
+      "Symbol": "Lv",
+      "Year": 2000
+    },
+    {
+      "Element": "Nihonium",
+      "Symbol": "Nh",
+      "Year": 2004
+    },
+    {
+      "Element": "Oganesson",
+      "Symbol": "Og",
+      "Year": 2006
+    },
+    {
+      "Element": "Moscovium",
+      "Symbol": "Mc",
+      "Year": 2010
+    },
+    {
+      "Element": "Tennessine",
+      "Symbol": "Ts",
+      "Year": 2010
+    }
+  ],
+  [
+    {
+      "Element": "Beryllium",
+      "Group": 2,
+      "Symbol": "Be"
+    },
+    {
+      "Element": "Magnesium",
+      "Group": 2,
+      "Symbol": "Mg"
+    },
+    {
+      "Element": "Aluminum",
+      "Group": 13,
+      "Symbol": "Al"
+    },
+    {
+      "Element": "Calcium",
+      "Group": 2,
+      "Symbol": "Ca"
+    },
+    {
+      "Element": "Scandium",
+      "Group": 3,
+      "Symbol": "Sc"
+    },
+    {
+      "Element": "Titanium",
+      "Group": 4,
+      "Symbol": "Ti"
+    },
+    {
+      "Element": "Vanadium",
+      "Group": 5,
+      "Symbol": "V"
+    },
+    {
+      "Element": "Chromium",
+      "Group": 6,
+      "Symbol": "Cr"
+    },
+    {
+      "Element": "Manganese",
+      "Group": 7,
+      "Symbol": "Mn"
+    },
+    {
+      "Element": "Iron",
+      "Group": 8,
+      "Symbol": "Fe"
+    },
+    {
+      "Element": "Cobalt",
+      "Group": 9,
+      "Symbol": "Co"
+    },
+    {
+      "Element": "Nickel",
+      "Group": 10,
+      "Symbol": "Ni"
+    },
+    {
+      "Element": "Copper",
+      "Group": 11,
+      "Symbol": "Cu"
+    },
+    {
+      "Element": "Zinc",
+      "Group": 12,
+      "Symbol": "Zn"
+    },
+    {
+      "Element": "Gallium",
+      "Group": 13,
+      "Symbol": "Ga"
+    },
+    {
+      "Element": "Strontium",
+      "Group": 2,
+      "Symbol": "Sr"
+    },
+    {
+      "Element": "Yttrium",
+      "Group": 3,
+      "Symbol": "Y"
+    },
+    {
+      "Element": "Zirconium",
+      "Group": 4,
+      "Symbol": "Zr"
+    },
+    {
+      "Element": "Niobium",
+      "Group": 5,
+      "Symbol": "Nb"
+    },
+    {
+      "Element": "Molybdenum",
+      "Group": 6,
+      "Symbol": "Mo"
+    }
+  ],
+  [
+    {
+      "Element": "Helium",
+      "Group": 18,
+      "Symbol": "He",
+      "Year": 1868
+    },
+    {
+      "Element": "Argon",
+      "Group": 18,
+      "Symbol": "Ar",
+      "Year": 1894
+    },
+    {
+      "Element": "Neon",
+      "Group": 18,
+      "Symbol": "Ne",
+      "Year": 1898
+    },
+    {
+      "Element": "Krypton",
+      "Group": 18,
+      "Symbol": "Kr",
+      "Year": 1898
+    },
+    {
+      "Element": "Xenon",
+      "Group": 18,
+      "Symbol": "Xe",
+      "Year": 1898
+    },
+    {
+      "Element": "Polonium",
+      "Group": 16,
+      "Symbol": "Po",
+      "Year": 1898
+    },
+    {
+      "Element": "Radium",
+      "Group": 2,
+      "Symbol": "Ra",
+      "Year": 1898
+    },
+    {
+      "Element": "Radon",
+      "Group": 18,
+      "Symbol": "Rn",
+      "Year": 1900
+    },
+    {
+      "Element": "Oganesson",
+      "Group": 18,
+      "Symbol": "Og",
+      "Year": 2006
+    }
+  ],
+  [
+    {
+      "Phase": "solid",
+      "count": 77
+    },
+    {
+      "Phase": "gas",
+      "count": 11
+    },
+    {
+      "Phase": "liq",
+      "count": 2
+    }
+  ]
+]

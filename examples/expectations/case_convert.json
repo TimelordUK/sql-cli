@@ -1,0 +1,397 @@
+[
+  [
+    {
+      "camel_case": "userId",
+      "constant_case": "USER_ID",
+      "id": 1,
+      "kebab_case": "user-id",
+      "original_text": "userId",
+      "pascal_case": "UserId",
+      "snake_case": "user_id"
+    },
+    {
+      "camel_case": "firstName",
+      "constant_case": "FIRST_NAME",
+      "id": 2,
+      "kebab_case": "first-name",
+      "original_text": "first_name",
+      "pascal_case": "FirstName",
+      "snake_case": "first_name"
+    },
+    {
+      "camel_case": "lastName",
+      "constant_case": "LAST_NAME",
+      "id": 3,
+      "kebab_case": "last-name",
+      "original_text": "LastName",
+      "pascal_case": "LastName",
+      "snake_case": "last_name"
+    },
+    {
+      "camel_case": "phoneNumber",
+      "constant_case": "PHONE_NUMBER",
+      "id": 4,
+      "kebab_case": "phone-number",
+      "original_text": "phone-number",
+      "pascal_case": "PhoneNumber",
+      "snake_case": "phone_number"
+    },
+    {
+      "camel_case": "emailAddress",
+      "constant_case": "EMAIL_ADDRESS",
+      "id": 5,
+      "kebab_case": "email-address",
+      "original_text": "EMAIL_ADDRESS",
+      "pascal_case": "EmailAddress",
+      "snake_case": "email_address"
+    },
+    {
+      "camel_case": "httPresponse",
+      "constant_case": "HTT_PRESPONSE",
+      "id": 6,
+      "kebab_case": "htt-presponse",
+      "original_text": "HTTPResponse",
+      "pascal_case": "HttPresponse",
+      "snake_case": "htt_presponse"
+    },
+    {
+      "camel_case": "xmLhttpRequest",
+      "constant_case": "XM_LHTTP_REQUEST",
+      "id": 7,
+      "kebab_case": "xm-lhttp-request",
+      "original_text": "XMLHttpRequest",
+      "pascal_case": "XmLhttpRequest",
+      "snake_case": "xm_lhttp_request"
+    },
+    {
+      "camel_case": "apiV2",
+      "constant_case": "API_V2",
+      "id": 8,
+      "kebab_case": "api-v2",
+      "original_text": "api_v2",
+      "pascal_case": "ApiV2",
+      "snake_case": "api_v2"
+    },
+    {
+      "camel_case": "v2Api",
+      "constant_case": "V2_API",
+      "id": 9,
+      "kebab_case": "v2-api",
+      "original_text": "v2API",
+      "pascal_case": "V2Api",
+      "snake_case": "v2_api"
+    },
+    {
+      "camel_case": "userProfileSettings",
+      "constant_case": "USER_PROFILE_SETTINGS",
+      "id": 10,
+      "kebab_case": "user-profile-settings",
+      "original_text": "user-profile-settings",
+      "pascal_case": "UserProfileSettings",
+      "snake_case": "user_profile_settings"
+    }
+  ],
+  [
+    {
+      "csharp_style": "UserId",
+      "description": "Common camelCase field",
+      "js_style": "userId",
+      "original_text": "userId",
+      "python_style": "user_id"
+    },
+    {
+      "csharp_style": "FirstName",
+      "description": "Typical snake_case column",
+      "js_style": "firstName",
+      "original_text": "first_name",
+      "python_style": "first_name"
+    },
+    {
+      "csharp_style": "LastName",
+      "description": "PascalCase property",
+      "js_style": "lastName",
+      "original_text": "LastName",
+      "python_style": "last_name"
+    },
+    {
+      "csharp_style": "CreatedAt",
+      "description": "Timestamp snake_case",
+      "js_style": "createdAt",
+      "original_text": "created_at",
+      "python_style": "created_at"
+    },
+    {
+      "csharp_style": "UpdatedAt",
+      "description": "Timestamp PascalCase",
+      "js_style": "updatedAt",
+      "original_text": "UpdatedAt",
+      "python_style": "updated_at"
+    }
+  ],
+  [
+    {
+      "description": "Acronym with word",
+      "original_text": "HTTPResponse",
+      "to_camel": "httPresponse",
+      "to_snake": "htt_presponse"
+    },
+    {
+      "description": "Multiple acronyms",
+      "original_text": "XMLHttpRequest",
+      "to_camel": "xmLhttpRequest",
+      "to_snake": "xm_lhttp_request"
+    },
+    {
+      "description": "Version with acronym",
+      "original_text": "v2API",
+      "to_camel": "v2Api",
+      "to_snake": "v2_api"
+    },
+    {
+      "description": "Acronym combination",
+      "original_text": "HTMLParser",
+      "to_camel": "htmLparser",
+      "to_snake": "htm_lparser"
+    }
+  ],
+  [
+    {
+      "class_property": "UserId",
+      "database_column": "userId",
+      "json_field": "userId",
+      "url_slug": "user-id"
+    },
+    {
+      "class_property": "FirstName",
+      "database_column": "first_name",
+      "json_field": "firstName",
+      "url_slug": "first-name"
+    },
+    {
+      "class_property": "LastName",
+      "database_column": "LastName",
+      "json_field": "lastName",
+      "url_slug": "last-name"
+    },
+    {
+      "class_property": "PhoneNumber",
+      "database_column": "phone-number",
+      "json_field": "phoneNumber",
+      "url_slug": "phone-number"
+    },
+    {
+      "class_property": "EmailAddress",
+      "database_column": "EMAIL_ADDRESS",
+      "json_field": "emailAddress",
+      "url_slug": "email-address"
+    },
+    {
+      "class_property": "HttPresponse",
+      "database_column": "HTTPResponse",
+      "json_field": "httPresponse",
+      "url_slug": "htt-presponse"
+    },
+    {
+      "class_property": "XmLhttpRequest",
+      "database_column": "XMLHttpRequest",
+      "json_field": "xmLhttpRequest",
+      "url_slug": "xm-lhttp-request"
+    },
+    {
+      "class_property": "ApiV2",
+      "database_column": "api_v2",
+      "json_field": "apiV2",
+      "url_slug": "api-v2"
+    },
+    {
+      "class_property": "V2Api",
+      "database_column": "v2API",
+      "json_field": "v2Api",
+      "url_slug": "v2-api"
+    },
+    {
+      "class_property": "UserProfileSettings",
+      "database_column": "user-profile-settings",
+      "json_field": "userProfileSettings",
+      "url_slug": "user-profile-settings"
+    },
+    {
+      "class_property": "MaximumRetryCount",
+      "database_column": "MAXIMUM_RETRY_COUNT",
+      "json_field": "maximumRetryCount",
+      "url_slug": "maximum-retry-count"
+    },
+    {
+      "class_property": "IsActive",
+      "database_column": "isActive",
+      "json_field": "isActive",
+      "url_slug": "is-active"
+    },
+    {
+      "class_property": "CreatedAt",
+      "database_column": "created_at",
+      "json_field": "createdAt",
+      "url_slug": "created-at"
+    },
+    {
+      "class_property": "UpdatedAt",
+      "database_column": "UpdatedAt",
+      "json_field": "updatedAt",
+      "url_slug": "updated-at"
+    },
+    {
+      "class_property": "OrderItems",
+      "database_column": "order-items",
+      "json_field": "orderItems",
+      "url_slug": "order-items"
+    },
+    {
+      "class_property": "ProductId",
+      "database_column": "ProductID",
+      "json_field": "productId",
+      "url_slug": "product-id"
+    },
+    {
+      "class_property": "CustomerEmailAddress",
+      "database_column": "customer_email_address",
+      "json_field": "customerEmailAddress",
+      "url_slug": "customer-email-address"
+    },
+    {
+      "class_property": "IoError",
+      "database_column": "IoError",
+      "json_field": "ioError",
+      "url_slug": "io-error"
+    },
+    {
+      "class_property": "HtmLparser",
+      "database_column": "HTMLParser",
+      "json_field": "htmLparser",
+      "url_slug": "htm-lparser"
+    },
+    {
+      "class_property": "HelloWorld",
+      "database_column": "hello world",
+      "json_field": "helloWorld",
+      "url_slug": "hello-world"
+    }
+  ],
+  [
+    {
+      "css_class": "user-id",
+      "env_variable": "USER_ID",
+      "js_field": "userId",
+      "sql_column": "user_id"
+    },
+    {
+      "css_class": "is-active",
+      "env_variable": "IS_ACTIVE",
+      "js_field": "isActive",
+      "sql_column": "is_active"
+    }
+  ],
+  [
+    {
+      "api_output": "userId",
+      "mixed_input": "userId",
+      "status": "unchanged"
+    },
+    {
+      "api_output": "firstName",
+      "mixed_input": "first_name",
+      "status": "converted"
+    },
+    {
+      "api_output": "lastName",
+      "mixed_input": "LastName",
+      "status": "converted"
+    },
+    {
+      "api_output": "phoneNumber",
+      "mixed_input": "phone-number",
+      "status": "converted"
+    },
+    {
+      "api_output": "emailAddress",
+      "mixed_input": "EMAIL_ADDRESS",
+      "status": "converted"
+    },
+    {
+      "api_output": "httPresponse",
+      "mixed_input": "HTTPResponse",
+      "status": "converted"
+    },
+    {
+      "api_output": "xmLhttpRequest",
+      "mixed_input": "XMLHttpRequest",
+      "status": "converted"
+    },
+    {
+      "api_output": "apiV2",
+      "mixed_input": "api_v2",
+      "status": "converted"
+    },
+    {
+      "api_output": "v2Api",
+      "mixed_input": "v2API",
+      "status": "converted"
+    },
+    {
+      "api_output": "userProfileSettings",
+      "mixed_input": "user-profile-settings",
+      "status": "converted"
+    }
+  ],
+  [
+    {
+      "bash_export": "export USER_ID=\"${USER_ID}\"",
+      "env_var_name": "USER_ID",
+      "original_text": "userId"
+    },
+    {
+      "bash_export": "export FIRST_NAME=\"${FIRST_NAME}\"",
+      "env_var_name": "FIRST_NAME",
+      "original_text": "first_name"
+    },
+    {
+      "bash_export": "export LAST_NAME=\"${LAST_NAME}\"",
+      "env_var_name": "LAST_NAME",
+      "original_text": "LastName"
+    },
+    {
+      "bash_export": "export PHONE_NUMBER=\"${PHONE_NUMBER}\"",
+      "env_var_name": "PHONE_NUMBER",
+      "original_text": "phone-number"
+    },
+    {
+      "bash_export": "export EMAIL_ADDRESS=\"${EMAIL_ADDRESS}\"",
+      "env_var_name": "EMAIL_ADDRESS",
+      "original_text": "EMAIL_ADDRESS"
+    }
+  ],
+  [
+    {
+      "camel": "apiV2",
+      "input": "v2API",
+      "kebab": "ap-iversion2",
+      "snake": "v2_api"
+    }
+  ],
+  [
+    {
+      "step1_original": "phone-number",
+      "step2_to_snake": "phone_number",
+      "step3_to_pascal": "PhoneNumber"
+    },
+    {
+      "step1_original": "user-profile-settings",
+      "step2_to_snake": "user_profile_settings",
+      "step3_to_pascal": "UserProfileSettings"
+    },
+    {
+      "step1_original": "order-items",
+      "step2_to_snake": "order_items",
+      "step3_to_pascal": "OrderItems"
+    }
+  ]
+]
