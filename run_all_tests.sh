@@ -37,11 +37,12 @@ else
 fi
 echo ""
 
-# Run SQL example tests
+# Run SQL example tests (Python-based with formal/smoke test modes)
 echo "3. Running SQL example tests..."
 echo "-----------------------------------------"
-if ./scripts/test_all_examples.sh > /tmp/example_test_output.txt 2>&1; then
-    tail -3 /tmp/example_test_output.txt
+if uv run python tests/integration/test_examples.py > /tmp/example_test_output.txt 2>&1; then
+    # Show summary (last 10 lines include test counts and results)
+    tail -10 /tmp/example_test_output.txt
     echo "✅ SQL example tests passed"
 else
     cat /tmp/example_test_output.txt
