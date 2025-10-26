@@ -430,6 +430,7 @@ struct NonInteractiveArgs {
     show_work_units_arg: bool,
     execution_plan_arg: bool,
     show_preprocessing_arg: bool,
+    analyze_correlations_arg: bool,
     cte_info_arg: bool,
     rewrite_analysis_arg: bool,
     lift_in_arg: bool,
@@ -518,6 +519,10 @@ fn parse_non_interactive_args(args: &[String]) -> NonInteractiveArgs {
         show_preprocessing_arg: args
             .iter()
             .any(|arg| arg == "--show-preprocessing" || arg == "--show_preprocessing"),
+
+        analyze_correlations_arg: args
+            .iter()
+            .any(|arg| arg == "--analyze-correlations" || arg == "--analyze_correlations"),
 
         cte_info_arg: args
             .iter()

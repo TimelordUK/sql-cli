@@ -2,6 +2,7 @@
 mod query_plan;
 
 // Sub-modules
+pub mod correlated_subquery_analyzer;
 pub mod cte_hoister;
 pub mod dependency_analyzer;
 pub mod expression_lifter;
@@ -20,6 +21,9 @@ pub use query_plan::{
 };
 
 // Re-export commonly used items
+pub use correlated_subquery_analyzer::{
+    CorrelatedSubqueryAnalyzer, CorrelationAnalysis, SubqueryInfo, SubqueryLocation, SubqueryType,
+};
 pub use cte_hoister::CTEHoister;
 pub use dependency_analyzer::{ScriptDependencyGraph, StatementNode};
 pub use expression_lifter::{ExpressionLifter, LiftableExpression};
