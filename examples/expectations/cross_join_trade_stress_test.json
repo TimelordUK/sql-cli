@@ -1,0 +1,764 @@
+[
+  [
+    {
+      "desk": "Equity",
+      "factor": 1.0,
+      "scenario": "Base",
+      "trader": "Alice"
+    },
+    {
+      "desk": "Equity",
+      "factor": 2.0,
+      "scenario": "Extreme",
+      "trader": "Alice"
+    },
+    {
+      "desk": "Equity",
+      "factor": 1.5,
+      "scenario": "Stressed",
+      "trader": "Alice"
+    },
+    {
+      "desk": "FX",
+      "factor": 1.0,
+      "scenario": "Base",
+      "trader": "Bob"
+    },
+    {
+      "desk": "FX",
+      "factor": 2.0,
+      "scenario": "Extreme",
+      "trader": "Bob"
+    },
+    {
+      "desk": "FX",
+      "factor": 1.5,
+      "scenario": "Stressed",
+      "trader": "Bob"
+    },
+    {
+      "desk": "Rates",
+      "factor": 1.0,
+      "scenario": "Base",
+      "trader": "Carol"
+    },
+    {
+      "desk": "Rates",
+      "factor": 2.0,
+      "scenario": "Extreme",
+      "trader": "Carol"
+    },
+    {
+      "desk": "Rates",
+      "factor": 1.5,
+      "scenario": "Stressed",
+      "trader": "Carol"
+    }
+  ],
+  [
+    {
+      "description": "Normal market",
+      "direction": "Long",
+      "original_notional": 15000.0,
+      "original_price": 150.0,
+      "pnl_impact": 0.0,
+      "quantity": 100,
+      "scenario": "Base Case",
+      "stressed_notional": 15000.0,
+      "stressed_price": 150.0,
+      "symbol": "AAPL",
+      "trader": "Alice"
+    },
+    {
+      "description": "30% crash",
+      "direction": "Long",
+      "original_notional": 15000.0,
+      "original_price": 150.0,
+      "pnl_impact": -4500.0,
+      "quantity": 100,
+      "scenario": "Black Swan",
+      "stressed_notional": 10500.0,
+      "stressed_price": 105.0,
+      "symbol": "AAPL",
+      "trader": "Alice"
+    },
+    {
+      "description": "10% drawdown",
+      "direction": "Long",
+      "original_notional": 15000.0,
+      "original_price": 150.0,
+      "pnl_impact": -1500.0,
+      "quantity": 100,
+      "scenario": "Market Stress",
+      "stressed_notional": 13500.0,
+      "stressed_price": 135.0,
+      "symbol": "AAPL",
+      "trader": "Alice"
+    },
+    {
+      "description": "20% rally",
+      "direction": "Long",
+      "original_notional": 15000.0,
+      "original_price": 150.0,
+      "pnl_impact": 3000.0,
+      "quantity": 100,
+      "scenario": "Rally",
+      "stressed_notional": 18000.0,
+      "stressed_price": 180.0,
+      "symbol": "AAPL",
+      "trader": "Alice"
+    },
+    {
+      "description": "Normal market",
+      "direction": "Long",
+      "original_notional": 140000.0,
+      "original_price": 2800.0,
+      "pnl_impact": 0.0,
+      "quantity": 50,
+      "scenario": "Base Case",
+      "stressed_notional": 140000.0,
+      "stressed_price": 2800.0,
+      "symbol": "GOOGL",
+      "trader": "Alice"
+    },
+    {
+      "description": "30% crash",
+      "direction": "Long",
+      "original_notional": 140000.0,
+      "original_price": 2800.0,
+      "pnl_impact": -42000.0,
+      "quantity": 50,
+      "scenario": "Black Swan",
+      "stressed_notional": 98000.0,
+      "stressed_price": 1959.9999999999998,
+      "symbol": "GOOGL",
+      "trader": "Alice"
+    },
+    {
+      "description": "10% drawdown",
+      "direction": "Long",
+      "original_notional": 140000.0,
+      "original_price": 2800.0,
+      "pnl_impact": -14000.0,
+      "quantity": 50,
+      "scenario": "Market Stress",
+      "stressed_notional": 126000.0,
+      "stressed_price": 2520.0,
+      "symbol": "GOOGL",
+      "trader": "Alice"
+    },
+    {
+      "description": "20% rally",
+      "direction": "Long",
+      "original_notional": 140000.0,
+      "original_price": 2800.0,
+      "pnl_impact": 28000.0,
+      "quantity": 50,
+      "scenario": "Rally",
+      "stressed_notional": 168000.0,
+      "stressed_price": 3360.0,
+      "symbol": "GOOGL",
+      "trader": "Alice"
+    },
+    {
+      "description": "Normal market",
+      "direction": "Long",
+      "original_notional": 60000.0,
+      "original_price": 300.0,
+      "pnl_impact": 0.0,
+      "quantity": 200,
+      "scenario": "Base Case",
+      "stressed_notional": 60000.0,
+      "stressed_price": 300.0,
+      "symbol": "MSFT",
+      "trader": "Bob"
+    },
+    {
+      "description": "30% crash",
+      "direction": "Long",
+      "original_notional": 60000.0,
+      "original_price": 300.0,
+      "pnl_impact": -18000.0,
+      "quantity": 200,
+      "scenario": "Black Swan",
+      "stressed_notional": 42000.0,
+      "stressed_price": 210.0,
+      "symbol": "MSFT",
+      "trader": "Bob"
+    },
+    {
+      "description": "10% drawdown",
+      "direction": "Long",
+      "original_notional": 60000.0,
+      "original_price": 300.0,
+      "pnl_impact": -6000.0,
+      "quantity": 200,
+      "scenario": "Market Stress",
+      "stressed_notional": 54000.0,
+      "stressed_price": 270.0,
+      "symbol": "MSFT",
+      "trader": "Bob"
+    },
+    {
+      "description": "20% rally",
+      "direction": "Long",
+      "original_notional": 60000.0,
+      "original_price": 300.0,
+      "pnl_impact": 12000.0,
+      "quantity": 200,
+      "scenario": "Rally",
+      "stressed_notional": 72000.0,
+      "stressed_price": 360.0,
+      "symbol": "MSFT",
+      "trader": "Bob"
+    },
+    {
+      "description": "Normal market",
+      "direction": "Short",
+      "original_notional": 60000.0,
+      "original_price": 800.0,
+      "pnl_impact": 0.0,
+      "quantity": 75,
+      "scenario": "Base Case",
+      "stressed_notional": 60000.0,
+      "stressed_price": 800.0,
+      "symbol": "TSLA",
+      "trader": "Carol"
+    },
+    {
+      "description": "30% crash",
+      "direction": "Short",
+      "original_notional": 60000.0,
+      "original_price": 800.0,
+      "pnl_impact": 18000.0,
+      "quantity": 75,
+      "scenario": "Black Swan",
+      "stressed_notional": 42000.0,
+      "stressed_price": 560.0,
+      "symbol": "TSLA",
+      "trader": "Carol"
+    },
+    {
+      "description": "10% drawdown",
+      "direction": "Short",
+      "original_notional": 60000.0,
+      "original_price": 800.0,
+      "pnl_impact": 6000.0,
+      "quantity": 75,
+      "scenario": "Market Stress",
+      "stressed_notional": 54000.0,
+      "stressed_price": 720.0,
+      "symbol": "TSLA",
+      "trader": "Carol"
+    },
+    {
+      "description": "20% rally",
+      "direction": "Short",
+      "original_notional": 60000.0,
+      "original_price": 800.0,
+      "pnl_impact": -12000.0,
+      "quantity": 75,
+      "scenario": "Rally",
+      "stressed_notional": 72000.0,
+      "stressed_price": 960.0,
+      "symbol": "TSLA",
+      "trader": "Carol"
+    }
+  ],
+  [
+    {
+      "days": 30,
+      "intrinsic_value": 10,
+      "strike": 140,
+      "time_value_proxy": 6.020512880350457,
+      "vol": 0.15
+    },
+    {
+      "days": 60,
+      "intrinsic_value": 10,
+      "strike": 140,
+      "time_value_proxy": 8.514290967833523,
+      "vol": 0.15
+    },
+    {
+      "days": 90,
+      "intrinsic_value": 10,
+      "strike": 140,
+      "time_value_proxy": 10.427834196389835,
+      "vol": 0.15
+    },
+    {
+      "days": 30,
+      "intrinsic_value": 10,
+      "strike": 140,
+      "time_value_proxy": 8.027350507133942,
+      "vol": 0.2
+    },
+    {
+      "days": 60,
+      "intrinsic_value": 10,
+      "strike": 140,
+      "time_value_proxy": 11.352387957111365,
+      "vol": 0.2
+    },
+    {
+      "days": 90,
+      "intrinsic_value": 10,
+      "strike": 140,
+      "time_value_proxy": 13.903778928519781,
+      "vol": 0.2
+    },
+    {
+      "days": 30,
+      "intrinsic_value": 10,
+      "strike": 140,
+      "time_value_proxy": 10.034188133917429,
+      "vol": 0.25
+    },
+    {
+      "days": 60,
+      "intrinsic_value": 10,
+      "strike": 140,
+      "time_value_proxy": 14.190484946389205,
+      "vol": 0.25
+    },
+    {
+      "days": 90,
+      "intrinsic_value": 10,
+      "strike": 140,
+      "time_value_proxy": 17.379723660649727,
+      "vol": 0.25
+    },
+    {
+      "days": 30,
+      "intrinsic_value": 10,
+      "strike": 140,
+      "time_value_proxy": 12.041025760700913,
+      "vol": 0.3
+    },
+    {
+      "days": 60,
+      "intrinsic_value": 10,
+      "strike": 140,
+      "time_value_proxy": 17.028581935667045,
+      "vol": 0.3
+    },
+    {
+      "days": 90,
+      "intrinsic_value": 10,
+      "strike": 140,
+      "time_value_proxy": 20.85566839277967,
+      "vol": 0.3
+    },
+    {
+      "days": 30,
+      "intrinsic_value": 5,
+      "strike": 145,
+      "time_value_proxy": 6.235531197505829,
+      "vol": 0.15
+    },
+    {
+      "days": 60,
+      "intrinsic_value": 5,
+      "strike": 145,
+      "time_value_proxy": 8.818372788113292,
+      "vol": 0.15
+    },
+    {
+      "days": 90,
+      "intrinsic_value": 5,
+      "strike": 145,
+      "time_value_proxy": 10.8002568462609,
+      "vol": 0.15
+    },
+    {
+      "days": 30,
+      "intrinsic_value": 5,
+      "strike": 145,
+      "time_value_proxy": 8.314041596674441,
+      "vol": 0.2
+    },
+    {
+      "days": 60,
+      "intrinsic_value": 5,
+      "strike": 145,
+      "time_value_proxy": 11.757830384151056,
+      "vol": 0.2
+    },
+    {
+      "days": 90,
+      "intrinsic_value": 5,
+      "strike": 145,
+      "time_value_proxy": 14.400342461681202,
+      "vol": 0.2
+    },
+    {
+      "days": 30,
+      "intrinsic_value": 5,
+      "strike": 145,
+      "time_value_proxy": 10.39255199584305,
+      "vol": 0.25
+    },
+    {
+      "days": 60,
+      "intrinsic_value": 5,
+      "strike": 145,
+      "time_value_proxy": 14.69728798018882,
+      "vol": 0.25
+    },
+    {
+      "days": 90,
+      "intrinsic_value": 5,
+      "strike": 145,
+      "time_value_proxy": 18.000428077101503,
+      "vol": 0.25
+    },
+    {
+      "days": 30,
+      "intrinsic_value": 5,
+      "strike": 145,
+      "time_value_proxy": 12.471062395011659,
+      "vol": 0.3
+    },
+    {
+      "days": 60,
+      "intrinsic_value": 5,
+      "strike": 145,
+      "time_value_proxy": 17.636745576226584,
+      "vol": 0.3
+    },
+    {
+      "days": 90,
+      "intrinsic_value": 5,
+      "strike": 145,
+      "time_value_proxy": 21.6005136925218,
+      "vol": 0.3
+    },
+    {
+      "days": 30,
+      "intrinsic_value": 0,
+      "strike": 150,
+      "time_value_proxy": 6.450549514661203,
+      "vol": 0.15
+    },
+    {
+      "days": 60,
+      "intrinsic_value": 0,
+      "strike": 150,
+      "time_value_proxy": 9.12245460839306,
+      "vol": 0.15
+    },
+    {
+      "days": 90,
+      "intrinsic_value": 0,
+      "strike": 150,
+      "time_value_proxy": 11.172679496131966,
+      "vol": 0.15
+    },
+    {
+      "days": 30,
+      "intrinsic_value": 0,
+      "strike": 150,
+      "time_value_proxy": 8.600732686214938,
+      "vol": 0.2
+    },
+    {
+      "days": 60,
+      "intrinsic_value": 0,
+      "strike": 150,
+      "time_value_proxy": 12.16327281119075,
+      "vol": 0.2
+    },
+    {
+      "days": 90,
+      "intrinsic_value": 0,
+      "strike": 150,
+      "time_value_proxy": 14.896905994842623,
+      "vol": 0.2
+    },
+    {
+      "days": 30,
+      "intrinsic_value": 0,
+      "strike": 150,
+      "time_value_proxy": 10.750915857768673,
+      "vol": 0.25
+    },
+    {
+      "days": 60,
+      "intrinsic_value": 0,
+      "strike": 150,
+      "time_value_proxy": 15.204091013988434,
+      "vol": 0.25
+    },
+    {
+      "days": 90,
+      "intrinsic_value": 0,
+      "strike": 150,
+      "time_value_proxy": 18.62113249355328,
+      "vol": 0.25
+    },
+    {
+      "days": 30,
+      "intrinsic_value": 0,
+      "strike": 150,
+      "time_value_proxy": 12.901099029322406,
+      "vol": 0.3
+    },
+    {
+      "days": 60,
+      "intrinsic_value": 0,
+      "strike": 150,
+      "time_value_proxy": 18.24490921678612,
+      "vol": 0.3
+    },
+    {
+      "days": 90,
+      "intrinsic_value": 0,
+      "strike": 150,
+      "time_value_proxy": 22.345358992263932,
+      "vol": 0.3
+    },
+    {
+      "days": 30,
+      "intrinsic_value": -5,
+      "strike": 155,
+      "time_value_proxy": 6.665567831816577,
+      "vol": 0.15
+    },
+    {
+      "days": 60,
+      "intrinsic_value": -5,
+      "strike": 155,
+      "time_value_proxy": 9.42653642867283,
+      "vol": 0.15
+    },
+    {
+      "days": 90,
+      "intrinsic_value": -5,
+      "strike": 155,
+      "time_value_proxy": 11.545102146003032,
+      "vol": 0.15
+    },
+    {
+      "days": 30,
+      "intrinsic_value": -5,
+      "strike": 155,
+      "time_value_proxy": 8.887423775755437,
+      "vol": 0.2
+    },
+    {
+      "days": 60,
+      "intrinsic_value": -5,
+      "strike": 155,
+      "time_value_proxy": 12.56871523823044,
+      "vol": 0.2
+    },
+    {
+      "days": 90,
+      "intrinsic_value": -5,
+      "strike": 155,
+      "time_value_proxy": 15.393469528004044,
+      "vol": 0.2
+    },
+    {
+      "days": 30,
+      "intrinsic_value": -5,
+      "strike": 155,
+      "time_value_proxy": 11.109279719694294,
+      "vol": 0.25
+    },
+    {
+      "days": 60,
+      "intrinsic_value": -5,
+      "strike": 155,
+      "time_value_proxy": 15.710894047788049,
+      "vol": 0.25
+    },
+    {
+      "days": 90,
+      "intrinsic_value": -5,
+      "strike": 155,
+      "time_value_proxy": 19.241836910005055,
+      "vol": 0.25
+    },
+    {
+      "days": 30,
+      "intrinsic_value": -5,
+      "strike": 155,
+      "time_value_proxy": 13.331135663633153,
+      "vol": 0.3
+    },
+    {
+      "days": 60,
+      "intrinsic_value": -5,
+      "strike": 155,
+      "time_value_proxy": 18.85307285734566,
+      "vol": 0.3
+    },
+    {
+      "days": 90,
+      "intrinsic_value": -5,
+      "strike": 155,
+      "time_value_proxy": 23.090204292006064,
+      "vol": 0.3
+    },
+    {
+      "days": 30,
+      "intrinsic_value": -10,
+      "strike": 160,
+      "time_value_proxy": 6.88058614897195,
+      "vol": 0.15
+    },
+    {
+      "days": 60,
+      "intrinsic_value": -10,
+      "strike": 160,
+      "time_value_proxy": 9.730618248952597,
+      "vol": 0.15
+    },
+    {
+      "days": 90,
+      "intrinsic_value": -10,
+      "strike": 160,
+      "time_value_proxy": 11.917524795874098,
+      "vol": 0.15
+    },
+    {
+      "days": 30,
+      "intrinsic_value": -10,
+      "strike": 160,
+      "time_value_proxy": 9.174114865295934,
+      "vol": 0.2
+    },
+    {
+      "days": 60,
+      "intrinsic_value": -10,
+      "strike": 160,
+      "time_value_proxy": 12.974157665270132,
+      "vol": 0.2
+    },
+    {
+      "days": 90,
+      "intrinsic_value": -10,
+      "strike": 160,
+      "time_value_proxy": 15.890033061165465,
+      "vol": 0.2
+    },
+    {
+      "days": 30,
+      "intrinsic_value": -10,
+      "strike": 160,
+      "time_value_proxy": 11.467643581619917,
+      "vol": 0.25
+    },
+    {
+      "days": 60,
+      "intrinsic_value": -10,
+      "strike": 160,
+      "time_value_proxy": 16.217697081587662,
+      "vol": 0.25
+    },
+    {
+      "days": 90,
+      "intrinsic_value": -10,
+      "strike": 160,
+      "time_value_proxy": 19.86254132645683,
+      "vol": 0.25
+    },
+    {
+      "days": 30,
+      "intrinsic_value": -10,
+      "strike": 160,
+      "time_value_proxy": 13.7611722979439,
+      "vol": 0.3
+    },
+    {
+      "days": 60,
+      "intrinsic_value": -10,
+      "strike": 160,
+      "time_value_proxy": 19.461236497905194,
+      "vol": 0.3
+    },
+    {
+      "days": 90,
+      "intrinsic_value": -10,
+      "strike": 160,
+      "time_value_proxy": 23.835049591748195,
+      "vol": 0.3
+    }
+  ],
+  [
+    {
+      "available_capacity": 500000,
+      "counterparty": "Bank A",
+      "counterparty_limit": 2000000,
+      "exposure": 1500000,
+      "status": "PASS",
+      "trader": "Alice"
+    },
+    {
+      "available_capacity": -500000,
+      "counterparty": "Bank B",
+      "counterparty_limit": 1000000,
+      "exposure": 1500000,
+      "status": "LIMIT BREACH",
+      "trader": "Alice"
+    },
+    {
+      "available_capacity": 1500000,
+      "counterparty": "Hedge Fund C",
+      "counterparty_limit": 3000000,
+      "exposure": 1500000,
+      "status": "PASS",
+      "trader": "Alice"
+    },
+    {
+      "available_capacity": -200000,
+      "counterparty": "Bank A",
+      "counterparty_limit": 2000000,
+      "exposure": 2200000,
+      "status": "LIMIT BREACH",
+      "trader": "Bob"
+    },
+    {
+      "available_capacity": -1200000,
+      "counterparty": "Bank B",
+      "counterparty_limit": 1000000,
+      "exposure": 2200000,
+      "status": "LIMIT BREACH",
+      "trader": "Bob"
+    },
+    {
+      "available_capacity": 800000,
+      "counterparty": "Hedge Fund C",
+      "counterparty_limit": 3000000,
+      "exposure": 2200000,
+      "status": "PASS",
+      "trader": "Bob"
+    },
+    {
+      "available_capacity": 1100000,
+      "counterparty": "Bank A",
+      "counterparty_limit": 2000000,
+      "exposure": 900000,
+      "status": "PASS",
+      "trader": "Carol"
+    },
+    {
+      "available_capacity": 100000,
+      "counterparty": "Bank B",
+      "counterparty_limit": 1000000,
+      "exposure": 900000,
+      "status": "PASS",
+      "trader": "Carol"
+    },
+    {
+      "available_capacity": 2100000,
+      "counterparty": "Hedge Fund C",
+      "counterparty_limit": 3000000,
+      "exposure": 900000,
+      "status": "PASS",
+      "trader": "Carol"
+    }
+  ]
+]

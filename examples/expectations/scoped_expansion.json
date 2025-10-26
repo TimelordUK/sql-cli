@@ -1,0 +1,131 @@
+[
+  [
+    {
+      "email": "alice@example.com",
+      "id": 1,
+      "item_name": "Laptop",
+      "name": "Alice",
+      "weight": 2.5
+    },
+    {
+      "email": "alice@example.com",
+      "id": 1,
+      "item_name": "Mouse",
+      "name": "Alice",
+      "weight": 0.1
+    },
+    {
+      "email": "bob@example.com",
+      "id": 2,
+      "item_name": "Keyboard",
+      "name": "Bob",
+      "weight": 0.8
+    },
+    {
+      "email": "charlie@example.com",
+      "id": 3,
+      "item_name": "Monitor",
+      "name": "Charlie",
+      "weight": 5.2
+    },
+    {
+      "email": "charlie@example.com",
+      "id": 3,
+      "item_name": "Cable",
+      "name": "Charlie",
+      "weight": 0.05
+    }
+  ],
+  [
+    {
+      "email": "alice@example.com",
+      "id": 1,
+      "id_right": 101,
+      "name": "Alice",
+      "name_right": "Laptop",
+      "user_id": 1,
+      "weight": 2.5
+    },
+    {
+      "email": "alice@example.com",
+      "id": 1,
+      "id_right": 102,
+      "name": "Alice",
+      "name_right": "Mouse",
+      "user_id": 1,
+      "weight": 0.1
+    }
+  ],
+  [
+    {
+      "email": "charlie@example.com",
+      "id": 3,
+      "name": "Charlie",
+      "product": "Monitor",
+      "weight": 5.2,
+      "weight_display": "\u001b[32m5.2 kg\u001b[0m"
+    },
+    {
+      "email": "alice@example.com",
+      "id": 1,
+      "name": "Alice",
+      "product": "Laptop",
+      "weight": 2.5,
+      "weight_display": "\u001b[32m2.5 kg\u001b[0m"
+    }
+  ],
+  [
+    {
+      "email": "alice@example.com",
+      "id": 1,
+      "name": "Alice"
+    },
+    {
+      "email": "bob@example.com",
+      "id": 2,
+      "name": "Bob"
+    }
+  ],
+  [
+    {
+      "email": "alice@example.com",
+      "id": 1,
+      "name": "Alice",
+      "order_id": "\u001b[36mOrder #101\u001b[0m",
+      "product_name": "Laptop",
+      "weight": 2.5
+    },
+    {
+      "email": "alice@example.com",
+      "id": 1,
+      "name": "Alice",
+      "order_id": "\u001b[36mOrder #102\u001b[0m",
+      "product_name": "Mouse",
+      "weight": 0.1
+    },
+    {
+      "email": "bob@example.com",
+      "id": 2,
+      "name": "Bob",
+      "order_id": "\u001b[36mOrder #103\u001b[0m",
+      "product_name": "Keyboard",
+      "weight": 0.8
+    },
+    {
+      "email": "charlie@example.com",
+      "id": 3,
+      "name": "Charlie",
+      "order_id": "\u001b[36mOrder #104\u001b[0m",
+      "product_name": "Monitor",
+      "weight": 5.2
+    },
+    {
+      "email": "charlie@example.com",
+      "id": 3,
+      "name": "Charlie",
+      "order_id": "\u001b[36mOrder #105\u001b[0m",
+      "product_name": "Cable",
+      "weight": 0.05
+    }
+  ]
+]
