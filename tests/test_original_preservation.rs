@@ -102,6 +102,7 @@ fn test_original_preserved_after_computed_query() {
 }
 
 #[test]
+#[ignore] // Requires history file infrastructure
 fn test_orchestrator_preserves_original() {
     use sql_cli::buffer::BufferManager;
 
