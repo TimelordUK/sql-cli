@@ -919,17 +919,51 @@ pub fn execute_script(config: NonInteractiveConfig) -> Result<()> {
         // Create a fresh DataView for each statement
         let dataview = DataView::new(source_table);
 
-        // If this statement has an INTO clause, we need to remove it before execution
-        // because the query executor doesn't understand INTO syntax
-        let executable_sql = if parsed_stmt.into_table.is_some() {
-            // Remove the INTO clause using AST preprocessing (robust and maintainable)
-            use crate::query_plan::IntoClauseRemover;
+        // Apply preprocessing pipeline (alias expansion, etc.) if statement has FROM clause
+        // This enables Quick Win features (WHERE/GROUP BY/HAVING alias expansion) in scripts
+        let executable_sql = {
+            use crate::query_plan::{create_standard_pipeline, IntoClauseRemover};
             use crate::sql::parser::ast_formatter;
 
-            let cleaned_stmt = IntoClauseRemover::remove_into_clause(parsed_stmt.clone());
-            ast_formatter::format_select_statement(&cleaned_stmt)
-        } else {
-            statement.to_string()
+            let has_from_clause = parsed_stmt.from_table.is_some()
+                || parsed_stmt.from_subquery.is_some()
+                || parsed_stmt.from_function.is_some();
+
+            if has_from_clause {
+                // Apply full preprocessing pipeline
+                let mut pipeline = create_standard_pipeline(config.show_preprocessing);
+                match pipeline.process(parsed_stmt.clone()) {
+                    Ok(transformed_stmt) => {
+                        // Remove INTO clause if present (executor doesn't understand INTO syntax)
+                        let final_stmt = if transformed_stmt.into_table.is_some() {
+                            IntoClauseRemover::remove_into_clause(transformed_stmt)
+                        } else {
+                            transformed_stmt
+                        };
+
+                        ast_formatter::format_select_statement(&final_stmt)
+                    }
+                    Err(e) => {
+                        // If preprocessing fails, log and fall back to original query
+                        debug!("Preprocessing failed: {}, using original query", e);
+                        if parsed_stmt.into_table.is_some() {
+                            let cleaned =
+                                IntoClauseRemover::remove_into_clause(parsed_stmt.clone());
+                            ast_formatter::format_select_statement(&cleaned)
+                        } else {
+                            statement.to_string()
+                        }
+                    }
+                }
+            } else {
+                // No FROM clause - preserve special row-iteration semantics
+                if parsed_stmt.into_table.is_some() {
+                    let cleaned = IntoClauseRemover::remove_into_clause(parsed_stmt.clone());
+                    ast_formatter::format_select_statement(&cleaned)
+                } else {
+                    statement.to_string()
+                }
+            }
         };
 
         // Execute the statement
