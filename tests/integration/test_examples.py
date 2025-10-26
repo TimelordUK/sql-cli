@@ -41,11 +41,65 @@ class TestResult:
         self.passed_tests: List[str] = []
         self.failed_tests: List[Tuple[str, str]] = []  # (name, reason)
 
-def run_sql_file(cli_path: str, sql_file: Path) -> Tuple[bool, str]:
-    """Run SQL file and return (success, output)"""
+def get_data_file_hint(sql_file: Path) -> Optional[str]:
+    """Extract data file hint from SQL file comments
+
+    Looks for lines like:
+        -- #! ../data/sales_data.csv
+        -- #! data/solar_system.csv
+
+    Returns absolute path if found and file exists, None otherwise.
+    """
     try:
+        with open(sql_file, 'r') as f:
+            # Check first 10 lines for data hint
+            for i, line in enumerate(f):
+                if i >= 10:
+                    break
+                line = line.strip()
+                if line.startswith('-- #!'):
+                    # Extract path after -- #!
+                    hint_path = line[5:].strip()
+
+                    # Try multiple resolution strategies
+                    if hint_path.startswith('../'):
+                        # Relative to SQL file's directory (e.g., examples/../data/sales_data.csv)
+                        data_path = (sql_file.parent / hint_path).resolve()
+                    elif hint_path.startswith('data/'):
+                        # Relative to project root
+                        data_path = Path(hint_path).resolve()
+                    else:
+                        # Absolute or simple path
+                        data_path = Path(hint_path).resolve()
+
+                    # Only return if file exists
+                    if data_path.exists():
+                        return str(data_path)
+                    else:
+                        # File not found, return None so test fails with helpful error
+                        return None
+    except Exception:
+        pass
+    return None
+
+def run_sql_file(cli_path: str, sql_file: Path) -> Tuple[bool, str]:
+    """Run SQL file and return (success, output)
+
+    Checks for data file hint (-- #! <path>) and includes it if present.
+    """
+    try:
+        # Check for data file hint
+        data_file = get_data_file_hint(sql_file)
+
+        if data_file:
+            # Run with data file: ./sql-cli <data_file> -f <sql_file> -o json
+            cmd = [cli_path, data_file, '-f', str(sql_file), '-o', 'json']
+        else:
+            # Run standalone: ./sql-cli -f <sql_file> -o json
+            cmd = [cli_path, '-f', str(sql_file), '-o', 'json']
+
         result = subprocess.run(
-            [cli_path, '-f', str(sql_file), '-o', 'json'],
+            cmd,
             capture_output=True,
             text=True,
             timeout=30

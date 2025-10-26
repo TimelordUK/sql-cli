@@ -1,3 +1,4 @@
+-- #! data/test_simple_math.csv
 -- ============================================================================
 -- Common Table Expressions (CTEs) Demo
 -- Shows how to use WITH clauses to filter on computed expressions

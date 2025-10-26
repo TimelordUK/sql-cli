@@ -1,6 +1,7 @@
+-- #! data/solar_system.csv
 -- Solar System Calculations Example (Simplified)
 -- This version works around parser limitations with functions in ORDER BY clauses
--- Run with: ./target/release/sql-cli examples/solar_system.csv < examples/solar_system_calculations_simple.sql
+-- Run with: ./target/release/sql-cli data/solar_system.csv -f examples/solar_system_calculations_simple.sql
 
 -- Basic properties lookup
 SELECT 

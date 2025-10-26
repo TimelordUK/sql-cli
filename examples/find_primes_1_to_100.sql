@@ -1,6 +1,7 @@
-with is_prime as 
+-- #! data/numbers_1_to_100.csv
+with is_prime as
   (
-    select 
+    select
       n as n,
       is_prime(n) as n_prime 
     from numbers

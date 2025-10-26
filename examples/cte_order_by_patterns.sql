@@ -1,3 +1,4 @@
+-- #! data/solar_system.csv
 -- ============================================================================
 -- CTE ORDER BY Patterns and Best Practices
 -- Shows different ways to use ORDER BY with CTEs
