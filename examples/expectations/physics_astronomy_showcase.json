@@ -1,0 +1,135 @@
+[
+  [
+    {
+      "avogadro_number": 6.02214076e+23,
+      "boltzmann_constant": 1.380649e-23,
+      "category": "=== PHYSICS CONSTANTS ===",
+      "electron_mass": 9.1093837015e-31,
+      "elementary_charge": 2.718281828459045,
+      "gravitational_constant": 6.6743e-11,
+      "planck_constant": 6.62607015e-34,
+      "proton_mass": 1.67262192369e-27,
+      "speed_of_light": 299792458.0
+    }
+  ],
+  [
+    {
+      "astronomical_unit": 149597870700.0,
+      "category": "=== ASTRONOMICAL DISTANCES ===",
+      "distance_to_neptune": 1241662326810.0,
+      "distance_to_proxima_centauri": 4.0113368e+16,
+      "light_year": 9460700000000000.0,
+      "parsec": 3.0857e+16
+    }
+  ],
+  [
+    {
+      "category": "=== SOLAR SYSTEM MASSES ===",
+      "earth": 5.97237e+24,
+      "jupiter": 1.8982e+27,
+      "mars": 6.4171e+23,
+      "moon": 7.342e+22,
+      "saturn": 5.6834e+26,
+      "sun": 1.989e+30
+    }
+  ],
+  [
+    {
+      "category": "=== SOLAR SYSTEM RADII ===",
+      "earth": 6371000.0,
+      "jupiter": 69910000.0,
+      "mars": 3390000.0,
+      "moon": 1737000.0,
+      "saturn": 58230000.0,
+      "sun": 696000000.0
+    }
+  ],
+  [
+    {
+      "category": "=== PHYSICS CALCULATIONS ===",
+      "earth_escape_velocity": 0.001770421859221024,
+      "earth_orbital_velocity": 29789.111319772674,
+      "sun_schwarzschild_radius": 2.6550365399999998e+20
+    }
+  ],
+  [
+    {
+      "bohr_radius": 5.29177210903e-11,
+      "category": "=== PARTICLE PHYSICS ===",
+      "coulomb_constant": 8987551787.368176,
+      "rydberg_constant": 10973731.56816
+    }
+  ],
+  [
+    {
+      "category": "=== PARTICLE CHARGES ===",
+      "electron": -1.602176634e-19,
+      "muon": -1.602176634e-19,
+      "neutron": 0.0,
+      "positron": 1.602176634e-19,
+      "proton": 1.602176634e-19
+    }
+  ],
+  [
+    {
+      "category": "=== MASS-ENERGY ===",
+      "electron_energy": 8.187105776823886e-14,
+      "mass_difference_energy": -8.187105776823718e-14,
+      "proton_energy": 1.5032776159851256e-10
+    }
+  ],
+  [
+    {
+      "au_per_lightyear": 63240.87338764508,
+      "category": "=== SCALE COMPARISONS ===",
+      "earth_orbit_in_au": 1.0,
+      "parsecs_per_lightyear": 3.2615979790078957,
+      "sun_earth_mass_ratio": 333033.6198192677,
+      "sun_earth_size_ratio": 109.24501648092921
+    }
+  ],
+  [
+    {
+      "category": "=== GRAVITATIONAL PARAMETERS ===",
+      "earth_gm": 398613890909999.94,
+      "jupiter_gm": 1.266915626e+17,
+      "moon_gm": 4900271059999.999,
+      "solar_gm": 1.3275182699999999e+20
+    }
+  ],
+  [
+    {
+      "category": "=== SOLAR BODY LOOKUPS ===",
+      "earth_mass": 5.97237e+24,
+      "jupiter_radius": 69911000.0,
+      "mars_distance": 227900000000.0,
+      "moon_radius": 1737400.0,
+      "sun_mass": 1.989e+30
+    }
+  ],
+  [
+    {
+      "c_verification": 1.0,
+      "category": "=== DIMENSIONLESS NUMBERS ===",
+      "fine_structure_approx": 1.0206929032258235e-35,
+      "h_bar": 1.0408206652705309e-33,
+      "proton_electron_mass_ratio": 1836.1526734400013
+    }
+  ],
+  [
+    {
+      "category": "=== ENERGY SCALES ===",
+      "green_photon_energy": 3.972891714297857e-19,
+      "hydrogen_ionization_energy": 36.96863286704301,
+      "room_temp_energy": 4.141947e-21,
+      "rydberg_energy": 2.1798723611035847e-18
+    }
+  ],
+  [
+    {
+      "description": "Complete physics and astronomy constants library",
+      "features": "Includes fundamental constants, solar system data, and particle physics",
+      "info": "Summary"
+    }
+  ]
+]

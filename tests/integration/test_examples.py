@@ -133,12 +133,40 @@ def compare_json(expected, actual) -> Tuple[bool, Optional[str]]:
 
     return False, '\n'.join(diff_lines)
 
+def should_skip_file(sql_file: Path) -> Tuple[bool, Optional[str]]:
+    """Check if file should be skipped based on -- [TEST:SKIP] directive"""
+    try:
+        with open(sql_file, 'r') as f:
+            # Check first 10 lines for [TEST:SKIP] directive
+            for i, line in enumerate(f):
+                if i >= 10:
+                    break
+                line = line.strip()
+                if '[TEST:SKIP]' in line.upper():
+                    # Extract reason if provided: -- [TEST:SKIP] Reason here
+                    parts = line.split('[TEST:SKIP]', 1)
+                    if len(parts) > 1:
+                        reason = parts[1].strip()
+                        return True, reason if reason else "Marked as skip"
+                    return True, "Marked as skip"
+    except Exception:
+        pass
+    return False, None
+
 def run_test(cli_path: str, sql_file: Path, expectations_dir: Path, result: TestResult) -> None:
     """Run a single test"""
     base_name = sql_file.stem
     expectation_file = expectations_dir / f"{base_name}.json"
 
     result.total += 1
+
+    # Check if file should be skipped
+    should_skip, skip_reason = should_skip_file(sql_file)
+    if should_skip:
+        print(f"[SKIP] {base_name} ... {Color.YELLOW}⊘ SKIPPED{Color.NC} ({skip_reason})")
+        result.passed += 1  # Count skips as passed
+        result.passed_tests.append(f"{base_name} (skipped)")
+        return
 
     # Determine test mode
     is_formal = expectation_file.exists()

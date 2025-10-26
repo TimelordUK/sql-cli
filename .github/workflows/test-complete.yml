@@ -128,24 +128,74 @@ jobs:
           .pytest_cache/
           **/*.log
 
+  # Examples test suite (formal and smoke tests)
+  examples-tests:
+    name: Examples Test Suite (Linux)
+    runs-on: ubuntu-latest
+    needs: rust-tests  # Run after Rust tests to ensure binary builds
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.10'
+
+    - name: Install uv
+      run: |
+        curl -LsSf https://astral.sh/uv/install.sh | sh
+        echo "$HOME/.cargo/bin" >> $GITHUB_PATH
+
+    - name: Set up Rust (for building sql-cli)
+      uses: actions-rs/toolchain@v1
+      with:
+        toolchain: stable
+        override: true
+
+    - name: Cache cargo build
+      uses: actions/cache@v4
+      with:
+        path: target
+        key: ${{ runner.os }}-cargo-build-examples-${{ hashFiles('**/Cargo.lock') }}
+        restore-keys: |
+          ${{ runner.os }}-cargo-build-examples-
+          ${{ runner.os }}-cargo-build-
+
+    - name: Build SQL CLI
+      run: cargo build --release
+
+    - name: Run examples test suite
+      run: |
+        uv run python tests/integration/test_examples.py
+
+    - name: Upload test results
+      if: failure()
+      uses: actions/upload-artifact@v4
+      with:
+        name: examples-test-results
+        path: |
+          examples/expectations/*.json
+          **/*.log
+
   # Integration test combining both
   integration-test:
     name: Integration Test (Linux)
     runs-on: ubuntu-latest
-    needs: [rust-tests, python-tests]
-    
+    needs: [rust-tests, python-tests, examples-tests]
+
     steps:
     - uses: actions/checkout@v4
-    
+
     - name: Set up Rust
       uses: actions-rs/toolchain@v1
       with:
         toolchain: stable
         override: true
-    
+
     - name: Build SQL CLI
       run: cargo build --release
-    
+
     - name: Test CLI directly
       run: |
         # Generate test data
@@ -153,17 +203,17 @@ jobs:
         echo "1,10" >> test.csv
         echo "2,20" >> test.csv
         echo "3,30" >> test.csv
-        
+
         # Test basic query
         ./target/release/sql-cli test.csv -q "SELECT * FROM test WHERE value > 15" -o csv
-        
+
         # Test with string methods
         echo "id,name" > names.csv
         echo "1,  Alice  " >> names.csv
         echo "2,Bob" >> names.csv
-        
+
         ./target/release/sql-cli names.csv -q "SELECT id, name.Trim() as trimmed FROM names" -o csv
-    
+
     - name: Verify --query-plan works
       run: |
         ./target/release/sql-cli test.csv -q "SELECT id FROM test WHERE value > 15" --query-plan
