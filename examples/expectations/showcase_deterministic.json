@@ -1,0 +1,494 @@
+[
+  [
+    {
+      "absolute": 42,
+      "addition": 15,
+      "ceiling": 10,
+      "division": 25,
+      "e_to_one": 2.718281828459045,
+      "five_factorial": 120,
+      "floored": 9,
+      "log_base10": 2.0,
+      "modulo": 1,
+      "multiplication": 42,
+      "natural_log": 0.999999327347282,
+      "rounded": 3.14,
+      "square_root": 12.0,
+      "subtraction": 12,
+      "two_to_tenth": 1024.0
+    }
+  ],
+  [
+    {
+      "eighteen_is_prime": false,
+      "primes_up_to_100": 25,
+      "primes_up_to_50": 15,
+      "seventeen_is_prime": true,
+      "tenth_prime": 29,
+      "twentieth_prime": 71
+    }
+  ],
+  [
+    {
+      "avogadro_number": 6.02214076e+23,
+      "boltzmann_constant": 1.380649e-23,
+      "electron_mass": 9.1093837015e-31,
+      "gravitational_constant": 6.6743e-11,
+      "neutron_mass": 1.67492749804e-27,
+      "planck_constant": 6.62607015e-34,
+      "proton_mass": 1.67262192369e-27,
+      "speed_of_light_ms": 299792458.0
+    }
+  ],
+  [
+    {
+      "earth_mass": 5.97237e+24,
+      "jupiter_mass": 1.8982e+27,
+      "mars_mass": 6.4171e+23,
+      "moon_mass": 7.342e+22,
+      "sun_earth_ratio": 333033.6198192677,
+      "sun_mass": 1.989e+30
+    }
+  ],
+  [
+    {
+      "glucose_formula": "C6H12O6",
+      "glucose_mass": 180.156,
+      "methane_formula": "CH4",
+      "methane_mass": 16.042,
+      "water_formula": "H2O",
+      "water_mass": 18.016
+    }
+  ],
+  [
+    {
+      "lowercase": "hello world",
+      "mid_extract": "taba",
+      "replaced": "Hello SQL-CLI",
+      "string_length": 7,
+      "substr": "ello ",
+      "trimmed": "spaces",
+      "uppercase": "HELLO WORLD"
+    }
+  ],
+  [
+    {
+      "contains_world": true,
+      "edit_dist": 3,
+      "ends_with_db": true,
+      "fruit_list": "apple, banana, orange",
+      "joined_text": "SQL CLI Rocks",
+      "starts_with_sql": true
+    }
+  ],
+  [
+    {
+      "example_date": "2024-01-15",
+      "example_timestamp": "2024-01-15 14:30:00"
+    }
+  ],
+  [
+    {
+      "days_in_2024": 365,
+      "months_diff": 12,
+      "next_year": "2025-01-01 00:00:00",
+      "three_months_later": "2024-04-01 00:00:00",
+      "week_later": "2024-01-08 00:00:00",
+      "years_diff": 24
+    }
+  ],
+  [
+    {
+      "earth_escape_velocity_ms": 11186.324404552197,
+      "energy_joules_from_1kg": 8.987551787368176e+16,
+      "sun_schwarzschild_radius_m": 2954.126555055405
+    }
+  ],
+  [
+    {
+      "fact_0": 1,
+      "fact_10": 3628800,
+      "fact_15": 1307674368000,
+      "fact_20": 2432902008176640000,
+      "fact_5": 120
+    }
+  ],
+  [
+    {
+      "arccos_half": 1.0471975511965979,
+      "arcsin_half": 0.5235987755982989,
+      "arctan2_45deg": 0.7853981633974483,
+      "arctan_one": 0.7853981633974483,
+      "cos_60_degrees": 0.5000000000000001,
+      "cot_45_degrees": 1.0000000000000002,
+      "degrees_180_in_radians": 3.141592653589793,
+      "hyperbolic_cosine": 1.5430806348152437,
+      "hyperbolic_sine": 1.1752011936438014,
+      "hyperbolic_tangent": 0.7615941559557649,
+      "pi_in_degrees": 180.0,
+      "sin_30_degrees": 0.49999999999999994,
+      "tan_45_degrees": 0.9999999999999999
+    }
+  ],
+  [
+    {
+      "circle_area_r10": 314.1592653589793,
+      "circle_circum_r10": 62.83185307179586,
+      "distance_origin_to_3_4": 5.0,
+      "hypotenuse_3_4": 5.0,
+      "right_triangle_area": 6.0,
+      "sphere_surface_r10": 1256.6370614359173,
+      "sphere_volume_r10": 4188.790204786391
+    }
+  ],
+  [
+    {
+      "example_stddev": null,
+      "example_volatility": 0.0,
+      "log_return": 0.09531017980432493,
+      "sharpe_ratio": 0.6666666666666666,
+      "simple_return": 0.1
+    }
+  ],
+  [
+    {
+      "fib_0": 0,
+      "fib_1": 1,
+      "fib_10": 55,
+      "fib_20": 6765,
+      "geometric_series": 3.99609375,
+      "harmonic_10": 2.9289682539682538,
+      "sum_1_to_100": 5050,
+      "sum_cubes_1_to_5": 225,
+      "sum_squares_1_to_10": 385
+    }
+  ],
+  [
+    {
+      "density_kg_m3": 5427.0,
+      "distance_from_sun_m": 57910000000.0,
+      "escape_velocity_ms": 4250.0,
+      "mass_kg": 3.3011e+23,
+      "moon_count": 0,
+      "orbital_period_days": 87.969,
+      "planet": "Mercury",
+      "radius_m": 2440000.0,
+      "rotation_period_hours": 1407.6,
+      "surface_gravity_ms2": 3.7
+    }
+  ],
+  [
+    {
+      "earth_density": 5514.0,
+      "earth_escape_velocity": 11186.0,
+      "earth_orbital_velocity_ms": 29788.8993205065,
+      "jupiter_density": 1326.0,
+      "ly_per_parsec": 0.30659817869527173,
+      "mars_distance_in_AU": 1.5234174051649787,
+      "moon_escape_velocity": 2380.0
+    }
+  ],
+  [
+    {
+      "atomic_mass_unit": 1.6605390666e-27,
+      "bohr_radius": 5.29177210903e-11,
+      "coulomb_constant": 8987551787.368176,
+      "electric_permittivity": 8.8541878128e-12,
+      "euler_number": 2.718281828459045,
+      "fine_structure_constant": 0.0072973525693,
+      "gas_constant": 8.314462618,
+      "golden_ratio": 1.618033988749895,
+      "magnetic_permeability": 1.25663706212e-06,
+      "reduced_planck_constant": 1.054571817e-34,
+      "rydberg_constant": 10973731.56816,
+      "stefan_boltzmann": 5.670374419e-08,
+      "tau_2pi": 6.283185307179586
+    }
+  ],
+  [
+    {
+      "down_quark_charge": -5.340588779999999e-20,
+      "electron_charge": -1.602176634e-19,
+      "electron_mass": 9.1093837015e-31,
+      "electron_radius": 2.8179403262e-15,
+      "muon_charge": -1.602176634e-19,
+      "neutron_charge": 0.0,
+      "neutron_mass": 1.67492749804e-27,
+      "neutron_radius": 8.4e-16,
+      "positron_charge": 1.602176634e-19,
+      "proton_charge": 1.602176634e-19,
+      "proton_mass": 1.67262192369e-27,
+      "proton_radius": 8.414e-16,
+      "tau_charge": -1.602176634e-19,
+      "up_quark_charge": 1.0681177559999998e-19
+    }
+  ],
+  [
+    {
+      "aspirin_formula": "C9H8O4",
+      "aspirin_mass": 180.154,
+      "avogadro_number": 6.02214076e+23,
+      "caffeine_formula": "C8H10N4O2",
+      "caffeine_mass": 194.2,
+      "carbon_atomic_mass": 12.01,
+      "carbon_atomic_num": 6,
+      "carbon_neutrons": 6
+    }
+  ],
+  [
+    {
+      "base_16": "64",
+      "base_36": "ya",
+      "binary_42": "101010",
+      "from_base_16": 100,
+      "from_binary": "42",
+      "from_hex_FF": "255",
+      "from_octal": 64,
+      "hex_255": "ff",
+      "octal_64": "100"
+    }
+  ],
+  [
+    {
+      "big_add": "10000000000000000",
+      "big_int": "999999999999999999",
+      "big_multiply": "999999998000000001",
+      "factorial_50": "30414093201713378043612608166064768844377641568960512000000000000",
+      "two_to_100th": "1267650600228229401496703205376"
+    }
+  ],
+  [
+    {
+      "bitwise_and": "8",
+      "bitwise_not": -6,
+      "bitwise_or": "14",
+      "bitwise_xor": "6",
+      "count_ones": 8,
+      "highest_bit": 7,
+      "is_pow_2": true,
+      "lowest_bit": 2,
+      "next_pow_2": 128,
+      "shift_left_2": "32",
+      "shift_right_2": "2"
+    }
+  ],
+  [
+    {
+      "bit_str_and": "1000",
+      "bit_str_not": "0011",
+      "bit_str_or": "1110",
+      "bit_str_xor": "0110",
+      "count_bits": 4,
+      "formatted_binary": "1111_1111",
+      "hamming_dist": 2,
+      "rotate_left": "1001",
+      "shift_left": "0000"
+    }
+  ],
+  [
+    {
+      "day_name_full": "Friday",
+      "day_name_short": "Fri",
+      "day_of_week": 5,
+      "day_value": 15.0,
+      "is_2024_leap_year": true,
+      "month_name_full": "March",
+      "month_name_short": "Mar",
+      "month_value": 3.0,
+      "quarter_value": 1,
+      "week_of_year": 11,
+      "year_value": 2024.0
+    }
+  ],
+  [
+    {
+      "from_epoch": "2021-01-01 00:00:00",
+      "full_date": "March 15, 2024",
+      "iso_date": "2024-03-15",
+      "parsed_datetime": "2024-12-25 15:30:00.000",
+      "unix_time": 1705320000,
+      "us_date": "03/15/2024"
+    }
+  ],
+  [
+    {
+      "base64_decoded": "Hello",
+      "base64_encoded": "SGVsbG8=",
+      "md5_hash": "5eb63bbbe01eeed093cb22bb8f5acdc3",
+      "sha1_hash": "2aae6c35c94fcfb415dbe95f408b9ce91ee846ed",
+      "sha256_hash": "b94d27b9934d3e08a52e52d7da7dabfac484efe37a5380ee9088f7ace2efcde9",
+      "sha512_hash": "309ecc489c12d6eb4cc40f50c902f2b4d0ed77ee511a7c7a9bcd3ca86d4cd86f989dd35bc5ff499670da34255b45b0cfd830e81f605dcf7dc5542e93ae9cd76f",
+      "soundex_smith": "S530",
+      "soundex_smyth": "S530"
+    }
+  ],
+  [
+    {
+      "morse_sos": "... --- ...",
+      "note_about_random_funcs": "Removed for deterministic testing",
+      "pig_latin": "ellohay orldway",
+      "rot13_encoded": "Uryyb Jbeyq"
+    }
+  ],
+  [
+    {
+      "CONSTANT_CASE": "HELLO_WORLD_EXAMPLE",
+      "PascalCase": "HelloWorldExample",
+      "camelCase": "helloWorldExample",
+      "kebab_case": "hello-world-example",
+      "original": "hello world example",
+      "snake_case": "hello_world_example"
+    }
+  ],
+  [
+    {
+      "first_ordinal": "1st",
+      "first_words": "first",
+      "forty_second_ordinal": "42nd",
+      "forty_two": "forty-two",
+      "spelled_out": "one million two hundred thirty-four thousand five hundred sixty-seven",
+      "twenty_first_words": "twenty-first"
+    }
+  ],
+  [
+    {
+      "from_roman_1994": 1994.0,
+      "from_roman_2024": 2024.0,
+      "mcmxciv": "MCMXCIV",
+      "year_2024_roman": "MMXXIV"
+    }
+  ],
+  [
+    {
+      "euros": "\u20ac1,234.56",
+      "formatted_with_commas": "1,234,567.89",
+      "pounds": "\u00a31,234.56",
+      "us_dollars": "$1,234.56",
+      "with_k_suffix": "1,234,567.00",
+      "with_m_suffix": "1,234,567,890.00"
+    }
+  ],
+  [
+    {
+      "centered_text": "       TITLE        ",
+      "divider": "----------",
+      "dot_filled": "Name................",
+      "zero_padded": "00042"
+    }
+  ],
+  [
+    {
+      "cleaned": "Extra spaces here",
+      "count_letter_a": 3,
+      "no_punctuation": "Hello World",
+      "tokens": "test data here",
+      "word_count": 5,
+      "words_min_3": "Hello,World,How,are,you"
+    }
+  ],
+  [
+    {
+      "ascii_A": 65,
+      "chr_65": "A",
+      "domain": "example.com",
+      "left_3": "Hel",
+      "one_based_index": 7,
+      "ord_Z": 90,
+      "reversed": "olleH",
+      "right_2": "lo",
+      "second_part": "b",
+      "unicode_codes": "65,66,67",
+      "username": "user",
+      "zero_based_index": 6
+    }
+  ],
+  [
+    {
+      "best_label": "B",
+      "first_non_null": "default",
+      "max_value": 9,
+      "min_value": 1,
+      "returns_5": 5,
+      "returns_null": null,
+      "simple_if_false": "No",
+      "simple_if_true": "Yes",
+      "worst_label": "A"
+    }
+  ],
+  [
+    {
+      "is_bool_true": true,
+      "is_date_true": true,
+      "is_float_true": true,
+      "is_int_false": false,
+      "is_int_true": true,
+      "is_not_null_check": true,
+      "is_null_check": true,
+      "is_num_true": true
+    }
+  ],
+  [
+    {
+      "byte_max": 255,
+      "byte_min": 0,
+      "int16_max": 32767,
+      "int16_min": -32768,
+      "int32_max": 2147483647,
+      "int32_min": -2147483648,
+      "int64_max": 9223372036854775807,
+      "int64_min": -9223372036854775808,
+      "int8_max": 127,
+      "int8_min": -128,
+      "long_max": 9223372036854775807,
+      "long_min": -9223372036854775808,
+      "short_max": 32767,
+      "short_min": -32768,
+      "uint16_max": 65535,
+      "uint32_max": 4294967295,
+      "uint8_max": 255
+    }
+  ],
+  [
+    {
+      "mathematical_constant": 3.141592653589793,
+      "tenth_fibonacci": 55,
+      "twenty_fifth_prime": 97
+    }
+  ],
+  [
+    {
+      "hundredth_prime": 541,
+      "is_1009_prime": true,
+      "next_prime_after_100": 101,
+      "prev_prime_before_100": 97,
+      "primes_up_to_1000": 168,
+      "thousandth_prime": 7919
+    }
+  ],
+  [
+    {
+      "first_digit": 1,
+      "hundredth_digit": 9,
+      "pi_50_decimals": "3.14159265358979323846264338327950288419716939937510",
+      "pi_default": 3.141592653589793,
+      "tenth_digit": 5
+    }
+  ],
+  [
+    {
+      "blink": "\u001b[5mBlinking\u001b[0m",
+      "blue_info": "\u001b[34mINFO\u001b[0m",
+      "bold": "\u001b[1mBold Text\u001b[0m",
+      "green_success": "\u001b[32mSUCCESS\u001b[0m",
+      "italic": "\u001b[3mItalic Text\u001b[0m",
+      "orange_text": "\u001b[38;2;255;165;0mOrange\u001b[0m",
+      "red_background": "\u001b[41mCRITICAL\u001b[0m",
+      "red_error": "\u001b[31mERROR\u001b[0m",
+      "reverse": "\u001b[7mReversed\u001b[0m",
+      "rgb_bg": "\u001b[48;2;0;100;200mBlue BG\u001b[0m",
+      "strike": "\u001b[9mStrikethrough\u001b[0m",
+      "underline": "\u001b[4mUnderlined\u001b[0m",
+      "yellow_warning": "\u001b[33mWARNING\u001b[0m"
+    }
+  ]
+]

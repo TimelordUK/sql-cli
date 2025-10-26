@@ -1,9 +1,6 @@
--- SQL-CLI Complete Feature Showcase
--- This file demonstrates ALL features including non-deterministic functions
--- (NOW, RANDOM, LOREM_IPSUM, SCRAMBLE, etc.)
---
--- For formal testing with expectations, use: showcase_deterministic.sql
--- This file is great for smoke testing and demonstrations
+-- SQL-CLI Deterministic Feature Showcase
+-- This file demonstrates all implemented features with DETERMINISTIC output
+-- Safe for formal testing with expectations (no random/time-based functions)
 -- Each section is separated by GO to execute as independent statements
 
 -- ===== MATHEMATICAL FUNCTIONS =====
@@ -113,11 +110,11 @@ SELECT
 GO
 
 -- ===== DATE AND TIME FUNCTIONS =====
--- Working with dates and times
-SELECT 
-    -- Current date/time
-    NOW() as current_timestamp,
-    TODAY() as current_date;
+-- Working with dates and times (using fixed dates for deterministic output)
+SELECT
+    -- Fixed date/time for testing
+    '2024-01-15 14:30:00' as example_timestamp,
+    '2024-01-15' as example_date;
 GO
 
 -- ===== DATE ARITHMETIC =====
@@ -403,36 +400,36 @@ SELECT
 GO
 
 -- ===== EXTENDED DATE FUNCTIONS =====
--- Complete date/time manipulation
+-- Complete date/time manipulation (using fixed date)
 SELECT
-    -- Date component extraction
-    YEAR(NOW()) as current_year,
-    MONTH(NOW()) as current_month,
-    DAY(NOW()) as current_day,
-    QUARTER(NOW()) as current_quarter,
-    WEEKOFYEAR(NOW()) as week_of_year,
-    DAYOFWEEK(NOW()) as day_of_week,
+    -- Date component extraction (using 2024-03-15)
+    YEAR('2024-03-15') as year_value,
+    MONTH('2024-03-15') as month_value,
+    DAY('2024-03-15') as day_value,
+    QUARTER('2024-03-15') as quarter_value,
+    WEEKOFYEAR('2024-03-15') as week_of_year,
+    DAYOFWEEK('2024-03-15') as day_of_week,
 
     -- Date names
-    DAYNAME(NOW(), 'full') as day_name_full,
-    DAYNAME(NOW(), 'short') as day_name_short,
-    MONTHNAME(NOW(), 'full') as month_name_full,
-    MONTHNAME(NOW(), 'short') as month_name_short,
+    DAYNAME('2024-03-15', 'full') as day_name_full,
+    DAYNAME('2024-03-15', 'short') as day_name_short,
+    MONTHNAME('2024-03-15', 'full') as month_name_full,
+    MONTHNAME('2024-03-15', 'short') as month_name_short,
 
     -- Date checks
     ISLEAPYEAR(2024) as is_2024_leap_year;
 GO
 
 -- ===== DATE FORMATTING AND PARSING =====
--- Custom date formatting
+-- Custom date formatting (using fixed dates)
 SELECT
-    -- Format dates
-    FORMAT_DATE(NOW(), '%Y-%m-%d') as iso_date,
-    FORMAT_DATE(NOW(), '%B %d, %Y') as full_date,
-    FORMAT_DATE(NOW(), '%m/%d/%Y') as us_date,
+    -- Format dates (using 2024-03-15)
+    FORMAT_DATE('2024-03-15 10:30:45', '%Y-%m-%d') as iso_date,
+    FORMAT_DATE('2024-03-15 10:30:45', '%B %d, %Y') as full_date,
+    FORMAT_DATE('2024-03-15 10:30:45', '%m/%d/%Y') as us_date,
 
-    -- Unix timestamps
-    UNIX_TIMESTAMP(NOW()) as unix_time,
+    -- Unix timestamps (using fixed timestamp)
+    UNIX_TIMESTAMP('2024-01-15 12:00:00') as unix_time,
     FROM_UNIXTIME(1609459200) as from_epoch,
 
     -- Parse custom formats
@@ -458,16 +455,16 @@ SELECT
 GO
 
 -- ===== FUN TEXT TRANSFORMATIONS =====
--- Playful text manipulation
+-- Playful text manipulation (deterministic only - removed SCRAMBLE and LOREM_IPSUM)
 SELECT
     -- Encoding games
     MORSE_CODE('SOS') as morse_sos,
     ROT13('Hello World') as rot13_encoded,
     PIG_LATIN('Hello World') as pig_latin,
-    SCRAMBLE('Programming') as scrambled,
 
-    -- Lorem ipsum generation
-    LOREM_IPSUM(20) as lorem_text;
+    -- Note: SCRAMBLE() and LOREM_IPSUM() are non-deterministic
+    -- See showcase_all_features.sql for full demo
+    'Removed for deterministic testing' as note_about_random_funcs;
 GO
 
 -- ===== CASE CONVERSIONS =====
@@ -617,11 +614,13 @@ SELECT
 GO
 
 -- ===== RANDOM NUMBER GENERATION =====
--- Randomization functions
+-- Note: Random functions are non-deterministic and removed from this test
+-- See showcase_all_features.sql for RANDOM(), RAND_INT(), RAND_RANGE() demos
+-- Using fixed mathematical sequences instead
 SELECT
-    RANDOM() as random_float,
-    RAND_INT(1, 100) as random_1_to_100,
-    RAND_RANGE(5, 10, 20) as random_sample;
+    PI() as mathematical_constant,
+    FIBONACCI(10) as tenth_fibonacci,
+    PRIME(25) as twenty_fifth_prime;
 GO
 
 -- ===== PRIME NUMBER EXTENDED =====
@@ -671,9 +670,15 @@ SELECT
     ANSI_REVERSE('Reversed') as reverse;
 GO
 
--- ===== END OF COMPREHENSIVE SHOWCASE =====
+-- ===== END OF DETERMINISTIC SHOWCASE =====
 -- This file demonstrates the extensive capabilities of sql-cli
+-- With DETERMINISTIC output safe for formal testing with expectations
 -- Covering: Math, Trig, Geometry, Stats, Astronomy, Physics, Chemistry,
 --           String manipulation, Date/Time, Number systems, Bitwise ops,
 --           Text analysis, Formatting, Colors, and much more!
--- Run with: ./target/release/sql-cli -f examples/showcase_all_features.sql
+--
+-- For non-deterministic features (RANDOM, NOW, LOREM_IPSUM, SCRAMBLE):
+-- See: examples/showcase_all_features.sql
+--
+-- Run with: ./target/release/sql-cli -f examples/showcase_deterministic.sql
+-- Test with: uv run python tests/integration/test_examples.py showcase_deterministic
