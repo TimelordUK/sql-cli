@@ -5,6 +5,9 @@ Vim-like terminal SQL editor with in-memory query engine for ultra-fast navigati
 ## 🚀 QUICK START - Essential Commands
 
 ```bash
+# Run all tests (Rust + Python + Examples)
+./run_all_tests.sh                                  # Complete test suite
+
 # When in doubt about available functions:
 ./target/release/sql-cli --list-functions           # List all SQL functions
 ./target/release/sql-cli --function-help CONVERT    # Get help for specific function
@@ -14,7 +17,9 @@ Vim-like terminal SQL editor with in-memory query engine for ultra-fast navigati
 ./target/release/sql-cli data/test.csv -q "SELECT * FROM test WHERE id > 5" -o csv
 
 # Test examples:
-./scripts/test_all_examples.sh                      # Run all SQL examples
+uv run python tests/integration/test_examples.py    # Run all examples (formal + smoke tests)
+uv run python tests/integration/test_examples.py physics_astronomy_showcase  # Run specific
+uv run python tests/integration/test_examples.py --capture qualified_names   # Capture expectations
 ```
 
 ## 🏗️ CORE ARCHITECTURE - Key Files
@@ -135,23 +140,39 @@ Vim-like terminal SQL editor with in-memory query engine for ultra-fast navigati
    ```bash
    # Test new feature
    ./target/release/sql-cli -q "YOUR_QUERY" -o csv
-   
+
    # Debug parser
    ./target/release/sql-cli -q "YOUR_QUERY" --query-plan
    ```
 
 2. **Run test suites**:
    ```bash
-   cargo test                    # Rust tests
-   ./run_python_tests.sh        # Python integration tests
-   ./scripts/test_all_examples.sh  # Example SQL files
+   cargo test                                        # Rust unit tests
+   ./run_python_tests.sh                            # Python integration tests
+   uv run python tests/integration/test_examples.py # Examples (formal + smoke)
+   ./run_all_tests.sh                               # ALL THREE test suites
    ```
 
-3. **Always run before committing**:
+3. **Examples testing** (new Python-based framework):
+   ```bash
+   # Run all examples (2 formal with expectations, 117 smoke tests)
+   uv run python tests/integration/test_examples.py
+
+   # Run specific example
+   uv run python tests/integration/test_examples.py qualified_names
+
+   # Capture expected output for formal testing
+   uv run python tests/integration/test_examples.py --capture physics_astronomy_showcase
+
+   # Only fails if FORMAL tests fail (expectations not met)
+   # SMOKE test failures are reported but non-blocking
+   ```
+
+4. **Always run before committing**:
    ```bash
    cargo fmt                    # Required formatting
    cargo clippy                 # Linting
-   ./run_all_tests.sh          # All tests
+   ./run_all_tests.sh          # All tests (Rust + Python + Examples)
    ```
 
 ## 🗂️ Project Structure
@@ -176,14 +197,17 @@ sql-cli/
 │   │   └── unit_converter.rs  # Unit conversion logic
 │   └── ui/                     # TUI components
 ├── examples/                   # SQL example files
+│   └── expectations/          # Captured JSON output for formal tests
 ├── data/                       # Test data files
 ├── docs/                       # Technical documentation
 ├── tests/
 │   ├── python_tests/          # Python integration tests
-│   ├── integration/           # Shell/Lua integration tests
+│   ├── integration/           # Integration test scripts
+│   │   └── test_examples.py   # Examples test framework (formal + smoke)
 │   └── sql_examples/          # Test SQL queries
 ├── scripts/
-│   └── test_all_examples.sh   # Example test runner
+│   ├── test_all_examples.sh   # Legacy bash example runner (deprecated)
+│   └── capture_expectation.sh # Helper to capture example expectations
 └── nvim-plugin/               # Neovim plugin
 ```
 
