@@ -74,6 +74,13 @@ impl PreprocessingStats {
             self.total_duration_micros as f64 / 1000.0
         )
     }
+
+    /// Returns true if any transformer actually modified the AST
+    pub fn has_modifications(&self) -> bool {
+        self.transformations
+            .iter()
+            .any(|stats| stats.modifications > 0)
+    }
 }
 
 /// Configuration for the preprocessing pipeline

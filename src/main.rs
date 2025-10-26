@@ -435,6 +435,12 @@ struct NonInteractiveArgs {
     rewrite_analysis_arg: bool,
     lift_in_arg: bool,
     debug_arg: bool,
+    no_where_expansion_arg: bool,
+    no_group_by_expansion_arg: bool,
+    no_having_expansion_arg: bool,
+    no_expression_lifter_arg: bool,
+    no_cte_hoister_arg: bool,
+    no_in_lifter_arg: bool,
     limit_arg: Option<usize>,
     analyze_query_arg: bool,
     expand_star_arg: bool,
@@ -535,6 +541,18 @@ fn parse_non_interactive_args(args: &[String]) -> NonInteractiveArgs {
         debug_arg: args
             .iter()
             .any(|arg| arg == "--debug" || arg == "--debug-trace"),
+
+        no_where_expansion_arg: args.iter().any(|arg| arg == "--no-where-expansion"),
+
+        no_group_by_expansion_arg: args.iter().any(|arg| arg == "--no-group-by-expansion"),
+
+        no_having_expansion_arg: args.iter().any(|arg| arg == "--no-having-expansion"),
+
+        no_expression_lifter_arg: args.iter().any(|arg| arg == "--no-expression-lifter"),
+
+        no_cte_hoister_arg: args.iter().any(|arg| arg == "--no-cte-hoister"),
+
+        no_in_lifter_arg: args.iter().any(|arg| arg == "--no-in-lifter"),
 
         limit_arg: args
             .iter()
@@ -1509,6 +1527,12 @@ fn handle_non_interactive_query(
             .map_err(io::Error::other)?,
         styled: parsed_args.styled_arg,
         style_file: parsed_args.style_file_arg.clone(),
+        no_where_expansion: parsed_args.no_where_expansion_arg,
+        no_group_by_expansion: parsed_args.no_group_by_expansion_arg,
+        no_having_expansion: parsed_args.no_having_expansion_arg,
+        no_expression_lifter: parsed_args.no_expression_lifter_arg,
+        no_cte_hoister: parsed_args.no_cte_hoister_arg,
+        no_in_lifter: parsed_args.no_in_lifter_arg,
     };
 
     // Use script executor if GO separator is detected, otherwise normal execution

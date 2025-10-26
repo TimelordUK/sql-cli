@@ -509,6 +509,12 @@ pub fn handle_distinct_column_flag(args: &[String]) -> Option<io::Result<()>> {
         table_style: sql_cli::non_interactive::TableStyle::Default,
         styled: false,
         style_file: None,
+        no_where_expansion: false,
+        no_group_by_expansion: false,
+        no_having_expansion: false,
+        no_expression_lifter: false,
+        no_cte_hoister: false,
+        no_in_lifter: false,
     };
 
     // Execute using the non-interactive interface

@@ -1,0 +1,318 @@
+[
+  [
+    {
+      "amount": 40,
+      "category": 1,
+      "id": 4
+    },
+    {
+      "amount": 50,
+      "category": 2,
+      "id": 5
+    },
+    {
+      "amount": 60,
+      "category": 0,
+      "id": 6
+    },
+    {
+      "amount": 70,
+      "category": 1,
+      "id": 7
+    },
+    {
+      "amount": 80,
+      "category": 2,
+      "id": 8
+    },
+    {
+      "amount": 90,
+      "category": 0,
+      "id": 9
+    },
+    {
+      "amount": 100,
+      "category": 1,
+      "id": 10
+    }
+  ],
+  [
+    {
+      "price": 1000,
+      "product_id": 10,
+      "type": "even"
+    },
+    {
+      "price": 900,
+      "product_id": 9,
+      "type": "odd"
+    },
+    {
+      "price": 800,
+      "product_id": 8,
+      "type": "even"
+    },
+    {
+      "price": 700,
+      "product_id": 7,
+      "type": "odd"
+    },
+    {
+      "price": 600,
+      "product_id": 6,
+      "type": "even"
+    },
+    {
+      "price": 500,
+      "product_id": 5,
+      "type": "odd"
+    },
+    {
+      "price": 400,
+      "product_id": 4,
+      "type": "even"
+    },
+    {
+      "price": 300,
+      "product_id": 3,
+      "type": "odd"
+    }
+  ],
+  [
+    {
+      "avg_revenue": 1800.0,
+      "count": 2,
+      "product_category": 0,
+      "region": 0,
+      "total_revenue": 3600
+    },
+    {
+      "avg_revenue": 1000.0,
+      "count": 2,
+      "product_category": 1,
+      "region": 0,
+      "total_revenue": 2000
+    },
+    {
+      "avg_revenue": 1400.0,
+      "count": 2,
+      "product_category": 2,
+      "region": 0,
+      "total_revenue": 2800
+    },
+    {
+      "avg_revenue": 1500.0,
+      "count": 2,
+      "product_category": 0,
+      "region": 1,
+      "total_revenue": 3000
+    },
+    {
+      "avg_revenue": 700.0,
+      "count": 2,
+      "product_category": 1,
+      "region": 1,
+      "total_revenue": 1400
+    },
+    {
+      "avg_revenue": 1100.0,
+      "count": 2,
+      "product_category": 2,
+      "region": 1,
+      "total_revenue": 2200
+    },
+    {
+      "avg_revenue": 1200.0,
+      "count": 2,
+      "product_category": 0,
+      "region": 2,
+      "total_revenue": 2400
+    },
+    {
+      "avg_revenue": 1600.0,
+      "count": 2,
+      "product_category": 1,
+      "region": 2,
+      "total_revenue": 3200
+    },
+    {
+      "avg_revenue": 800.0,
+      "count": 2,
+      "product_category": 2,
+      "region": 2,
+      "total_revenue": 1600
+    },
+    {
+      "avg_revenue": 900.0,
+      "count": 2,
+      "product_category": 0,
+      "region": 3,
+      "total_revenue": 1800
+    },
+    {
+      "avg_revenue": 1300.0,
+      "count": 2,
+      "product_category": 1,
+      "region": 3,
+      "total_revenue": 2600
+    },
+    {
+      "avg_revenue": 1700.0,
+      "count": 2,
+      "product_category": 2,
+      "region": 3,
+      "total_revenue": 3400
+    }
+  ],
+  [
+    {
+      "avg_score": 150.0,
+      "bucket": 0,
+      "count": 5,
+      "total_score": 750
+    },
+    {
+      "avg_score": 120.0,
+      "bucket": 2,
+      "count": 5,
+      "total_score": 600
+    },
+    {
+      "avg_score": 110.0,
+      "bucket": 1,
+      "count": 5,
+      "total_score": 550
+    }
+  ],
+  [
+    {
+      "classification": "type.category.B",
+      "id": 1
+    },
+    {
+      "classification": "type.category.B",
+      "id": 4
+    },
+    {
+      "classification": "type.category.B",
+      "id": 7
+    },
+    {
+      "classification": "type.category.B",
+      "id": 10
+    },
+    {
+      "classification": "type.category.B",
+      "id": 13
+    },
+    {
+      "classification": "type.category.B",
+      "id": 16
+    },
+    {
+      "classification": "type.category.B",
+      "id": 19
+    }
+  ],
+  [
+    {
+      "customer_id": 0,
+      "total_amount": 52500,
+      "transaction_count": 20
+    },
+    {
+      "customer_id": 4,
+      "total_amount": 51500,
+      "transaction_count": 20
+    },
+    {
+      "customer_id": 3,
+      "total_amount": 50500,
+      "transaction_count": 20
+    },
+    {
+      "customer_id": 2,
+      "total_amount": 49500,
+      "transaction_count": 20
+    },
+    {
+      "customer_id": 1,
+      "total_amount": 48500,
+      "transaction_count": 20
+    }
+  ],
+  [
+    {
+      "category": 0,
+      "category_average": 1375.0,
+      "category_total": 13750,
+      "max_value": 2500,
+      "min_value": 250,
+      "parity": "even",
+      "record_count": 10
+    },
+    {
+      "category": 1,
+      "category_average": 1275.0,
+      "category_total": 11475,
+      "max_value": 2275,
+      "min_value": 275,
+      "parity": "odd",
+      "record_count": 9
+    },
+    {
+      "category": 2,
+      "category_average": 1300.0,
+      "category_total": 11700,
+      "max_value": 2300,
+      "min_value": 300,
+      "parity": "even",
+      "record_count": 9
+    },
+    {
+      "category": 3,
+      "category_average": 1325.0,
+      "category_total": 11925,
+      "max_value": 2325,
+      "min_value": 325,
+      "parity": "odd",
+      "record_count": 9
+    },
+    {
+      "category": 4,
+      "category_average": 1350.0,
+      "category_total": 12150,
+      "max_value": 2350,
+      "min_value": 350,
+      "parity": "even",
+      "record_count": 9
+    },
+    {
+      "category": 5,
+      "category_average": 1250.0,
+      "category_total": 12500,
+      "max_value": 2375,
+      "min_value": 125,
+      "parity": "odd",
+      "record_count": 10
+    },
+    {
+      "category": 6,
+      "category_average": 1275.0,
+      "category_total": 12750,
+      "max_value": 2400,
+      "min_value": 150,
+      "parity": "even",
+      "record_count": 10
+    },
+    {
+      "category": 7,
+      "category_average": 1300.0,
+      "category_total": 13000,
+      "max_value": 2425,
+      "min_value": 175,
+      "parity": "odd",
+      "record_count": 10
+    }
+  ]
+]

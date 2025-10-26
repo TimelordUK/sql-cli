@@ -44,6 +44,92 @@ pub use transformer_adapters::{
     CTEHoisterTransformer, ExpressionLifterTransformer, InOperatorLifterTransformer,
 };
 
+/// Configuration for selective transformer enabling/disabling
+#[derive(Default)]
+pub struct TransformerConfig {
+    pub enable_expression_lifter: bool,
+    pub enable_where_expansion: bool,
+    pub enable_group_by_expansion: bool,
+    pub enable_having_expansion: bool,
+    pub enable_cte_hoister: bool,
+    pub enable_in_lifter: bool,
+}
+
+impl TransformerConfig {
+    /// Create a config with all transformers enabled
+    pub fn all_enabled() -> Self {
+        Self {
+            enable_expression_lifter: true,
+            enable_where_expansion: true,
+            enable_group_by_expansion: true,
+            enable_having_expansion: true,
+            enable_cte_hoister: true,
+            enable_in_lifter: true,
+        }
+    }
+}
+
+/// Create a preprocessing pipeline with configurable transformers
+///
+/// # Arguments
+/// * `verbose` - Whether to enable verbose logging
+/// * `transformer_config` - Configuration for which transformers to enable
+///
+/// # Example
+/// ```ignore
+/// let config = TransformerConfig::all_enabled();
+/// let mut pipeline = create_pipeline_with_config(false, config);
+/// let transformed = pipeline.process(statement)?;
+/// ```
+pub fn create_pipeline_with_config(
+    verbose: bool,
+    transformer_config: TransformerConfig,
+) -> PreprocessingPipeline {
+    let config = if verbose {
+        PipelineConfig {
+            enabled: true,
+            verbose_logging: true,
+            collect_stats: true,
+            debug_ast_changes: false,
+        }
+    } else {
+        PipelineConfig::default()
+    };
+
+    let mut builder = PipelineBuilder::with_config(config);
+
+    // Add transformers in the correct order based on configuration
+    // Order matters! ExpressionLifter must run before CTEHoister
+    // WhereAliasExpander and GroupByAliasExpander run early to expand aliases
+    // HavingAliasTransformer runs after GROUP BY to ensure proper aggregate aliases
+
+    if transformer_config.enable_expression_lifter {
+        builder = builder.with_transformer(Box::new(ExpressionLifterTransformer::new()));
+    }
+
+    if transformer_config.enable_where_expansion {
+        builder = builder.with_transformer(Box::new(WhereAliasExpander::new()));
+    }
+
+    if transformer_config.enable_group_by_expansion {
+        builder = builder.with_transformer(Box::new(GroupByAliasExpander::new()));
+    }
+
+    if transformer_config.enable_having_expansion {
+        builder = builder.with_transformer(Box::new(HavingAliasTransformer::new()));
+    }
+
+    if transformer_config.enable_cte_hoister {
+        builder = builder.with_transformer(Box::new(CTEHoisterTransformer::new()));
+    }
+
+    if transformer_config.enable_in_lifter {
+        builder = builder.with_transformer(Box::new(InOperatorLifterTransformer::new()));
+    }
+
+    builder.build()
+}
+
 /// Create a standard preprocessing pipeline with all default transformers
 ///
 /// The transformers are applied in this order:

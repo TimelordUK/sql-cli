@@ -203,6 +203,24 @@ pub struct NonInteractiveConfig {
     pub table_style: TableStyle,      // Table styling preset (only affects table output format)
     pub styled: bool,                 // Whether to apply color styling rules
     pub style_file: Option<String>,   // Path to YAML style configuration file
+    pub no_where_expansion: bool,     // Disable WHERE clause alias expansion
+    pub no_group_by_expansion: bool,  // Disable GROUP BY clause alias expansion
+    pub no_having_expansion: bool,    // Disable HAVING clause auto-aliasing
+    pub no_expression_lifter: bool,   // Disable expression lifting transformer
+    pub no_cte_hoister: bool,         // Disable CTE hoisting transformer
+    pub no_in_lifter: bool,           // Disable IN operator lifting transformer
+}
+
+/// Convert NonInteractiveConfig flags to TransformerConfig
+fn make_transformer_config(config: &NonInteractiveConfig) -> crate::query_plan::TransformerConfig {
+    crate::query_plan::TransformerConfig {
+        enable_expression_lifter: !config.no_expression_lifter,
+        enable_where_expansion: !config.no_where_expansion,
+        enable_group_by_expansion: !config.no_group_by_expansion,
+        enable_having_expansion: !config.no_having_expansion,
+        enable_cte_hoister: !config.no_cte_hoister,
+        enable_in_lifter: !config.no_in_lifter,
+    }
 }
 
 /// Execute a query in non-interactive mode
@@ -445,9 +463,12 @@ pub fn execute_non_interactive(config: NonInteractiveConfig) -> Result<()> {
                         )
                     }
                 } else {
-                    // Apply preprocessing pipeline with all transformers
-                    let mut pipeline =
-                        crate::query_plan::create_standard_pipeline(config.show_preprocessing);
+                    // Apply preprocessing pipeline with configured transformers
+                    let transformer_config = make_transformer_config(&config);
+                    let mut pipeline = crate::query_plan::create_pipeline_with_config(
+                        config.show_preprocessing,
+                        transformer_config,
+                    );
                     let stmt = pipeline.process(stmt)?;
 
                     // Show statistics if requested
@@ -469,10 +490,10 @@ pub fn execute_non_interactive(config: NonInteractiveConfig) -> Result<()> {
                         eprintln!();
                     }
 
-                    // Check if any transformations were applied
-                    let transformers_applied = pipeline.stats().transformers_applied > 0;
-
-                    if transformers_applied {
+                    // Always use AST execution to avoid re-parsing (double-preprocessing bug)
+                    // Re-parsing would run preprocessing again, breaking qualified names
+                    // NOTE: This means scalar subqueries in expressions don't work yet
+                    if true {
                         // Execute the rewritten AST directly using QueryEngine
                         let engine = QueryEngine::with_case_insensitive(config.case_insensitive);
 
@@ -921,59 +942,103 @@ pub fn execute_script(config: NonInteractiveConfig) -> Result<()> {
 
         // Apply preprocessing pipeline (alias expansion, etc.) if statement has FROM clause
         // This enables Quick Win features (WHERE/GROUP BY/HAVING alias expansion) in scripts
-        let executable_sql = {
-            use crate::query_plan::{create_standard_pipeline, IntoClauseRemover};
-            use crate::sql::parser::ast_formatter;
+        let has_from_clause = parsed_stmt.from_table.is_some()
+            || parsed_stmt.from_subquery.is_some()
+            || parsed_stmt.from_function.is_some();
 
-            let has_from_clause = parsed_stmt.from_table.is_some()
-                || parsed_stmt.from_subquery.is_some()
-                || parsed_stmt.from_function.is_some();
+        // Determine whether to use AST execution or SQL string execution
+        let (use_ast_execution, transformed_stmt) = if has_from_clause {
+            use crate::query_plan::{create_pipeline_with_config, IntoClauseRemover};
 
-            if has_from_clause {
-                // Apply full preprocessing pipeline
-                let mut pipeline = create_standard_pipeline(config.show_preprocessing);
-                match pipeline.process(parsed_stmt.clone()) {
-                    Ok(transformed_stmt) => {
-                        // Remove INTO clause if present (executor doesn't understand INTO syntax)
-                        let final_stmt = if transformed_stmt.into_table.is_some() {
-                            IntoClauseRemover::remove_into_clause(transformed_stmt)
-                        } else {
-                            transformed_stmt
-                        };
+            // Apply preprocessing pipeline with configured transformers
+            let transformer_config = make_transformer_config(&config);
+            let mut pipeline =
+                create_pipeline_with_config(config.show_preprocessing, transformer_config);
 
-                        ast_formatter::format_select_statement(&final_stmt)
-                    }
-                    Err(e) => {
-                        // If preprocessing fails, log and fall back to original query
-                        debug!("Preprocessing failed: {}, using original query", e);
-                        if parsed_stmt.into_table.is_some() {
-                            let cleaned =
-                                IntoClauseRemover::remove_into_clause(parsed_stmt.clone());
-                            ast_formatter::format_select_statement(&cleaned)
-                        } else {
-                            statement.to_string()
-                        }
-                    }
+            match pipeline.process(parsed_stmt.clone()) {
+                Ok(transformed) => {
+                    // Remove INTO clause if present (executor doesn't understand INTO syntax)
+                    let final_stmt = if transformed.into_table.is_some() {
+                        IntoClauseRemover::remove_into_clause(transformed)
+                    } else {
+                        transformed
+                    };
+
+                    // Always use AST execution in script mode to avoid re-parsing
+                    // Re-parsing would trigger preprocessing again (double-processing bug)
+                    // NOTE: This means scalar subqueries in CTEs don't work in script mode yet
+                    // Workaround: Use --no-* flags to disable preprocessing for affected scripts
+                    (true, final_stmt)
                 }
-            } else {
-                // No FROM clause - preserve special row-iteration semantics
-                if parsed_stmt.into_table.is_some() {
-                    let cleaned = IntoClauseRemover::remove_into_clause(parsed_stmt.clone());
-                    ast_formatter::format_select_statement(&cleaned)
-                } else {
-                    statement.to_string()
+                Err(e) => {
+                    // If preprocessing fails, fall back to original statement
+                    debug!("Preprocessing failed: {}, using original statement", e);
+                    let fallback = if parsed_stmt.into_table.is_some() {
+                        IntoClauseRemover::remove_into_clause(parsed_stmt.clone())
+                    } else {
+                        parsed_stmt.clone()
+                    };
+                    (false, fallback)
                 }
             }
+        } else {
+            // No FROM clause - use original statement
+            let stmt = if parsed_stmt.into_table.is_some() {
+                use crate::query_plan::IntoClauseRemover;
+                IntoClauseRemover::remove_into_clause(parsed_stmt.clone())
+            } else {
+                parsed_stmt.clone()
+            };
+            (false, stmt)
         };
 
-        // Execute the statement
-        let service = QueryExecutionService::new(config.case_insensitive, config.auto_hide_empty);
-        match service.execute_with_temp_tables(
-            &executable_sql,
-            Some(&dataview),
-            None,
-            Some(&temp_tables),
-        ) {
+        // Execute the statement - use AST execution when transformers were applied
+        let result = if use_ast_execution {
+            // Execute the transformed AST directly to avoid re-parsing
+            use crate::data::query_engine::QueryEngine;
+
+            let engine = QueryEngine::with_case_insensitive(config.case_insensitive);
+            match engine.execute_statement_with_temp_tables(
+                dataview.source_arc(),
+                transformed_stmt.clone(),
+                Some(&temp_tables),
+            ) {
+                Ok(result_view) => {
+                    use crate::sql::parser::ast_formatter;
+                    let query_str = ast_formatter::format_select_statement(&transformed_stmt);
+                    Ok(
+                        crate::services::query_execution_service::QueryExecutionResult {
+                            dataview: result_view.clone(),
+                            stats: crate::services::query_execution_service::QueryStats {
+                                row_count: result_view.row_count(),
+                                column_count: result_view.column_count(),
+                                execution_time: stmt_start.elapsed(),
+                                query_engine_time: stmt_start.elapsed(),
+                            },
+                            hidden_columns: Vec::new(),
+                            query: query_str,
+                            execution_plan: None,
+                            debug_trace: None,
+                        },
+                    )
+                }
+                Err(e) => Err(e),
+            }
+        } else {
+            // Fall back to SQL string execution for non-FROM queries or when preprocessing failed
+            use crate::sql::parser::ast_formatter;
+            let executable_sql = ast_formatter::format_select_statement(&transformed_stmt);
+            let service =
+                QueryExecutionService::new(config.case_insensitive, config.auto_hide_empty);
+            service.execute_with_temp_tables(
+                &executable_sql,
+                Some(&dataview),
+                None,
+                Some(&temp_tables),
+            )
+        };
+
+        match result {
             Ok(result) => {
                 let exec_time = stmt_start.elapsed().as_secs_f64() * 1000.0;
                 let final_view = result.dataview;

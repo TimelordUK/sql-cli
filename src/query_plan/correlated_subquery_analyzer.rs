@@ -14,8 +14,8 @@
 //! This analyzer provides visibility into these patterns, which will inform
 //! future transformation strategies.
 
-use crate::sql::parser::ast::{ColumnRef, SelectStatement, SqlExpression, WhereClause};
-use std::collections::{HashMap, HashSet};
+use crate::sql::parser::ast::{SelectStatement, SqlExpression, WhereClause};
+use std::collections::HashSet;
 
 /// Location where a subquery appears
 #[derive(Debug, Clone, PartialEq)]
