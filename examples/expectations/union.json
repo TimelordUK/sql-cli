@@ -1,0 +1,30 @@
+[
+  [
+    {
+      "fruit": "apple"
+    }
+  ],
+  [
+    {
+      "color": "red",
+      "fruit": "apple"
+    }
+  ],
+  [
+    {
+      "city": "New York",
+      "customer": "Alice"
+    }
+  ],
+  [
+    {
+      "operation": "Sum",
+      "result": 10
+    }
+  ],
+  [
+    {
+      "fruit": "apple"
+    }
+  ]
+]

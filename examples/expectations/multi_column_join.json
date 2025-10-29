@@ -1,0 +1,70 @@
+[
+  [
+    {
+      "buy_price": 150.0,
+      "buy_qty": 100,
+      "instrument": "AAPL",
+      "sell_price": 150.0,
+      "sell_qty": 100
+    },
+    {
+      "buy_price": 2800.0,
+      "buy_qty": 200,
+      "instrument": "GOOGL",
+      "sell_price": 2800.0,
+      "sell_qty": 200
+    },
+    {
+      "buy_price": 380.0,
+      "buy_qty": 150,
+      "instrument": "MSFT",
+      "sell_price": 380.0,
+      "sell_qty": 100
+    }
+  ],
+  [
+    {
+      "buy_qty": 150,
+      "instrument": "MSFT",
+      "price": 380.0,
+      "sell_qty": 100
+    }
+  ],
+  [
+    {
+      "instrument": "AAPL",
+      "side1": "Buy",
+      "side2": "Sell",
+      "trade1_id": 1,
+      "trade2_id": 2
+    },
+    {
+      "instrument": "AAPL",
+      "side1": "Buy",
+      "side2": "Buy",
+      "trade1_id": 1,
+      "trade2_id": 3
+    },
+    {
+      "instrument": "AAPL",
+      "side1": "Sell",
+      "side2": "Buy",
+      "trade1_id": 2,
+      "trade2_id": 3
+    },
+    {
+      "instrument": "GOOGL",
+      "side1": "Buy",
+      "side2": "Sell",
+      "trade1_id": 4,
+      "trade2_id": 5
+    },
+    {
+      "instrument": "MSFT",
+      "side1": "Buy",
+      "side2": "Sell",
+      "trade1_id": 6,
+      "trade2_id": 7
+    }
+  ]
+]

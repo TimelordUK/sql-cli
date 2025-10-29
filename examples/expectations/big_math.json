@@ -1,0 +1,448 @@
+[
+  [
+    {
+      "calculation": "Jupiter + Saturn Orbits",
+      "digits": 10,
+      "total_km": "2212500000"
+    }
+  ],
+  [
+    {
+      "digit_count": 10,
+      "seconds_in_years": "3153600000",
+      "years": 100
+    },
+    {
+      "digit_count": 10,
+      "seconds_in_years": "6307200000",
+      "years": 200
+    },
+    {
+      "digit_count": 10,
+      "seconds_in_years": "9460800000",
+      "years": 300
+    },
+    {
+      "digit_count": 11,
+      "seconds_in_years": "12614400000",
+      "years": 400
+    },
+    {
+      "digit_count": 11,
+      "seconds_in_years": "15768000000",
+      "years": 500
+    }
+  ],
+  [
+    {
+      "binary_representation": "111111111111111111111111111111111111111111111111111111111111111",
+      "bit_count": 63,
+      "constant": "INT64_MAX",
+      "value": 9223372036854775807
+    }
+  ],
+  [
+    {
+      "binary_representation": "10",
+      "decimal_digits": 1,
+      "n": 1,
+      "power_of_2": "2"
+    },
+    {
+      "binary_representation": "100000000000",
+      "decimal_digits": 4,
+      "n": 11,
+      "power_of_2": "2048"
+    },
+    {
+      "binary_representation": "1000000000000000000000",
+      "decimal_digits": 7,
+      "n": 21,
+      "power_of_2": "2097152"
+    },
+    {
+      "binary_representation": "10000000000000000000000000000000",
+      "decimal_digits": 10,
+      "n": 31,
+      "power_of_2": "2147483648"
+    },
+    {
+      "binary_representation": "100000000000000000000000000000000000000000",
+      "decimal_digits": 13,
+      "n": 41,
+      "power_of_2": "2199023255552"
+    }
+  ],
+  [
+    {
+      "binary": "1",
+      "bit_length": 1,
+      "exponent": 0,
+      "power_of_2": "1"
+    },
+    {
+      "binary": "10",
+      "bit_length": 2,
+      "exponent": 1,
+      "power_of_2": "2"
+    },
+    {
+      "binary": "100",
+      "bit_length": 3,
+      "exponent": 2,
+      "power_of_2": "4"
+    },
+    {
+      "binary": "10000",
+      "bit_length": 5,
+      "exponent": 4,
+      "power_of_2": "16"
+    },
+    {
+      "binary": "100000000",
+      "bit_length": 9,
+      "exponent": 8,
+      "power_of_2": "256"
+    },
+    {
+      "binary": "10000000000000000",
+      "bit_length": 17,
+      "exponent": 16,
+      "power_of_2": "65536"
+    },
+    {
+      "binary": "100000000000000000000000000000000",
+      "bit_length": 33,
+      "exponent": 32,
+      "power_of_2": "4294967296"
+    },
+    {
+      "binary": "1000000000000000000000000000000000000000000000000000000000000000",
+      "bit_length": 64,
+      "exponent": 63,
+      "power_of_2": "9223372036854775808"
+    }
+  ],
+  [
+    {
+      "bits_needed": 7,
+      "digits": 3,
+      "factorial": "120",
+      "n": 5,
+      "overflow_status": "Within INT64"
+    },
+    {
+      "bits_needed": 22,
+      "digits": 7,
+      "factorial": "3628800",
+      "n": 10,
+      "overflow_status": "Within INT64"
+    },
+    {
+      "bits_needed": 41,
+      "digits": 13,
+      "factorial": "1307674368000",
+      "n": 15,
+      "overflow_status": "Within INT64"
+    },
+    {
+      "bits_needed": 62,
+      "digits": 19,
+      "factorial": "2432902008176640000",
+      "n": 20,
+      "overflow_status": "Within INT64"
+    },
+    {
+      "bits_needed": 80,
+      "digits": 24,
+      "factorial": "620448401733239439360000",
+      "n": 24,
+      "overflow_status": "Exceeds INT64_MAX"
+    }
+  ],
+  [
+    {
+      "digits": 51,
+      "number": "10^50",
+      "preview": "00000000000000000000...",
+      "value": "100000000000000000000000000000000000000000000000000"
+    }
+  ],
+  [
+    {
+      "first_binary": "10000000000",
+      "first_power": "2^10",
+      "first_value": "1024",
+      "second_binary": "100000000000000000000",
+      "second_power": "2^20",
+      "second_value": "1048576",
+      "sum": "1049600",
+      "sum_binary": "100000000010000000000"
+    }
+  ],
+  [
+    {
+      "binary_representation": "1",
+      "bits_needed": 1,
+      "fibonacci_value": 1,
+      "position": 1
+    },
+    {
+      "binary_representation": "1000",
+      "bits_needed": 4,
+      "fibonacci_value": 8,
+      "position": 6
+    },
+    {
+      "binary_representation": "1011001",
+      "bits_needed": 7,
+      "fibonacci_value": 89,
+      "position": 11
+    },
+    {
+      "binary_representation": "1111011011",
+      "bits_needed": 10,
+      "fibonacci_value": 987,
+      "position": 16
+    },
+    {
+      "binary_representation": "10101011000010",
+      "bits_needed": 14,
+      "fibonacci_value": 10946,
+      "position": 21
+    },
+    {
+      "binary_representation": "11101101000110001",
+      "bits_needed": 17,
+      "fibonacci_value": 121393,
+      "position": 26
+    },
+    {
+      "binary_representation": "101001000101011011101",
+      "bits_needed": 21,
+      "fibonacci_value": 1346269,
+      "position": 31
+    },
+    {
+      "binary_representation": "111000111101000110110000",
+      "bits_needed": 24,
+      "fibonacci_value": 14930352,
+      "position": 36
+    },
+    {
+      "binary_representation": "1001110111101000110101101101",
+      "bits_needed": 28,
+      "fibonacci_value": 165580141,
+      "position": 41
+    },
+    {
+      "binary_representation": "1101101011100111110010101011111",
+      "bits_needed": 31,
+      "fibonacci_value": 1836311903,
+      "position": 46
+    }
+  ],
+  [
+    {
+      "bits_needed": 333,
+      "digit_count": 101,
+      "number": "Googol (10^100)",
+      "preview": "00000000000000000000000000000000000000000000000000...",
+      "value": "10000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+    }
+  ],
+  [
+    {
+      "flag1": "0b1010",
+      "flag1_decimal": "10",
+      "flag2": "0b1100",
+      "flag2_decimal": "12",
+      "or_result_binary": "1110",
+      "or_result_decimal": 14
+    }
+  ],
+  [
+    {
+      "factor": 7,
+      "factor_term": "7^1",
+      "number": 1001,
+      "power": 1
+    },
+    {
+      "factor": 11,
+      "factor_term": "11^1",
+      "number": 1001,
+      "power": 1
+    },
+    {
+      "factor": 13,
+      "factor_term": "13^1",
+      "number": 1001,
+      "power": 1
+    }
+  ],
+  [
+    {
+      "expr_4": "3^1",
+      "factor": 3,
+      "number": 12345,
+      "power": 1
+    },
+    {
+      "expr_4": "5^1",
+      "factor": 5,
+      "number": 12345,
+      "power": 1
+    },
+    {
+      "expr_4": "823^1",
+      "factor": 823,
+      "number": 12345,
+      "power": 1
+    }
+  ],
+  [
+    {
+      "expr_1": 60,
+      "expression": "2^2",
+      "factor": 2,
+      "power": 2
+    },
+    {
+      "expr_1": 60,
+      "expression": "3^1",
+      "factor": 3,
+      "power": 1
+    },
+    {
+      "expr_1": 60,
+      "expression": "5^1",
+      "factor": 5,
+      "power": 1
+    }
+  ],
+  [
+    {
+      "base": 2,
+      "binary": "10000000000",
+      "bits": 11,
+      "power_10": "1024"
+    },
+    {
+      "base": 4,
+      "binary": "100000000000000000000",
+      "bits": 21,
+      "power_10": "1048576"
+    },
+    {
+      "base": 6,
+      "binary": "11100110101010010000000000",
+      "bits": 26,
+      "power_10": "60466176"
+    },
+    {
+      "base": 8,
+      "binary": "1000000000000000000000000000000",
+      "bits": 31,
+      "power_10": "1073741824"
+    },
+    {
+      "base": 10,
+      "binary": "1001010100000010111110010000000000",
+      "bits": 34,
+      "power_10": "10000000000"
+    }
+  ],
+  [
+    {
+      "binary": "1111111",
+      "bits": 7,
+      "max_value": 127,
+      "type": "INT8_MAX"
+    }
+  ],
+  [
+    {
+      "binary": "111111111111111",
+      "bits": 15,
+      "max_value": 32767,
+      "type": "INT16_MAX"
+    }
+  ],
+  [
+    {
+      "binary": "1111111111111111111111111111111",
+      "bits": 31,
+      "max_value": 2147483647,
+      "type": "INT32_MAX"
+    }
+  ],
+  [
+    {
+      "binary": "111111111111111111111111111111111111111111111111111111111111111",
+      "bits": 63,
+      "max_value": 9223372036854775807,
+      "type": "INT64_MAX"
+    }
+  ],
+  [
+    {
+      "min_value": 1,
+      "peak_value": 9232,
+      "sequence": "Collatz(27)",
+      "steps_to_one": 112
+    }
+  ],
+  [
+    {
+      "operation": "odd -> 3n + 1",
+      "step": 0,
+      "value": 27
+    },
+    {
+      "operation": "even -> divide by 2",
+      "step": 1,
+      "value": 82
+    },
+    {
+      "operation": "odd -> 3n + 1",
+      "step": 2,
+      "value": 41
+    },
+    {
+      "operation": "even -> divide by 2",
+      "step": 3,
+      "value": 124
+    },
+    {
+      "operation": "even -> divide by 2",
+      "step": 4,
+      "value": 62
+    },
+    {
+      "operation": "odd -> 3n + 1",
+      "step": 5,
+      "value": 31
+    },
+    {
+      "operation": "even -> divide by 2",
+      "step": 6,
+      "value": 94
+    },
+    {
+      "operation": "odd -> 3n + 1",
+      "step": 7,
+      "value": 47
+    },
+    {
+      "operation": "even -> divide by 2",
+      "step": 8,
+      "value": 142
+    },
+    {
+      "operation": "odd -> 3n + 1",
+      "step": 9,
+      "value": 71
+    }
+  ]
+]

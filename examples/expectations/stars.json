@@ -1,0 +1,1337 @@
+[
+  [
+    {
+      "apparent_magnitude": "5.21 + 6.05",
+      "constellation": "Cygnus",
+      "designation": "61 Cygni",
+      "distance_ly": 11.4,
+      "notes": "Binary star system",
+      "stellar_class": "K5V + K7V"
+    },
+    {
+      "apparent_magnitude": "8.9 + 9.7",
+      "constellation": "Draco",
+      "designation": "Struve 2398",
+      "distance_ly": 11.5,
+      "notes": "Binary red dwarfs",
+      "stellar_class": "M3V + M3.5V"
+    },
+    {
+      "apparent_magnitude": "8.08 + 11.06",
+      "constellation": "Andromeda",
+      "designation": "Groombridge 34",
+      "distance_ly": 11.6,
+      "notes": "Binary system",
+      "stellar_class": "M1.5V + M3.5V"
+    },
+    {
+      "apparent_magnitude": 4.69,
+      "constellation": "Indus",
+      "designation": "Epsilon Indi",
+      "distance_ly": 11.8,
+      "notes": "Has brown dwarf companions",
+      "stellar_class": "K5V"
+    },
+    {
+      "apparent_magnitude": 14.78,
+      "constellation": "Cancer",
+      "designation": "DX Cancri",
+      "distance_ly": 11.8,
+      "notes": "Red dwarf",
+      "stellar_class": "M6.5V"
+    },
+    {
+      "apparent_magnitude": 3.5,
+      "constellation": "Cetus",
+      "designation": "Tau Ceti",
+      "distance_ly": 11.9,
+      "notes": "Sun-like star",
+      "stellar_class": "G8V"
+    },
+    {
+      "apparent_magnitude": 13.09,
+      "constellation": "Horologium",
+      "designation": "GJ 1061",
+      "distance_ly": 12.0,
+      "notes": "Red dwarf",
+      "stellar_class": "M5.5V"
+    },
+    {
+      "apparent_magnitude": 12.02,
+      "constellation": "Cetus",
+      "designation": "YZ Ceti",
+      "distance_ly": 12.1,
+      "notes": "Red dwarf",
+      "stellar_class": "M4.5V"
+    },
+    {
+      "apparent_magnitude": 9.86,
+      "constellation": "Canis Minor",
+      "designation": "Luyten's Star",
+      "distance_ly": 12.4,
+      "notes": "Red dwarf",
+      "stellar_class": "M3.5V"
+    },
+    {
+      "apparent_magnitude": 15.4,
+      "constellation": "Aries",
+      "designation": "Teegarden's Star",
+      "distance_ly": 12.5,
+      "notes": "Has two Earth-like planets",
+      "stellar_class": "M7V"
+    },
+    {
+      "apparent_magnitude": 17.4,
+      "constellation": "Pavo",
+      "designation": "SCR 1845-6357",
+      "distance_ly": 12.6,
+      "notes": "Very cool red dwarf",
+      "stellar_class": "M8.5V"
+    },
+    {
+      "apparent_magnitude": 8.85,
+      "constellation": "Pictor",
+      "designation": "Kapteyn's Star",
+      "distance_ly": 12.8,
+      "notes": "High proper motion",
+      "stellar_class": "M1.5V"
+    },
+    {
+      "apparent_magnitude": 6.67,
+      "constellation": "Microscopium",
+      "designation": "Lacaille 8760",
+      "distance_ly": 12.9,
+      "notes": "Brightest M dwarf in southern sky",
+      "stellar_class": "M0V"
+    },
+    {
+      "apparent_magnitude": "9.79 + 11.41",
+      "constellation": "Cepheus",
+      "designation": "Kruger 60",
+      "distance_ly": 13.1,
+      "notes": "Binary red dwarfs",
+      "stellar_class": "M3V + M4V"
+    },
+    {
+      "apparent_magnitude": "11.15 + 14.23",
+      "constellation": "Monoceros",
+      "designation": "Ross 614",
+      "distance_ly": 13.3,
+      "notes": "Binary system",
+      "stellar_class": "M4.5V + M8V"
+    },
+    {
+      "apparent_magnitude": 10.07,
+      "constellation": "Ophiuchus",
+      "designation": "Wolf 1061",
+      "distance_ly": 13.9,
+      "notes": "Has three planets",
+      "stellar_class": "M3V"
+    },
+    {
+      "apparent_magnitude": "13.18 + 13.17",
+      "constellation": "Virgo",
+      "designation": "Wolf 424",
+      "distance_ly": 14.0,
+      "notes": "Binary red dwarfs",
+      "stellar_class": "M5.5V + M7V"
+    },
+    {
+      "apparent_magnitude": 12.38,
+      "constellation": "Pisces",
+      "designation": "van Maanen's Star",
+      "distance_ly": 14.1,
+      "notes": "White dwarf",
+      "stellar_class": "DZ7"
+    },
+    {
+      "apparent_magnitude": "12.27 + 15.22",
+      "constellation": "Aries",
+      "designation": "TZ Arietis",
+      "distance_ly": 14.5,
+      "notes": "Binary flare stars",
+      "stellar_class": "M4.5V + M6.5V"
+    },
+    {
+      "apparent_magnitude": 13.76,
+      "constellation": "Cetus",
+      "designation": "GJ 1002",
+      "distance_ly": 15.3,
+      "notes": "Red dwarf with planets",
+      "stellar_class": "M3.5V"
+    },
+    {
+      "apparent_magnitude": 10.17,
+      "constellation": "Aquarius",
+      "designation": "GJ 876",
+      "distance_ly": 15.3,
+      "notes": "Has four planets",
+      "stellar_class": "M4V"
+    },
+    {
+      "apparent_magnitude": 13.9,
+      "constellation": "Carina",
+      "designation": "LHS 288",
+      "distance_ly": 15.6,
+      "notes": "Red dwarf",
+      "stellar_class": "M5.5V"
+    },
+    {
+      "apparent_magnitude": "8.77 + 14.48",
+      "constellation": "Ursa Major",
+      "designation": "GJ 412",
+      "distance_ly": 15.8,
+      "notes": "Binary system",
+      "stellar_class": "M1V + M6V"
+    },
+    {
+      "apparent_magnitude": 9.32,
+      "constellation": "Leo",
+      "designation": "AD Leonis",
+      "distance_ly": 16.2,
+      "notes": "Flare star",
+      "stellar_class": "M3.5V"
+    },
+    {
+      "apparent_magnitude": 8.66,
+      "constellation": "Grus",
+      "designation": "GJ 832",
+      "distance_ly": 16.2,
+      "notes": "Has two planets",
+      "stellar_class": "M2V"
+    },
+    {
+      "apparent_magnitude": 10.95,
+      "constellation": "Scorpius",
+      "designation": "GJ 682",
+      "distance_ly": 16.3,
+      "notes": "Red dwarf",
+      "stellar_class": "M3.5V"
+    },
+    {
+      "apparent_magnitude": 7.47,
+      "constellation": "Ursa Major",
+      "designation": "Lalande 21185",
+      "distance_ly": 8.3,
+      "notes": "Fourth nearest star system",
+      "stellar_class": "M2V"
+    },
+    {
+      "apparent_magnitude": "4.20 + 6.00",
+      "constellation": "Ophiuchus",
+      "designation": "70 Ophiuchi",
+      "distance_ly": 16.6,
+      "notes": "Binary star",
+      "stellar_class": "K0V + K5V"
+    },
+    {
+      "apparent_magnitude": 0.76,
+      "constellation": "Aquila",
+      "designation": "Altair",
+      "distance_ly": 16.7,
+      "notes": "Bright main sequence star",
+      "stellar_class": "A7V"
+    },
+    {
+      "apparent_magnitude": 10.17,
+      "constellation": "Draco",
+      "designation": "GJ 625",
+      "distance_ly": 17.0,
+      "notes": "Red dwarf",
+      "stellar_class": "M1.5V"
+    },
+    {
+      "apparent_magnitude": "13.46 + 14.01 + 16.75",
+      "constellation": "Cygnus",
+      "designation": "GJ 1245",
+      "distance_ly": 17.1,
+      "notes": "Triple star system",
+      "stellar_class": "M5.5V + M6V + M5.5V"
+    },
+    {
+      "apparent_magnitude": 12.78,
+      "constellation": "Ursa Minor",
+      "designation": "GJ 1128",
+      "distance_ly": 17.3,
+      "notes": "Red dwarf",
+      "stellar_class": "M4V"
+    },
+    {
+      "apparent_magnitude": "10.38 + 12.41",
+      "constellation": "Pegasus",
+      "designation": "EQ Pegasi",
+      "distance_ly": 20.4,
+      "notes": "Binary flare stars",
+      "stellar_class": "M3.5V + M4.5V"
+    },
+    {
+      "apparent_magnitude": 11.31,
+      "constellation": "Libra",
+      "designation": "HN Librae",
+      "distance_ly": 20.5,
+      "notes": "Red dwarf",
+      "stellar_class": "M4V"
+    },
+    {
+      "apparent_magnitude": 10.55,
+      "constellation": "Libra",
+      "designation": "GJ 581",
+      "distance_ly": 20.5,
+      "notes": "Has multiple planets",
+      "stellar_class": "M3V"
+    },
+    {
+      "apparent_magnitude": 9.44,
+      "constellation": "Crater",
+      "designation": "GJ 367",
+      "distance_ly": 20.8,
+      "notes": "Red dwarf with ultra-short period planet",
+      "stellar_class": "M1V"
+    },
+    {
+      "apparent_magnitude": 11.33,
+      "constellation": "Orion",
+      "designation": "GJ 3379",
+      "distance_ly": 20.9,
+      "notes": "Red dwarf",
+      "stellar_class": "M3.5V"
+    },
+    {
+      "apparent_magnitude": 0.03,
+      "constellation": "Lyra",
+      "designation": "Vega",
+      "distance_ly": 25.0,
+      "notes": "Brightest star in Lyra",
+      "stellar_class": "A0V"
+    },
+    {
+      "apparent_magnitude": 1.16,
+      "constellation": "Piscis Austrinus",
+      "designation": "Fomalhaut",
+      "distance_ly": 25.1,
+      "notes": "Has debris disk",
+      "stellar_class": "A3V"
+    },
+    {
+      "apparent_magnitude": 10.67,
+      "constellation": "Leo",
+      "designation": "GJ 436",
+      "distance_ly": 31.9,
+      "notes": "Has hot Neptune planet",
+      "stellar_class": "M3.5V"
+    }
+  ],
+  [
+    {
+      "constellation": "Cetus",
+      "num": 3
+    },
+    {
+      "constellation": "Cygnus",
+      "num": 2
+    },
+    {
+      "constellation": "Libra",
+      "num": 2
+    },
+    {
+      "constellation": "Aries",
+      "num": 2
+    },
+    {
+      "constellation": "Draco",
+      "num": 2
+    },
+    {
+      "constellation": "Ursa Major",
+      "num": 2
+    },
+    {
+      "constellation": "Ophiuchus",
+      "num": 2
+    },
+    {
+      "constellation": "Leo",
+      "num": 2
+    },
+    {
+      "constellation": "Cepheus",
+      "num": 1
+    },
+    {
+      "constellation": "Andromeda",
+      "num": 1
+    },
+    {
+      "constellation": "Aquila",
+      "num": 1
+    },
+    {
+      "constellation": "Aquarius",
+      "num": 1
+    },
+    {
+      "constellation": "Pavo",
+      "num": 1
+    },
+    {
+      "constellation": "Crater",
+      "num": 1
+    },
+    {
+      "constellation": "Cancer",
+      "num": 1
+    },
+    {
+      "constellation": "Carina",
+      "num": 1
+    },
+    {
+      "constellation": "Scorpius",
+      "num": 1
+    },
+    {
+      "constellation": "Pisces",
+      "num": 1
+    },
+    {
+      "constellation": "Pegasus",
+      "num": 1
+    },
+    {
+      "constellation": "Microscopium",
+      "num": 1
+    },
+    {
+      "constellation": "Grus",
+      "num": 1
+    },
+    {
+      "constellation": "Canis Minor",
+      "num": 1
+    },
+    {
+      "constellation": "Piscis Austrinus",
+      "num": 1
+    },
+    {
+      "constellation": "Horologium",
+      "num": 1
+    },
+    {
+      "constellation": "Indus",
+      "num": 1
+    },
+    {
+      "constellation": "Ursa Minor",
+      "num": 1
+    },
+    {
+      "constellation": "Orion",
+      "num": 1
+    },
+    {
+      "constellation": "Pictor",
+      "num": 1
+    },
+    {
+      "constellation": "Monoceros",
+      "num": 1
+    },
+    {
+      "constellation": "Virgo",
+      "num": 1
+    },
+    {
+      "constellation": "Lyra",
+      "num": 1
+    }
+  ],
+  [
+    {
+      "apparent_magnitude": 11.33,
+      "constellation": "Orion",
+      "designation": "GJ 3379",
+      "distance_ly": 20.9,
+      "notes": "Red dwarf",
+      "stellar_class": "M3.5V"
+    },
+    {
+      "apparent_magnitude": 9.44,
+      "constellation": "Crater",
+      "designation": "GJ 367",
+      "distance_ly": 20.8,
+      "notes": "Red dwarf with ultra-short period planet",
+      "stellar_class": "M1V"
+    },
+    {
+      "apparent_magnitude": 11.31,
+      "constellation": "Libra",
+      "designation": "HN Librae",
+      "distance_ly": 20.5,
+      "notes": "Red dwarf",
+      "stellar_class": "M4V"
+    },
+    {
+      "apparent_magnitude": 12.78,
+      "constellation": "Ursa Minor",
+      "designation": "GJ 1128",
+      "distance_ly": 17.3,
+      "notes": "Red dwarf",
+      "stellar_class": "M4V"
+    },
+    {
+      "apparent_magnitude": 10.17,
+      "constellation": "Draco",
+      "designation": "GJ 625",
+      "distance_ly": 17.0,
+      "notes": "Red dwarf",
+      "stellar_class": "M1.5V"
+    },
+    {
+      "apparent_magnitude": 10.95,
+      "constellation": "Scorpius",
+      "designation": "GJ 682",
+      "distance_ly": 16.3,
+      "notes": "Red dwarf",
+      "stellar_class": "M3.5V"
+    },
+    {
+      "apparent_magnitude": 13.9,
+      "constellation": "Carina",
+      "designation": "LHS 288",
+      "distance_ly": 15.6,
+      "notes": "Red dwarf",
+      "stellar_class": "M5.5V"
+    },
+    {
+      "apparent_magnitude": 13.76,
+      "constellation": "Cetus",
+      "designation": "GJ 1002",
+      "distance_ly": 15.3,
+      "notes": "Red dwarf with planets",
+      "stellar_class": "M3.5V"
+    },
+    {
+      "apparent_magnitude": 12.38,
+      "constellation": "Pisces",
+      "designation": "van Maanen's Star",
+      "distance_ly": 14.1,
+      "notes": "White dwarf",
+      "stellar_class": "DZ7"
+    },
+    {
+      "apparent_magnitude": "13.18 + 13.17",
+      "constellation": "Virgo",
+      "designation": "Wolf 424",
+      "distance_ly": 14.0,
+      "notes": "Binary red dwarfs",
+      "stellar_class": "M5.5V + M7V"
+    },
+    {
+      "apparent_magnitude": "9.79 + 11.41",
+      "constellation": "Cepheus",
+      "designation": "Kruger 60",
+      "distance_ly": 13.1,
+      "notes": "Binary red dwarfs",
+      "stellar_class": "M3V + M4V"
+    },
+    {
+      "apparent_magnitude": 6.67,
+      "constellation": "Microscopium",
+      "designation": "Lacaille 8760",
+      "distance_ly": 12.9,
+      "notes": "Brightest M dwarf in southern sky",
+      "stellar_class": "M0V"
+    },
+    {
+      "apparent_magnitude": 17.4,
+      "constellation": "Pavo",
+      "designation": "SCR 1845-6357",
+      "distance_ly": 12.6,
+      "notes": "Very cool red dwarf",
+      "stellar_class": "M8.5V"
+    },
+    {
+      "apparent_magnitude": 9.86,
+      "constellation": "Canis Minor",
+      "designation": "Luyten's Star",
+      "distance_ly": 12.4,
+      "notes": "Red dwarf",
+      "stellar_class": "M3.5V"
+    },
+    {
+      "apparent_magnitude": 12.02,
+      "constellation": "Cetus",
+      "designation": "YZ Ceti",
+      "distance_ly": 12.1,
+      "notes": "Red dwarf",
+      "stellar_class": "M4.5V"
+    },
+    {
+      "apparent_magnitude": 13.09,
+      "constellation": "Horologium",
+      "designation": "GJ 1061",
+      "distance_ly": 12.0,
+      "notes": "Red dwarf",
+      "stellar_class": "M5.5V"
+    },
+    {
+      "apparent_magnitude": 4.69,
+      "constellation": "Indus",
+      "designation": "Epsilon Indi",
+      "distance_ly": 11.8,
+      "notes": "Has brown dwarf companions",
+      "stellar_class": "K5V"
+    },
+    {
+      "apparent_magnitude": 14.78,
+      "constellation": "Cancer",
+      "designation": "DX Cancri",
+      "distance_ly": 11.8,
+      "notes": "Red dwarf",
+      "stellar_class": "M6.5V"
+    },
+    {
+      "apparent_magnitude": "8.9 + 9.7",
+      "constellation": "Draco",
+      "designation": "Struve 2398",
+      "distance_ly": 11.5,
+      "notes": "Binary red dwarfs",
+      "stellar_class": "M3V + M3.5V"
+    }
+  ],
+  [
+    {
+      "apparent_magnitude": 7.47,
+      "constellation": "Ursa Major",
+      "designation": "Lalande 21185",
+      "distance_ly": 8.3,
+      "notes": "Fourth nearest star system",
+      "stellar_class": "M2V"
+    }
+  ],
+  [
+    {
+      "constellation": "Ursa Major",
+      "designation": "Lalande 21185",
+      "distance_delta": null,
+      "distance_ly": 8.3,
+      "prev_constellation": null,
+      "prev_distance": null,
+      "prev_star": null
+    },
+    {
+      "constellation": "Cygnus",
+      "designation": "61 Cygni",
+      "distance_delta": 3.1,
+      "distance_ly": 11.4,
+      "prev_constellation": "Ursa Major",
+      "prev_distance": 8.3,
+      "prev_star": "Lalande 21185"
+    },
+    {
+      "constellation": "Draco",
+      "designation": "Struve 2398",
+      "distance_delta": 0.1,
+      "distance_ly": 11.5,
+      "prev_constellation": "Cygnus",
+      "prev_distance": 11.4,
+      "prev_star": "61 Cygni"
+    },
+    {
+      "constellation": "Andromeda",
+      "designation": "Groombridge 34",
+      "distance_delta": 0.1,
+      "distance_ly": 11.6,
+      "prev_constellation": "Draco",
+      "prev_distance": 11.5,
+      "prev_star": "Struve 2398"
+    },
+    {
+      "constellation": "Indus",
+      "designation": "Epsilon Indi",
+      "distance_delta": 0.2,
+      "distance_ly": 11.8,
+      "prev_constellation": "Andromeda",
+      "prev_distance": 11.6,
+      "prev_star": "Groombridge 34"
+    },
+    {
+      "constellation": "Cancer",
+      "designation": "DX Cancri",
+      "distance_delta": 0.0,
+      "distance_ly": 11.8,
+      "prev_constellation": "Indus",
+      "prev_distance": 11.8,
+      "prev_star": "Epsilon Indi"
+    },
+    {
+      "constellation": "Cetus",
+      "designation": "Tau Ceti",
+      "distance_delta": 0.1,
+      "distance_ly": 11.9,
+      "prev_constellation": "Cancer",
+      "prev_distance": 11.8,
+      "prev_star": "DX Cancri"
+    },
+    {
+      "constellation": "Horologium",
+      "designation": "GJ 1061",
+      "distance_delta": 0.1,
+      "distance_ly": 12.0,
+      "prev_constellation": "Cetus",
+      "prev_distance": 11.9,
+      "prev_star": "Tau Ceti"
+    },
+    {
+      "constellation": "Cetus",
+      "designation": "YZ Ceti",
+      "distance_delta": 0.1,
+      "distance_ly": 12.1,
+      "prev_constellation": "Horologium",
+      "prev_distance": 12.0,
+      "prev_star": "GJ 1061"
+    },
+    {
+      "constellation": "Canis Minor",
+      "designation": "Luyten's Star",
+      "distance_delta": 0.3,
+      "distance_ly": 12.4,
+      "prev_constellation": "Cetus",
+      "prev_distance": 12.1,
+      "prev_star": "YZ Ceti"
+    },
+    {
+      "constellation": "Aries",
+      "designation": "Teegarden's Star",
+      "distance_delta": 0.1,
+      "distance_ly": 12.5,
+      "prev_constellation": "Canis Minor",
+      "prev_distance": 12.4,
+      "prev_star": "Luyten's Star"
+    },
+    {
+      "constellation": "Pavo",
+      "designation": "SCR 1845-6357",
+      "distance_delta": 0.1,
+      "distance_ly": 12.6,
+      "prev_constellation": "Aries",
+      "prev_distance": 12.5,
+      "prev_star": "Teegarden's Star"
+    },
+    {
+      "constellation": "Pictor",
+      "designation": "Kapteyn's Star",
+      "distance_delta": 0.2,
+      "distance_ly": 12.8,
+      "prev_constellation": "Pavo",
+      "prev_distance": 12.6,
+      "prev_star": "SCR 1845-6357"
+    },
+    {
+      "constellation": "Microscopium",
+      "designation": "Lacaille 8760",
+      "distance_delta": 0.1,
+      "distance_ly": 12.9,
+      "prev_constellation": "Pictor",
+      "prev_distance": 12.8,
+      "prev_star": "Kapteyn's Star"
+    },
+    {
+      "constellation": "Cepheus",
+      "designation": "Kruger 60",
+      "distance_delta": 0.2,
+      "distance_ly": 13.1,
+      "prev_constellation": "Microscopium",
+      "prev_distance": 12.9,
+      "prev_star": "Lacaille 8760"
+    },
+    {
+      "constellation": "Monoceros",
+      "designation": "Ross 614",
+      "distance_delta": 0.2,
+      "distance_ly": 13.3,
+      "prev_constellation": "Cepheus",
+      "prev_distance": 13.1,
+      "prev_star": "Kruger 60"
+    },
+    {
+      "constellation": "Ophiuchus",
+      "designation": "Wolf 1061",
+      "distance_delta": 0.6,
+      "distance_ly": 13.9,
+      "prev_constellation": "Monoceros",
+      "prev_distance": 13.3,
+      "prev_star": "Ross 614"
+    },
+    {
+      "constellation": "Virgo",
+      "designation": "Wolf 424",
+      "distance_delta": 0.1,
+      "distance_ly": 14.0,
+      "prev_constellation": "Ophiuchus",
+      "prev_distance": 13.9,
+      "prev_star": "Wolf 1061"
+    },
+    {
+      "constellation": "Pisces",
+      "designation": "van Maanen's Star",
+      "distance_delta": 0.1,
+      "distance_ly": 14.1,
+      "prev_constellation": "Virgo",
+      "prev_distance": 14.0,
+      "prev_star": "Wolf 424"
+    },
+    {
+      "constellation": "Aries",
+      "designation": "TZ Arietis",
+      "distance_delta": 0.4,
+      "distance_ly": 14.5,
+      "prev_constellation": "Pisces",
+      "prev_distance": 14.1,
+      "prev_star": "van Maanen's Star"
+    },
+    {
+      "constellation": "Cetus",
+      "designation": "GJ 1002",
+      "distance_delta": 0.8,
+      "distance_ly": 15.3,
+      "prev_constellation": "Aries",
+      "prev_distance": 14.5,
+      "prev_star": "TZ Arietis"
+    },
+    {
+      "constellation": "Aquarius",
+      "designation": "GJ 876",
+      "distance_delta": 0.0,
+      "distance_ly": 15.3,
+      "prev_constellation": "Cetus",
+      "prev_distance": 15.3,
+      "prev_star": "GJ 1002"
+    },
+    {
+      "constellation": "Carina",
+      "designation": "LHS 288",
+      "distance_delta": 0.3,
+      "distance_ly": 15.6,
+      "prev_constellation": "Aquarius",
+      "prev_distance": 15.3,
+      "prev_star": "GJ 876"
+    },
+    {
+      "constellation": "Ursa Major",
+      "designation": "GJ 412",
+      "distance_delta": 0.2,
+      "distance_ly": 15.8,
+      "prev_constellation": "Carina",
+      "prev_distance": 15.6,
+      "prev_star": "LHS 288"
+    },
+    {
+      "constellation": "Leo",
+      "designation": "AD Leonis",
+      "distance_delta": 0.4,
+      "distance_ly": 16.2,
+      "prev_constellation": "Ursa Major",
+      "prev_distance": 15.8,
+      "prev_star": "GJ 412"
+    },
+    {
+      "constellation": "Grus",
+      "designation": "GJ 832",
+      "distance_delta": 0.0,
+      "distance_ly": 16.2,
+      "prev_constellation": "Leo",
+      "prev_distance": 16.2,
+      "prev_star": "AD Leonis"
+    },
+    {
+      "constellation": "Scorpius",
+      "designation": "GJ 682",
+      "distance_delta": 0.1,
+      "distance_ly": 16.3,
+      "prev_constellation": "Grus",
+      "prev_distance": 16.2,
+      "prev_star": "GJ 832"
+    },
+    {
+      "constellation": "Ophiuchus",
+      "designation": "70 Ophiuchi",
+      "distance_delta": 0.3,
+      "distance_ly": 16.6,
+      "prev_constellation": "Scorpius",
+      "prev_distance": 16.3,
+      "prev_star": "GJ 682"
+    },
+    {
+      "constellation": "Aquila",
+      "designation": "Altair",
+      "distance_delta": 0.1,
+      "distance_ly": 16.7,
+      "prev_constellation": "Ophiuchus",
+      "prev_distance": 16.6,
+      "prev_star": "70 Ophiuchi"
+    },
+    {
+      "constellation": "Draco",
+      "designation": "GJ 625",
+      "distance_delta": 0.3,
+      "distance_ly": 17.0,
+      "prev_constellation": "Aquila",
+      "prev_distance": 16.7,
+      "prev_star": "Altair"
+    },
+    {
+      "constellation": "Cygnus",
+      "designation": "GJ 1245",
+      "distance_delta": 0.1,
+      "distance_ly": 17.1,
+      "prev_constellation": "Draco",
+      "prev_distance": 17.0,
+      "prev_star": "GJ 625"
+    },
+    {
+      "constellation": "Ursa Minor",
+      "designation": "GJ 1128",
+      "distance_delta": 0.2,
+      "distance_ly": 17.3,
+      "prev_constellation": "Cygnus",
+      "prev_distance": 17.1,
+      "prev_star": "GJ 1245"
+    },
+    {
+      "constellation": "Pegasus",
+      "designation": "EQ Pegasi",
+      "distance_delta": 3.1,
+      "distance_ly": 20.4,
+      "prev_constellation": "Ursa Minor",
+      "prev_distance": 17.3,
+      "prev_star": "GJ 1128"
+    },
+    {
+      "constellation": "Libra",
+      "designation": "HN Librae",
+      "distance_delta": 0.1,
+      "distance_ly": 20.5,
+      "prev_constellation": "Pegasus",
+      "prev_distance": 20.4,
+      "prev_star": "EQ Pegasi"
+    },
+    {
+      "constellation": "Libra",
+      "designation": "GJ 581",
+      "distance_delta": 0.0,
+      "distance_ly": 20.5,
+      "prev_constellation": "Libra",
+      "prev_distance": 20.5,
+      "prev_star": "HN Librae"
+    },
+    {
+      "constellation": "Crater",
+      "designation": "GJ 367",
+      "distance_delta": 0.3,
+      "distance_ly": 20.8,
+      "prev_constellation": "Libra",
+      "prev_distance": 20.5,
+      "prev_star": "GJ 581"
+    },
+    {
+      "constellation": "Orion",
+      "designation": "GJ 3379",
+      "distance_delta": 0.1,
+      "distance_ly": 20.9,
+      "prev_constellation": "Crater",
+      "prev_distance": 20.8,
+      "prev_star": "GJ 367"
+    },
+    {
+      "constellation": "Lyra",
+      "designation": "Vega",
+      "distance_delta": 4.1,
+      "distance_ly": 25.0,
+      "prev_constellation": "Orion",
+      "prev_distance": 20.9,
+      "prev_star": "GJ 3379"
+    },
+    {
+      "constellation": "Piscis Austrinus",
+      "designation": "Fomalhaut",
+      "distance_delta": 0.1,
+      "distance_ly": 25.1,
+      "prev_constellation": "Lyra",
+      "prev_distance": 25.0,
+      "prev_star": "Vega"
+    },
+    {
+      "constellation": "Leo",
+      "designation": "GJ 436",
+      "distance_delta": 6.8,
+      "distance_ly": 31.9,
+      "prev_constellation": "Piscis Austrinus",
+      "prev_distance": 25.1,
+      "prev_star": "Fomalhaut"
+    }
+  ],
+  [
+    {
+      "constellation": "Ursa Major",
+      "designation": "Lalande 21185",
+      "distance_band": "10-15 ly",
+      "distance_ly": 8.3,
+      "rank_in_band": 1
+    },
+    {
+      "constellation": "Cygnus",
+      "designation": "61 Cygni",
+      "distance_band": "10-15 ly",
+      "distance_ly": 11.4,
+      "rank_in_band": 2
+    },
+    {
+      "constellation": "Draco",
+      "designation": "Struve 2398",
+      "distance_band": "10-15 ly",
+      "distance_ly": 11.5,
+      "rank_in_band": 3
+    },
+    {
+      "constellation": "Andromeda",
+      "designation": "Groombridge 34",
+      "distance_band": "10-15 ly",
+      "distance_ly": 11.6,
+      "rank_in_band": 4
+    },
+    {
+      "constellation": "Indus",
+      "designation": "Epsilon Indi",
+      "distance_band": "10-15 ly",
+      "distance_ly": 11.8,
+      "rank_in_band": 5
+    },
+    {
+      "constellation": "Cancer",
+      "designation": "DX Cancri",
+      "distance_band": "10-15 ly",
+      "distance_ly": 11.8,
+      "rank_in_band": 6
+    },
+    {
+      "constellation": "Cetus",
+      "designation": "Tau Ceti",
+      "distance_band": "10-15 ly",
+      "distance_ly": 11.9,
+      "rank_in_band": 7
+    },
+    {
+      "constellation": "Horologium",
+      "designation": "GJ 1061",
+      "distance_band": "10-15 ly",
+      "distance_ly": 12.0,
+      "rank_in_band": 8
+    },
+    {
+      "constellation": "Cetus",
+      "designation": "YZ Ceti",
+      "distance_band": "10-15 ly",
+      "distance_ly": 12.1,
+      "rank_in_band": 9
+    },
+    {
+      "constellation": "Canis Minor",
+      "designation": "Luyten's Star",
+      "distance_band": "10-15 ly",
+      "distance_ly": 12.4,
+      "rank_in_band": 10
+    },
+    {
+      "constellation": "Aries",
+      "designation": "Teegarden's Star",
+      "distance_band": "10-15 ly",
+      "distance_ly": 12.5,
+      "rank_in_band": 11
+    },
+    {
+      "constellation": "Pavo",
+      "designation": "SCR 1845-6357",
+      "distance_band": "10-15 ly",
+      "distance_ly": 12.6,
+      "rank_in_band": 12
+    },
+    {
+      "constellation": "Pictor",
+      "designation": "Kapteyn's Star",
+      "distance_band": "10-15 ly",
+      "distance_ly": 12.8,
+      "rank_in_band": 13
+    },
+    {
+      "constellation": "Microscopium",
+      "designation": "Lacaille 8760",
+      "distance_band": "10-15 ly",
+      "distance_ly": 12.9,
+      "rank_in_band": 14
+    },
+    {
+      "constellation": "Cepheus",
+      "designation": "Kruger 60",
+      "distance_band": "10-15 ly",
+      "distance_ly": 13.1,
+      "rank_in_band": 15
+    },
+    {
+      "constellation": "Monoceros",
+      "designation": "Ross 614",
+      "distance_band": "10-15 ly",
+      "distance_ly": 13.3,
+      "rank_in_band": 16
+    },
+    {
+      "constellation": "Ophiuchus",
+      "designation": "Wolf 1061",
+      "distance_band": "10-15 ly",
+      "distance_ly": 13.9,
+      "rank_in_band": 17
+    },
+    {
+      "constellation": "Virgo",
+      "designation": "Wolf 424",
+      "distance_band": "10-15 ly",
+      "distance_ly": 14.0,
+      "rank_in_band": 18
+    },
+    {
+      "constellation": "Pisces",
+      "designation": "van Maanen's Star",
+      "distance_band": "10-15 ly",
+      "distance_ly": 14.1,
+      "rank_in_band": 19
+    },
+    {
+      "constellation": "Aries",
+      "designation": "TZ Arietis",
+      "distance_band": "10-15 ly",
+      "distance_ly": 14.5,
+      "rank_in_band": 20
+    },
+    {
+      "constellation": "Cetus",
+      "designation": "GJ 1002",
+      "distance_band": "15-20 ly",
+      "distance_ly": 15.3,
+      "rank_in_band": 1
+    },
+    {
+      "constellation": "Aquarius",
+      "designation": "GJ 876",
+      "distance_band": "15-20 ly",
+      "distance_ly": 15.3,
+      "rank_in_band": 2
+    },
+    {
+      "constellation": "Carina",
+      "designation": "LHS 288",
+      "distance_band": "15-20 ly",
+      "distance_ly": 15.6,
+      "rank_in_band": 3
+    },
+    {
+      "constellation": "Ursa Major",
+      "designation": "GJ 412",
+      "distance_band": "15-20 ly",
+      "distance_ly": 15.8,
+      "rank_in_band": 4
+    },
+    {
+      "constellation": "Leo",
+      "designation": "AD Leonis",
+      "distance_band": "15-20 ly",
+      "distance_ly": 16.2,
+      "rank_in_band": 5
+    },
+    {
+      "constellation": "Grus",
+      "designation": "GJ 832",
+      "distance_band": "15-20 ly",
+      "distance_ly": 16.2,
+      "rank_in_band": 6
+    },
+    {
+      "constellation": "Scorpius",
+      "designation": "GJ 682",
+      "distance_band": "15-20 ly",
+      "distance_ly": 16.3,
+      "rank_in_band": 7
+    },
+    {
+      "constellation": "Ophiuchus",
+      "designation": "70 Ophiuchi",
+      "distance_band": "15-20 ly",
+      "distance_ly": 16.6,
+      "rank_in_band": 8
+    },
+    {
+      "constellation": "Aquila",
+      "designation": "Altair",
+      "distance_band": "15-20 ly",
+      "distance_ly": 16.7,
+      "rank_in_band": 9
+    },
+    {
+      "constellation": "Draco",
+      "designation": "GJ 625",
+      "distance_band": "15-20 ly",
+      "distance_ly": 17.0,
+      "rank_in_band": 10
+    },
+    {
+      "constellation": "Cygnus",
+      "designation": "GJ 1245",
+      "distance_band": "15-20 ly",
+      "distance_ly": 17.1,
+      "rank_in_band": 11
+    },
+    {
+      "constellation": "Ursa Minor",
+      "designation": "GJ 1128",
+      "distance_band": "15-20 ly",
+      "distance_ly": 17.3,
+      "rank_in_band": 12
+    },
+    {
+      "constellation": "Pegasus",
+      "designation": "EQ Pegasi",
+      "distance_band": "20-25 ly",
+      "distance_ly": 20.4,
+      "rank_in_band": 1
+    },
+    {
+      "constellation": "Libra",
+      "designation": "HN Librae",
+      "distance_band": "20-25 ly",
+      "distance_ly": 20.5,
+      "rank_in_band": 2
+    },
+    {
+      "constellation": "Libra",
+      "designation": "GJ 581",
+      "distance_band": "20-25 ly",
+      "distance_ly": 20.5,
+      "rank_in_band": 3
+    },
+    {
+      "constellation": "Crater",
+      "designation": "GJ 367",
+      "distance_band": "20-25 ly",
+      "distance_ly": 20.8,
+      "rank_in_band": 4
+    },
+    {
+      "constellation": "Orion",
+      "designation": "GJ 3379",
+      "distance_band": "20-25 ly",
+      "distance_ly": 20.9,
+      "rank_in_band": 5
+    },
+    {
+      "constellation": "Lyra",
+      "designation": "Vega",
+      "distance_band": "25-30 ly",
+      "distance_ly": 25.0,
+      "rank_in_band": 1
+    },
+    {
+      "constellation": "Piscis Austrinus",
+      "designation": "Fomalhaut",
+      "distance_band": "25-30 ly",
+      "distance_ly": 25.1,
+      "rank_in_band": 2
+    },
+    {
+      "constellation": "Leo",
+      "designation": "GJ 436",
+      "distance_band": "> 30 ly",
+      "distance_ly": 31.9,
+      "rank_in_band": 1
+    }
+  ],
+  [
+    {
+      "avg_distance": 12.4,
+      "distance_band": "10-15 ly",
+      "max_distance": 14.5,
+      "min_distance": 8.3,
+      "star_count": 20
+    },
+    {
+      "avg_distance": 16.3,
+      "distance_band": "15-20 ly",
+      "max_distance": 17.3,
+      "min_distance": 15.3,
+      "star_count": 12
+    },
+    {
+      "avg_distance": 20.6,
+      "distance_band": "20-25 ly",
+      "max_distance": 20.9,
+      "min_distance": 20.4,
+      "star_count": 5
+    },
+    {
+      "avg_distance": 25.1,
+      "distance_band": "25-30 ly",
+      "max_distance": 25.1,
+      "min_distance": 25.0,
+      "star_count": 2
+    },
+    {
+      "avg_distance": 31.9,
+      "distance_band": "> 30 ly",
+      "max_distance": 31.9,
+      "min_distance": 31.9,
+      "star_count": 1
+    }
+  ],
+  [
+    {
+      "bar_chart": "********************",
+      "distance_band": "10-15 ly",
+      "max_distance": 14.5,
+      "min_distance": 8.3,
+      "percent": 50.0,
+      "star_count": 20
+    },
+    {
+      "bar_chart": "************",
+      "distance_band": "15-20 ly",
+      "max_distance": 17.3,
+      "min_distance": 15.3,
+      "percent": 30.0,
+      "star_count": 12
+    },
+    {
+      "bar_chart": "*****",
+      "distance_band": "20-25 ly",
+      "max_distance": 20.9,
+      "min_distance": 20.4,
+      "percent": 12.5,
+      "star_count": 5
+    },
+    {
+      "bar_chart": "**",
+      "distance_band": "25-30 ly",
+      "max_distance": 25.1,
+      "min_distance": 25.0,
+      "percent": 5.0,
+      "star_count": 2
+    },
+    {
+      "bar_chart": "*",
+      "distance_band": "> 30 ly",
+      "max_distance": 31.9,
+      "min_distance": 31.9,
+      "percent": 2.5,
+      "star_count": 1
+    }
+  ]
+]

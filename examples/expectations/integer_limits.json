@@ -1,0 +1,121 @@
+[
+  [
+    {
+      "max_binary": "1111111",
+      "max_value": 127,
+      "min_value": -128,
+      "type_name": "INT8",
+      "unsigned_hex": "ff",
+      "unsigned_max": 255
+    }
+  ],
+  [
+    {
+      "max_value": 32767,
+      "min_value": -32768,
+      "type_name": "INT16",
+      "unsigned_hex": "ffff",
+      "unsigned_max": 65535
+    }
+  ],
+  [
+    {
+      "max_value": 2147483647,
+      "min_value": -2147483648,
+      "type_name": "INT32",
+      "unsigned_hex": "ffffffff",
+      "unsigned_max": 4294967295
+    }
+  ],
+  [
+    {
+      "max_hex": "7fffffffffffffff",
+      "max_value": 9223372036854775807,
+      "min_value": -9223372036854775808,
+      "type_name": "INT64"
+    }
+  ],
+  [
+    {
+      "max_value": 255,
+      "max_value2": 127,
+      "min_value": 0,
+      "min_value2": -128,
+      "separator": "---",
+      "type_name": "Byte",
+      "type_name2": "Char"
+    }
+  ],
+  [
+    {
+      "bits": 8,
+      "max_val": 127,
+      "min_val": -128,
+      "total_values": 256.0,
+      "type_name": "INT8"
+    }
+  ],
+  [
+    {
+      "max_value": 2147483647,
+      "min_value": -2147483648,
+      "overflow_result": 2147483648,
+      "test": "INT32 Overflow Check",
+      "underflow_result": -2147483649
+    }
+  ],
+  [
+    {
+      "fits_in_int16": "Yes",
+      "int8_validation": "Valid INT8",
+      "value": 127
+    }
+  ],
+  [
+    {
+      "description": "Boundary Patterns",
+      "int16_max_binary": "111111111111111",
+      "int8_max_binary": "1111111",
+      "uint16_max_binary": "1111111111111111",
+      "uint8_max_binary": "11111111"
+    }
+  ],
+  [
+    {
+      "exponent": 0,
+      "hex_value": "1",
+      "min_type_needed": "UINT8",
+      "power_of_2": 1.0
+    },
+    {
+      "exponent": 7,
+      "hex_value": "80",
+      "min_type_needed": "UINT8",
+      "power_of_2": 128.0
+    },
+    {
+      "exponent": 8,
+      "hex_value": "100",
+      "min_type_needed": "UINT16",
+      "power_of_2": 256.0
+    },
+    {
+      "exponent": 15,
+      "hex_value": "8000",
+      "min_type_needed": "UINT16",
+      "power_of_2": 32768.0
+    },
+    {
+      "exponent": 16,
+      "hex_value": "10000",
+      "min_type_needed": "UINT32",
+      "power_of_2": 65536.0
+    },
+    {
+      "exponent": 31,
+      "hex_value": "80000000",
+      "min_type_needed": "UINT32",
+      "power_of_2": 2147483648.0
+    }
+  ]
+]

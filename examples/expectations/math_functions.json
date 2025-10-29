@@ -1,0 +1,66 @@
+[
+  [
+    {
+      "addition": 15,
+      "division": 2,
+      "modulo": 1,
+      "multiplication": 50,
+      "square_root": 12.0,
+      "subtraction": 5,
+      "two_to_eighth": 256.0
+    }
+  ],
+  [
+    {
+      "absolute_value": 42,
+      "ceiling": 5,
+      "floor": 4,
+      "rounded": 3.14
+    }
+  ],
+  [
+    {
+      "common_log": 3.0,
+      "e_to_first": 2.718281828459045,
+      "log_base_10": 2.0,
+      "log_base_2_of_8": 3.0,
+      "natural_log": 0.9999999998311266
+    }
+  ],
+  [
+    {
+      "maximum": 9,
+      "minimum": 1
+    }
+  ],
+  [
+    {
+      "maximum": 9,
+      "minimum": 1
+    }
+  ],
+  [
+    {
+      "check_prime": true,
+      "five_factorial": 120,
+      "primes_up_to_100": 25,
+      "ten_factorial": 3628800,
+      "tenth_prime": 29,
+      "zero_factorial": 1
+    }
+  ],
+  [
+    {
+      "compound_interest_5_years": 1283.3586785035118,
+      "future_value_5_years": 608.4149636377274,
+      "simple_interest_5_years": 250.0
+    }
+  ],
+  [
+    {
+      "half_circle_radians": 3.141592653589793,
+      "pi_in_degrees": 179.99984796050427,
+      "round_trip_90": 90.0
+    }
+  ]
+]

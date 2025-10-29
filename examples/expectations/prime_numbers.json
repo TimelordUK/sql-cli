@@ -1,0 +1,183 @@
+[
+  [
+    {
+      "is_pair": true,
+      "plus_2": 5,
+      "prime": 3
+    },
+    {
+      "is_pair": true,
+      "plus_2": 7,
+      "prime": 5
+    },
+    {
+      "is_pair": true,
+      "plus_2": 13,
+      "prime": 11
+    },
+    {
+      "is_pair": true,
+      "plus_2": 19,
+      "prime": 17
+    },
+    {
+      "is_pair": true,
+      "plus_2": 31,
+      "prime": 29
+    },
+    {
+      "is_pair": true,
+      "plus_2": 43,
+      "prime": 41
+    },
+    {
+      "is_pair": true,
+      "plus_2": 61,
+      "prime": 59
+    },
+    {
+      "is_pair": true,
+      "plus_2": 73,
+      "prime": 71
+    },
+    {
+      "is_pair": true,
+      "plus_2": 103,
+      "prime": 101
+    },
+    {
+      "is_pair": true,
+      "plus_2": 109,
+      "prime": 107
+    },
+    {
+      "is_pair": true,
+      "plus_2": 139,
+      "prime": 137
+    },
+    {
+      "is_pair": true,
+      "plus_2": 151,
+      "prime": 149
+    },
+    {
+      "is_pair": true,
+      "plus_2": 181,
+      "prime": 179
+    },
+    {
+      "is_pair": true,
+      "plus_2": 193,
+      "prime": 191
+    },
+    {
+      "is_pair": true,
+      "plus_2": 199,
+      "prime": 197
+    }
+  ],
+  [
+    {
+      "is_n_prime": false,
+      "n": 1
+    },
+    {
+      "is_n_prime": true,
+      "n": 2
+    },
+    {
+      "is_n_prime": true,
+      "n": 3
+    },
+    {
+      "is_n_prime": false,
+      "n": 4
+    },
+    {
+      "is_n_prime": true,
+      "n": 5
+    },
+    {
+      "is_n_prime": false,
+      "n": 6
+    },
+    {
+      "is_n_prime": true,
+      "n": 7
+    },
+    {
+      "is_n_prime": false,
+      "n": 8
+    },
+    {
+      "is_n_prime": false,
+      "n": 9
+    },
+    {
+      "is_n_prime": false,
+      "n": 10
+    },
+    {
+      "is_n_prime": true,
+      "n": 11
+    },
+    {
+      "is_n_prime": false,
+      "n": 12
+    },
+    {
+      "is_n_prime": true,
+      "n": 13
+    },
+    {
+      "is_n_prime": false,
+      "n": 14
+    },
+    {
+      "is_n_prime": false,
+      "n": 15
+    },
+    {
+      "is_n_prime": false,
+      "n": 16
+    },
+    {
+      "is_n_prime": true,
+      "n": 17
+    },
+    {
+      "is_n_prime": false,
+      "n": 18
+    },
+    {
+      "is_n_prime": true,
+      "n": 19
+    },
+    {
+      "is_n_prime": false,
+      "n": 20
+    }
+  ],
+  [
+    {
+      "first_prime": 2,
+      "hundredth_prime": 541,
+      "tenth_prime": 29,
+      "thousandth_prime": 7919
+    }
+  ],
+  [
+    {
+      "primes_up_to_10": 4,
+      "primes_up_to_100": 25,
+      "primes_up_to_1000": 168
+    }
+  ],
+  [
+    {
+      "next_prime_after_100": 101,
+      "next_prime_after_1000": 1009,
+      "prev_prime_before_100": 97
+    }
+  ]
+]

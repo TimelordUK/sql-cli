@@ -1,0 +1,33 @@
+[
+  [
+    {
+      "region": "North",
+      "sales": 100
+    }
+  ],
+  [
+    {
+      "quarter": "Q1",
+      "revenue": 1000
+    }
+  ],
+  [
+    {
+      "department": "Engineering",
+      "name": "Alice"
+    }
+  ],
+  [
+    {
+      "operation": "Addition",
+      "result": 15
+    }
+  ],
+  [
+    {
+      "location": "Store 1",
+      "product": "Product A",
+      "quantity": 25
+    }
+  ]
+]

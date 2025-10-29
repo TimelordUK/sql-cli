@@ -1,0 +1,253 @@
+[
+  [
+    {
+      "standard_format": "1,234,567.89"
+    }
+  ],
+  [
+    {
+      "billions": "1.5B",
+      "millions": "1.5M",
+      "thousands": "1.5k"
+    }
+  ],
+  [
+    {
+      "eu_format": "1.234,56",
+      "indian_format": "1,234.56",
+      "swiss_format": "1'234.56",
+      "us_format": "1,234.56"
+    }
+  ],
+  [
+    {
+      "dollars": "$1,234.56",
+      "euros": "\u20ac1,234.56",
+      "pounds": "\u00a31,234.56",
+      "yen": "\u00a550,000"
+    }
+  ],
+  [
+    {
+      "compact_code": "3k GBP",
+      "compact_symbol": "\u00a33k",
+      "millions_usd": "$1.5M"
+    }
+  ],
+  [
+    {
+      "amount": 2299.0,
+      "country": "Germany",
+      "currency": "EUR",
+      "local_price": "\u20ac2,299.00",
+      "price_code": "2.3k EUR",
+      "product": "Laptop"
+    },
+    {
+      "amount": 899.99,
+      "country": "France",
+      "currency": "EUR",
+      "local_price": "\u20ac899.99",
+      "price_code": "900.0 EUR",
+      "product": "Phone"
+    },
+    {
+      "amount": 1599.99,
+      "country": "UK",
+      "currency": "GBP",
+      "local_price": "\u00a31,599.99",
+      "price_code": "1.6k GBP",
+      "product": "Tablet"
+    },
+    {
+      "amount": 4500.0,
+      "country": "Switzerland",
+      "currency": "CHF",
+      "local_price": "CHF4,500.00",
+      "price_code": "4.5k CHF",
+      "product": "Watch"
+    },
+    {
+      "amount": 12999.0,
+      "country": "Sweden",
+      "currency": "SEK",
+      "local_price": "12,999.00kr",
+      "price_code": "13k SEK",
+      "product": "Camera"
+    }
+  ],
+  [
+    {
+      "avg_price": "22,453.92",
+      "notional": 1764000.0,
+      "num_sales": 20,
+      "region": "Asia",
+      "total_compact": "5.13M"
+    },
+    {
+      "avg_price": "22,453.92",
+      "notional": 1499980.0,
+      "num_sales": 20,
+      "region": "Asia",
+      "total_compact": "5.13M"
+    },
+    {
+      "avg_price": "22,453.92",
+      "notional": 1000000.0,
+      "num_sales": 20,
+      "region": "Asia",
+      "total_compact": "5.13M"
+    },
+    {
+      "avg_price": "22,453.92",
+      "notional": 231104.0,
+      "num_sales": 20,
+      "region": "Asia",
+      "total_compact": "5.13M"
+    },
+    {
+      "avg_price": "22,453.92",
+      "notional": 137997.0,
+      "num_sales": 20,
+      "region": "Europe",
+      "total_compact": "5.13M"
+    },
+    {
+      "avg_price": "22,453.92",
+      "notional": 95994.0,
+      "num_sales": 20,
+      "region": "Asia",
+      "total_compact": "5.13M"
+    },
+    {
+      "avg_price": "22,453.92",
+      "notional": 89995.0,
+      "num_sales": 20,
+      "region": "Europe",
+      "total_compact": "5.13M"
+    },
+    {
+      "avg_price": "22,453.92",
+      "notional": 55999.86,
+      "num_sales": 20,
+      "region": "North America",
+      "total_compact": "5.13M"
+    },
+    {
+      "avg_price": "22,453.92",
+      "notional": 51996.0,
+      "num_sales": 20,
+      "region": "Europe",
+      "total_compact": "5.13M"
+    },
+    {
+      "avg_price": "22,453.92",
+      "notional": 47499.75,
+      "num_sales": 20,
+      "region": "North America",
+      "total_compact": "5.13M"
+    },
+    {
+      "avg_price": "22,453.92",
+      "notional": 30799.89,
+      "num_sales": 20,
+      "region": "Europe",
+      "total_compact": "5.13M"
+    },
+    {
+      "avg_price": "22,453.92",
+      "notional": 19795.5,
+      "num_sales": 20,
+      "region": "Oceania",
+      "total_compact": "5.13M"
+    },
+    {
+      "avg_price": "22,453.92",
+      "notional": 19794.0,
+      "num_sales": 20,
+      "region": "Europe",
+      "total_compact": "5.13M"
+    },
+    {
+      "avg_price": "22,453.92",
+      "notional": 19485.0,
+      "num_sales": 20,
+      "region": "North America",
+      "total_compact": "5.13M"
+    },
+    {
+      "avg_price": "22,453.92",
+      "notional": 13293.0,
+      "num_sales": 20,
+      "region": "Europe",
+      "total_compact": "5.13M"
+    },
+    {
+      "avg_price": "22,453.92",
+      "notional": 12499.949999999999,
+      "num_sales": 20,
+      "region": "North America",
+      "total_compact": "5.13M"
+    },
+    {
+      "avg_price": "22,453.92",
+      "notional": 11199.93,
+      "num_sales": 20,
+      "region": "Europe",
+      "total_compact": "5.13M"
+    },
+    {
+      "avg_price": "22,453.92",
+      "notional": 10799.880000000001,
+      "num_sales": 20,
+      "region": "Europe",
+      "total_compact": "5.13M"
+    },
+    {
+      "avg_price": "22,453.92",
+      "notional": 9000.0,
+      "num_sales": 20,
+      "region": "Europe",
+      "total_compact": "5.13M"
+    },
+    {
+      "avg_price": "22,453.92",
+      "notional": 6897.0,
+      "num_sales": 20,
+      "region": "Europe",
+      "total_compact": "5.13M"
+    }
+  ],
+  [
+    {
+      "formatted_units": "90.00",
+      "num_currencies": "5.00",
+      "product": "Phone",
+      "units_sold": 90
+    },
+    {
+      "formatted_units": "30.00",
+      "num_currencies": "4.00",
+      "product": "Camera",
+      "units_sold": 30
+    },
+    {
+      "formatted_units": "30.00",
+      "num_currencies": "3.00",
+      "product": "Tablet",
+      "units_sold": 30
+    },
+    {
+      "formatted_units": "19.00",
+      "num_currencies": "4.00",
+      "product": "Laptop",
+      "units_sold": 19
+    },
+    {
+      "formatted_units": "19.00",
+      "num_currencies": "4.00",
+      "product": "Watch",
+      "units_sold": 19
+    }
+  ]
+]
