@@ -45,7 +45,7 @@ pub use transformer_adapters::{
 };
 
 /// Configuration for selective transformer enabling/disabling
-#[derive(Default)]
+#[derive(Clone, Debug)]
 pub struct TransformerConfig {
     pub enable_expression_lifter: bool,
     pub enable_where_expansion: bool,
@@ -53,6 +53,13 @@ pub struct TransformerConfig {
     pub enable_having_expansion: bool,
     pub enable_cte_hoister: bool,
     pub enable_in_lifter: bool,
+}
+
+impl Default for TransformerConfig {
+    fn default() -> Self {
+        // By default, all transformers are enabled for compatibility
+        Self::all_enabled()
+    }
 }
 
 impl TransformerConfig {
