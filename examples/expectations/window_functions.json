@@ -1,0 +1,1588 @@
+[
+  [
+    {
+      "change": null,
+      "month": "2024-01",
+      "prev_sales": null,
+      "sales_amount": 15000,
+      "salesperson": "Alice"
+    },
+    {
+      "change": 3000,
+      "month": "2024-02",
+      "prev_sales": 15000,
+      "sales_amount": 18000,
+      "salesperson": "Alice"
+    },
+    {
+      "change": 4000,
+      "month": "2024-03",
+      "prev_sales": 18000,
+      "sales_amount": 22000,
+      "salesperson": "Alice"
+    },
+    {
+      "change": -10000,
+      "month": "2024-01",
+      "prev_sales": 22000,
+      "sales_amount": 12000,
+      "salesperson": "Bob"
+    },
+    {
+      "change": 2000,
+      "month": "2024-02",
+      "prev_sales": 12000,
+      "sales_amount": 14000,
+      "salesperson": "Bob"
+    },
+    {
+      "change": 2000,
+      "month": "2024-03",
+      "prev_sales": 14000,
+      "sales_amount": 16000,
+      "salesperson": "Bob"
+    },
+    {
+      "change": 4000,
+      "month": "2024-01",
+      "prev_sales": 16000,
+      "sales_amount": 20000,
+      "salesperson": "Charlie"
+    },
+    {
+      "change": -1000,
+      "month": "2024-02",
+      "prev_sales": 20000,
+      "sales_amount": 19000,
+      "salesperson": "Charlie"
+    },
+    {
+      "change": 6000,
+      "month": "2024-03",
+      "prev_sales": 19000,
+      "sales_amount": 25000,
+      "salesperson": "Charlie"
+    },
+    {
+      "change": -8000,
+      "month": "2024-01",
+      "prev_sales": 25000,
+      "sales_amount": 17000,
+      "salesperson": "Diana"
+    }
+  ],
+  [
+    {
+      "month": "2024-01",
+      "next_sales": 18000,
+      "sales_amount": 15000,
+      "salesperson": "Alice"
+    },
+    {
+      "month": "2024-02",
+      "next_sales": 22000,
+      "sales_amount": 18000,
+      "salesperson": "Alice"
+    },
+    {
+      "month": "2024-03",
+      "next_sales": 12000,
+      "sales_amount": 22000,
+      "salesperson": "Alice"
+    }
+  ],
+  [
+    {
+      "overall_rank": 17,
+      "sales_amount": 15000,
+      "salesperson": "Alice"
+    },
+    {
+      "overall_rank": 12,
+      "sales_amount": 18000,
+      "salesperson": "Alice"
+    },
+    {
+      "overall_rank": 6,
+      "sales_amount": 22000,
+      "salesperson": "Alice"
+    },
+    {
+      "overall_rank": 23,
+      "sales_amount": 12000,
+      "salesperson": "Bob"
+    },
+    {
+      "overall_rank": 19,
+      "sales_amount": 14000,
+      "salesperson": "Bob"
+    },
+    {
+      "overall_rank": 15,
+      "sales_amount": 16000,
+      "salesperson": "Bob"
+    },
+    {
+      "overall_rank": 8,
+      "sales_amount": 20000,
+      "salesperson": "Charlie"
+    },
+    {
+      "overall_rank": 10,
+      "sales_amount": 19000,
+      "salesperson": "Charlie"
+    },
+    {
+      "overall_rank": 3,
+      "sales_amount": 25000,
+      "salesperson": "Charlie"
+    },
+    {
+      "overall_rank": 14,
+      "sales_amount": 17000,
+      "salesperson": "Diana"
+    },
+    {
+      "overall_rank": 7,
+      "sales_amount": 21000,
+      "salesperson": "Diana"
+    },
+    {
+      "overall_rank": 5,
+      "sales_amount": 23000,
+      "salesperson": "Diana"
+    },
+    {
+      "overall_rank": 21,
+      "sales_amount": 13000,
+      "salesperson": "Eve"
+    },
+    {
+      "overall_rank": 18,
+      "sales_amount": 15000,
+      "salesperson": "Eve"
+    },
+    {
+      "overall_rank": 11,
+      "sales_amount": 19000,
+      "salesperson": "Eve"
+    },
+    {
+      "overall_rank": 24,
+      "sales_amount": 11000,
+      "salesperson": "Frank"
+    },
+    {
+      "overall_rank": 22,
+      "sales_amount": 13000,
+      "salesperson": "Frank"
+    },
+    {
+      "overall_rank": 20,
+      "sales_amount": 14000,
+      "salesperson": "Frank"
+    },
+    {
+      "overall_rank": 4,
+      "sales_amount": 24000,
+      "salesperson": "Grace"
+    },
+    {
+      "overall_rank": 2,
+      "sales_amount": 26000,
+      "salesperson": "Grace"
+    },
+    {
+      "overall_rank": 1,
+      "sales_amount": 28000,
+      "salesperson": "Grace"
+    },
+    {
+      "overall_rank": 16,
+      "sales_amount": 16000,
+      "salesperson": "Henry"
+    },
+    {
+      "overall_rank": 13,
+      "sales_amount": 18000,
+      "salesperson": "Henry"
+    },
+    {
+      "overall_rank": 9,
+      "sales_amount": 20000,
+      "salesperson": "Henry"
+    }
+  ],
+  [
+    {
+      "month": "2024-01",
+      "region": "North",
+      "region_rank": 4,
+      "sales_amount": 15000,
+      "salesperson": "Alice"
+    },
+    {
+      "month": "2024-02",
+      "region": "North",
+      "region_rank": 2,
+      "sales_amount": 18000,
+      "salesperson": "Alice"
+    },
+    {
+      "month": "2024-03",
+      "region": "North",
+      "region_rank": 1,
+      "sales_amount": 22000,
+      "salesperson": "Alice"
+    },
+    {
+      "month": "2024-01",
+      "region": "North",
+      "region_rank": 6,
+      "sales_amount": 12000,
+      "salesperson": "Bob"
+    },
+    {
+      "month": "2024-02",
+      "region": "North",
+      "region_rank": 5,
+      "sales_amount": 14000,
+      "salesperson": "Bob"
+    },
+    {
+      "month": "2024-03",
+      "region": "North",
+      "region_rank": 3,
+      "sales_amount": 16000,
+      "salesperson": "Bob"
+    },
+    {
+      "month": "2024-01",
+      "region": "South",
+      "region_rank": 4,
+      "sales_amount": 20000,
+      "salesperson": "Charlie"
+    },
+    {
+      "month": "2024-02",
+      "region": "South",
+      "region_rank": 5,
+      "sales_amount": 19000,
+      "salesperson": "Charlie"
+    },
+    {
+      "month": "2024-03",
+      "region": "South",
+      "region_rank": 1,
+      "sales_amount": 25000,
+      "salesperson": "Charlie"
+    },
+    {
+      "month": "2024-01",
+      "region": "South",
+      "region_rank": 6,
+      "sales_amount": 17000,
+      "salesperson": "Diana"
+    },
+    {
+      "month": "2024-02",
+      "region": "South",
+      "region_rank": 3,
+      "sales_amount": 21000,
+      "salesperson": "Diana"
+    },
+    {
+      "month": "2024-03",
+      "region": "South",
+      "region_rank": 2,
+      "sales_amount": 23000,
+      "salesperson": "Diana"
+    },
+    {
+      "month": "2024-01",
+      "region": "East",
+      "region_rank": 4,
+      "sales_amount": 13000,
+      "salesperson": "Eve"
+    },
+    {
+      "month": "2024-02",
+      "region": "East",
+      "region_rank": 2,
+      "sales_amount": 15000,
+      "salesperson": "Eve"
+    },
+    {
+      "month": "2024-03",
+      "region": "East",
+      "region_rank": 1,
+      "sales_amount": 19000,
+      "salesperson": "Eve"
+    },
+    {
+      "month": "2024-01",
+      "region": "East",
+      "region_rank": 6,
+      "sales_amount": 11000,
+      "salesperson": "Frank"
+    },
+    {
+      "month": "2024-02",
+      "region": "East",
+      "region_rank": 5,
+      "sales_amount": 13000,
+      "salesperson": "Frank"
+    },
+    {
+      "month": "2024-03",
+      "region": "East",
+      "region_rank": 3,
+      "sales_amount": 14000,
+      "salesperson": "Frank"
+    },
+    {
+      "month": "2024-01",
+      "region": "West",
+      "region_rank": 3,
+      "sales_amount": 24000,
+      "salesperson": "Grace"
+    },
+    {
+      "month": "2024-02",
+      "region": "West",
+      "region_rank": 2,
+      "sales_amount": 26000,
+      "salesperson": "Grace"
+    },
+    {
+      "month": "2024-03",
+      "region": "West",
+      "region_rank": 1,
+      "sales_amount": 28000,
+      "salesperson": "Grace"
+    },
+    {
+      "month": "2024-01",
+      "region": "West",
+      "region_rank": 6,
+      "sales_amount": 16000,
+      "salesperson": "Henry"
+    },
+    {
+      "month": "2024-02",
+      "region": "West",
+      "region_rank": 5,
+      "sales_amount": 18000,
+      "salesperson": "Henry"
+    },
+    {
+      "month": "2024-03",
+      "region": "West",
+      "region_rank": 4,
+      "sales_amount": 20000,
+      "salesperson": "Henry"
+    }
+  ],
+  [
+    {
+      "rank": 1,
+      "region": "North",
+      "sales_amount": 22000,
+      "salesperson": "Alice"
+    },
+    {
+      "rank": 3,
+      "region": "North",
+      "sales_amount": 16000,
+      "salesperson": "Bob"
+    },
+    {
+      "rank": 1,
+      "region": "South",
+      "sales_amount": 25000,
+      "salesperson": "Charlie"
+    },
+    {
+      "rank": 2,
+      "region": "South",
+      "sales_amount": 23000,
+      "salesperson": "Diana"
+    },
+    {
+      "rank": 1,
+      "region": "East",
+      "sales_amount": 19000,
+      "salesperson": "Eve"
+    },
+    {
+      "rank": 3,
+      "region": "East",
+      "sales_amount": 14000,
+      "salesperson": "Frank"
+    },
+    {
+      "rank": 1,
+      "region": "West",
+      "sales_amount": 28000,
+      "salesperson": "Grace"
+    },
+    {
+      "rank": 4,
+      "region": "West",
+      "sales_amount": 20000,
+      "salesperson": "Henry"
+    }
+  ],
+  [
+    {
+      "month": "2024-01",
+      "prev_month": null,
+      "region": "North",
+      "sales_amount": 15000,
+      "salesperson": "Alice",
+      "trend": "N/A"
+    },
+    {
+      "month": "2024-02",
+      "prev_month": 15000,
+      "region": "North",
+      "sales_amount": 18000,
+      "salesperson": "Alice",
+      "trend": "UP"
+    },
+    {
+      "month": "2024-03",
+      "prev_month": 18000,
+      "region": "North",
+      "sales_amount": 22000,
+      "salesperson": "Alice",
+      "trend": "UP"
+    },
+    {
+      "month": "2024-01",
+      "prev_month": null,
+      "region": "North",
+      "sales_amount": 12000,
+      "salesperson": "Bob",
+      "trend": "N/A"
+    },
+    {
+      "month": "2024-02",
+      "prev_month": 12000,
+      "region": "North",
+      "sales_amount": 14000,
+      "salesperson": "Bob",
+      "trend": "UP"
+    },
+    {
+      "month": "2024-03",
+      "prev_month": 14000,
+      "region": "North",
+      "sales_amount": 16000,
+      "salesperson": "Bob",
+      "trend": "UP"
+    },
+    {
+      "month": "2024-01",
+      "prev_month": null,
+      "region": "South",
+      "sales_amount": 20000,
+      "salesperson": "Charlie",
+      "trend": "N/A"
+    },
+    {
+      "month": "2024-02",
+      "prev_month": 20000,
+      "region": "South",
+      "sales_amount": 19000,
+      "salesperson": "Charlie",
+      "trend": "DOWN"
+    },
+    {
+      "month": "2024-03",
+      "prev_month": 19000,
+      "region": "South",
+      "sales_amount": 25000,
+      "salesperson": "Charlie",
+      "trend": "UP"
+    },
+    {
+      "month": "2024-01",
+      "prev_month": null,
+      "region": "South",
+      "sales_amount": 17000,
+      "salesperson": "Diana",
+      "trend": "N/A"
+    },
+    {
+      "month": "2024-02",
+      "prev_month": 17000,
+      "region": "South",
+      "sales_amount": 21000,
+      "salesperson": "Diana",
+      "trend": "UP"
+    },
+    {
+      "month": "2024-03",
+      "prev_month": 21000,
+      "region": "South",
+      "sales_amount": 23000,
+      "salesperson": "Diana",
+      "trend": "UP"
+    },
+    {
+      "month": "2024-01",
+      "prev_month": null,
+      "region": "East",
+      "sales_amount": 13000,
+      "salesperson": "Eve",
+      "trend": "N/A"
+    },
+    {
+      "month": "2024-02",
+      "prev_month": 13000,
+      "region": "East",
+      "sales_amount": 15000,
+      "salesperson": "Eve",
+      "trend": "UP"
+    },
+    {
+      "month": "2024-03",
+      "prev_month": 15000,
+      "region": "East",
+      "sales_amount": 19000,
+      "salesperson": "Eve",
+      "trend": "UP"
+    },
+    {
+      "month": "2024-01",
+      "prev_month": null,
+      "region": "East",
+      "sales_amount": 11000,
+      "salesperson": "Frank",
+      "trend": "N/A"
+    },
+    {
+      "month": "2024-02",
+      "prev_month": 11000,
+      "region": "East",
+      "sales_amount": 13000,
+      "salesperson": "Frank",
+      "trend": "UP"
+    },
+    {
+      "month": "2024-03",
+      "prev_month": 13000,
+      "region": "East",
+      "sales_amount": 14000,
+      "salesperson": "Frank",
+      "trend": "UP"
+    },
+    {
+      "month": "2024-01",
+      "prev_month": null,
+      "region": "West",
+      "sales_amount": 24000,
+      "salesperson": "Grace",
+      "trend": "N/A"
+    },
+    {
+      "month": "2024-02",
+      "prev_month": 24000,
+      "region": "West",
+      "sales_amount": 26000,
+      "salesperson": "Grace",
+      "trend": "UP"
+    },
+    {
+      "month": "2024-03",
+      "prev_month": 26000,
+      "region": "West",
+      "sales_amount": 28000,
+      "salesperson": "Grace",
+      "trend": "UP"
+    },
+    {
+      "month": "2024-01",
+      "prev_month": null,
+      "region": "West",
+      "sales_amount": 16000,
+      "salesperson": "Henry",
+      "trend": "N/A"
+    },
+    {
+      "month": "2024-02",
+      "prev_month": 16000,
+      "region": "West",
+      "sales_amount": 18000,
+      "salesperson": "Henry",
+      "trend": "UP"
+    },
+    {
+      "month": "2024-03",
+      "prev_month": 18000,
+      "region": "West",
+      "sales_amount": 20000,
+      "salesperson": "Henry",
+      "trend": "UP"
+    }
+  ],
+  [
+    {
+      "month": "2024-01",
+      "month_over_month_change": null,
+      "sales_amount": 15000,
+      "salesperson": "Alice"
+    },
+    {
+      "month": "2024-02",
+      "month_over_month_change": 3000,
+      "sales_amount": 18000,
+      "salesperson": "Alice"
+    },
+    {
+      "month": "2024-03",
+      "month_over_month_change": 4000,
+      "sales_amount": 22000,
+      "salesperson": "Alice"
+    },
+    {
+      "month": "2024-01",
+      "month_over_month_change": null,
+      "sales_amount": 12000,
+      "salesperson": "Bob"
+    },
+    {
+      "month": "2024-02",
+      "month_over_month_change": 2000,
+      "sales_amount": 14000,
+      "salesperson": "Bob"
+    },
+    {
+      "month": "2024-03",
+      "month_over_month_change": 2000,
+      "sales_amount": 16000,
+      "salesperson": "Bob"
+    }
+  ],
+  [
+    {
+      "first_month_sales": 15000,
+      "month": "2024-01",
+      "region": "North",
+      "sales_amount": 15000,
+      "salesperson": "Alice"
+    },
+    {
+      "first_month_sales": 15000,
+      "month": "2024-02",
+      "region": "North",
+      "sales_amount": 18000,
+      "salesperson": "Alice"
+    },
+    {
+      "first_month_sales": 15000,
+      "month": "2024-03",
+      "region": "North",
+      "sales_amount": 22000,
+      "salesperson": "Alice"
+    },
+    {
+      "first_month_sales": 15000,
+      "month": "2024-01",
+      "region": "North",
+      "sales_amount": 12000,
+      "salesperson": "Bob"
+    },
+    {
+      "first_month_sales": 15000,
+      "month": "2024-02",
+      "region": "North",
+      "sales_amount": 14000,
+      "salesperson": "Bob"
+    },
+    {
+      "first_month_sales": 15000,
+      "month": "2024-03",
+      "region": "North",
+      "sales_amount": 16000,
+      "salesperson": "Bob"
+    },
+    {
+      "first_month_sales": 20000,
+      "month": "2024-01",
+      "region": "South",
+      "sales_amount": 20000,
+      "salesperson": "Charlie"
+    },
+    {
+      "first_month_sales": 20000,
+      "month": "2024-02",
+      "region": "South",
+      "sales_amount": 19000,
+      "salesperson": "Charlie"
+    },
+    {
+      "first_month_sales": 20000,
+      "month": "2024-03",
+      "region": "South",
+      "sales_amount": 25000,
+      "salesperson": "Charlie"
+    },
+    {
+      "first_month_sales": 20000,
+      "month": "2024-01",
+      "region": "South",
+      "sales_amount": 17000,
+      "salesperson": "Diana"
+    },
+    {
+      "first_month_sales": 20000,
+      "month": "2024-02",
+      "region": "South",
+      "sales_amount": 21000,
+      "salesperson": "Diana"
+    },
+    {
+      "first_month_sales": 20000,
+      "month": "2024-03",
+      "region": "South",
+      "sales_amount": 23000,
+      "salesperson": "Diana"
+    },
+    {
+      "first_month_sales": 13000,
+      "month": "2024-01",
+      "region": "East",
+      "sales_amount": 13000,
+      "salesperson": "Eve"
+    },
+    {
+      "first_month_sales": 13000,
+      "month": "2024-02",
+      "region": "East",
+      "sales_amount": 15000,
+      "salesperson": "Eve"
+    },
+    {
+      "first_month_sales": 13000,
+      "month": "2024-03",
+      "region": "East",
+      "sales_amount": 19000,
+      "salesperson": "Eve"
+    },
+    {
+      "first_month_sales": 13000,
+      "month": "2024-01",
+      "region": "East",
+      "sales_amount": 11000,
+      "salesperson": "Frank"
+    },
+    {
+      "first_month_sales": 13000,
+      "month": "2024-02",
+      "region": "East",
+      "sales_amount": 13000,
+      "salesperson": "Frank"
+    },
+    {
+      "first_month_sales": 13000,
+      "month": "2024-03",
+      "region": "East",
+      "sales_amount": 14000,
+      "salesperson": "Frank"
+    },
+    {
+      "first_month_sales": 24000,
+      "month": "2024-01",
+      "region": "West",
+      "sales_amount": 24000,
+      "salesperson": "Grace"
+    },
+    {
+      "first_month_sales": 24000,
+      "month": "2024-02",
+      "region": "West",
+      "sales_amount": 26000,
+      "salesperson": "Grace"
+    },
+    {
+      "first_month_sales": 24000,
+      "month": "2024-03",
+      "region": "West",
+      "sales_amount": 28000,
+      "salesperson": "Grace"
+    },
+    {
+      "first_month_sales": 24000,
+      "month": "2024-01",
+      "region": "West",
+      "sales_amount": 16000,
+      "salesperson": "Henry"
+    },
+    {
+      "first_month_sales": 24000,
+      "month": "2024-02",
+      "region": "West",
+      "sales_amount": 18000,
+      "salesperson": "Henry"
+    },
+    {
+      "first_month_sales": 24000,
+      "month": "2024-03",
+      "region": "West",
+      "sales_amount": 20000,
+      "salesperson": "Henry"
+    }
+  ],
+  [
+    {
+      "last_sale_in_frame": 16000,
+      "month": "2024-01",
+      "region": "North",
+      "sales_amount": 15000,
+      "salesperson": "Alice"
+    },
+    {
+      "last_sale_in_frame": 16000,
+      "month": "2024-02",
+      "region": "North",
+      "sales_amount": 18000,
+      "salesperson": "Alice"
+    },
+    {
+      "last_sale_in_frame": 16000,
+      "month": "2024-03",
+      "region": "North",
+      "sales_amount": 22000,
+      "salesperson": "Alice"
+    },
+    {
+      "last_sale_in_frame": 16000,
+      "month": "2024-01",
+      "region": "North",
+      "sales_amount": 12000,
+      "salesperson": "Bob"
+    },
+    {
+      "last_sale_in_frame": 16000,
+      "month": "2024-02",
+      "region": "North",
+      "sales_amount": 14000,
+      "salesperson": "Bob"
+    },
+    {
+      "last_sale_in_frame": 16000,
+      "month": "2024-03",
+      "region": "North",
+      "sales_amount": 16000,
+      "salesperson": "Bob"
+    },
+    {
+      "last_sale_in_frame": 23000,
+      "month": "2024-01",
+      "region": "South",
+      "sales_amount": 20000,
+      "salesperson": "Charlie"
+    },
+    {
+      "last_sale_in_frame": 23000,
+      "month": "2024-02",
+      "region": "South",
+      "sales_amount": 19000,
+      "salesperson": "Charlie"
+    },
+    {
+      "last_sale_in_frame": 23000,
+      "month": "2024-03",
+      "region": "South",
+      "sales_amount": 25000,
+      "salesperson": "Charlie"
+    },
+    {
+      "last_sale_in_frame": 23000,
+      "month": "2024-01",
+      "region": "South",
+      "sales_amount": 17000,
+      "salesperson": "Diana"
+    },
+    {
+      "last_sale_in_frame": 23000,
+      "month": "2024-02",
+      "region": "South",
+      "sales_amount": 21000,
+      "salesperson": "Diana"
+    },
+    {
+      "last_sale_in_frame": 23000,
+      "month": "2024-03",
+      "region": "South",
+      "sales_amount": 23000,
+      "salesperson": "Diana"
+    },
+    {
+      "last_sale_in_frame": 14000,
+      "month": "2024-01",
+      "region": "East",
+      "sales_amount": 13000,
+      "salesperson": "Eve"
+    },
+    {
+      "last_sale_in_frame": 14000,
+      "month": "2024-02",
+      "region": "East",
+      "sales_amount": 15000,
+      "salesperson": "Eve"
+    },
+    {
+      "last_sale_in_frame": 14000,
+      "month": "2024-03",
+      "region": "East",
+      "sales_amount": 19000,
+      "salesperson": "Eve"
+    },
+    {
+      "last_sale_in_frame": 14000,
+      "month": "2024-01",
+      "region": "East",
+      "sales_amount": 11000,
+      "salesperson": "Frank"
+    },
+    {
+      "last_sale_in_frame": 14000,
+      "month": "2024-02",
+      "region": "East",
+      "sales_amount": 13000,
+      "salesperson": "Frank"
+    },
+    {
+      "last_sale_in_frame": 14000,
+      "month": "2024-03",
+      "region": "East",
+      "sales_amount": 14000,
+      "salesperson": "Frank"
+    },
+    {
+      "last_sale_in_frame": 20000,
+      "month": "2024-01",
+      "region": "West",
+      "sales_amount": 24000,
+      "salesperson": "Grace"
+    },
+    {
+      "last_sale_in_frame": 20000,
+      "month": "2024-02",
+      "region": "West",
+      "sales_amount": 26000,
+      "salesperson": "Grace"
+    },
+    {
+      "last_sale_in_frame": 20000,
+      "month": "2024-03",
+      "region": "West",
+      "sales_amount": 28000,
+      "salesperson": "Grace"
+    },
+    {
+      "last_sale_in_frame": 20000,
+      "month": "2024-01",
+      "region": "West",
+      "sales_amount": 16000,
+      "salesperson": "Henry"
+    },
+    {
+      "last_sale_in_frame": 20000,
+      "month": "2024-02",
+      "region": "West",
+      "sales_amount": 18000,
+      "salesperson": "Henry"
+    },
+    {
+      "last_sale_in_frame": 20000,
+      "month": "2024-03",
+      "region": "West",
+      "sales_amount": 20000,
+      "salesperson": "Henry"
+    }
+  ],
+  [
+    {
+      "month": "2024-01",
+      "next_month_sales": 18000,
+      "prev_month_sales": null,
+      "rank_in_region": 4,
+      "region": "North",
+      "region_max": 22000,
+      "sales_amount": 15000,
+      "salesperson": "Alice"
+    },
+    {
+      "month": "2024-02",
+      "next_month_sales": 22000,
+      "prev_month_sales": 15000,
+      "rank_in_region": 2,
+      "region": "North",
+      "region_max": 22000,
+      "sales_amount": 18000,
+      "salesperson": "Alice"
+    },
+    {
+      "month": "2024-03",
+      "next_month_sales": null,
+      "prev_month_sales": 18000,
+      "rank_in_region": 1,
+      "region": "North",
+      "region_max": 22000,
+      "sales_amount": 22000,
+      "salesperson": "Alice"
+    },
+    {
+      "month": "2024-01",
+      "next_month_sales": 14000,
+      "prev_month_sales": null,
+      "rank_in_region": 6,
+      "region": "North",
+      "region_max": 22000,
+      "sales_amount": 12000,
+      "salesperson": "Bob"
+    },
+    {
+      "month": "2024-02",
+      "next_month_sales": 16000,
+      "prev_month_sales": 12000,
+      "rank_in_region": 5,
+      "region": "North",
+      "region_max": 22000,
+      "sales_amount": 14000,
+      "salesperson": "Bob"
+    },
+    {
+      "month": "2024-03",
+      "next_month_sales": null,
+      "prev_month_sales": 14000,
+      "rank_in_region": 3,
+      "region": "North",
+      "region_max": 22000,
+      "sales_amount": 16000,
+      "salesperson": "Bob"
+    },
+    {
+      "month": "2024-01",
+      "next_month_sales": 19000,
+      "prev_month_sales": null,
+      "rank_in_region": 4,
+      "region": "South",
+      "region_max": 25000,
+      "sales_amount": 20000,
+      "salesperson": "Charlie"
+    },
+    {
+      "month": "2024-02",
+      "next_month_sales": 25000,
+      "prev_month_sales": 20000,
+      "rank_in_region": 5,
+      "region": "South",
+      "region_max": 25000,
+      "sales_amount": 19000,
+      "salesperson": "Charlie"
+    },
+    {
+      "month": "2024-03",
+      "next_month_sales": null,
+      "prev_month_sales": 19000,
+      "rank_in_region": 1,
+      "region": "South",
+      "region_max": 25000,
+      "sales_amount": 25000,
+      "salesperson": "Charlie"
+    },
+    {
+      "month": "2024-01",
+      "next_month_sales": 21000,
+      "prev_month_sales": null,
+      "rank_in_region": 6,
+      "region": "South",
+      "region_max": 25000,
+      "sales_amount": 17000,
+      "salesperson": "Diana"
+    },
+    {
+      "month": "2024-02",
+      "next_month_sales": 23000,
+      "prev_month_sales": 17000,
+      "rank_in_region": 3,
+      "region": "South",
+      "region_max": 25000,
+      "sales_amount": 21000,
+      "salesperson": "Diana"
+    },
+    {
+      "month": "2024-03",
+      "next_month_sales": null,
+      "prev_month_sales": 21000,
+      "rank_in_region": 2,
+      "region": "South",
+      "region_max": 25000,
+      "sales_amount": 23000,
+      "salesperson": "Diana"
+    },
+    {
+      "month": "2024-01",
+      "next_month_sales": 15000,
+      "prev_month_sales": null,
+      "rank_in_region": 4,
+      "region": "East",
+      "region_max": 19000,
+      "sales_amount": 13000,
+      "salesperson": "Eve"
+    },
+    {
+      "month": "2024-02",
+      "next_month_sales": 19000,
+      "prev_month_sales": 13000,
+      "rank_in_region": 2,
+      "region": "East",
+      "region_max": 19000,
+      "sales_amount": 15000,
+      "salesperson": "Eve"
+    },
+    {
+      "month": "2024-03",
+      "next_month_sales": null,
+      "prev_month_sales": 15000,
+      "rank_in_region": 1,
+      "region": "East",
+      "region_max": 19000,
+      "sales_amount": 19000,
+      "salesperson": "Eve"
+    },
+    {
+      "month": "2024-01",
+      "next_month_sales": 13000,
+      "prev_month_sales": null,
+      "rank_in_region": 6,
+      "region": "East",
+      "region_max": 19000,
+      "sales_amount": 11000,
+      "salesperson": "Frank"
+    },
+    {
+      "month": "2024-02",
+      "next_month_sales": 14000,
+      "prev_month_sales": 11000,
+      "rank_in_region": 5,
+      "region": "East",
+      "region_max": 19000,
+      "sales_amount": 13000,
+      "salesperson": "Frank"
+    },
+    {
+      "month": "2024-03",
+      "next_month_sales": null,
+      "prev_month_sales": 13000,
+      "rank_in_region": 3,
+      "region": "East",
+      "region_max": 19000,
+      "sales_amount": 14000,
+      "salesperson": "Frank"
+    },
+    {
+      "month": "2024-01",
+      "next_month_sales": 26000,
+      "prev_month_sales": null,
+      "rank_in_region": 3,
+      "region": "West",
+      "region_max": 28000,
+      "sales_amount": 24000,
+      "salesperson": "Grace"
+    },
+    {
+      "month": "2024-02",
+      "next_month_sales": 28000,
+      "prev_month_sales": 24000,
+      "rank_in_region": 2,
+      "region": "West",
+      "region_max": 28000,
+      "sales_amount": 26000,
+      "salesperson": "Grace"
+    }
+  ],
+  [
+    {
+      "product": "Gadget",
+      "rank": 1,
+      "region": "North",
+      "sales_amount": 22000,
+      "salesperson": "Alice"
+    },
+    {
+      "product": "Widget",
+      "rank": 3,
+      "region": "North",
+      "sales_amount": 16000,
+      "salesperson": "Bob"
+    },
+    {
+      "product": "Gadget",
+      "rank": 1,
+      "region": "South",
+      "sales_amount": 25000,
+      "salesperson": "Charlie"
+    },
+    {
+      "product": "Widget",
+      "rank": 2,
+      "region": "South",
+      "sales_amount": 23000,
+      "salesperson": "Diana"
+    },
+    {
+      "product": "Gadget",
+      "rank": 1,
+      "region": "East",
+      "sales_amount": 19000,
+      "salesperson": "Eve"
+    },
+    {
+      "product": "Gadget",
+      "rank": 3,
+      "region": "East",
+      "sales_amount": 14000,
+      "salesperson": "Frank"
+    },
+    {
+      "product": "Widget",
+      "rank": 1,
+      "region": "West",
+      "sales_amount": 28000,
+      "salesperson": "Grace"
+    },
+    {
+      "product": "Gadget",
+      "rank": 4,
+      "region": "West",
+      "sales_amount": 20000,
+      "salesperson": "Henry"
+    }
+  ],
+  [
+    {
+      "month": "2024-01",
+      "pct_of_highest": 68.18181818181819,
+      "rank_in_region": 4,
+      "region": "North",
+      "region_highest": 22000,
+      "sales_amount": 15000,
+      "salesperson": "Alice"
+    },
+    {
+      "month": "2024-02",
+      "pct_of_highest": 81.81818181818181,
+      "rank_in_region": 2,
+      "region": "North",
+      "region_highest": 22000,
+      "sales_amount": 18000,
+      "salesperson": "Alice"
+    },
+    {
+      "month": "2024-03",
+      "pct_of_highest": 100.0,
+      "rank_in_region": 1,
+      "region": "North",
+      "region_highest": 22000,
+      "sales_amount": 22000,
+      "salesperson": "Alice"
+    },
+    {
+      "month": "2024-01",
+      "pct_of_highest": 54.54545454545455,
+      "rank_in_region": 6,
+      "region": "North",
+      "region_highest": 22000,
+      "sales_amount": 12000,
+      "salesperson": "Bob"
+    },
+    {
+      "month": "2024-02",
+      "pct_of_highest": 63.63636363636363,
+      "rank_in_region": 5,
+      "region": "North",
+      "region_highest": 22000,
+      "sales_amount": 14000,
+      "salesperson": "Bob"
+    },
+    {
+      "month": "2024-03",
+      "pct_of_highest": 72.72727272727273,
+      "rank_in_region": 3,
+      "region": "North",
+      "region_highest": 22000,
+      "sales_amount": 16000,
+      "salesperson": "Bob"
+    },
+    {
+      "month": "2024-01",
+      "pct_of_highest": 80.0,
+      "rank_in_region": 4,
+      "region": "South",
+      "region_highest": 25000,
+      "sales_amount": 20000,
+      "salesperson": "Charlie"
+    },
+    {
+      "month": "2024-02",
+      "pct_of_highest": 76.0,
+      "rank_in_region": 5,
+      "region": "South",
+      "region_highest": 25000,
+      "sales_amount": 19000,
+      "salesperson": "Charlie"
+    },
+    {
+      "month": "2024-03",
+      "pct_of_highest": 100.0,
+      "rank_in_region": 1,
+      "region": "South",
+      "region_highest": 25000,
+      "sales_amount": 25000,
+      "salesperson": "Charlie"
+    },
+    {
+      "month": "2024-01",
+      "pct_of_highest": 68.0,
+      "rank_in_region": 6,
+      "region": "South",
+      "region_highest": 25000,
+      "sales_amount": 17000,
+      "salesperson": "Diana"
+    },
+    {
+      "month": "2024-02",
+      "pct_of_highest": 84.0,
+      "rank_in_region": 3,
+      "region": "South",
+      "region_highest": 25000,
+      "sales_amount": 21000,
+      "salesperson": "Diana"
+    },
+    {
+      "month": "2024-03",
+      "pct_of_highest": 92.0,
+      "rank_in_region": 2,
+      "region": "South",
+      "region_highest": 25000,
+      "sales_amount": 23000,
+      "salesperson": "Diana"
+    },
+    {
+      "month": "2024-01",
+      "pct_of_highest": 68.42105263157895,
+      "rank_in_region": 4,
+      "region": "East",
+      "region_highest": 19000,
+      "sales_amount": 13000,
+      "salesperson": "Eve"
+    },
+    {
+      "month": "2024-02",
+      "pct_of_highest": 78.94736842105263,
+      "rank_in_region": 2,
+      "region": "East",
+      "region_highest": 19000,
+      "sales_amount": 15000,
+      "salesperson": "Eve"
+    },
+    {
+      "month": "2024-03",
+      "pct_of_highest": 100.0,
+      "rank_in_region": 1,
+      "region": "East",
+      "region_highest": 19000,
+      "sales_amount": 19000,
+      "salesperson": "Eve"
+    },
+    {
+      "month": "2024-01",
+      "pct_of_highest": 57.89473684210526,
+      "rank_in_region": 6,
+      "region": "East",
+      "region_highest": 19000,
+      "sales_amount": 11000,
+      "salesperson": "Frank"
+    },
+    {
+      "month": "2024-02",
+      "pct_of_highest": 68.42105263157895,
+      "rank_in_region": 5,
+      "region": "East",
+      "region_highest": 19000,
+      "sales_amount": 13000,
+      "salesperson": "Frank"
+    },
+    {
+      "month": "2024-03",
+      "pct_of_highest": 73.6842105263158,
+      "rank_in_region": 3,
+      "region": "East",
+      "region_highest": 19000,
+      "sales_amount": 14000,
+      "salesperson": "Frank"
+    },
+    {
+      "month": "2024-01",
+      "pct_of_highest": 85.71428571428571,
+      "rank_in_region": 3,
+      "region": "West",
+      "region_highest": 28000,
+      "sales_amount": 24000,
+      "salesperson": "Grace"
+    },
+    {
+      "month": "2024-02",
+      "pct_of_highest": 92.85714285714286,
+      "rank_in_region": 2,
+      "region": "West",
+      "region_highest": 28000,
+      "sales_amount": 26000,
+      "salesperson": "Grace"
+    },
+    {
+      "month": "2024-03",
+      "pct_of_highest": 100.0,
+      "rank_in_region": 1,
+      "region": "West",
+      "region_highest": 28000,
+      "sales_amount": 28000,
+      "salesperson": "Grace"
+    },
+    {
+      "month": "2024-01",
+      "pct_of_highest": 57.142857142857146,
+      "rank_in_region": 6,
+      "region": "West",
+      "region_highest": 28000,
+      "sales_amount": 16000,
+      "salesperson": "Henry"
+    },
+    {
+      "month": "2024-02",
+      "pct_of_highest": 64.28571428571429,
+      "rank_in_region": 5,
+      "region": "West",
+      "region_highest": 28000,
+      "sales_amount": 18000,
+      "salesperson": "Henry"
+    },
+    {
+      "month": "2024-03",
+      "pct_of_highest": 71.42857142857143,
+      "rank_in_region": 4,
+      "region": "West",
+      "region_highest": 28000,
+      "sales_amount": 20000,
+      "salesperson": "Henry"
+    }
+  ],
+  [
+    {
+      "month": "2024-01",
+      "next_month": "2024-02",
+      "prev_month": null,
+      "sales_amount": 15000,
+      "salesperson": "Alice"
+    },
+    {
+      "month": "2024-02",
+      "next_month": "2024-03",
+      "prev_month": "2024-01",
+      "sales_amount": 18000,
+      "salesperson": "Alice"
+    },
+    {
+      "month": "2024-03",
+      "next_month": null,
+      "prev_month": "2024-02",
+      "sales_amount": 22000,
+      "salesperson": "Alice"
+    },
+    {
+      "month": "2024-01",
+      "next_month": "2024-02",
+      "prev_month": null,
+      "sales_amount": 12000,
+      "salesperson": "Bob"
+    },
+    {
+      "month": "2024-02",
+      "next_month": "2024-03",
+      "prev_month": "2024-01",
+      "sales_amount": 14000,
+      "salesperson": "Bob"
+    },
+    {
+      "month": "2024-03",
+      "next_month": null,
+      "prev_month": "2024-02",
+      "sales_amount": 16000,
+      "salesperson": "Bob"
+    }
+  ],
+  [
+    {
+      "global_rank": 6,
+      "region": "North",
+      "regional_rank": 1,
+      "sales_amount": 22000,
+      "salesperson": "Alice"
+    },
+    {
+      "global_rank": 15,
+      "region": "North",
+      "regional_rank": 3,
+      "sales_amount": 16000,
+      "salesperson": "Bob"
+    },
+    {
+      "global_rank": 3,
+      "region": "South",
+      "regional_rank": 1,
+      "sales_amount": 25000,
+      "salesperson": "Charlie"
+    },
+    {
+      "global_rank": 5,
+      "region": "South",
+      "regional_rank": 2,
+      "sales_amount": 23000,
+      "salesperson": "Diana"
+    },
+    {
+      "global_rank": 11,
+      "region": "East",
+      "regional_rank": 1,
+      "sales_amount": 19000,
+      "salesperson": "Eve"
+    },
+    {
+      "global_rank": 20,
+      "region": "East",
+      "regional_rank": 3,
+      "sales_amount": 14000,
+      "salesperson": "Frank"
+    },
+    {
+      "global_rank": 1,
+      "region": "West",
+      "regional_rank": 1,
+      "sales_amount": 28000,
+      "salesperson": "Grace"
+    },
+    {
+      "global_rank": 9,
+      "region": "West",
+      "regional_rank": 4,
+      "sales_amount": 20000,
+      "salesperson": "Henry"
+    }
+  ]
+]

@@ -3,24 +3,56 @@
     {
       "region": "North",
       "sales": 100
+    },
+    {
+      "region": "South",
+      "sales": 150
     }
   ],
   [
     {
       "quarter": "Q1",
       "revenue": 1000
+    },
+    {
+      "quarter": "Q2",
+      "revenue": 1200
+    },
+    {
+      "quarter": "Q3",
+      "revenue": 1500
+    },
+    {
+      "quarter": "Q4",
+      "revenue": 1800
     }
   ],
   [
     {
       "department": "Engineering",
       "name": "Alice"
+    },
+    {
+      "department": null,
+      "name": "Bob"
+    },
+    {
+      "department": "Marketing",
+      "name": null
     }
   ],
   [
     {
       "operation": "Addition",
       "result": 15
+    },
+    {
+      "operation": "Multiplication",
+      "result": 50
+    },
+    {
+      "operation": "Division",
+      "result": 5
     }
   ],
   [
@@ -28,6 +60,21 @@
       "location": "Store 1",
       "product": "Product A",
       "quantity": 25
+    },
+    {
+      "location": "Store 2",
+      "product": "Product A",
+      "quantity": 30
+    },
+    {
+      "location": "Store 1",
+      "product": "Product B",
+      "quantity": 15
+    },
+    {
+      "location": "Store 2",
+      "product": "Product B",
+      "quantity": 20
     }
   ]
 ]

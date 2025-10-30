@@ -1,0 +1,209 @@
+[
+  [
+    {
+      "gravity": 24.79,
+      "name": "Jupiter"
+    },
+    {
+      "gravity": 11.15,
+      "name": "Neptune"
+    },
+    {
+      "gravity": 10.44,
+      "name": "Saturn"
+    },
+    {
+      "gravity": 9.81,
+      "name": "Earth"
+    },
+    {
+      "gravity": 8.87,
+      "name": "Venus"
+    }
+  ],
+  [
+    {
+      "name": "Jupiter",
+      "raw_gravity": 24.79,
+      "rounded_gravity": 24.79
+    },
+    {
+      "name": "Neptune",
+      "raw_gravity": 11.15,
+      "rounded_gravity": 11.15
+    },
+    {
+      "name": "Saturn",
+      "raw_gravity": 10.44,
+      "rounded_gravity": 10.44
+    },
+    {
+      "name": "Earth",
+      "raw_gravity": 9.807,
+      "rounded_gravity": 9.81
+    },
+    {
+      "name": "Venus",
+      "raw_gravity": 8.87,
+      "rounded_gravity": 8.87
+    }
+  ],
+  [
+    {
+      "gravity_ms2": 24.79,
+      "name": "Jupiter"
+    },
+    {
+      "gravity_ms2": 11.15,
+      "name": "Neptune"
+    },
+    {
+      "gravity_ms2": 10.44,
+      "name": "Saturn"
+    },
+    {
+      "gravity_ms2": 9.807,
+      "name": "Earth"
+    },
+    {
+      "gravity_ms2": 8.87,
+      "name": "Venus"
+    }
+  ],
+  [
+    {
+      "gravity": 24.79,
+      "mass_earths": 317.83,
+      "name": "Jupiter",
+      "radius_earths": 10.97
+    },
+    {
+      "gravity": 10.44,
+      "mass_earths": 95.16,
+      "name": "Saturn",
+      "radius_earths": 9.14
+    },
+    {
+      "gravity": 11.15,
+      "mass_earths": 17.15,
+      "name": "Neptune",
+      "radius_earths": 3.86
+    },
+    {
+      "gravity": 8.87,
+      "mass_earths": 14.54,
+      "name": "Uranus",
+      "radius_earths": 3.98
+    },
+    {
+      "gravity": 9.81,
+      "mass_earths": 1.0,
+      "name": "Earth",
+      "radius_earths": 1.0
+    },
+    {
+      "gravity": 8.87,
+      "mass_earths": 0.82,
+      "name": "Venus",
+      "radius_earths": 0.95
+    },
+    {
+      "gravity": 3.71,
+      "mass_earths": 0.11,
+      "name": "Mars",
+      "radius_earths": 0.53
+    },
+    {
+      "gravity": 3.7,
+      "mass_earths": 0.06,
+      "name": "Mercury",
+      "radius_earths": 0.38
+    }
+  ],
+  [
+    {
+      "category": "High",
+      "gravity": 24.79,
+      "name": "Jupiter",
+      "priority": 3,
+      "type": "Gas Giant"
+    },
+    {
+      "category": "Medium",
+      "gravity": 11.15,
+      "name": "Neptune",
+      "priority": 2,
+      "type": "Ice Giant"
+    },
+    {
+      "category": "Medium",
+      "gravity": 10.44,
+      "name": "Saturn",
+      "priority": 2,
+      "type": "Gas Giant"
+    },
+    {
+      "category": "Medium",
+      "gravity": 9.81,
+      "name": "Earth",
+      "priority": 2,
+      "type": "Terrestrial"
+    },
+    {
+      "category": "Medium",
+      "gravity": 8.87,
+      "name": "Venus",
+      "priority": 2,
+      "type": "Terrestrial"
+    },
+    {
+      "category": "Medium",
+      "gravity": 8.87,
+      "name": "Uranus",
+      "priority": 2,
+      "type": "Ice Giant"
+    },
+    {
+      "category": "Low",
+      "gravity": 3.71,
+      "name": "Mars",
+      "priority": 1,
+      "type": "Terrestrial"
+    },
+    {
+      "category": "Low",
+      "gravity": 3.7,
+      "name": "Mercury",
+      "priority": 1,
+      "type": "Terrestrial"
+    },
+    {
+      "category": "Low",
+      "gravity": 1.62,
+      "name": "Moon",
+      "priority": 1,
+      "type": "Moon"
+    },
+    {
+      "category": "Low",
+      "gravity": 0.82,
+      "name": "Eris",
+      "priority": 1,
+      "type": "Dwarf Planet"
+    },
+    {
+      "category": "Low",
+      "gravity": 0.62,
+      "name": "Pluto",
+      "priority": 1,
+      "type": "Dwarf Planet"
+    },
+    {
+      "category": "Low",
+      "gravity": 0.27,
+      "name": "Ceres",
+      "priority": 1,
+      "type": "Dwarf Planet"
+    }
+  ]
+]

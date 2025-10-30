@@ -11,7 +11,8 @@ use crate::config::config::Config;
 use crate::data::data_view::DataView;
 use crate::data::datatable::{DataTable, DataValue};
 use crate::data::datatable_loaders::{load_csv_to_datatable, load_json_to_datatable};
-use crate::data::temp_table_registry::TempTableRegistry;
+// Phase 1: TempTableRegistry no longer used directly - it's in ExecutionContext
+// use crate::data::temp_table_registry::TempTableRegistry;
 use crate::services::query_execution_service::QueryExecutionService;
 use crate::sql::parser::ast::{CTEType, TableSource, CTE};
 use crate::sql::recursive_parser::Parser;
@@ -772,11 +773,26 @@ pub fn execute_script(config: NonInteractiveConfig) -> Result<()> {
     let mut script_result = ScriptResult::new();
     let mut output = Vec::new();
 
-    // Create Arc<DataTable> once for all statements - avoids expensive cloning
-    let arc_data_table = std::sync::Arc::new(data_table);
+    // Phase 1: Create unified execution context (replaces TempTableRegistry)
+    use crate::execution::{ExecutionConfig, ExecutionContext, StatementExecutor};
+    let mut context = ExecutionContext::new(std::sync::Arc::new(data_table));
 
-    // Create temporary table registry for this script execution
-    let mut temp_tables = TempTableRegistry::new();
+    // Phase 1: Create unified execution config from CLI flags
+    let exec_config = ExecutionConfig::from_cli_flags(
+        config.show_preprocessing,
+        config.case_insensitive,
+        config.auto_hide_empty,
+        config.no_expression_lifter,
+        config.no_where_expansion,
+        config.no_group_by_expansion,
+        config.no_having_expansion,
+        config.no_cte_hoister,
+        config.no_in_lifter,
+        false, // debug_trace - not used in script mode
+    );
+
+    // Phase 1: Create unified statement executor
+    let executor = StatementExecutor::with_config(exec_config);
 
     // Execute each statement
     for (idx, script_stmt) in script_statements.iter().enumerate() {
@@ -850,9 +866,9 @@ pub fn execute_script(config: NonInteractiveConfig) -> Result<()> {
         }
 
         // Step 1: Expand templates in the SQL string FIRST (before parsing)
-        // This ensures templates are expanded even when the SQL is re-parsed internally
+        // Phase 1: Use context.temp_tables instead of temp_tables directly
         use crate::sql::template_expander::TemplateExpander;
-        let expander = TemplateExpander::new(&temp_tables);
+        let expander = TemplateExpander::new(&context.temp_tables);
 
         let expanded_statement = match expander.parse_templates(statement) {
             Ok(vars) => {
@@ -896,7 +912,7 @@ pub fn execute_script(config: NonInteractiveConfig) -> Result<()> {
         // Use the expanded statement for the rest of the processing
         let statement = expanded_statement.as_str();
 
-        // Step 2: Parse the (possibly expanded) statement to check for INTO clause and temp table references
+        // Step 2: Parse the (possibly expanded) statement
         let mut parser = Parser::new(statement);
         let parsed_stmt = match parser.parse() {
             Ok(stmt) => stmt,
@@ -912,144 +928,50 @@ pub fn execute_script(config: NonInteractiveConfig) -> Result<()> {
             }
         };
 
-        // Check if FROM clause references a temp table
-        let source_table = if let Some(from_table) = &parsed_stmt.from_table {
-            if from_table.starts_with('#') {
-                // Resolve temp table
-                match temp_tables.get(from_table) {
-                    Some(temp_table) => temp_table,
-                    None => {
-                        script_result.add_failure(
-                            statement_num,
-                            statement.to_string(),
-                            format!("Temporary table {} not found", from_table),
-                            stmt_start.elapsed().as_secs_f64() * 1000.0,
-                        );
-                        break;
-                    }
-                }
-            } else {
-                // Use the base table
-                arc_data_table.clone()
+        // Phase 1: Check if temp table is referenced (for better error message)
+        // The executor will handle resolution, but we check here for early validation
+        if let Some(from_table) = &parsed_stmt.from_table {
+            if from_table.starts_with('#') && !context.has_temp_table(from_table) {
+                script_result.add_failure(
+                    statement_num,
+                    statement.to_string(),
+                    format!("Temporary table {} not found", from_table),
+                    stmt_start.elapsed().as_secs_f64() * 1000.0,
+                );
+                break;
             }
+        }
+
+        // Phase 1: Remove INTO clause before execution (executor doesn't handle INTO syntax)
+        // We'll handle it ourselves after execution
+        let into_table = parsed_stmt.into_table.clone();
+        let stmt_without_into = if into_table.is_some() {
+            use crate::query_plan::IntoClauseRemover;
+            IntoClauseRemover::remove_into_clause(parsed_stmt)
         } else {
-            // No FROM clause, use base table
-            arc_data_table.clone()
+            parsed_stmt
         };
 
-        // Create a fresh DataView for each statement
-        let dataview = DataView::new(source_table);
-
-        // Apply preprocessing pipeline (alias expansion, etc.) if statement has FROM clause
-        // This enables Quick Win features (WHERE/GROUP BY/HAVING alias expansion) in scripts
-        let has_from_clause = parsed_stmt.from_table.is_some()
-            || parsed_stmt.from_subquery.is_some()
-            || parsed_stmt.from_function.is_some();
-
-        // Determine whether to use AST execution or SQL string execution
-        let (use_ast_execution, transformed_stmt) = if has_from_clause {
-            use crate::query_plan::{create_pipeline_with_config, IntoClauseRemover};
-
-            // Apply preprocessing pipeline with configured transformers
-            let transformer_config = make_transformer_config(&config);
-            let mut pipeline =
-                create_pipeline_with_config(config.show_preprocessing, transformer_config);
-
-            match pipeline.process(parsed_stmt.clone()) {
-                Ok(transformed) => {
-                    // Remove INTO clause if present (executor doesn't understand INTO syntax)
-                    let final_stmt = if transformed.into_table.is_some() {
-                        IntoClauseRemover::remove_into_clause(transformed)
-                    } else {
-                        transformed
-                    };
-
-                    // Always use AST execution in script mode to avoid re-parsing
-                    // Re-parsing would trigger preprocessing again (double-processing bug)
-                    // NOTE: This means scalar subqueries in CTEs don't work in script mode yet
-                    // Workaround: Use --no-* flags to disable preprocessing for affected scripts
-                    (true, final_stmt)
-                }
-                Err(e) => {
-                    // If preprocessing fails, fall back to original statement
-                    debug!("Preprocessing failed: {}, using original statement", e);
-                    let fallback = if parsed_stmt.into_table.is_some() {
-                        IntoClauseRemover::remove_into_clause(parsed_stmt.clone())
-                    } else {
-                        parsed_stmt.clone()
-                    };
-                    (false, fallback)
-                }
-            }
-        } else {
-            // No FROM clause - use original statement
-            let stmt = if parsed_stmt.into_table.is_some() {
-                use crate::query_plan::IntoClauseRemover;
-                IntoClauseRemover::remove_into_clause(parsed_stmt.clone())
-            } else {
-                parsed_stmt.clone()
-            };
-            (false, stmt)
-        };
-
-        // Execute the statement - use AST execution when transformers were applied
-        let result = if use_ast_execution {
-            // Execute the transformed AST directly to avoid re-parsing
-            use crate::data::query_engine::QueryEngine;
-
-            let engine = QueryEngine::with_case_insensitive(config.case_insensitive);
-            match engine.execute_statement_with_temp_tables(
-                dataview.source_arc(),
-                transformed_stmt.clone(),
-                Some(&temp_tables),
-            ) {
-                Ok(result_view) => {
-                    use crate::sql::parser::ast_formatter;
-                    let query_str = ast_formatter::format_select_statement(&transformed_stmt);
-                    Ok(
-                        crate::services::query_execution_service::QueryExecutionResult {
-                            dataview: result_view.clone(),
-                            stats: crate::services::query_execution_service::QueryStats {
-                                row_count: result_view.row_count(),
-                                column_count: result_view.column_count(),
-                                execution_time: stmt_start.elapsed(),
-                                query_engine_time: stmt_start.elapsed(),
-                            },
-                            hidden_columns: Vec::new(),
-                            query: query_str,
-                            execution_plan: None,
-                            debug_trace: None,
-                        },
-                    )
-                }
-                Err(e) => Err(e),
-            }
-        } else {
-            // Fall back to SQL string execution for non-FROM queries or when preprocessing failed
-            use crate::sql::parser::ast_formatter;
-            let executable_sql = ast_formatter::format_select_statement(&transformed_stmt);
-            let service =
-                QueryExecutionService::new(config.case_insensitive, config.auto_hide_empty);
-            service.execute_with_temp_tables(
-                &executable_sql,
-                Some(&dataview),
-                None,
-                Some(&temp_tables),
-            )
-        };
+        // Phase 1: Execute using unified StatementExecutor
+        // This handles:
+        // - Table resolution (temp tables, base table, DUAL)
+        // - Preprocessing pipeline (alias expansion, transformers)
+        // - Direct AST execution (no re-parsing!)
+        let result = executor.execute(stmt_without_into, &mut context);
 
         match result {
-            Ok(result) => {
+            Ok(exec_result) => {
                 let exec_time = stmt_start.elapsed().as_secs_f64() * 1000.0;
-                let final_view = result.dataview;
+                let final_view = exec_result.dataview;
 
-                // Check if this is an INTO statement - store result in temp table
-                if let Some(into_table) = &parsed_stmt.into_table {
+                // Phase 1: Check if this is an INTO statement - store result in temp table
+                if let Some(into_table) = &into_table {
                     // Get the source table from the DataView - this contains the query result
                     let result_table = final_view.source_arc();
                     let row_count = result_table.row_count();
 
-                    match temp_tables.insert(into_table.name.clone(), result_table) {
+                    // Phase 1: Use context.store_temp_table() instead of temp_tables.insert()
+                    match context.store_temp_table(into_table.name.clone(), result_table) {
                         Ok(_) => {
                             info!(
                                 "Stored {} rows in temporary table {}",

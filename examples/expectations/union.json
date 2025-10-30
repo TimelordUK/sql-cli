@@ -2,29 +2,51 @@
   [
     {
       "fruit": "apple"
+    },
+    {
+      "fruit": "banana"
     }
   ],
   [
     {
       "color": "red",
       "fruit": "apple"
+    },
+    {
+      "color": "green",
+      "fruit": "apple"
+    },
+    {
+      "color": "yellow",
+      "fruit": "banana"
     }
   ],
   [
     {
       "city": "New York",
       "customer": "Alice"
+    },
+    {
+      "city": "Boston",
+      "customer": "Bob"
     }
   ],
   [
     {
       "operation": "Sum",
       "result": 10
+    },
+    {
+      "operation": "Product",
+      "result": 10
     }
   ],
   [
     {
       "fruit": "apple"
+    },
+    {
+      "fruit": "banana"
     }
   ]
 ]

@@ -1,0 +1,87 @@
+[
+  [
+    {
+      "no_punct": "Hello world",
+      "original": "Hello, world!",
+      "tokenized": "hello world",
+      "word_count": 2
+    }
+  ],
+  [
+    {
+      "cleaned": "The quick brown fox...",
+      "messy": "  The   quick  brown   fox...  ",
+      "no_punct": "The quick brown fox"
+    }
+  ],
+  [
+    {
+      "frequency": 3,
+      "word": "quick"
+    },
+    {
+      "frequency": 3,
+      "word": "the"
+    },
+    {
+      "frequency": 2,
+      "word": "fox"
+    },
+    {
+      "frequency": 1,
+      "word": "lazy"
+    },
+    {
+      "frequency": 1,
+      "word": "over"
+    },
+    {
+      "frequency": 1,
+      "word": "very"
+    },
+    {
+      "frequency": 1,
+      "word": "jumps"
+    },
+    {
+      "frequency": 1,
+      "word": "dog"
+    },
+    {
+      "frequency": 1,
+      "word": "brown"
+    },
+    {
+      "frequency": 1,
+      "word": "is"
+    }
+  ],
+  [
+    {
+      "long_words_upper": "QUICK,BROWN,JUMPS,OVER,LAZY",
+      "longer_words_lower": "quick,brown,jumps"
+    }
+  ],
+  [
+    {
+      "alphanumeric_chars": 87,
+      "punctuation_count": 0,
+      "total_chars": 87,
+      "total_words": 13
+    }
+  ],
+  [
+    {
+      "clean_id": "my file v2 0 txt",
+      "filename": "my-file_v2.0.txt",
+      "tokens": "my file v2 0 txt",
+      "words": "my,file,v2,txt"
+    }
+  ],
+  [
+    {
+      "total_words": 10,
+      "unique_words": 8
+    }
+  ]
+]
