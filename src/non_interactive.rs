@@ -231,13 +231,54 @@ pub fn execute_non_interactive(config: NonInteractiveConfig) -> Result<()> {
     // Phase 2: REMOVED temp table blocking - temp tables now work in single query mode!
     // check_temp_table_usage(&config.query)?;
 
+    // Phase 3.3: Check for data file hint in query if no data file specified
+    let data_file_to_use = if config.data_file.is_empty() {
+        // Look for -- #! hint in first 10 lines
+        let lines: Vec<&str> = config.query.lines().take(10).collect();
+        let mut hint_path: Option<String> = None;
+
+        for line in lines {
+            let trimmed = line.trim();
+            if trimmed.starts_with("-- #!") {
+                hint_path = Some(trimmed[5..].trim().to_string());
+                break;
+            }
+        }
+
+        if let Some(path) = hint_path {
+            debug!("Found data file hint: {}", path);
+            // Resolve relative paths
+            let resolved_path = if path.starts_with("../") {
+                // Relative to current directory
+                std::path::Path::new(&path).to_path_buf()
+            } else if path.starts_with("data/") {
+                // Relative to project root (assume current dir)
+                std::path::Path::new(&path).to_path_buf()
+            } else {
+                std::path::Path::new(&path).to_path_buf()
+            };
+
+            if resolved_path.exists() {
+                info!("Using data file from hint: {:?}", resolved_path);
+                resolved_path.to_string_lossy().to_string()
+            } else {
+                debug!("Data file hint path does not exist: {:?}", resolved_path);
+                String::new()
+            }
+        } else {
+            String::new()
+        }
+    } else {
+        config.data_file.clone()
+    };
+
     // Phase 2: Load data file and create unified execution context
-    let (data_table, _is_dual) = if config.data_file.is_empty() {
+    let (data_table, _is_dual) = if data_file_to_use.is_empty() {
         info!("No data file provided, using DUAL table");
         (crate::data::datatable::DataTable::dual(), true)
     } else {
-        info!("Loading data from: {}", config.data_file);
-        let table = load_data_file(&config.data_file)?;
+        info!("Loading data from: {}", data_file_to_use);
+        let table = load_data_file(&data_file_to_use)?;
         info!(
             "Loaded {} rows with {} columns",
             table.row_count(),
@@ -437,7 +478,42 @@ pub fn execute_non_interactive(config: NonInteractiveConfig) -> Result<()> {
     let result = {
         use crate::sql::recursive_parser::Parser;
 
-        let mut parser = Parser::new(&config.query);
+        // Phase 3.1: Expand templates BEFORE parsing (same as script mode)
+        use crate::sql::template_expander::TemplateExpander;
+        let expander = TemplateExpander::new(&context.temp_tables);
+
+        let query_to_parse = match expander.parse_templates(&config.query) {
+            Ok(vars) => {
+                if vars.is_empty() {
+                    config.query.clone()
+                } else {
+                    match expander.expand(&config.query, &vars) {
+                        Ok(expanded) => {
+                            debug!(
+                                "Template expansion in single query mode: {} vars expanded",
+                                vars.len()
+                            );
+                            for var in &vars {
+                                debug!("  {} -> resolved", var.placeholder);
+                            }
+                            expanded
+                        }
+                        Err(e) => {
+                            return Err(anyhow::anyhow!(
+                                "Template expansion failed: {}. Available tables: {}",
+                                e,
+                                context.temp_tables.list_tables().join(", ")
+                            ));
+                        }
+                    }
+                }
+            }
+            Err(e) => {
+                return Err(anyhow::anyhow!("Template parsing failed: {}", e));
+            }
+        };
+
+        let mut parser = Parser::new(&query_to_parse);
         match parser.parse() {
             Ok(stmt) => {
                 // Phase 2: Execute using unified StatementExecutor

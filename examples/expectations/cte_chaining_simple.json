@@ -1,0 +1,88 @@
+[
+  [
+    {
+      "density_kgm3": 1326,
+      "gravity_ms2": 24.79,
+      "mass_ratio": 317.8,
+      "name": "Jupiter",
+      "type": "Gas Giant"
+    },
+    {
+      "density_kgm3": 1638,
+      "gravity_ms2": 11.15,
+      "mass_ratio": 17.1,
+      "name": "Neptune",
+      "type": "Ice Giant"
+    },
+    {
+      "density_kgm3": 687,
+      "gravity_ms2": 10.44,
+      "mass_ratio": 95.2,
+      "name": "Saturn",
+      "type": "Gas Giant"
+    },
+    {
+      "density_kgm3": 5514,
+      "gravity_ms2": 9.81,
+      "mass_ratio": 1.0,
+      "name": "Earth",
+      "type": "Terrestrial"
+    },
+    {
+      "density_kgm3": 5243,
+      "gravity_ms2": 8.87,
+      "mass_ratio": 0.8,
+      "name": "Venus",
+      "type": "Terrestrial"
+    },
+    {
+      "density_kgm3": 1271,
+      "gravity_ms2": 8.87,
+      "mass_ratio": 14.5,
+      "name": "Uranus",
+      "type": "Ice Giant"
+    }
+  ],
+  [
+    {
+      "max_gravity_ms2": 24.79,
+      "name": "Jupiter",
+      "type": "Gas Giant"
+    },
+    {
+      "max_gravity_ms2": 11.15,
+      "name": "Neptune",
+      "type": "Ice Giant"
+    },
+    {
+      "max_gravity_ms2": 9.81,
+      "name": "Earth",
+      "type": "Terrestrial"
+    },
+    {
+      "max_gravity_ms2": 0.82,
+      "name": "Eris",
+      "type": "Dwarf Planet"
+    }
+  ],
+  [
+    {
+      "avg_moons": 71.0,
+      "body_count": 4,
+      "moon_category": "Many moons",
+      "total_moons": 284
+    },
+    {
+      "avg_moons": 2.3,
+      "body_count": 4,
+      "moon_category": "Few moons",
+      "total_moons": 9
+    },
+    {
+      "avg_moons": 0.0,
+      "body_count": 3,
+      "moon_category": "No moons",
+      "total_moons": 0
+    }
+  ]
+]
