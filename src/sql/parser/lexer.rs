@@ -54,6 +54,8 @@ pub enum Token {
     Over,      // OVER keyword for window functions
     Partition, // PARTITION keyword for window functions
     By,        // BY keyword (used with PARTITION BY, ORDER BY)
+    Exclude,   // EXCLUDE keyword (for SELECT * EXCLUDE)
+    Replace,   // REPLACE keyword (for SELECT * REPLACE)
 
     // Window frame keywords
     Rows,      // ROWS frame type
@@ -151,6 +153,8 @@ impl Token {
             "OFFSET" => Some(Token::Offset),
             "INTO" => Some(Token::Into),
             "DISTINCT" => Some(Token::Distinct),
+            "EXCLUDE" => Some(Token::Exclude),
+            "REPLACE" => Some(Token::Replace),
             "CASE" => Some(Token::Case),
             "WHEN" => Some(Token::When),
             "THEN" => Some(Token::Then),
@@ -239,6 +243,8 @@ impl Token {
             Token::Offset => Some("OFFSET"),
             Token::Into => Some("INTO"),
             Token::Distinct => Some("DISTINCT"),
+            Token::Exclude => Some("EXCLUDE"),
+            Token::Replace => Some("REPLACE"),
             Token::Case => Some("CASE"),
             Token::When => Some("WHEN"),
             Token::Then => Some("THEN"),
@@ -856,6 +862,8 @@ impl Lexer {
                     "ELSE" => Token::Else,
                     "END" => Token::End,
                     "DISTINCT" => Token::Distinct,
+                    "EXCLUDE" => Token::Exclude,
+                    "REPLACE" => Token::Replace,
                     "OVER" => Token::Over,
                     "PARTITION" => Token::Partition,
                     "BY" => Token::By,
