@@ -5,6 +5,166 @@ All notable changes to SQL CLI will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.64.0] - 2025-11-01
+
+### ✨ Major Features
+
+#### **Execution Mode Unification & Query Transformation Pipeline**
+Complete unification of script mode (`-f`) and query mode (`-q`) execution paths, bringing sophisticated query transformation capabilities to both modes.
+
+**Unified Execution Architecture**:
+- **Single execution path** - Both `-f` scripts and `-q` queries now use the same underlying execution engine
+- **Consistent transformer support** - All query transformations (WHERE, GROUP BY, HAVING, ORDER BY alias expansion) work in both modes
+- **Dependency-aware execution** - `--execute-statement N` now applies full preprocessing pipeline
+- **Shared infrastructure** - Eliminates code duplication and ensures feature parity
+
+**Query Transformation Pipeline** (now available in both modes):
+- **WHERE clause alias expansion** - Use SELECT aliases in WHERE: `SELECT value * 2 AS doubled FROM data WHERE doubled > 100`
+- **GROUP BY alias expansion** - Reference SELECT aliases in GROUP BY: `SELECT region, SUM(sales) AS total FROM data GROUP BY region HAVING total > 1000`
+- **HAVING auto-aliasing** - Automatic aliases for aggregate expressions in HAVING clause
+- **ORDER BY expression support** - Complex expressions in ORDER BY automatically moved to SELECT with hidden columns
+
+**New Debug Capabilities**:
+- **`--show-transformations` flag** - See the complete transformation pipeline for any query
+- **Nvim `\st` keymap** - Visualize transformations for query at cursor in Neovim plugin
+- **`\sz` keymap** - Alternative transformations debug view
+- **Detailed pipeline output** - Shows original SQL, intermediate steps, and final transformed query
+
+**ORDER BY Expression Support**:
+- **Complex expressions in ORDER BY** - Use any SQL expression in ORDER BY clause
+- **Automatic SELECT injection** - Expressions automatically added to SELECT with hidden columns
+- **Aggregate support** - ORDER BY can use aggregates: `ORDER BY SUM(value) DESC`
+- **Works with transformers** - Integrates seamlessly with WHERE/GROUP BY alias expansion
+- **Example**: `SELECT region FROM sales GROUP BY region ORDER BY SUM(amount) DESC`
+
+**Technical Architecture**:
+- **Three-phase execution** (Phases 0-2 complete):
+  - Phase 0: Unified execution module foundation
+  - Phase 1: Refactored `-q` mode to use unified path
+  - Phase 2: Refactored `-f` mode to use unified path
+  - Phase 3: Enabled full preprocessing pipeline in both modes
+- **Transformer orchestration** - Coordinated pipeline of AST transformers
+- **Preserved semantics** - All transformations maintain original query intent
+
+#### **QUALIFY Clause Support**
+Industry-standard window function filtering using QUALIFY clause (Snowflake, BigQuery, Teradata syntax).
+
+**New Capability**:
+```sql
+-- Top 3 products per category by sales
+SELECT category, product, sales,
+       ROW_NUMBER() OVER (PARTITION BY category ORDER BY sales DESC) as rank
+FROM products
+QUALIFY rank <= 3;
+```
+
+**Benefits**:
+- **Cleaner syntax** - No need for CTE wrapper around window functions
+- **Better readability** - Filter intent clear and concise
+- **Standard SQL** - Matches Snowflake/BigQuery syntax
+- **Performance** - Efficient filtering after window function evaluation
+
+**Full Window Function Support**:
+- Works with ROW_NUMBER(), RANK(), DENSE_RANK()
+- Supports LAG(), LEAD(), FIRST_VALUE(), LAST_VALUE()
+- Compatible with all window functions (SUM, AVG, COUNT, etc.)
+- Handles complex PARTITION BY and ORDER BY clauses
+
+### 🔧 Improvements
+
+**Examples Testing Framework**:
+- **Python-based test runner** - Replaced bash scripts with robust Python framework
+- **Formal testing** - JSON expectations for critical examples
+- **Smoke testing** - 117+ examples validated for basic execution
+- **Data file hint support** - Examples automatically find their data files
+- **Clear output** - JSON validation failures clearly reported
+
+**Neovim Plugin**:
+- **Transformation debug keymaps** - `\st` and `\sz` for pipeline visualization
+- **Better keymap organization** - Moved transformations to `\sz` to free up `\st`
+
+**Documentation**:
+- **UNION ALL examples** - Added comprehensive subquery examples
+- **ORDER BY examples** - New example file for expression patterns
+- **Roadmap updates** - Documented ORDER BY completion status
+
+### 🐛 Bug Fixes
+
+**Temp Table Persistence**:
+- **Fixed `--execute-statement` mode** - Temp tables now properly persist across statement execution
+- **Materialization** - Temp tables correctly materialized and registered
+- **Dependency chain** - Multi-statement scripts with temp table dependencies work correctly
+
+**Transformer Pipeline**:
+- **Dependency-aware execution** - Transformers now enabled in `--execute-statement` mode
+- **Qualified name resolution** - Fixed regression in table.column resolution after transformer changes
+- **Correlated subquery detection** - Phase 1 analyzer for future optimization
+
+**Testing**:
+- **History file tests** - Ignored tests requiring persistent history file in CI
+- **Test output** - Clear JSON validation messages in examples framework
+- **CI pipeline** - Examples test suite integrated into continuous integration
+
+### 📚 Documentation & Examples
+
+**New Examples**:
+- `examples/order_by_expressions.sql` - ORDER BY expression patterns
+- `examples/union_all_subquery.sql` - UNION ALL with subqueries
+- Time series generation examples - How to create temporal test data
+
+**Updated Documentation**:
+- `CLAUDE.md` - Examples test framework commands and usage
+- Roadmap - ORDER BY expression support completion notes
+- Test framework - Formal vs smoke test distinctions
+
+### 🎯 Use Cases Enabled
+
+**Complex Analytical Queries**:
+```sql
+-- Top regions by total sales (ORDER BY with aggregate)
+SELECT region, SUM(amount) AS total
+FROM sales
+GROUP BY region
+ORDER BY SUM(amount) DESC
+LIMIT 5;
+
+-- Filtered window functions with QUALIFY
+SELECT salesperson, month, sales,
+       ROW_NUMBER() OVER (PARTITION BY salesperson ORDER BY sales DESC) as rank
+FROM monthly_sales
+QUALIFY rank <= 3;
+
+-- Multi-stage transformation pipeline (visible with --show-transformations)
+SELECT region, value * 2 AS doubled
+FROM data
+WHERE doubled > 100
+GROUP BY region
+HAVING SUM(doubled) > 1000
+ORDER BY SUM(doubled) DESC;
+```
+
+**Unified Workflow**:
+- Write query in Neovim with `\st` to see transformations
+- Test with `-q` mode: `sql-cli -q "SELECT ..." --show-transformations`
+- Save to script file and run with `-f` mode (same execution path!)
+- Use `--execute-statement N` with full transformer support
+
+### 🔧 Technical Details
+
+**Files Modified**:
+- `src/main.rs` - Unified execution path integration
+- `src/execution/mod.rs` - New unified execution module
+- `src/query_plan/` - Transformer orchestration
+- `tests/integration/test_examples.py` - Python examples framework
+- `nvim-plugin/lua/sql-cli/` - Transformation debug keymaps
+
+**Test Results**:
+- ✅ 457 library tests passing
+- ✅ 397 integration tests passing
+- ✅ 119 example tests (2 formal, 117 smoke)
+
+---
+
 ## [1.63.0] - 2025-10-25
 
 ### ✨ Major Features
