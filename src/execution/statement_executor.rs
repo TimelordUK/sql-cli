@@ -114,6 +114,9 @@ impl StatementExecutor {
         let total_start = Instant::now();
         let mut stats = ExecutionStats::new();
 
+        // Step 0: Check if this statement has an INTO clause (before preprocessing removes it!)
+        let into_table_name = stmt.into_table.as_ref().map(|it| it.name.clone());
+
         // Step 1: Determine source table
         let source_table = if let Some(ref from_table) = stmt.from_table {
             context.resolve_table(from_table)
@@ -133,7 +136,18 @@ impl StatementExecutor {
         let result_view = self.execute_ast(transformed_stmt.clone(), source_table, context)?;
         stats.execution_time_ms = exec_start.elapsed().as_secs_f64() * 1000.0;
 
-        // Step 4: Collect statistics
+        // Step 4: If this was a SELECT INTO statement, store the result as a temp table
+        if let Some(table_name) = into_table_name {
+            // Materialize the view into a DataTable using QueryEngine's method
+            let engine = QueryEngine::with_case_insensitive(self.config.case_insensitive);
+            let temp_table = engine.materialize_view(result_view.clone())?;
+
+            // Store in temp table registry
+            context.store_temp_table(table_name.clone(), Arc::new(temp_table))?;
+            tracing::debug!("Stored temp table: {}", table_name);
+        }
+
+        // Step 5: Collect statistics
         stats.total_time_ms = total_start.elapsed().as_secs_f64() * 1000.0;
         stats.row_count = result_view.row_count();
         stats.column_count = result_view.column_count();
