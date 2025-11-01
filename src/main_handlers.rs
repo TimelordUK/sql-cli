@@ -513,6 +513,7 @@ pub fn handle_distinct_column_flag(args: &[String]) -> Option<io::Result<()>> {
         no_where_expansion: false,
         no_group_by_expansion: false,
         no_having_expansion: false,
+        no_order_by_expansion: false,
         no_expression_lifter: false,
         no_cte_hoister: false,
         no_in_lifter: false,

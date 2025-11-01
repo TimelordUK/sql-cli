@@ -1,3 +1,4 @@
+use sql_cli::sql::parser::ast::SqlExpression;
 use sql_cli::sql::recursive_parser::{Parser, SortDirection};
 
 #[test]
@@ -8,7 +9,11 @@ fn test_order_by_single_column_asc() {
     assert!(stmt.order_by.is_some());
     let order_by = stmt.order_by.unwrap();
     assert_eq!(order_by.len(), 1);
-    assert_eq!(order_by[0].column, "price");
+    if let SqlExpression::Column(col_ref) = &order_by[0].expr {
+        assert_eq!(col_ref.name, "price");
+    } else {
+        panic!("Expected Column expression");
+    }
     assert!(matches!(order_by[0].direction, SortDirection::Asc));
 }
 
@@ -20,7 +25,11 @@ fn test_order_by_single_column_desc() {
     assert!(stmt.order_by.is_some());
     let order_by = stmt.order_by.unwrap();
     assert_eq!(order_by.len(), 1);
-    assert_eq!(order_by[0].column, "price");
+    if let SqlExpression::Column(col_ref) = &order_by[0].expr {
+        assert_eq!(col_ref.name, "price");
+    } else {
+        panic!("Expected Column expression");
+    }
     assert!(matches!(order_by[0].direction, SortDirection::Desc));
 }
 
@@ -34,7 +43,11 @@ fn test_order_by_default_asc() {
     assert!(stmt.order_by.is_some());
     let order_by = stmt.order_by.unwrap();
     assert_eq!(order_by.len(), 1);
-    assert_eq!(order_by[0].column, "price");
+    if let SqlExpression::Column(col_ref) = &order_by[0].expr {
+        assert_eq!(col_ref.name, "price");
+    } else {
+        panic!("Expected Column expression");
+    }
     assert!(matches!(order_by[0].direction, SortDirection::Asc)); // Default is ASC
 }
 
@@ -49,13 +62,25 @@ fn test_order_by_multiple_columns() {
     let order_by = stmt.order_by.unwrap();
     assert_eq!(order_by.len(), 3);
 
-    assert_eq!(order_by[0].column, "category");
+    if let SqlExpression::Column(col_ref) = &order_by[0].expr {
+        assert_eq!(col_ref.name, "category");
+    } else {
+        panic!("Expected Column expression");
+    }
     assert!(matches!(order_by[0].direction, SortDirection::Desc));
 
-    assert_eq!(order_by[1].column, "price");
+    if let SqlExpression::Column(col_ref) = &order_by[1].expr {
+        assert_eq!(col_ref.name, "price");
+    } else {
+        panic!("Expected Column expression");
+    }
     assert!(matches!(order_by[1].direction, SortDirection::Asc));
 
-    assert_eq!(order_by[2].column, "name");
+    if let SqlExpression::Column(col_ref) = &order_by[2].expr {
+        assert_eq!(col_ref.name, "name");
+    } else {
+        panic!("Expected Column expression");
+    }
     assert!(matches!(order_by[2].direction, SortDirection::Asc)); // Default
 }
 
@@ -71,10 +96,18 @@ fn test_order_by_with_quoted_columns() {
     let order_by = stmt.order_by.unwrap();
     assert_eq!(order_by.len(), 2);
 
-    assert_eq!(order_by[0].column, "Customer Name");
+    if let SqlExpression::Column(col_ref) = &order_by[0].expr {
+        assert_eq!(col_ref.name, "Customer Name");
+    } else {
+        panic!("Expected Column expression");
+    }
     assert!(matches!(order_by[0].direction, SortDirection::Desc));
 
-    assert_eq!(order_by[1].column, "Order Date");
+    if let SqlExpression::Column(col_ref) = &order_by[1].expr {
+        assert_eq!(col_ref.name, "Order Date");
+    } else {
+        panic!("Expected Column expression");
+    }
     assert!(matches!(order_by[1].direction, SortDirection::Asc));
 }
 
@@ -92,10 +125,18 @@ fn test_order_by_with_where_clause() {
     let order_by = stmt.order_by.unwrap();
     assert_eq!(order_by.len(), 2);
 
-    assert_eq!(order_by[0].column, "category");
+    if let SqlExpression::Column(col_ref) = &order_by[0].expr {
+        assert_eq!(col_ref.name, "category");
+    } else {
+        panic!("Expected Column expression");
+    }
     assert!(matches!(order_by[0].direction, SortDirection::Desc));
 
-    assert_eq!(order_by[1].column, "price");
+    if let SqlExpression::Column(col_ref) = &order_by[1].expr {
+        assert_eq!(col_ref.name, "price");
+    } else {
+        panic!("Expected Column expression");
+    }
     assert!(matches!(order_by[1].direction, SortDirection::Asc));
 }
 
@@ -118,9 +159,17 @@ fn test_order_by_numeric_columns() {
     let order_by = stmt.order_by.unwrap();
     assert_eq!(order_by.len(), 2);
 
-    assert_eq!(order_by[0].column, "202204");
+    if let SqlExpression::Column(col_ref) = &order_by[0].expr {
+        assert_eq!(col_ref.name, "202204");
+    } else {
+        panic!("Expected Column expression");
+    }
     assert!(matches!(order_by[0].direction, SortDirection::Desc));
 
-    assert_eq!(order_by[1].column, "202205");
+    if let SqlExpression::Column(col_ref) = &order_by[1].expr {
+        assert_eq!(col_ref.name, "202205");
+    } else {
+        panic!("Expected Column expression");
+    }
     assert!(matches!(order_by[1].direction, SortDirection::Asc));
 }

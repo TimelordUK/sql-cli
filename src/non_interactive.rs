@@ -208,6 +208,7 @@ pub struct NonInteractiveConfig {
     pub no_where_expansion: bool,     // Disable WHERE clause alias expansion
     pub no_group_by_expansion: bool,  // Disable GROUP BY clause alias expansion
     pub no_having_expansion: bool,    // Disable HAVING clause auto-aliasing
+    pub no_order_by_expansion: bool,  // Disable ORDER BY aggregate expansion
     pub no_expression_lifter: bool,   // Disable expression lifting transformer
     pub no_cte_hoister: bool,         // Disable CTE hoisting transformer
     pub no_in_lifter: bool,           // Disable IN operator lifting transformer
@@ -220,6 +221,7 @@ fn make_transformer_config(config: &NonInteractiveConfig) -> crate::query_plan::
         enable_where_expansion: !config.no_where_expansion,
         enable_group_by_expansion: !config.no_group_by_expansion,
         enable_having_expansion: !config.no_having_expansion,
+        enable_order_by_expansion: !config.no_order_by_expansion,
         enable_cte_hoister: !config.no_cte_hoister,
         enable_in_lifter: !config.no_in_lifter,
     }
@@ -467,6 +469,7 @@ pub fn execute_non_interactive(config: NonInteractiveConfig) -> Result<()> {
         config.no_where_expansion,
         config.no_group_by_expansion,
         config.no_having_expansion,
+        config.no_order_by_expansion,
         config.no_cte_hoister,
         config.no_in_lifter,
         config.debug_trace,
@@ -776,6 +779,7 @@ pub fn execute_script(config: NonInteractiveConfig) -> Result<()> {
         config.no_where_expansion,
         config.no_group_by_expansion,
         config.no_having_expansion,
+        config.no_order_by_expansion,
         config.no_cte_hoister,
         config.no_in_lifter,
         false, // debug_trace - not used in script mode

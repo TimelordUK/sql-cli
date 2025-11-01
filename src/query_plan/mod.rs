@@ -10,6 +10,7 @@ pub mod group_by_alias_expander;
 pub mod having_alias_transformer;
 pub mod in_operator_lifter;
 pub mod into_clause_remover;
+pub mod order_by_alias_transformer;
 pub mod pipeline;
 pub mod transformer_adapters;
 pub mod where_alias_expander;
@@ -31,6 +32,7 @@ pub use group_by_alias_expander::GroupByAliasExpander;
 pub use having_alias_transformer::HavingAliasTransformer;
 pub use in_operator_lifter::{InOperatorLifter, LiftedInExpression};
 pub use into_clause_remover::IntoClauseRemover;
+pub use order_by_alias_transformer::OrderByAliasTransformer;
 pub use where_alias_expander::WhereAliasExpander;
 
 // Re-export pipeline types
@@ -51,6 +53,7 @@ pub struct TransformerConfig {
     pub enable_where_expansion: bool,
     pub enable_group_by_expansion: bool,
     pub enable_having_expansion: bool,
+    pub enable_order_by_expansion: bool,
     pub enable_cte_hoister: bool,
     pub enable_in_lifter: bool,
 }
@@ -70,6 +73,7 @@ impl TransformerConfig {
             enable_where_expansion: true,
             enable_group_by_expansion: true,
             enable_having_expansion: true,
+            enable_order_by_expansion: true,
             enable_cte_hoister: true,
             enable_in_lifter: true,
         }
@@ -128,6 +132,10 @@ pub fn create_pipeline_with_config(
         builder = builder.with_transformer(Box::new(HavingAliasTransformer::new()));
     }
 
+    if transformer_config.enable_order_by_expansion {
+        builder = builder.with_transformer(Box::new(OrderByAliasTransformer::new()));
+    }
+
     if transformer_config.enable_cte_hoister {
         builder = builder.with_transformer(Box::new(CTEHoisterTransformer::new()));
     }
@@ -175,12 +183,13 @@ pub fn create_standard_pipeline(verbose: bool) -> PreprocessingPipeline {
     // Add transformers in the correct order
     // Order matters! ExpressionLifter must run before CTEHoister
     // WhereAliasExpander and GroupByAliasExpander run early to expand aliases
-    // HavingAliasTransformer runs after GROUP BY to ensure proper aggregate aliases
+    // HavingAliasTransformer and OrderByAliasTransformer run after GROUP BY
     builder = builder
         .with_transformer(Box::new(ExpressionLifterTransformer::new()))
         .with_transformer(Box::new(WhereAliasExpander::new()))
         .with_transformer(Box::new(GroupByAliasExpander::new()))
         .with_transformer(Box::new(HavingAliasTransformer::new()))
+        .with_transformer(Box::new(OrderByAliasTransformer::new()))
         .with_transformer(Box::new(CTEHoisterTransformer::new()))
         .with_transformer(Box::new(InOperatorLifterTransformer::new()));
 

@@ -10,7 +10,9 @@ use anyhow::{anyhow, Result};
 
 use crate::data::data_view::DataView;
 use crate::data::datatable::{DataTable, DataValue};
-use crate::sql::parser::ast::{FrameBound, FrameUnit, OrderByColumn, SortDirection, WindowSpec};
+use crate::sql::parser::ast::{
+    FrameBound, FrameUnit, OrderByItem, SortDirection, SqlExpression, WindowSpec,
+};
 
 /// Key for identifying a partition (combination of partition column values)
 /// We use String representation for now since DataValue doesn't impl Ord
@@ -112,7 +114,7 @@ impl WindowContext {
     pub fn new(
         view: Arc<DataView>,
         partition_by: Vec<String>,
-        order_by: Vec<OrderByColumn>,
+        order_by: Vec<OrderByItem>,
     ) -> Result<Self> {
         Self::new_with_spec(
             view,
@@ -206,7 +208,7 @@ impl WindowContext {
     /// Create a single partition from the entire view
     fn create_single_partition(
         view: &DataView,
-        order_by: &[OrderByColumn],
+        order_by: &[OrderByItem],
     ) -> Result<OrderedPartition> {
         let mut rows: Vec<usize> = view.get_visible_rows();
 
@@ -218,18 +220,21 @@ impl WindowContext {
     }
 
     /// Sort row indices according to ORDER BY specification
-    fn sort_rows(
-        rows: &mut Vec<usize>,
-        table: &DataTable,
-        order_by: &[OrderByColumn],
-    ) -> Result<()> {
+    fn sort_rows(rows: &mut Vec<usize>, table: &DataTable, order_by: &[OrderByItem]) -> Result<()> {
         // Get column indices for ORDER BY columns
         let sort_cols: Vec<(usize, bool)> = order_by
             .iter()
             .map(|col| {
+                // Extract column name from expression (currently only supports simple columns)
+                let column_name = match &col.expr {
+                    SqlExpression::Column(col_ref) => &col_ref.name,
+                    _ => {
+                        return Err(anyhow!("Window function ORDER BY only supports simple columns, not expressions"));
+                    }
+                };
                 let idx = table
-                    .get_column_index(&col.column)
-                    .ok_or_else(|| anyhow!("Invalid ORDER BY column: {}", col.column))?;
+                    .get_column_index(column_name)
+                    .ok_or_else(|| anyhow!("Invalid ORDER BY column: {}", column_name))?;
                 let ascending = matches!(col.direction, SortDirection::Asc);
                 Ok((idx, ascending))
             })

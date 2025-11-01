@@ -1,3 +1,4 @@
+use sql_cli::sql::parser::ast::SqlExpression;
 use sql_cli::sql::recursive_parser::Parser;
 
 #[test]
@@ -31,8 +32,16 @@ fn test_between_with_or() {
 
     let order_by = stmt.order_by.unwrap();
     assert_eq!(order_by.len(), 2);
-    assert_eq!(order_by[0].column, "Category");
-    assert_eq!(order_by[1].column, "price");
+    if let SqlExpression::Column(col_ref) = &order_by[0].expr {
+        assert_eq!(col_ref.name, "Category");
+    } else {
+        panic!("Expected Column expression");
+    }
+    if let SqlExpression::Column(col_ref) = &order_by[1].expr {
+        assert_eq!(col_ref.name, "price");
+    } else {
+        panic!("Expected Column expression");
+    }
 }
 
 #[test]

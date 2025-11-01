@@ -267,10 +267,38 @@ pub enum SortDirection {
     Desc,
 }
 
+/// Legacy structure - kept for backward compatibility
+/// New code should use OrderByItem
 #[derive(Debug, Clone)]
 pub struct OrderByColumn {
     pub column: String,
     pub direction: SortDirection,
+}
+
+/// Modern ORDER BY item that supports expressions
+#[derive(Debug, Clone)]
+pub struct OrderByItem {
+    pub expr: SqlExpression,
+    pub direction: SortDirection,
+}
+
+impl OrderByItem {
+    /// Create from a simple column name (for backward compatibility)
+    pub fn from_column_name(name: String, direction: SortDirection) -> Self {
+        Self {
+            expr: SqlExpression::Column(ColumnRef {
+                name,
+                quote_style: QuoteStyle::None,
+                table_prefix: None,
+            }),
+            direction,
+        }
+    }
+
+    /// Create from an expression
+    pub fn from_expression(expr: SqlExpression, direction: SortDirection) -> Self {
+        Self { expr, direction }
+    }
 }
 
 // ===== Window Function Types =====
@@ -303,7 +331,7 @@ pub struct WindowFrame {
 #[derive(Debug, Clone)]
 pub struct WindowSpec {
     pub partition_by: Vec<String>,
-    pub order_by: Vec<OrderByColumn>,
+    pub order_by: Vec<OrderByItem>,
     pub frame: Option<WindowFrame>, // Optional window frame
 }
 
@@ -357,9 +385,9 @@ pub struct SelectStatement {
     pub from_alias: Option<String>,                  // Alias for subquery (AS name)
     pub joins: Vec<JoinClause>,                      // JOIN clauses
     pub where_clause: Option<WhereClause>,
-    pub order_by: Option<Vec<OrderByColumn>>,
+    pub order_by: Option<Vec<OrderByItem>>, // Supports expressions: columns, aggregates, CASE, etc.
     pub group_by: Option<Vec<SqlExpression>>, // Changed from Vec<String> to support expressions
-    pub having: Option<SqlExpression>,        // HAVING clause for post-aggregation filtering
+    pub having: Option<SqlExpression>,      // HAVING clause for post-aggregation filtering
     pub limit: Option<usize>,
     pub offset: Option<usize>,
     pub ctes: Vec<CTE>,                // Common Table Expressions (WITH clause)

@@ -105,6 +105,7 @@ impl ExecutionConfig {
         no_where_expansion: bool,
         no_group_by_expansion: bool,
         no_having_expansion: bool,
+        no_order_by_expansion: bool,
         no_cte_hoister: bool,
         no_in_lifter: bool,
         debug_trace: bool,
@@ -119,6 +120,7 @@ impl ExecutionConfig {
                 enable_where_expansion: !no_where_expansion,
                 enable_group_by_expansion: !no_group_by_expansion,
                 enable_having_expansion: !no_having_expansion,
+                enable_order_by_expansion: !no_order_by_expansion,
                 enable_cte_hoister: !no_cte_hoister,
                 enable_in_lifter: !no_in_lifter,
             },
@@ -188,6 +190,7 @@ mod tests {
             true,  // no_where_expansion
             true,  // no_group_by_expansion
             true,  // no_having_expansion
+            true,  // no_order_by_expansion
             true,  // no_cte_hoister
             true,  // no_in_lifter
             false, // debug_trace
@@ -215,6 +218,7 @@ mod tests {
             false, // no_where_expansion
             false, // no_group_by_expansion
             false, // no_having_expansion
+            false, // no_order_by_expansion
             false, // no_cte_hoister
             false, // no_in_lifter
             true,  // debug_trace
@@ -240,6 +244,7 @@ mod tests {
             enable_where_expansion: false,
             enable_group_by_expansion: true,
             enable_having_expansion: false,
+            enable_order_by_expansion: true,
             enable_cte_hoister: true,
             enable_in_lifter: false,
         };

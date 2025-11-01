@@ -189,7 +189,7 @@ impl<'a> AstFormatter<'a> {
                 if i > 0 {
                     write!(&mut result, ", ").unwrap();
                 }
-                write!(&mut result, "{}", col.column).unwrap();
+                write!(&mut result, "{}", self.format_expression(&col.expr)).unwrap();
                 match col.direction {
                     SortDirection::Asc => write!(&mut result, " {}", self.keyword("ASC")).unwrap(),
                     SortDirection::Desc => {
@@ -917,7 +917,7 @@ impl<'a> AstFormatter<'a> {
                         if i > 0 {
                             result.push_str(", ");
                         }
-                        result.push_str(&col.column);
+                        result.push_str(&self.format_expression(&col.expr));
                         match col.direction {
                             SortDirection::Asc => {
                                 result.push(' ');

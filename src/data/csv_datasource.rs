@@ -1,7 +1,8 @@
 use crate::api_client::{QueryInfo, QueryResponse};
 use crate::csv_fixes::{build_column_lookup, find_column_case_insensitive, parse_column_name};
 use crate::data::datatable::{DataColumn, DataRow, DataTable, DataValue};
-use crate::recursive_parser::{OrderByColumn, Parser, SortDirection};
+use crate::recursive_parser::{OrderByItem, Parser, SortDirection};
+use crate::sql::parser::ast::SqlExpression;
 use crate::where_ast::evaluate_where_expr_with_options;
 use crate::where_parser::WhereParser;
 use anyhow::Result;
@@ -302,7 +303,7 @@ impl CsvDataSource {
     fn sort_results(
         &self,
         mut data: Vec<Value>,
-        order_by_columns: &[OrderByColumn],
+        order_by_columns: &[OrderByItem],
     ) -> Result<Vec<Value>> {
         if order_by_columns.is_empty() {
             return Ok(data);
@@ -311,7 +312,13 @@ impl CsvDataSource {
         // Sort by multiple columns with proper type-aware comparison
         data.sort_by(|a, b| {
             for order_col in order_by_columns {
-                let col_parsed = parse_column_name(&order_col.column);
+                // Extract column name from expression (currently only supports simple columns)
+                let column_name = match &order_col.expr {
+                    SqlExpression::Column(col_ref) => col_ref.name.clone(),
+                    _ => continue, // Skip non-column expressions for now (TODO: evaluate expressions)
+                };
+
+                let col_parsed = parse_column_name(&column_name);
 
                 let val_a = if let Some(obj_a) = a.as_object() {
                     find_column_case_insensitive(obj_a, col_parsed, &self.column_lookup)

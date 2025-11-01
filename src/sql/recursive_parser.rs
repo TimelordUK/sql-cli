@@ -3,8 +3,8 @@
 // Re-exports for backward compatibility - these serve as both imports and re-exports
 pub use super::parser::ast::{
     CTEType, Comment, Condition, DataFormat, FrameBound, FrameUnit, HttpMethod, IntoTable,
-    JoinClause, JoinCondition, JoinOperator, JoinType, LogicalOp, OrderByColumn, SelectItem,
-    SelectStatement, SetOperation, SingleJoinCondition, SortDirection, SqlExpression,
+    JoinClause, JoinCondition, JoinOperator, JoinType, LogicalOp, OrderByColumn, OrderByItem,
+    SelectItem, SelectStatement, SetOperation, SingleJoinCondition, SortDirection, SqlExpression,
     TableFunction, TableSource, WebCTESpec, WhenBranch, WhereClause, WindowFrame, WindowSpec, CTE,
 };
 pub use super::parser::legacy::{ParseContext, ParseState, Schema, SqlParser, SqlToken, TableInfo};
@@ -1306,58 +1306,18 @@ impl Parser {
         })
     }
 
-    fn parse_order_by_list(&mut self) -> Result<Vec<OrderByColumn>, String> {
-        let mut order_columns = Vec::new();
+    fn parse_order_by_list(&mut self) -> Result<Vec<OrderByItem>, String> {
+        let mut order_items = Vec::new();
 
         loop {
-            let column = match &self.current_token {
-                Token::Identifier(id) => {
-                    let col = id.clone();
-                    self.advance();
-
-                    // Check for qualified column name (table.column)
-                    if matches!(self.current_token, Token::Dot) {
-                        self.advance();
-                        match &self.current_token {
-                            Token::Identifier(col_name) => {
-                                let mut qualified = col;
-                                qualified.push('.');
-                                qualified.push_str(col_name);
-                                self.advance();
-                                qualified
-                            }
-                            _ => return Err("Expected column name after '.'".to_string()),
-                        }
-                    } else {
-                        col
-                    }
-                }
-                Token::QuotedIdentifier(id) => {
-                    let col = id.clone();
-                    self.advance();
-                    col
-                }
-                Token::NumberLiteral(num) if self.columns.iter().any(|col| col == num) => {
-                    // Support numeric column names like "202204"
-                    let col = num.clone();
-                    self.advance();
-                    col
-                }
-                // Handle window keywords that can be column names
-                Token::Row => {
-                    self.advance();
-                    "row".to_string()
-                }
-                Token::Rows => {
-                    self.advance();
-                    "rows".to_string()
-                }
-                Token::Range => {
-                    self.advance();
-                    "range".to_string()
-                }
-                _ => return Err("Expected column name in ORDER BY".to_string()),
-            };
+            // Parse ANY expression (not just column names)
+            // This supports:
+            // - Simple columns: region
+            // - Qualified columns: table.column
+            // - Aggregate functions: SUM(sales_amount)
+            // - Arithmetic: sales_amount * 1.1
+            // - CASE expressions: CASE WHEN ... END
+            let expr = self.parse_expression()?;
 
             // Check for ASC/DESC
             let direction = match &self.current_token {
@@ -1372,7 +1332,7 @@ impl Parser {
                 _ => SortDirection::Asc, // Default to ASC if not specified
             };
 
-            order_columns.push(OrderByColumn { column, direction });
+            order_items.push(OrderByItem { expr, direction });
 
             if matches!(self.current_token, Token::Comma) {
                 self.advance();
@@ -1381,7 +1341,7 @@ impl Parser {
             }
         }
 
-        Ok(order_columns)
+        Ok(order_items)
     }
 
     /// Parse INTO clause for temporary tables

@@ -1,3 +1,4 @@
+use sql_cli::sql::parser::ast::SqlExpression;
 use sql_cli::sql::recursive_parser::{Lexer, Parser, SortDirection, Token};
 use sql_cli::sql::where_parser::WhereParser;
 
@@ -113,15 +114,27 @@ fn test_complex_trade_query_ast() {
     assert_eq!(order_by.len(), 3);
 
     // First: counterparty desc
-    assert_eq!(order_by[0].column, "counterparty");
+    if let SqlExpression::Column(col_ref) = &order_by[0].expr {
+        assert_eq!(col_ref.name, "counterparty");
+    } else {
+        panic!("Expected Column expression");
+    }
     assert_eq!(order_by[0].direction, SortDirection::Desc);
 
     // Second: book (default asc)
-    assert_eq!(order_by[1].column, "book");
+    if let SqlExpression::Column(col_ref) = &order_by[1].expr {
+        assert_eq!(col_ref.name, "book");
+    } else {
+        panic!("Expected Column expression");
+    }
     assert_eq!(order_by[1].direction, SortDirection::Asc); // Default is ASC
 
     // Third: counterpartyCountry asc
-    assert_eq!(order_by[2].column, "counterpartyCountry");
+    if let SqlExpression::Column(col_ref) = &order_by[2].expr {
+        assert_eq!(col_ref.name, "counterpartyCountry");
+    } else {
+        panic!("Expected Column expression");
+    }
     assert_eq!(order_by[2].direction, SortDirection::Asc);
 }
 
@@ -194,15 +207,27 @@ fn test_mixed_order_by_directions() {
     assert_eq!(order_by.len(), 3);
 
     // DESC specified
-    assert_eq!(order_by[0].column, "counterparty");
+    if let SqlExpression::Column(col_ref) = &order_by[0].expr {
+        assert_eq!(col_ref.name, "counterparty");
+    } else {
+        panic!("Expected Column expression");
+    }
     assert_eq!(order_by[0].direction, SortDirection::Desc);
 
     // No direction (defaults to ASC)
-    assert_eq!(order_by[1].column, "book");
+    if let SqlExpression::Column(col_ref) = &order_by[1].expr {
+        assert_eq!(col_ref.name, "book");
+    } else {
+        panic!("Expected Column expression");
+    }
     assert_eq!(order_by[1].direction, SortDirection::Asc);
 
     // ASC explicitly specified
-    assert_eq!(order_by[2].column, "counterpartyCountry");
+    if let SqlExpression::Column(col_ref) = &order_by[2].expr {
+        assert_eq!(col_ref.name, "counterpartyCountry");
+    } else {
+        panic!("Expected Column expression");
+    }
     assert_eq!(order_by[2].direction, SortDirection::Asc);
 }
 
@@ -322,7 +347,11 @@ fn test_complex_query_with_limit_and_offset() {
     assert!(stmt.order_by.is_some());
     let order_by = stmt.order_by.unwrap();
     assert_eq!(order_by.len(), 1);
-    assert_eq!(order_by[0].column, "commission");
+    if let SqlExpression::Column(col_ref) = &order_by[0].expr {
+        assert_eq!(col_ref.name, "commission");
+    } else {
+        panic!("Expected Column expression");
+    }
     assert_eq!(order_by[0].direction, SortDirection::Desc);
 
     // Verify LIMIT
@@ -417,8 +446,16 @@ fn test_comprehensive_query_features() {
     // Verify ORDER BY has multiple columns
     let order_by = stmt.order_by.unwrap();
     assert_eq!(order_by.len(), 2);
-    assert_eq!(order_by[0].column, "commission");
+    if let SqlExpression::Column(col_ref) = &order_by[0].expr {
+        assert_eq!(col_ref.name, "commission");
+    } else {
+        panic!("Expected Column expression");
+    }
     assert_eq!(order_by[0].direction, SortDirection::Desc);
-    assert_eq!(order_by[1].column, "counterparty");
+    if let SqlExpression::Column(col_ref) = &order_by[1].expr {
+        assert_eq!(col_ref.name, "counterparty");
+    } else {
+        panic!("Expected Column expression");
+    }
     assert_eq!(order_by[1].direction, SortDirection::Asc);
 }

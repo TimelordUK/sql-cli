@@ -24,7 +24,7 @@ use crate::sql::parser::ast::ColumnRef;
 use crate::sql::parser::ast::SetOperation;
 use crate::sql::parser::ast::TableSource;
 use crate::sql::recursive_parser::{
-    CTEType, OrderByColumn, Parser, SelectItem, SelectStatement, SortDirection, SqlExpression,
+    CTEType, OrderByItem, Parser, SelectItem, SelectStatement, SortDirection, SqlExpression,
     TableFunction,
 };
 
@@ -1323,7 +1323,12 @@ impl QueryEngine {
                 );
                 plan.set_rows_in(view.row_count());
                 for col in order_by_columns {
-                    plan.add_detail(format!("{} {:?}", col.column, col.direction));
+                    // Format the expression (simplified for now - just show column name or "expr")
+                    let expr_str = match &col.expr {
+                        SqlExpression::Column(col_ref) => col_ref.name.clone(),
+                        _ => "expr".to_string(),
+                    };
+                    plan.add_detail(format!("{} {:?}", expr_str, col.direction));
                 }
 
                 let sort_start = Instant::now();
@@ -2134,7 +2139,7 @@ impl QueryEngine {
     fn apply_multi_order_by(
         &self,
         view: DataView,
-        order_by_columns: &[OrderByColumn],
+        order_by_columns: &[OrderByItem],
     ) -> Result<DataView> {
         self.apply_multi_order_by_with_context(view, order_by_columns, None)
     }
@@ -2143,40 +2148,51 @@ impl QueryEngine {
     fn apply_multi_order_by_with_context(
         &self,
         mut view: DataView,
-        order_by_columns: &[OrderByColumn],
+        order_by_columns: &[OrderByItem],
         _exec_context: Option<&ExecutionContext>,
     ) -> Result<DataView> {
         // Build list of (source_column_index, ascending) tuples
         let mut sort_columns = Vec::new();
 
         for order_col in order_by_columns {
+            // Extract column name from expression (currently only supports simple columns)
+            let column_name = match &order_col.expr {
+                SqlExpression::Column(col_ref) => col_ref.name.clone(),
+                _ => {
+                    // TODO: Support expression evaluation in ORDER BY
+                    return Err(anyhow!(
+                        "ORDER BY expressions not yet supported - only simple columns allowed"
+                    ));
+                }
+            };
+
             // Try to find the column index, handling qualified column names (table.column)
-            let col_index = if order_col.column.contains('.') {
+            let col_index = if column_name.contains('.') {
                 // Qualified column name - extract unqualified part
-                if let Some(dot_pos) = order_col.column.rfind('.') {
-                    let col_name = &order_col.column[dot_pos + 1..];
+                if let Some(dot_pos) = column_name.rfind('.') {
+                    let col_name = &column_name[dot_pos + 1..];
 
                     // After SELECT processing, columns are unqualified
                     // So just use the column name part
                     debug!(
                         "ORDER BY: Extracting unqualified column '{}' from '{}'",
-                        col_name, order_col.column
+                        col_name, column_name
                     );
                     view.source().get_column_index(col_name)
                 } else {
-                    view.source().get_column_index(&order_col.column)
+                    view.source().get_column_index(&column_name)
                 }
             } else {
                 // Simple column name
-                view.source().get_column_index(&order_col.column)
+                view.source().get_column_index(&column_name)
             }
             .ok_or_else(|| {
                 // If not found, provide helpful error with suggestions
-                let suggestion = self.find_similar_column(view.source(), &order_col.column);
+                let suggestion = self.find_similar_column(view.source(), &column_name);
                 match suggestion {
                     Some(similar) => anyhow::anyhow!(
                         "Column '{}' not found. Did you mean '{}'?",
-                        order_col.column,
+                        column_name,
                         similar
                     ),
                     None => {
@@ -2184,7 +2200,7 @@ impl QueryEngine {
                         let available_cols = view.source().column_names().join(", ");
                         anyhow::anyhow!(
                             "Column '{}' not found. Available columns: {}",
-                            order_col.column,
+                            column_name,
                             available_cols
                         )
                     }

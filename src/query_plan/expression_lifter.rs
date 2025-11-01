@@ -234,9 +234,12 @@ impl ExpressionLifter {
 
                     // Check ORDER BY
                     for order_col in &window_spec.order_by {
-                        let col = &order_col.column;
-                        if aliases.contains_key(col) {
-                            dependencies.push((col.clone(), aliases[col].clone()));
+                        // Extract column name from expression
+                        if let SqlExpression::Column(col_ref) = &order_col.expr {
+                            let col = &col_ref.name;
+                            if aliases.contains_key(col) {
+                                dependencies.push((col.clone(), aliases[col].clone()));
+                            }
                         }
                     }
                 }
@@ -399,7 +402,10 @@ pub fn analyze_dependencies(expr: &SqlExpression) -> HashSet<String> {
             }
 
             for order_col in &window_spec.order_by {
-                deps.insert(order_col.column.clone());
+                // Extract column name from expression
+                if let SqlExpression::Column(col_ref) = &order_col.expr {
+                    deps.insert(col_ref.name.clone());
+                }
             }
         }
 

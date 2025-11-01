@@ -62,9 +62,14 @@ fn format_select_statement(stmt: &SelectStatement, indent: usize) -> String {
                     SortDirection::Asc => "ASC",
                     SortDirection::Desc => "DESC",
                 };
+                // Simple expression formatting - just extract column name for now
+                let expr_str = match &col.expr {
+                    SqlExpression::Column(col_ref) => col_ref.name.clone(),
+                    _ => format!("{:?}", col.expr),
+                };
                 result.push_str(&format!(
-                    "{indent_str}    {{ column: \"{}\", direction: {dir} }},\n",
-                    col.column
+                    "{indent_str}    {{ expr: \"{}\", direction: {dir} }},\n",
+                    expr_str
                 ));
             }
             result.push_str(&format!("{indent_str}  ],\n"));
@@ -780,7 +785,12 @@ pub fn format_expression(expr: &SqlExpression) -> String {
                             SortDirection::Asc => " ASC",
                             SortDirection::Desc => " DESC",
                         };
-                        format!("{}{}", col.column, dir)
+                        // Simple expression formatting
+                        let expr_str = match &col.expr {
+                            SqlExpression::Column(col_ref) => col_ref.name.clone(),
+                            _ => format_expression(&col.expr),
+                        };
+                        format!("{}{}", expr_str, dir)
                     })
                     .collect();
                 result.push_str(&order_strs.join(", "));

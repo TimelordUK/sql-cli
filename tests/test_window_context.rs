@@ -1,6 +1,7 @@
 use sql_cli::data::data_view::DataView;
 use sql_cli::data::datatable::{DataColumn, DataRow, DataTable, DataValue};
-use sql_cli::sql::recursive_parser::{OrderByColumn, SortDirection};
+use sql_cli::sql::parser::ast::{ColumnRef, OrderByItem, QuoteStyle, SqlExpression};
+use sql_cli::sql::recursive_parser::SortDirection;
 use sql_cli::sql::window_context::WindowContext;
 use std::sync::Arc;
 
@@ -27,8 +28,12 @@ fn test_window_context_single_partition() {
     let context = WindowContext::new(
         Arc::new(view),
         vec![], // No partition
-        vec![OrderByColumn {
-            column: "id".to_string(),
+        vec![OrderByItem {
+            expr: SqlExpression::Column(ColumnRef {
+                name: "id".to_string(),
+                quote_style: QuoteStyle::None,
+                table_prefix: None,
+            }),
             direction: SortDirection::Asc,
         }],
     )
@@ -101,8 +106,12 @@ fn test_window_context_with_partitions() {
     let context = WindowContext::new(
         Arc::new(view),
         vec!["category".to_string()],
-        vec![OrderByColumn {
-            column: "id".to_string(),
+        vec![OrderByItem {
+            expr: SqlExpression::Column(ColumnRef {
+                name: "id".to_string(),
+                quote_style: QuoteStyle::None,
+                table_prefix: None,
+            }),
             direction: SortDirection::Asc,
         }],
     )
@@ -169,8 +178,12 @@ fn test_window_context_order_by_desc() {
     let context = WindowContext::new(
         Arc::new(view),
         vec![],
-        vec![OrderByColumn {
-            column: "value".to_string(),
+        vec![OrderByItem {
+            expr: SqlExpression::Column(ColumnRef {
+                name: "value".to_string(),
+                quote_style: QuoteStyle::None,
+                table_prefix: None,
+            }),
             direction: SortDirection::Desc,
         }],
     )
