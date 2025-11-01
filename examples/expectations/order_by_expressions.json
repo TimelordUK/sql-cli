@@ -1,0 +1,178 @@
+[
+  [
+    {
+      "region": "West",
+      "total": 132000
+    },
+    {
+      "region": "South",
+      "total": 125000
+    },
+    {
+      "region": "North",
+      "total": 97000
+    },
+    {
+      "region": "East",
+      "total": 85000
+    }
+  ],
+  [
+    {
+      "count": 6,
+      "region": "North"
+    },
+    {
+      "count": 6,
+      "region": "West"
+    },
+    {
+      "count": 6,
+      "region": "South"
+    },
+    {
+      "count": 6,
+      "region": "East"
+    }
+  ],
+  [
+    {
+      "avg_sales": 22000.0,
+      "region": "West",
+      "total_sales": 132000
+    },
+    {
+      "avg_sales": 20833.333333333332,
+      "region": "South",
+      "total_sales": 125000
+    },
+    {
+      "avg_sales": 16166.666666666666,
+      "region": "North",
+      "total_sales": 97000
+    },
+    {
+      "avg_sales": 14166.666666666666,
+      "region": "East",
+      "total_sales": 85000
+    }
+  ],
+  [
+    {
+      "product": "Gadget",
+      "region": "East",
+      "total": 46000
+    },
+    {
+      "product": "Widget",
+      "region": "East",
+      "total": 39000
+    },
+    {
+      "product": "Widget",
+      "region": "North",
+      "total": 61000
+    },
+    {
+      "product": "Gadget",
+      "region": "North",
+      "total": 36000
+    },
+    {
+      "product": "Gadget",
+      "region": "South",
+      "total": 66000
+    },
+    {
+      "product": "Widget",
+      "region": "South",
+      "total": 59000
+    },
+    {
+      "product": "Widget",
+      "region": "West",
+      "total": 70000
+    },
+    {
+      "product": "Gadget",
+      "region": "West",
+      "total": 62000
+    }
+  ],
+  [
+    {
+      "max_sale": 28000,
+      "min_sale": 16000,
+      "region": "West"
+    },
+    {
+      "max_sale": 25000,
+      "min_sale": 17000,
+      "region": "South"
+    },
+    {
+      "max_sale": 22000,
+      "min_sale": 12000,
+      "region": "North"
+    },
+    {
+      "max_sale": 19000,
+      "min_sale": 11000,
+      "region": "East"
+    }
+  ],
+  [
+    {
+      "expr_2": 6,
+      "region": "North"
+    },
+    {
+      "expr_2": 6,
+      "region": "West"
+    },
+    {
+      "expr_2": 6,
+      "region": "South"
+    },
+    {
+      "expr_2": 6,
+      "region": "East"
+    }
+  ],
+  [
+    {
+      "average_price": 19090.909090909092,
+      "product": "Gadget"
+    },
+    {
+      "average_price": 17615.384615384617,
+      "product": "Widget"
+    }
+  ],
+  [
+    {
+      "average": 22000.0,
+      "num_sales": 6,
+      "region": "West",
+      "total": 132000
+    },
+    {
+      "average": 20833.333333333332,
+      "num_sales": 6,
+      "region": "South",
+      "total": 125000
+    },
+    {
+      "average": 16166.666666666666,
+      "num_sales": 6,
+      "region": "North",
+      "total": 97000
+    },
+    {
+      "average": 14166.666666666666,
+      "num_sales": 6,
+      "region": "East",
+      "total": 85000
+    }
+  ]
+]
