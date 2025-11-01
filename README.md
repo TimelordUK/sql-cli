@@ -187,7 +187,28 @@ sql-cli messy_data.csv -q "SELECT * FROM messy_data WHERE email.EndsWith('.com')
 
 # Complex calculations
 sql-cli finances.csv -q "SELECT date, amount * (1 + tax_rate) as total FROM finances" -o table
+
+# Multi-stage analysis with temp tables (even in -q mode!)
+sql-cli -q "
+-- Stage 1: Calculate daily metrics
+SELECT
+    value as day,
+    value * 137.50 as revenue,
+    value * 12 as transactions
+FROM RANGE(1, 30) INTO #daily_metrics;
+GO
+
+-- Stage 2: Compute summary statistics
+SELECT
+    COUNT(*) as total_days,
+    ROUND(SUM(revenue), 2) as total_revenue,
+    ROUND(AVG(revenue), 2) as avg_daily_revenue,
+    SUM(transactions) as total_transactions
+FROM #daily_metrics
+" -o table
 ```
+
+The temp table example above shows a powerful pattern: create intermediate results with `SELECT INTO #table`, then analyze them in subsequent queries - all in a single `-q` command! Perfect for complex multi-stage analytics without creating intermediate files.
 
 ## 💪 Powerful SQL Engine Features
 
