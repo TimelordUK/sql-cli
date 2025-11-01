@@ -124,6 +124,7 @@ impl ExecutionConfig {
                 enable_having_expansion: !no_having_expansion,
                 enable_order_by_expansion: !no_order_by_expansion,
                 enable_qualify_to_where: !no_qualify_to_where,
+                enable_ilike_to_like: true, // Always enabled by default
                 enable_cte_hoister: !no_cte_hoister,
                 enable_in_lifter: !no_in_lifter,
             },
@@ -255,6 +256,7 @@ mod tests {
             enable_having_expansion: false,
             enable_order_by_expansion: true,
             enable_qualify_to_where: false,
+            enable_ilike_to_like: true,
             enable_cte_hoister: true,
             enable_in_lifter: false,
         };

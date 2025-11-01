@@ -225,6 +225,7 @@ impl TextNavigator {
             Token::GreaterThan => ">",
             Token::GreaterThanOrEqual => ">=",
             Token::Like => "LIKE",
+            Token::ILike => "ILIKE",
             Token::Not => "NOT",
             Token::Is => "IS",
             Token::Null => "NULL",

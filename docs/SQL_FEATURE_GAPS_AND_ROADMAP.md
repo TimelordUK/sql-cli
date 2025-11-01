@@ -280,18 +280,21 @@ SELECT * REPLACE (UPPER(region) AS region) FROM sales
 ---
 
 #### 11. ILIKE (Case-Insensitive LIKE)
-**Status:** ❌ Not implemented
+**Status:** ✅ **COMPLETED!**
 **Difficulty:** Trivial
 **Example:**
 ```sql
 SELECT * FROM sales WHERE region ILIKE '%north%'
 ```
 
-**Implementation Approach:**
-- **Transformer:** Rewrite as `UPPER(column) LIKE UPPER(pattern)`
-- Or add ILIKE operator to executor
+**Implementation:**
+- ✅ **Transformer:** `ILikeToLikeTransformer` rewrites to `UPPER(column) LIKE UPPER(pattern)`
+- ✅ Added LIKE operator support to arithmetic evaluator
+- ✅ Full pattern matching with `%` (any chars) and `_` (single char) wildcards
+- ✅ Works in all execution modes (-q, -f, --execute-statement)
+- ✅ PostgreSQL compatibility
 
-**Estimated Effort:** 1 day
+**Completed:** 2025-11-01 (v1.65.0)
 
 ---
 
@@ -302,8 +305,8 @@ SELECT * FROM sales WHERE region ILIKE '%north%'
 | ~~ORDER BY aggregates~~ | High | Easy | Yes | ~~**1**~~ | ✅ Done (v1.64.0) |
 | ~~DISTINCT in aggregates~~ | High | Medium | Yes | ~~**1**~~ | ✅ Done (v1.42.0) |
 | ~~QUALIFY clause~~ | Medium | Easy | No (Snowflake) | ~~**2**~~ | ✅ Done (v1.64.0) |
-| ILIKE | Low | Trivial | No (Postgres) | **1** | 📋 Next |
-| SELECT * EXCLUDE | Low | Easy | No (DuckDB) | **2** | 📋 Ready |
+| ~~ILIKE~~ | Low | Trivial | No (Postgres) | ~~**1**~~ | ✅ Done (v1.65.0) |
+| SELECT * EXCLUDE | Low | Easy | No (DuckDB) | **1** | 📋 Next |
 | PIVOT/UNPIVOT | Medium | Medium | Yes (SQL:2016) | **3** | 📋 Ready |
 | ARRAY_AGG/STRING_AGG | Medium | Medium | Yes | **4** | 📋 Ready |
 | Correlated subqueries | High | Hard | Yes | **5** | ⚠️ Complex |
@@ -322,8 +325,8 @@ SELECT * FROM sales WHERE region ILIKE '%north%'
 7. **NEXT:** Quick wins with transformers (ILIKE, SELECT * EXCLUDE)
 
 ### Short-term (1-2 months)
-1. Add ILIKE operator (case-insensitive LIKE) - **1 day**
-2. Implement SELECT * EXCLUDE/REPLACE - **2-3 days**
+1. ✅ Add ILIKE operator (case-insensitive LIKE) - **DONE!** (v1.65.0)
+2. Implement SELECT * EXCLUDE/REPLACE - **2-3 days** ⬅️ **NEXT**
 3. Implement PIVOT/UNPIVOT - **3-5 days**
 4. Add ARRAY_AGG and STRING_AGG - **3-4 days**
 5. Improve window function support (PARTITION BY expressions)
@@ -377,14 +380,14 @@ The transformer-based approach gives us a **powerful lever** to add SQL features
 
 **Philosophy:** Use transformers to fill SQL feature gaps wherever possible, resort to executor changes only when necessary.
 
-**Recent Wins (v1.64.0):**
-- ✅ ORDER BY aggregates - Complex expressions now supported
-- ✅ QUALIFY clause - Window function filtering
-- ✅ Unified execution - All modes use same transformer pipeline
+**Recent Wins:**
+- ✅ v1.64.0: ORDER BY aggregates, QUALIFY clause, Unified execution
+- ✅ v1.65.0: ILIKE operator - PostgreSQL compatibility
 
-**Next Quick Wins (Perfect for Transformers):**
-1. ILIKE operator (1 day) - Simple UPPER() rewrite
-2. SELECT * EXCLUDE (2 days) - Column list manipulation
-3. PIVOT/UNPIVOT (5 days) - CASE expression generation
+**Transformer Count:** 8 active transformers in production pipeline
+
+**Next Quick Win (Perfect for Transformers):**
+1. SELECT * EXCLUDE (2 days) - Column list manipulation ⬅️ **NEXT**
+2. PIVOT/UNPIVOT (5 days) - CASE expression generation
 
 This approach allows us to **incrementally improve** SQL support without major architectural changes, while keeping the executor simple and focused.

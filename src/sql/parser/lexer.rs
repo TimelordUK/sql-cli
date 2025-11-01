@@ -31,6 +31,7 @@ pub enum Token {
     Not,
     Between,
     Like,
+    ILike, // Case-insensitive LIKE (PostgreSQL)
     Is,
     Null,
     OrderBy,
@@ -136,6 +137,7 @@ impl Token {
             "NOT" => Some(Token::Not),
             "BETWEEN" => Some(Token::Between),
             "LIKE" => Some(Token::Like),
+            "ILIKE" => Some(Token::ILike),
             "IS" => Some(Token::Is),
             "NULL" => Some(Token::Null),
             "ORDER" => Some(Token::OrderBy),
@@ -223,6 +225,7 @@ impl Token {
             Token::Not => Some("NOT"),
             Token::Between => Some("BETWEEN"),
             Token::Like => Some("LIKE"),
+            Token::ILike => Some("ILIKE"),
             Token::Is => Some("IS"),
             Token::Null => Some("NULL"),
             Token::OrderBy => Some("ORDER BY"),
@@ -825,6 +828,7 @@ impl Lexer {
                     "NOT" => Token::Not,
                     "BETWEEN" => Token::Between,
                     "LIKE" => Token::Like,
+                    "ILIKE" => Token::ILike,
                     "IS" => Token::Is,
                     "NULL" => Token::Null,
                     "ORDER" if self.peek_keyword("BY") => {

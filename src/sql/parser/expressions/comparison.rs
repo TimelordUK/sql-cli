@@ -207,6 +207,7 @@ fn get_comparison_op(token: &Token) -> Option<String> {
         Token::LessThanOrEqual => Some("<=".to_string()),
         Token::GreaterThanOrEqual => Some(">=".to_string()),
         Token::Like => Some("LIKE".to_string()),
+        Token::ILike => Some("ILIKE".to_string()),
         _ => None,
     }
 }

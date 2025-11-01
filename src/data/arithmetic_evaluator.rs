@@ -368,6 +368,13 @@ impl<'a> ArithmeticEvaluator<'a> {
                 let right_bool = self.to_bool(&right_val)?;
                 Ok(DataValue::Boolean(left_bool || right_bool))
             }
+            // LIKE operator - SQL pattern matching
+            "LIKE" => {
+                let text = self.value_to_string(&left_val);
+                let pattern = self.value_to_string(&right_val);
+                let matches = self.sql_like_match(&text, &pattern);
+                Ok(DataValue::Boolean(matches))
+            }
             _ => Err(anyhow!("Unsupported arithmetic operator: {}", op)),
         }
     }
@@ -473,6 +480,72 @@ impl<'a> ArithmeticEvaluator<'a> {
             DataValue::Null => Ok(false),
             _ => Err(anyhow!("Cannot convert {:?} to boolean", value)),
         }
+    }
+
+    /// Convert DataValue to string for pattern matching
+    fn value_to_string(&self, value: &DataValue) -> String {
+        match value {
+            DataValue::String(s) => s.clone(),
+            DataValue::InternedString(s) => s.to_string(),
+            DataValue::Integer(i) => i.to_string(),
+            DataValue::Float(f) => f.to_string(),
+            DataValue::Boolean(b) => b.to_string(),
+            DataValue::DateTime(dt) => dt.to_string(),
+            DataValue::Null => String::new(),
+        }
+    }
+
+    /// SQL LIKE pattern matching
+    /// Supports % (any chars) and _ (single char)
+    fn sql_like_match(&self, text: &str, pattern: &str) -> bool {
+        let pattern_chars: Vec<char> = pattern.chars().collect();
+        let text_chars: Vec<char> = text.chars().collect();
+
+        self.like_match_recursive(&text_chars, 0, &pattern_chars, 0)
+    }
+
+    /// Recursive helper for LIKE matching
+    fn like_match_recursive(
+        &self,
+        text: &[char],
+        text_pos: usize,
+        pattern: &[char],
+        pattern_pos: usize,
+    ) -> bool {
+        // If we've consumed both text and pattern, it's a match
+        if pattern_pos >= pattern.len() {
+            return text_pos >= text.len();
+        }
+
+        // Handle % wildcard (matches zero or more characters)
+        if pattern[pattern_pos] == '%' {
+            // Try matching zero characters (skip the %)
+            if self.like_match_recursive(text, text_pos, pattern, pattern_pos + 1) {
+                return true;
+            }
+            // Try matching one or more characters
+            if text_pos < text.len() {
+                return self.like_match_recursive(text, text_pos + 1, pattern, pattern_pos);
+            }
+            return false;
+        }
+
+        // If text is consumed but pattern isn't, no match
+        if text_pos >= text.len() {
+            return false;
+        }
+
+        // Handle _ wildcard (matches exactly one character)
+        if pattern[pattern_pos] == '_' {
+            return self.like_match_recursive(text, text_pos + 1, pattern, pattern_pos + 1);
+        }
+
+        // Handle literal character match
+        if text[text_pos] == pattern[pattern_pos] {
+            return self.like_match_recursive(text, text_pos + 1, pattern, pattern_pos + 1);
+        }
+
+        false
     }
 
     /// Evaluate a function call

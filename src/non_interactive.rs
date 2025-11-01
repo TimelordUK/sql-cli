@@ -224,6 +224,7 @@ fn make_transformer_config(config: &NonInteractiveConfig) -> crate::query_plan::
         enable_having_expansion: !config.no_having_expansion,
         enable_order_by_expansion: !config.no_order_by_expansion,
         enable_qualify_to_where: !config.no_qualify_to_where,
+        enable_ilike_to_like: true, // Always enabled
         enable_cte_hoister: !config.no_cte_hoister,
         enable_in_lifter: !config.no_in_lifter,
     }

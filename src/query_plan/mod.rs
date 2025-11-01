@@ -8,6 +8,7 @@ pub mod dependency_analyzer;
 pub mod expression_lifter;
 pub mod group_by_alias_expander;
 pub mod having_alias_transformer;
+pub mod ilike_to_like_transformer;
 pub mod in_operator_lifter;
 pub mod into_clause_remover;
 pub mod order_by_alias_transformer;
@@ -31,6 +32,7 @@ pub use dependency_analyzer::{ScriptDependencyGraph, StatementNode};
 pub use expression_lifter::{ExpressionLifter, LiftableExpression};
 pub use group_by_alias_expander::GroupByAliasExpander;
 pub use having_alias_transformer::HavingAliasTransformer;
+pub use ilike_to_like_transformer::ILikeToLikeTransformer;
 pub use in_operator_lifter::{InOperatorLifter, LiftedInExpression};
 pub use into_clause_remover::IntoClauseRemover;
 pub use order_by_alias_transformer::OrderByAliasTransformer;
@@ -57,6 +59,7 @@ pub struct TransformerConfig {
     pub enable_having_expansion: bool,
     pub enable_order_by_expansion: bool,
     pub enable_qualify_to_where: bool,
+    pub enable_ilike_to_like: bool,
     pub enable_cte_hoister: bool,
     pub enable_in_lifter: bool,
 }
@@ -78,6 +81,7 @@ impl TransformerConfig {
             enable_having_expansion: true,
             enable_order_by_expansion: true,
             enable_qualify_to_where: true,
+            enable_ilike_to_like: true,
             enable_cte_hoister: true,
             enable_in_lifter: true,
         }
@@ -128,6 +132,12 @@ pub fn create_pipeline_with_config(
     // so that window functions are already lifted to CTEs
     if transformer_config.enable_qualify_to_where {
         builder = builder.with_transformer(Box::new(QualifyToWhereTransformer::new()));
+    }
+
+    // ILikeToLikeTransformer runs early before WHERE expansion
+    // to transform ILIKE operators before WHERE clause processing
+    if transformer_config.enable_ilike_to_like {
+        builder = builder.with_transformer(Box::new(ILikeToLikeTransformer::new()));
     }
 
     if transformer_config.enable_where_expansion {
@@ -192,10 +202,12 @@ pub fn create_standard_pipeline(verbose: bool) -> PreprocessingPipeline {
 
     // Add transformers in the correct order
     // Order matters! ExpressionLifter must run before CTEHoister
+    // ILikeToLikeTransformer runs early to convert ILIKE before other processing
     // WhereAliasExpander and GroupByAliasExpander run early to expand aliases
     // HavingAliasTransformer and OrderByAliasTransformer run after GROUP BY
     builder = builder
         .with_transformer(Box::new(ExpressionLifterTransformer::new()))
+        .with_transformer(Box::new(ILikeToLikeTransformer::new()))
         .with_transformer(Box::new(WhereAliasExpander::new()))
         .with_transformer(Box::new(GroupByAliasExpander::new()))
         .with_transformer(Box::new(HavingAliasTransformer::new()))
