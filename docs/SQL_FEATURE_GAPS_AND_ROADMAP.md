@@ -5,10 +5,11 @@
 As of the execution mode unification completion, we have:
 
 ✅ **Solid Foundation:**
-- Unified execution path (`StatementExecutor` used by both `-q` and `-f` modes)
-- 6 active preprocessor transformers (all enabled by default)
+- Unified execution path (`StatementExecutor` used by all modes: `-q`, `-f`, `--execute-statement`)
+- 7 active preprocessor transformers (all enabled by default)
 - WHERE/GROUP BY alias expansion
 - HAVING auto-aliasing
+- ORDER BY aggregate rewriting
 - Expression lifting for window functions
 - CTE hoisting (ready for subqueries)
 - IN operator optimization
@@ -70,23 +71,26 @@ GROUP BY region
 ---
 
 #### 2. Aggregate Expressions in ORDER BY
-**Status:** ❌ Not implemented
+**Status:** ✅ **COMPLETED!**
 **Difficulty:** Easy
 **Example:**
 ```sql
 SELECT region, SUM(sales_amount) AS total
 FROM sales
 GROUP BY region
-ORDER BY SUM(sales_amount) DESC  -- This should work!
+ORDER BY SUM(sales_amount) DESC  -- Works perfectly!
 ```
 
-**Implementation Approach:**
-- **Transformer:** `OrderByAggregateExpander` (similar to HavingAliasTransformer)
-- Find aggregates in ORDER BY
-- Match with SELECT clause aggregates
-- Replace with alias or compute inline
+**Implementation:**
+- ✅ **Transformer:** `OrderByAliasTransformer` (implemented)
+- ✅ Extended parser to support expressions in ORDER BY
+- ✅ Updated AST with `OrderByItem` struct
+- ✅ Handles COUNT(*), all aggregates, auto-generates aliases
+- ✅ Works in all execution modes (fixed dependency-aware path)
+- ✅ See `examples/order_by_expressions.sql` with 8 examples
+- ✅ Formal test coverage
 
-**Estimated Effort:** 1-2 days
+**Completed:** 2025-11-01
 
 ---
 
@@ -322,18 +326,18 @@ SELECT * FROM sales WHERE region ILIKE '%north%'
 
 ## Implementation Priority Matrix
 
-| Feature | User Value | Difficulty | SQL Standard | Priority |
-|---------|-----------|-----------|--------------|----------|
-| DISTINCT in aggregates | High | Medium | Yes | **1** |
-| ORDER BY aggregates | High | Easy | Yes | **2** |
-| QUALIFY clause | Medium | Easy | No (Snowflake) | **3** |
-| PIVOT/UNPIVOT | Medium | Medium | Yes (SQL:2016) | **4** |
-| Correlated subqueries | High | Hard | Yes | **5** |
-| ARRAY_AGG/STRING_AGG | Medium | Medium | Yes | **6** |
-| ILIKE | Low | Trivial | No (Postgres) | **7** |
-| SELECT * EXCLUDE | Low | Easy | No (DuckDB) | **8** |
-| LATERAL joins | Low | Hard | Yes | **9** |
-| Recursive CTEs | Low | Very Hard | Yes | **10** |
+| Feature | User Value | Difficulty | SQL Standard | Priority | Status |
+|---------|-----------|-----------|--------------|----------|--------|
+| ~~ORDER BY aggregates~~ | High | Easy | Yes | ~~**1**~~ | ✅ Done |
+| DISTINCT in aggregates | High | Medium | Yes | **1** | ⏳ Next |
+| QUALIFY clause | Medium | Easy | No (Snowflake) | **2** | 📋 Ready |
+| ILIKE | Low | Trivial | No (Postgres) | **3** | 📋 Ready |
+| PIVOT/UNPIVOT | Medium | Medium | Yes (SQL:2016) | **4** | 📋 Ready |
+| ARRAY_AGG/STRING_AGG | Medium | Medium | Yes | **5** | 📋 Ready |
+| SELECT * EXCLUDE | Low | Easy | No (DuckDB) | **6** | 📋 Ready |
+| Correlated subqueries | High | Hard | Yes | **7** | ⚠️ Complex |
+| LATERAL joins | Low | Hard | Yes | **8** | ⚠️ Complex |
+| Recursive CTEs | Low | Very Hard | Yes | **9** | ⚠️ Complex |
 
 ## Next Steps
 
@@ -341,8 +345,8 @@ SELECT * FROM sales WHERE region ILIKE '%north%'
 1. ✅ Complete execution mode unification (Phases 0-3) - **DONE!**
 2. ✅ Document all transformers - **DONE!**
 3. ✅ Create `examples/expander_rewriters.sql` - **DONE!**
-4. **NEXT:** Implement DISTINCT in aggregates (`DistinctAggregateLifter`)
-5. **NEXT:** Implement ORDER BY aggregate expansion
+4. ✅ Implement ORDER BY aggregate expansion - **DONE!** (2025-11-01)
+5. **NEXT:** Choose from quick wins below
 
 ### Short-term (1-2 months)
 1. Add QUALIFY clause support
