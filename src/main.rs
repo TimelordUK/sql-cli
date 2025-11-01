@@ -226,6 +226,10 @@ fn print_help() {
         "--show-preprocessing".green()
     );
     println!(
+        "  {} - Show SQL before/after each transformation",
+        "--show-transformations".green()
+    );
+    println!(
         "  {}  - Launch action system logger (console)",
         "--keys-simple".green()
     );
@@ -430,6 +434,7 @@ struct NonInteractiveArgs {
     show_work_units_arg: bool,
     execution_plan_arg: bool,
     show_preprocessing_arg: bool,
+    show_transformations_arg: bool,
     analyze_correlations_arg: bool,
     cte_info_arg: bool,
     rewrite_analysis_arg: bool,
@@ -525,6 +530,10 @@ fn parse_non_interactive_args(args: &[String]) -> NonInteractiveArgs {
         show_preprocessing_arg: args
             .iter()
             .any(|arg| arg == "--show-preprocessing" || arg == "--show_preprocessing"),
+
+        show_transformations_arg: args
+            .iter()
+            .any(|arg| arg == "--show-transformations" || arg == "--show_transformations"),
 
         analyze_correlations_arg: args
             .iter()
@@ -1516,6 +1525,7 @@ fn handle_non_interactive_query(
         show_work_units: parsed_args.show_work_units_arg,
         execution_plan: parsed_args.execution_plan_arg,
         show_preprocessing: parsed_args.show_preprocessing_arg,
+        show_transformations: parsed_args.show_transformations_arg,
         cte_info: parsed_args.cte_info_arg,
         rewrite_analysis: parsed_args.rewrite_analysis_arg,
         lift_in_expressions: parsed_args.lift_in_arg,

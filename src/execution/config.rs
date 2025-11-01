@@ -13,6 +13,9 @@ pub struct ExecutionConfig {
     /// Whether to show preprocessing transformations (debug output)
     pub show_preprocessing: bool,
 
+    /// Whether to show SQL before/after each transformation (formatted SQL output)
+    pub show_sql_transformations: bool,
+
     /// Whether to use case-insensitive comparison
     pub case_insensitive: bool,
 
@@ -30,6 +33,7 @@ impl Default for ExecutionConfig {
     fn default() -> Self {
         Self {
             show_preprocessing: false,
+            show_sql_transformations: false,
             case_insensitive: false,
             auto_hide_empty: false,
             transformer_config: TransformerConfig::default(),
@@ -47,6 +51,12 @@ impl ExecutionConfig {
     /// Enable preprocessing debug output
     pub fn with_show_preprocessing(mut self, show: bool) -> Self {
         self.show_preprocessing = show;
+        self
+    }
+
+    /// Enable SQL transformation output (show before/after SQL for each transformer)
+    pub fn with_show_sql_transformations(mut self, show: bool) -> Self {
+        self.show_sql_transformations = show;
         self
     }
 
@@ -88,6 +98,7 @@ impl ExecutionConfig {
     /// Create config from command-line flags (helper for non_interactive.rs)
     pub fn from_cli_flags(
         show_preprocessing: bool,
+        show_sql_transformations: bool,
         case_insensitive: bool,
         auto_hide_empty: bool,
         no_expression_lifter: bool,
@@ -100,6 +111,7 @@ impl ExecutionConfig {
     ) -> Self {
         let config = Self {
             show_preprocessing,
+            show_sql_transformations,
             case_insensitive,
             auto_hide_empty,
             transformer_config: TransformerConfig {
@@ -169,6 +181,7 @@ mod tests {
     fn test_from_cli_flags_all_disabled() {
         let config = ExecutionConfig::from_cli_flags(
             false, // show_preprocessing
+            false, // show_sql_transformations
             false, // case_insensitive
             false, // auto_hide_empty
             true,  // no_expression_lifter
@@ -181,6 +194,7 @@ mod tests {
         );
 
         assert!(!config.show_preprocessing);
+        assert!(!config.show_sql_transformations);
         assert!(!config.case_insensitive);
         assert!(!config.transformer_config.enable_expression_lifter);
         assert!(!config.transformer_config.enable_where_expansion);
@@ -194,6 +208,7 @@ mod tests {
     fn test_from_cli_flags_all_enabled() {
         let config = ExecutionConfig::from_cli_flags(
             true,  // show_preprocessing
+            true,  // show_sql_transformations
             true,  // case_insensitive
             true,  // auto_hide_empty
             false, // no_expression_lifter
@@ -206,6 +221,7 @@ mod tests {
         );
 
         assert!(config.show_preprocessing);
+        assert!(config.show_sql_transformations);
         assert!(config.case_insensitive);
         assert!(config.auto_hide_empty);
         assert!(config.debug_trace);

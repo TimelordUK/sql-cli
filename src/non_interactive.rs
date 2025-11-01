@@ -194,6 +194,7 @@ pub struct NonInteractiveConfig {
     pub show_work_units: bool,
     pub execution_plan: bool,
     pub show_preprocessing: bool,
+    pub show_transformations: bool,
     pub cte_info: bool,
     pub rewrite_analysis: bool,
     pub lift_in_expressions: bool,
@@ -459,6 +460,7 @@ pub fn execute_non_interactive(config: NonInteractiveConfig) -> Result<()> {
     // Phase 2: Create unified execution config from CLI flags
     let exec_config = ExecutionConfig::from_cli_flags(
         config.show_preprocessing,
+        config.show_transformations,
         config.case_insensitive,
         config.auto_hide_empty,
         config.no_expression_lifter,
@@ -767,6 +769,7 @@ pub fn execute_script(config: NonInteractiveConfig) -> Result<()> {
     // Phase 1: Create unified execution config from CLI flags
     let exec_config = ExecutionConfig::from_cli_flags(
         config.show_preprocessing,
+        config.show_transformations,
         config.case_insensitive,
         config.auto_hide_empty,
         config.no_expression_lifter,

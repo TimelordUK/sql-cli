@@ -163,6 +163,7 @@ impl StatementExecutor {
         // Create preprocessing pipeline with configured transformers
         let mut pipeline = create_pipeline_with_config(
             self.config.show_preprocessing,
+            self.config.show_sql_transformations,
             self.config.transformer_config.clone(),
         );
 

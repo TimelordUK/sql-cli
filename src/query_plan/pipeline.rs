@@ -95,8 +95,11 @@ pub struct PipelineConfig {
     /// Whether to collect detailed statistics
     pub collect_stats: bool,
 
-    /// Whether to show the AST before/after each transformation
+    /// Whether to show the AST before/after each transformation (Rust Debug format)
     pub debug_ast_changes: bool,
+
+    /// Whether to show SQL before/after each transformation (formatted SQL)
+    pub show_sql_transformations: bool,
 }
 
 impl Default for PipelineConfig {
@@ -106,6 +109,7 @@ impl Default for PipelineConfig {
             verbose_logging: false,
             collect_stats: true,
             debug_ast_changes: false,
+            show_sql_transformations: false,
         }
     }
 }
@@ -195,8 +199,17 @@ impl PreprocessingPipeline {
             }
 
             // Store original for comparison if debugging
-            let original = if self.config.debug_ast_changes {
+            let original_ast = if self.config.debug_ast_changes {
                 Some(format!("{:#?}", stmt))
+            } else {
+                None
+            };
+
+            // Store original SQL for comparison if showing transformations
+            let original_sql = if self.config.show_sql_transformations {
+                Some(crate::sql::parser::ast_formatter::format_select_statement(
+                    &stmt,
+                ))
             } else {
                 None
             };
@@ -212,23 +225,47 @@ impl PreprocessingPipeline {
 
             let duration = transform_start.elapsed();
 
-            // Check if anything changed
-            let modifications = if let Some(original_str) = original {
-                let new_str = format!("{:#?}", transformed);
-                if original_str != new_str {
+            // Check if anything changed (AST debug format)
+            let mut modifications = 0;
+            if let Some(original_ast_str) = original_ast {
+                let new_ast_str = format!("{:#?}", transformed);
+                if original_ast_str != new_ast_str {
                     if self.config.debug_ast_changes {
                         debug!("AST changed by '{}'", transformer.name());
-                        debug!("Before:\n{}", original_str);
-                        debug!("After:\n{}", new_str);
+                        debug!("Before:\n{}", original_ast_str);
+                        debug!("After:\n{}", new_ast_str);
                     }
-                    1
-                } else {
-                    0
+                    modifications = 1;
                 }
-            } else {
-                // Can't determine without comparing - assume it might have changed
-                0
-            };
+            }
+
+            // Show SQL transformations if enabled
+            if let Some(original_sql_str) = original_sql {
+                let new_sql_str =
+                    crate::sql::parser::ast_formatter::format_select_statement(&transformed);
+                if original_sql_str != new_sql_str {
+                    eprintln!(
+                        "\n╔════════════════════════════════════════════════════════════════╗"
+                    );
+                    eprintln!("║ Transformer: {:<51} ║", transformer.name());
+                    eprintln!("╠════════════════════════════════════════════════════════════════╣");
+                    eprintln!("║ BEFORE:                                                        ║");
+                    eprintln!("╠════════════════════════════════════════════════════════════════╣");
+                    for line in original_sql_str.lines() {
+                        eprintln!("  {}", line);
+                    }
+                    eprintln!("╠════════════════════════════════════════════════════════════════╣");
+                    eprintln!("║ AFTER:                                                         ║");
+                    eprintln!("╠════════════════════════════════════════════════════════════════╣");
+                    for line in new_sql_str.lines() {
+                        eprintln!("  {}", line);
+                    }
+                    eprintln!(
+                        "╚════════════════════════════════════════════════════════════════╝\n"
+                    );
+                    modifications = 1;
+                }
+            }
 
             // Record statistics
             let stats = TransformStats {

@@ -90,14 +90,16 @@ impl TransformerConfig {
 /// ```
 pub fn create_pipeline_with_config(
     verbose: bool,
+    show_sql_transformations: bool,
     transformer_config: TransformerConfig,
 ) -> PreprocessingPipeline {
-    let config = if verbose {
+    let config = if verbose || show_sql_transformations {
         PipelineConfig {
             enabled: true,
-            verbose_logging: true,
+            verbose_logging: verbose,
             collect_stats: true,
             debug_ast_changes: false,
+            show_sql_transformations,
         }
     } else {
         PipelineConfig::default()
@@ -162,6 +164,7 @@ pub fn create_standard_pipeline(verbose: bool) -> PreprocessingPipeline {
             verbose_logging: true,
             collect_stats: true,
             debug_ast_changes: false,
+            show_sql_transformations: false,
         }
     } else {
         PipelineConfig::default()
