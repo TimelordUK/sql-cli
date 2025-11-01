@@ -141,6 +141,10 @@ function M.create_commands()
     M.show_query_plan()
   end, { desc = "Show query execution plan" })
 
+  vim.api.nvim_create_user_command("SqlCliShowTransformations", function()
+    M.show_transformations()
+  end, { desc = "Show SQL transformation pipeline (QUALIFY, window functions, etc.)" })
+
   vim.api.nvim_create_user_command("SqlCliSelectQuery", function()
     navigation.select_query_at_cursor()
   end, { desc = "Select SQL query at cursor" })
@@ -346,6 +350,11 @@ function M.setup_keymaps()
   if keymaps.show_plan then
     vim.keymap.set("n", keymaps.show_plan, M.show_query_plan,
       { desc = "Show SQL query plan", silent = true })
+  end
+
+  if keymaps.show_transformations then
+    vim.keymap.set("n", keymaps.show_transformations, M.show_transformations,
+      { desc = "Show SQL transformation pipeline", silent = true })
   end
 
   if keymaps.open_data_file then
@@ -1057,6 +1066,15 @@ function M.show_query_plan()
     return
   end
   executor.execute_at_cursor_with_plan(M.config, M.state)
+end
+
+-- Show transformation pipeline
+function M.show_transformations()
+  if not M.state then
+    vim.notify("SQL CLI plugin not initialized. Run :lua require('sql-cli').setup()", vim.log.levels.ERROR)
+    return
+  end
+  executor.execute_at_cursor_with_transformations(M.config, M.state)
 end
 
 -- Open data file

@@ -940,8 +940,84 @@ function M.execute_at_cursor_with_plan(config, state)
   M.execute_query_with_plan(query, config, state)
 end
 
+-- Execute query at cursor with transformation debug output
+function M.execute_at_cursor_with_transformations(config, state)
+  -- Save current window and cursor position to restore later
+  local original_win = vim.api.nvim_get_current_win()
+  local original_cursor = vim.api.nvim_win_get_cursor(original_win)
+
+  local bufnr = vim.api.nvim_get_current_buf()
+  local cursor_line = vim.fn.line('.')
+  local lines = vim.api.nvim_buf_get_lines(bufnr, 0, -1, false)
+
+  -- Extract file-level variables
+  local file_vars = extract_file_variables(lines)
+
+  -- Find query boundaries
+  local start_line, end_line = utils.find_query_at_cursor(lines, cursor_line)
+
+  if not start_line then
+    vim.notify("No SQL statement found at cursor", vim.log.levels.WARN)
+    return
+  end
+
+  -- Extract the query, skipping comments and terminators
+  local query_lines = {}
+  for i = start_line, end_line do
+    local line = lines[i]
+    -- Skip GO terminators and comment lines
+    if not line:match("^%s*GO%s*$") and not line:match("^%s*%-%-") then
+      table.insert(query_lines, line)
+    end
+  end
+
+  local query = table.concat(query_lines, "\n")
+
+  -- Expand file-level variables in the query
+  query = expand_env_variables(query, file_vars)
+
+  -- Auto-detect data file if needed
+  if config.auto_detect.data_hints and not state:get_data_file() then
+    local buf_path = vim.api.nvim_buf_get_name(bufnr)
+    local buf_dir = nil
+    if buf_path and buf_path ~= "" then
+      buf_dir = vim.fn.fnamemodify(buf_path, ":h")
+    end
+    local data_file = utils.detect_data_hint(lines, buf_dir)
+    if data_file then
+      state:set_data_file(data_file)
+      if config.load_schema_callback then
+        config.load_schema_callback()
+      end
+    end
+  end
+
+  -- Auto-detect if current buffer is a CSV
+  if config.auto_detect.csv_files and not state:get_data_file() then
+    local filename = vim.api.nvim_buf_get_name(bufnr)
+    if filename:match("%.csv$") then
+      state:set_data_file(filename)
+      if config.load_schema_callback then
+        config.load_schema_callback()
+      end
+    end
+  end
+
+  -- Store the original window and cursor to restore after execution
+  state.original_win = original_win
+  state.original_cursor = original_cursor
+
+  M.execute_query_with_transformations(query, config, state)
+end
+
+-- Execute query with transformation debug output
+function M.execute_query_with_transformations(query, config, state)
+  -- Execute with transformations flag (no plan, yes transformations)
+  M.run_command(query, false, config, state, true)
+end
+
 -- Build command line for SQL CLI execution
-function M.build_command(query, show_plan, config, state)
+function M.build_command(query, show_plan, config, state, show_transformations)
   local command_path, err = utils.get_command_path(config.command)
   if not command_path then
     vim.notify(err, vim.log.levels.ERROR)
@@ -1014,6 +1090,11 @@ function M.build_command(query, show_plan, config, state)
     table.insert(cmd_parts, "--execution-plan")
   end
 
+  -- Add transformation debug flag if requested
+  if show_transformations then
+    table.insert(cmd_parts, "--show-transformations")
+  end
+
   local cmd = table.concat(cmd_parts, " ")
   -- Only show command in debug mode (won't trigger "Press ENTER" prompt)
   if vim.g.sql_cli_debug then
@@ -1023,7 +1104,7 @@ function M.build_command(query, show_plan, config, state)
 end
 
 -- Run SQL CLI command
-function M.run_command(query, show_plan, config, state)
+function M.run_command(query, show_plan, config, state, show_transformations)
   local ui_callbacks = config.ui_callbacks or {}
 
   -- Create output window if needed
@@ -1052,7 +1133,7 @@ function M.run_command(query, show_plan, config, state)
   end
 
   -- Build command
-  local cmd = M.build_command(query, show_plan, config, state)
+  local cmd = M.build_command(query, show_plan, config, state, show_transformations)
   if not cmd then
     return
   end

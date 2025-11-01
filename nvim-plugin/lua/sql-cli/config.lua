@@ -76,6 +76,7 @@ M.defaults = {
     set_data_file = "<leader>sD",   -- Set data file (capital D)
     clear_data_file = nil, -- Removed - conflicted with refactoring
     show_plan = "<leader>sp",       -- Show query plan
+    show_transformations = "<leader>st", -- Show transformation pipeline (QUALIFY, window functions, etc.)
     format_query = "<leader>sf",    -- Format query at cursor (primary mapping)
     open_data_file = "<leader>sV",  -- View data file (capital V to avoid conflict)
     next_query = "]q",              -- Jump to next query
