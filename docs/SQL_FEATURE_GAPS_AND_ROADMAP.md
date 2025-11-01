@@ -33,7 +33,7 @@ As of the execution mode unification completion, we have:
 ### HIGH PRIORITY - Standard SQL Features
 
 #### 1. DISTINCT in Aggregates
-**Status:** ❌ Not implemented
+**Status:** ✅ **COMPLETED!**
 **Difficulty:** Medium
 **Example:**
 ```sql
@@ -42,31 +42,13 @@ FROM sales
 GROUP BY region
 ```
 
-**Implementation Approach:**
-- **Transformer:** `DistinctAggregateLifter`
-- Detect `COUNT(DISTINCT x)` or `SUM(DISTINCT x)`
-- Lift to CTE that computes DISTINCT values first
-- Then aggregate the CTE result
+**Implementation:**
+- ✅ Fully functional in executor (no transformer needed)
+- ✅ Supports COUNT(DISTINCT x), SUM(DISTINCT x), AVG(DISTINCT x)
+- ✅ Works with all aggregate functions
+- ✅ Efficient deduplication within groups
 
-**Rewrite:**
-```sql
--- Input
-SELECT region, COUNT(DISTINCT salesperson) AS cnt
-FROM sales
-GROUP BY region
-
--- Becomes
-WITH _distinct_0 AS (
-    SELECT region, salesperson
-    FROM sales
-    GROUP BY region, salesperson
-)
-SELECT region, COUNT(*) AS cnt
-FROM _distinct_0
-GROUP BY region
-```
-
-**Estimated Effort:** 2-3 days
+**Completed:** Already working (v1.42.0)
 
 ---
 
@@ -134,7 +116,7 @@ INNER JOIN sales s2 ON s2.region = s1.region AND s2.sales_amount > s1.sales_amou
 ### MEDIUM PRIORITY - Quality of Life Features
 
 #### 4. QUALIFY Clause (Snowflake-style)
-**Status:** ❌ Not implemented (but ExpressionLifter partially handles this)
+**Status:** ✅ **COMPLETED!**
 **Difficulty:** Easy
 **Example:**
 ```sql
@@ -144,24 +126,13 @@ FROM sales
 QUALIFY rn <= 3  -- Cleaner than WHERE with window function
 ```
 
-**Implementation Approach:**
-- **Transformer:** `QualifyToWhereTransformer`
-- Convert QUALIFY to WHERE after lifting window functions
-- ExpressionLifter already does the hard work!
+**Implementation:**
+- ✅ Full parser support for QUALIFY clause
+- ✅ Executor handles window function filtering
+- ✅ Works with all window functions (ROW_NUMBER, RANK, LAG, LEAD, etc.)
+- ✅ See examples in documentation
 
-**Rewrite:**
-```sql
--- Input
-SELECT region, sales_amount, ROW_NUMBER() OVER (...) AS rn
-FROM sales
-QUALIFY rn <= 3
-
--- Becomes (via ExpressionLifter + QualifyToWhere)
-WITH _lifted AS (...)
-SELECT * FROM _lifted WHERE rn <= 3
-```
-
-**Estimated Effort:** 1 day (parser + simple transformer)
+**Completed:** 2025-11-01 (v1.64.0)
 
 ---
 
@@ -328,16 +299,16 @@ SELECT * FROM sales WHERE region ILIKE '%north%'
 
 | Feature | User Value | Difficulty | SQL Standard | Priority | Status |
 |---------|-----------|-----------|--------------|----------|--------|
-| ~~ORDER BY aggregates~~ | High | Easy | Yes | ~~**1**~~ | ✅ Done |
-| DISTINCT in aggregates | High | Medium | Yes | **1** | ⏳ Next |
-| QUALIFY clause | Medium | Easy | No (Snowflake) | **2** | 📋 Ready |
-| ILIKE | Low | Trivial | No (Postgres) | **3** | 📋 Ready |
-| PIVOT/UNPIVOT | Medium | Medium | Yes (SQL:2016) | **4** | 📋 Ready |
-| ARRAY_AGG/STRING_AGG | Medium | Medium | Yes | **5** | 📋 Ready |
-| SELECT * EXCLUDE | Low | Easy | No (DuckDB) | **6** | 📋 Ready |
-| Correlated subqueries | High | Hard | Yes | **7** | ⚠️ Complex |
-| LATERAL joins | Low | Hard | Yes | **8** | ⚠️ Complex |
-| Recursive CTEs | Low | Very Hard | Yes | **9** | ⚠️ Complex |
+| ~~ORDER BY aggregates~~ | High | Easy | Yes | ~~**1**~~ | ✅ Done (v1.64.0) |
+| ~~DISTINCT in aggregates~~ | High | Medium | Yes | ~~**1**~~ | ✅ Done (v1.42.0) |
+| ~~QUALIFY clause~~ | Medium | Easy | No (Snowflake) | ~~**2**~~ | ✅ Done (v1.64.0) |
+| ILIKE | Low | Trivial | No (Postgres) | **1** | 📋 Next |
+| SELECT * EXCLUDE | Low | Easy | No (DuckDB) | **2** | 📋 Ready |
+| PIVOT/UNPIVOT | Medium | Medium | Yes (SQL:2016) | **3** | 📋 Ready |
+| ARRAY_AGG/STRING_AGG | Medium | Medium | Yes | **4** | 📋 Ready |
+| Correlated subqueries | High | Hard | Yes | **5** | ⚠️ Complex |
+| LATERAL joins | Low | Hard | Yes | **6** | ⚠️ Complex |
+| Recursive CTEs | Low | Very Hard | Yes | **7** | ⚠️ Complex |
 
 ## Next Steps
 
@@ -346,13 +317,16 @@ SELECT * FROM sales WHERE region ILIKE '%north%'
 2. ✅ Document all transformers - **DONE!**
 3. ✅ Create `examples/expander_rewriters.sql` - **DONE!**
 4. ✅ Implement ORDER BY aggregate expansion - **DONE!** (2025-11-01)
-5. **NEXT:** Choose from quick wins below
+5. ✅ Add QUALIFY clause support - **DONE!** (2025-11-01)
+6. ✅ DISTINCT in aggregates - **Already working!** (v1.42.0)
+7. **NEXT:** Quick wins with transformers (ILIKE, SELECT * EXCLUDE)
 
 ### Short-term (1-2 months)
-1. Add QUALIFY clause support
-2. Implement PIVOT/UNPIVOT
-3. Add ARRAY_AGG and STRING_AGG
-4. Improve window function support (PARTITION BY expressions)
+1. Add ILIKE operator (case-insensitive LIKE) - **1 day**
+2. Implement SELECT * EXCLUDE/REPLACE - **2-3 days**
+3. Implement PIVOT/UNPIVOT - **3-5 days**
+4. Add ARRAY_AGG and STRING_AGG - **3-4 days**
+5. Improve window function support (PARTITION BY expressions)
 
 ### Medium-term (3-6 months)
 1. Basic JOIN support (INNER, LEFT, RIGHT)
@@ -394,17 +368,23 @@ When deciding whether to add a new transformer:
 
 The transformer-based approach gives us a **powerful lever** to add SQL features:
 
-- ✅ **Proven:** 6 transformers already working in production
-- ✅ **Unified:** Same transformers in all execution modes
+- ✅ **Proven:** 7 transformers working in production (v1.64.0)
+- ✅ **Unified:** Same transformers in all execution modes (-q, -f, --execute-statement)
 - ✅ **Extensible:** Easy to add new transformers
 - ✅ **Maintainable:** Each transformer is independent
 - ✅ **Testable:** Can test transformers in isolation
+- ✅ **Debuggable:** --show-transformations flag shows entire pipeline
 
 **Philosophy:** Use transformers to fill SQL feature gaps wherever possible, resort to executor changes only when necessary.
 
-**Next priorities:**
-1. DISTINCT in aggregates (high value, medium effort)
-2. ORDER BY aggregates (high value, low effort)
-3. QUALIFY clause (nice syntax sugar, low effort)
+**Recent Wins (v1.64.0):**
+- ✅ ORDER BY aggregates - Complex expressions now supported
+- ✅ QUALIFY clause - Window function filtering
+- ✅ Unified execution - All modes use same transformer pipeline
+
+**Next Quick Wins (Perfect for Transformers):**
+1. ILIKE operator (1 day) - Simple UPPER() rewrite
+2. SELECT * EXCLUDE (2 days) - Column list manipulation
+3. PIVOT/UNPIVOT (5 days) - CASE expression generation
 
 This approach allows us to **incrementally improve** SQL support without major architectural changes, while keeping the executor simple and focused.
