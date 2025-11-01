@@ -163,6 +163,7 @@ impl InOperatorLifter {
             set_operations: Vec::new(),
             leading_comments: vec![],
             trailing_comment: None,
+            qualify: None,
         };
 
         CTE {

@@ -90,6 +90,7 @@ impl ExecutionConfig {
         self.transformer_config.enable_where_expansion = false;
         self.transformer_config.enable_group_by_expansion = false;
         self.transformer_config.enable_having_expansion = false;
+        self.transformer_config.enable_qualify_to_where = false;
         self.transformer_config.enable_cte_hoister = false;
         self.transformer_config.enable_in_lifter = false;
         self
@@ -106,6 +107,7 @@ impl ExecutionConfig {
         no_group_by_expansion: bool,
         no_having_expansion: bool,
         no_order_by_expansion: bool,
+        no_qualify_to_where: bool,
         no_cte_hoister: bool,
         no_in_lifter: bool,
         debug_trace: bool,
@@ -121,6 +123,7 @@ impl ExecutionConfig {
                 enable_group_by_expansion: !no_group_by_expansion,
                 enable_having_expansion: !no_having_expansion,
                 enable_order_by_expansion: !no_order_by_expansion,
+                enable_qualify_to_where: !no_qualify_to_where,
                 enable_cte_hoister: !no_cte_hoister,
                 enable_in_lifter: !no_in_lifter,
             },
@@ -149,6 +152,7 @@ mod tests {
         assert!(config.transformer_config.enable_where_expansion);
         assert!(config.transformer_config.enable_group_by_expansion);
         assert!(config.transformer_config.enable_having_expansion);
+        assert!(config.transformer_config.enable_qualify_to_where);
         assert!(config.transformer_config.enable_cte_hoister);
         assert!(config.transformer_config.enable_in_lifter);
     }
@@ -175,6 +179,7 @@ mod tests {
         assert!(!config.transformer_config.enable_where_expansion);
         assert!(!config.transformer_config.enable_group_by_expansion);
         assert!(!config.transformer_config.enable_having_expansion);
+        assert!(!config.transformer_config.enable_qualify_to_where);
         assert!(!config.transformer_config.enable_cte_hoister);
         assert!(!config.transformer_config.enable_in_lifter);
     }
@@ -191,6 +196,7 @@ mod tests {
             true,  // no_group_by_expansion
             true,  // no_having_expansion
             true,  // no_order_by_expansion
+            true,  // no_qualify_to_where
             true,  // no_cte_hoister
             true,  // no_in_lifter
             false, // debug_trace
@@ -203,6 +209,7 @@ mod tests {
         assert!(!config.transformer_config.enable_where_expansion);
         assert!(!config.transformer_config.enable_group_by_expansion);
         assert!(!config.transformer_config.enable_having_expansion);
+        assert!(!config.transformer_config.enable_qualify_to_where);
         assert!(!config.transformer_config.enable_cte_hoister);
         assert!(!config.transformer_config.enable_in_lifter);
     }
@@ -219,6 +226,7 @@ mod tests {
             false, // no_group_by_expansion
             false, // no_having_expansion
             false, // no_order_by_expansion
+            false, // no_qualify_to_where
             false, // no_cte_hoister
             false, // no_in_lifter
             true,  // debug_trace
@@ -233,6 +241,7 @@ mod tests {
         assert!(config.transformer_config.enable_where_expansion);
         assert!(config.transformer_config.enable_group_by_expansion);
         assert!(config.transformer_config.enable_having_expansion);
+        assert!(config.transformer_config.enable_qualify_to_where);
         assert!(config.transformer_config.enable_cte_hoister);
         assert!(config.transformer_config.enable_in_lifter);
     }
@@ -245,6 +254,7 @@ mod tests {
             enable_group_by_expansion: true,
             enable_having_expansion: false,
             enable_order_by_expansion: true,
+            enable_qualify_to_where: false,
             enable_cte_hoister: true,
             enable_in_lifter: false,
         };
@@ -255,6 +265,7 @@ mod tests {
         assert!(!config.transformer_config.enable_where_expansion);
         assert!(config.transformer_config.enable_group_by_expansion);
         assert!(!config.transformer_config.enable_having_expansion);
+        assert!(!config.transformer_config.enable_qualify_to_where);
         assert!(config.transformer_config.enable_cte_hoister);
         assert!(!config.transformer_config.enable_in_lifter);
     }

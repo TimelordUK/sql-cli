@@ -444,6 +444,7 @@ struct NonInteractiveArgs {
     no_group_by_expansion_arg: bool,
     no_having_expansion_arg: bool,
     no_order_by_expansion_arg: bool,
+    no_qualify_to_where_arg: bool,
     no_expression_lifter_arg: bool,
     no_cte_hoister_arg: bool,
     no_in_lifter_arg: bool,
@@ -559,6 +560,8 @@ fn parse_non_interactive_args(args: &[String]) -> NonInteractiveArgs {
         no_having_expansion_arg: args.iter().any(|arg| arg == "--no-having-expansion"),
 
         no_order_by_expansion_arg: args.iter().any(|arg| arg == "--no-order-by-expansion"),
+
+        no_qualify_to_where_arg: args.iter().any(|arg| arg == "--no-qualify-to-where"),
 
         no_expression_lifter_arg: args.iter().any(|arg| arg == "--no-expression-lifter"),
 
@@ -904,6 +907,7 @@ fn handle_execute_statement(
         false, // no_group_by_expansion
         false, // no_having_expansion
         false, // no_order_by_expansion
+        false, // no_qualify_to_where
         false, // no_cte_hoister
         false, // no_in_lifter
         false, // debug_trace
@@ -1553,6 +1557,7 @@ fn handle_non_interactive_query(
         no_group_by_expansion: parsed_args.no_group_by_expansion_arg,
         no_having_expansion: parsed_args.no_having_expansion_arg,
         no_order_by_expansion: parsed_args.no_order_by_expansion_arg,
+        no_qualify_to_where: parsed_args.no_qualify_to_where_arg,
         no_expression_lifter: parsed_args.no_expression_lifter_arg,
         no_cte_hoister: parsed_args.no_cte_hoister_arg,
         no_in_lifter: parsed_args.no_in_lifter_arg,

@@ -1,0 +1,62 @@
+[
+  {
+    "region": "East",
+    "rn": 1,
+    "sales_amount": 19000
+  },
+  {
+    "region": "East",
+    "rn": 2,
+    "sales_amount": 15000
+  },
+  {
+    "region": "East",
+    "rn": 3,
+    "sales_amount": 14000
+  },
+  {
+    "region": "North",
+    "rn": 1,
+    "sales_amount": 22000
+  },
+  {
+    "region": "North",
+    "rn": 2,
+    "sales_amount": 18000
+  },
+  {
+    "region": "North",
+    "rn": 3,
+    "sales_amount": 16000
+  },
+  {
+    "region": "South",
+    "rn": 1,
+    "sales_amount": 25000
+  },
+  {
+    "region": "South",
+    "rn": 2,
+    "sales_amount": 23000
+  },
+  {
+    "region": "South",
+    "rn": 3,
+    "sales_amount": 21000
+  },
+  {
+    "region": "West",
+    "rn": 1,
+    "sales_amount": 28000
+  },
+  {
+    "region": "West",
+    "rn": 2,
+    "sales_amount": 26000
+  },
+  {
+    "region": "West",
+    "rn": 3,
+    "sales_amount": 24000
+  }
+]

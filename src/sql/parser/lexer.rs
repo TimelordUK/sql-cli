@@ -36,6 +36,7 @@ pub enum Token {
     OrderBy,
     GroupBy,
     Having,
+    Qualify,
     As,
     Asc,
     Desc,
@@ -140,6 +141,7 @@ impl Token {
             "ORDER" => Some(Token::OrderBy),
             "GROUP" => Some(Token::GroupBy),
             "HAVING" => Some(Token::Having),
+            "QUALIFY" => Some(Token::Qualify),
             "AS" => Some(Token::As),
             "ASC" => Some(Token::Asc),
             "DESC" => Some(Token::Desc),
@@ -226,6 +228,7 @@ impl Token {
             Token::OrderBy => Some("ORDER BY"),
             Token::GroupBy => Some("GROUP BY"),
             Token::Having => Some("HAVING"),
+            Token::Qualify => Some("QUALIFY"),
             Token::As => Some("AS"),
             Token::Asc => Some("ASC"),
             Token::Desc => Some("DESC"),
@@ -835,6 +838,7 @@ impl Lexer {
                         Token::GroupBy
                     }
                     "HAVING" => Token::Having,
+                    "QUALIFY" => Token::Qualify,
                     "AS" => Token::As,
                     "ASC" => Token::Asc,
                     "DESC" => Token::Desc,

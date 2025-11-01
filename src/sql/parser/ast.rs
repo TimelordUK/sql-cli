@@ -388,6 +388,7 @@ pub struct SelectStatement {
     pub order_by: Option<Vec<OrderByItem>>, // Supports expressions: columns, aggregates, CASE, etc.
     pub group_by: Option<Vec<SqlExpression>>, // Changed from Vec<String> to support expressions
     pub having: Option<SqlExpression>,      // HAVING clause for post-aggregation filtering
+    pub qualify: Option<SqlExpression>, // QUALIFY clause for window function filtering (Snowflake-style)
     pub limit: Option<usize>,
     pub offset: Option<usize>,
     pub ctes: Vec<CTE>,                // Common Table Expressions (WITH clause)
@@ -414,6 +415,7 @@ impl Default for SelectStatement {
             order_by: None,
             group_by: None,
             having: None,
+            qualify: None,
             limit: None,
             offset: None,
             ctes: Vec::new(),

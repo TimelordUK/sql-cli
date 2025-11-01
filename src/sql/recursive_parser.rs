@@ -955,7 +955,22 @@ impl Parser {
             None
         };
 
-        // Parse ORDER BY clause (comes after GROUP BY and HAVING)
+        // Parse QUALIFY clause (Snowflake-style window function filtering)
+        // QUALIFY filters on window function results without needing a subquery
+        // Example: SELECT *, ROW_NUMBER() OVER (...) AS rn FROM t QUALIFY rn <= 3
+        let qualify = if matches!(self.current_token, Token::Qualify) {
+            self.advance();
+            let qualify_expr = self.parse_expression()?;
+
+            // Note: QUALIFY is handled by the QualifyToWhereTransformer preprocessing step
+            // which converts it to WHERE after window functions are lifted to CTEs
+
+            Some(qualify_expr)
+        } else {
+            None
+        };
+
+        // Parse ORDER BY clause (comes after GROUP BY, HAVING, and QUALIFY)
         let order_by = if matches!(self.current_token, Token::OrderBy) {
             self.trace_token("Found OrderBy token");
             self.advance();
@@ -1046,6 +1061,7 @@ impl Parser {
             order_by,
             group_by,
             having,
+            qualify,
             limit,
             offset,
             ctes: Vec::new(), // Will be populated by WITH clause parser

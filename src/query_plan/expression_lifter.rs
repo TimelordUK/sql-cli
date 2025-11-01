@@ -157,6 +157,7 @@ impl ExpressionLifter {
                     from_alias: stmt.from_alias.clone(),
                     joins: stmt.joins.clone(),
                     where_clause: None, // Move simpler parts of WHERE here if possible
+                    qualify: None,
                     order_by: None,
                     group_by: None,
                     having: None,
@@ -246,6 +247,29 @@ impl ExpressionLifter {
             }
         }
 
+        // Check if QUALIFY clause references any window function aliases
+        // QUALIFY is designed to filter on window function results, so if it references
+        // an alias that's a window function, we need to lift that window function to a CTE
+        if let Some(ref qualify_expr) = stmt.qualify {
+            tracing::debug!("Checking QUALIFY clause for window function aliases");
+            let qualify_column_refs = extract_column_references(qualify_expr);
+
+            for col_name in qualify_column_refs {
+                tracing::debug!("QUALIFY references column: {}", col_name);
+                if let Some(expr) = aliases.get(&col_name) {
+                    // Check if this alias is a window function
+                    if matches!(expr, SqlExpression::WindowFunction { .. }) {
+                        tracing::debug!(
+                            "QUALIFY references window function alias: {} -> {:?}",
+                            col_name,
+                            expr
+                        );
+                        dependencies.push((col_name.clone(), expr.clone()));
+                    }
+                }
+            }
+        }
+
         // Remove duplicates
         dependencies.sort_by(|a, b| a.0.cmp(&b.0));
         dependencies.dedup_by(|a, b| a.0 == b.0);
@@ -296,6 +320,7 @@ impl ExpressionLifter {
             set_operations: Vec::new(),
             leading_comments: vec![],
             trailing_comment: None,
+            qualify: None,
         };
 
         // Update the main query to use simple column references
@@ -375,6 +400,78 @@ pub struct LiftableExpression {
 }
 
 /// Analyze dependencies between expressions
+/// Extract all column references from an expression (used for QUALIFY analysis)
+fn extract_column_references(expr: &SqlExpression) -> HashSet<String> {
+    let mut refs = HashSet::new();
+
+    match expr {
+        SqlExpression::Column(col_ref) => {
+            refs.insert(col_ref.name.clone());
+        }
+
+        SqlExpression::BinaryOp { left, right, .. } => {
+            refs.extend(extract_column_references(left));
+            refs.extend(extract_column_references(right));
+        }
+
+        SqlExpression::Not { expr } => {
+            refs.extend(extract_column_references(expr));
+        }
+
+        SqlExpression::Between { expr, lower, upper } => {
+            refs.extend(extract_column_references(expr));
+            refs.extend(extract_column_references(lower));
+            refs.extend(extract_column_references(upper));
+        }
+
+        SqlExpression::InList { expr, values } | SqlExpression::NotInList { expr, values } => {
+            refs.extend(extract_column_references(expr));
+            for val in values {
+                refs.extend(extract_column_references(val));
+            }
+        }
+
+        SqlExpression::FunctionCall { args, .. } | SqlExpression::WindowFunction { args, .. } => {
+            for arg in args {
+                refs.extend(extract_column_references(arg));
+            }
+        }
+
+        SqlExpression::CaseExpression {
+            when_branches,
+            else_branch,
+        } => {
+            for branch in when_branches {
+                refs.extend(extract_column_references(&branch.condition));
+                refs.extend(extract_column_references(&branch.result));
+            }
+            if let Some(else_expr) = else_branch {
+                refs.extend(extract_column_references(else_expr));
+            }
+        }
+
+        SqlExpression::SimpleCaseExpression {
+            expr,
+            when_branches,
+            else_branch,
+        } => {
+            refs.extend(extract_column_references(expr));
+            for branch in when_branches {
+                refs.extend(extract_column_references(&branch.value));
+                refs.extend(extract_column_references(&branch.result));
+            }
+            if let Some(else_expr) = else_branch {
+                refs.extend(extract_column_references(else_expr));
+            }
+        }
+
+        // Literals and other expressions don't contain column references
+        _ => {}
+    }
+
+    refs
+}
+
 pub fn analyze_dependencies(expr: &SqlExpression) -> HashSet<String> {
     let mut deps = HashSet::new();
 

@@ -248,6 +248,7 @@ impl TextNavigator {
             Token::LineComment(text) => text,
             Token::BlockComment(text) => text,
             Token::Eof => "EOF",
+            Token::Qualify => "QUALIFY",
         }
     }
 }

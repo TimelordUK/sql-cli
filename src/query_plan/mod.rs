@@ -12,6 +12,7 @@ pub mod in_operator_lifter;
 pub mod into_clause_remover;
 pub mod order_by_alias_transformer;
 pub mod pipeline;
+pub mod qualify_to_where_transformer;
 pub mod transformer_adapters;
 pub mod where_alias_expander;
 
@@ -33,6 +34,7 @@ pub use having_alias_transformer::HavingAliasTransformer;
 pub use in_operator_lifter::{InOperatorLifter, LiftedInExpression};
 pub use into_clause_remover::IntoClauseRemover;
 pub use order_by_alias_transformer::OrderByAliasTransformer;
+pub use qualify_to_where_transformer::QualifyToWhereTransformer;
 pub use where_alias_expander::WhereAliasExpander;
 
 // Re-export pipeline types
@@ -54,6 +56,7 @@ pub struct TransformerConfig {
     pub enable_group_by_expansion: bool,
     pub enable_having_expansion: bool,
     pub enable_order_by_expansion: bool,
+    pub enable_qualify_to_where: bool,
     pub enable_cte_hoister: bool,
     pub enable_in_lifter: bool,
 }
@@ -74,6 +77,7 @@ impl TransformerConfig {
             enable_group_by_expansion: true,
             enable_having_expansion: true,
             enable_order_by_expansion: true,
+            enable_qualify_to_where: true,
             enable_cte_hoister: true,
             enable_in_lifter: true,
         }
@@ -118,6 +122,12 @@ pub fn create_pipeline_with_config(
 
     if transformer_config.enable_expression_lifter {
         builder = builder.with_transformer(Box::new(ExpressionLifterTransformer::new()));
+    }
+
+    // QualifyToWhereTransformer must run after ExpressionLifter
+    // so that window functions are already lifted to CTEs
+    if transformer_config.enable_qualify_to_where {
+        builder = builder.with_transformer(Box::new(QualifyToWhereTransformer::new()));
     }
 
     if transformer_config.enable_where_expansion {
