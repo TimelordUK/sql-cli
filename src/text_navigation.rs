@@ -189,7 +189,6 @@ impl TextNavigator {
             Token::End => "END",
             Token::Distinct => "DISTINCT",
             Token::Exclude => "EXCLUDE",
-            Token::Replace => "REPLACE",
             Token::Over => "OVER",
             Token::Partition => "PARTITION",
             Token::By => "BY",
