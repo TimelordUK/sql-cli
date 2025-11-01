@@ -217,3 +217,63 @@ jobs:
     - name: Verify --query-plan works
       run: |
         ./target/release/sql-cli test.csv -q "SELECT id FROM test WHERE value > 15" --query-plan
+
+  # Performance benchmarking (Linux only, non-blocking)
+  performance-benchmark:
+    name: Performance Benchmarks (Linux)
+    runs-on: ubuntu-latest
+    needs: rust-tests  # Run after rust tests to get the binary
+    continue-on-error: true  # Don't fail the build if benchmarks have issues
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.10'
+
+    - name: Install uv
+      run: |
+        curl -LsSf https://astral.sh/uv/install.sh | sh
+        echo "$HOME/.cargo/bin" >> $GITHUB_PATH
+
+    - name: Set up Rust (for building sql-cli)
+      uses: actions-rs/toolchain@v1
+      with:
+        toolchain: stable
+        override: true
+
+    - name: Cache cargo build
+      uses: actions/cache@v4
+      with:
+        path: target
+        key: ${{ runner.os }}-cargo-build-benchmark-${{ hashFiles('**/Cargo.lock') }}
+        restore-keys: |
+          ${{ runner.os }}-cargo-build-benchmark-
+          ${{ runner.os }}-cargo-build-
+
+    - name: Build SQL CLI (Release with optimizations)
+      run: cargo build --release
+
+    - name: Install Python dependencies
+      run: |
+        uv venv
+        uv pip install pandas numpy
+
+    - name: Run performance benchmarks
+      run: |
+        echo "========================================="
+        echo "Performance Benchmark Results"
+        echo "========================================="
+        uv run python scripts/benchmark_all.py || echo "Benchmark completed with warnings"
+
+    - name: Upload benchmark results
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: benchmark-results
+        path: |
+          benchmarks/*.txt
+          benchmarks/*.csv
+        retention-days: 30
