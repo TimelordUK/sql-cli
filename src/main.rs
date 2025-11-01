@@ -873,10 +873,9 @@ fn handle_execute_statement(
     println!("Execution order: {:?}", plan.statements_to_execute);
     println!();
 
-    // Use the non-interactive executor to run the minimal set of statements
+    // Use the unified execution infrastructure with transformers
     use sql_cli::data::datatable_loaders::load_csv_to_datatable;
-    use sql_cli::data::query_engine::QueryEngine;
-    use sql_cli::data::temp_table_registry::TempTableRegistry;
+    use sql_cli::execution::{ExecutionConfig, ExecutionContext, StatementExecutor};
     use std::sync::Arc;
 
     // Load the data source if provided, otherwise use DUAL table
@@ -892,9 +891,25 @@ fn handle_execute_statement(
         DataTable::dual()
     };
 
-    let table_arc = Arc::new(data_table);
-    let engine = QueryEngine::new();
-    let mut temp_tables = TempTableRegistry::new();
+    // Create execution context and config with transformers enabled
+    let mut context = ExecutionContext::new(Arc::new(data_table));
+
+    let exec_config = ExecutionConfig::from_cli_flags(
+        false, // show_preprocessing
+        false, // show_sql_transformations
+        false, // case_insensitive
+        false, // auto_hide_empty
+        false, // no_expression_lifter
+        false, // no_where_expansion
+        false, // no_group_by_expansion
+        false, // no_having_expansion
+        false, // no_order_by_expansion
+        false, // no_cte_hoister
+        false, // no_in_lifter
+        false, // debug_trace
+    );
+
+    let executor = StatementExecutor::with_config(exec_config);
 
     // Execute statements in order from the plan
     let mut last_result = None;
@@ -912,26 +927,20 @@ fn handle_execute_statement(
         // Check if this statement has an INTO clause (creates a temp table)
         let into_table_name = parsed_stmt.into_table.as_ref().map(|it| it.name.clone());
 
-        match engine.execute_statement_with_temp_tables(
-            table_arc.clone(),
-            parsed_stmt,
-            Some(&temp_tables),
-        ) {
+        // Execute using unified StatementExecutor (with transformers!)
+        match executor.execute(parsed_stmt, &mut context) {
             Ok(result) => {
                 println!(
                     "  ✓ Statement #{} completed ({} rows)",
-                    stmt_num,
-                    result.row_count()
+                    stmt_num, result.stats.row_count
                 );
 
-                // If this statement creates a temp table, register it
-                if let Some(temp_name) = into_table_name {
-                    // Materialize the result into a DataTable
-                    let temp_table = engine.materialize_view(result.clone()).map_err(|e| {
-                        io::Error::other(format!("Failed to materialize temp table: {}", e))
-                    })?;
-                    temp_tables.insert(temp_name.clone(), Arc::new(temp_table));
-                    println!("  → Temp table {} created", temp_name);
+                // If this statement creates a temp table, it's already registered in context
+                if into_table_name.is_some() {
+                    println!(
+                        "  → Temp table {} created",
+                        into_table_name.as_ref().unwrap()
+                    );
                 }
 
                 if *stmt_num == target_statement {
@@ -967,7 +976,7 @@ fn handle_execute_statement(
             let mut file = std::fs::File::create(output_file)
                 .map_err(|e| io::Error::other(format!("Failed to create output file: {}", e)))?;
             output_dataview(
-                &result_view,
+                &result_view.dataview,
                 output_format,
                 &mut file,
                 None,
@@ -979,7 +988,7 @@ fn handle_execute_statement(
         } else {
             let mut stdout = io::stdout();
             output_dataview(
-                &result_view,
+                &result_view.dataview,
                 output_format,
                 &mut stdout,
                 None,
