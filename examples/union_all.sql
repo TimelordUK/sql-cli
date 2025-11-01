@@ -61,20 +61,43 @@ UNION ALL
 SELECT 'Value 5' as id, 'Fifth' as label;
 GO
 
--- Example 7: UNION ALL in subquery for virtual value list
+-- Example 7: UNION ALL in IN subquery (actual subquery usage)
 -- Demonstrates using UNION ALL inside WHERE IN clause
--- Useful pattern: WHERE id IN (SELECT 1 UNION ALL SELECT 2 UNION ALL SELECT 3)
-SELECT 1 as num, 'One' as word
+-- Pattern: WHERE col IN (SELECT val1 UNION ALL SELECT val2 UNION ALL SELECT val3)
+-- This creates a virtual value list for filtering
+SELECT 1 as id, 'One' as name, 'odd' as type
 UNION ALL
-SELECT 2 as num, 'Two' as word
+SELECT 2 as id, 'Two' as name, 'even' as type
 UNION ALL
-SELECT 3 as num, 'Three' as word
+SELECT 3 as id, 'Three' as name, 'odd' as type
 UNION ALL
-SELECT 5 as num, 'Five' as word
+SELECT 4 as id, 'Four' as name, 'even' as type
 UNION ALL
-SELECT 8 as num, 'Eight' as word
-UNION ALL
-SELECT 13 as num, 'Thirteen' as word;
+SELECT 5 as id, 'Five' as name, 'odd' as type;
+GO
+
+-- Example 8: Filtering with UNION ALL subquery
+-- Uses UNION ALL in WHERE IN to filter a result set
+-- This demonstrates the actual subquery pattern from the question
+WITH numbers AS (
+    SELECT 1 as id, 'One' as name, 'odd' as type
+    UNION ALL
+    SELECT 2 as id, 'Two' as name, 'even' as type
+    UNION ALL
+    SELECT 3 as id, 'Three' as name, 'odd' as type
+    UNION ALL
+    SELECT 4 as id, 'Four' as name, 'even' as type
+    UNION ALL
+    SELECT 5 as id, 'Five' as name, 'odd' as type
+)
+SELECT * FROM numbers
+WHERE id IN (
+    SELECT 1 as num
+    UNION ALL
+    SELECT 2 as num
+    UNION ALL
+    SELECT 5 as num
+);
 GO
 
 -- Notes:
