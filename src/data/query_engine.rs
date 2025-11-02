@@ -402,6 +402,68 @@ impl QueryEngine {
         }
     }
 
+    /// Check if an expression contains a window function
+    fn contains_window_function(expr: &SqlExpression) -> bool {
+        match expr {
+            SqlExpression::WindowFunction { .. } => true,
+            SqlExpression::BinaryOp { left, right, .. } => {
+                Self::contains_window_function(left) || Self::contains_window_function(right)
+            }
+            SqlExpression::Not { expr } => Self::contains_window_function(expr),
+            SqlExpression::FunctionCall { args, .. } => {
+                args.iter().any(Self::contains_window_function)
+            }
+            SqlExpression::CaseExpression {
+                when_branches,
+                else_branch,
+            } => {
+                when_branches.iter().any(|branch| {
+                    Self::contains_window_function(&branch.condition)
+                        || Self::contains_window_function(&branch.result)
+                }) || else_branch
+                    .as_ref()
+                    .map_or(false, |e| Self::contains_window_function(e))
+            }
+            SqlExpression::SimpleCaseExpression {
+                expr,
+                when_branches,
+                else_branch,
+            } => {
+                Self::contains_window_function(expr)
+                    || when_branches.iter().any(|branch| {
+                        Self::contains_window_function(&branch.value)
+                            || Self::contains_window_function(&branch.result)
+                    })
+                    || else_branch
+                        .as_ref()
+                        .map_or(false, |e| Self::contains_window_function(e))
+            }
+            SqlExpression::InList { expr, values } => {
+                Self::contains_window_function(expr)
+                    || values.iter().any(Self::contains_window_function)
+            }
+            SqlExpression::NotInList { expr, values } => {
+                Self::contains_window_function(expr)
+                    || values.iter().any(Self::contains_window_function)
+            }
+            SqlExpression::Between { expr, lower, upper } => {
+                Self::contains_window_function(expr)
+                    || Self::contains_window_function(lower)
+                    || Self::contains_window_function(upper)
+            }
+            SqlExpression::InSubquery { expr, .. } => Self::contains_window_function(expr),
+            SqlExpression::NotInSubquery { expr, .. } => Self::contains_window_function(expr),
+            SqlExpression::MethodCall { args, .. } => {
+                args.iter().any(Self::contains_window_function)
+            }
+            SqlExpression::ChainedMethodCall { base, args, .. } => {
+                Self::contains_window_function(base)
+                    || args.iter().any(Self::contains_window_function)
+            }
+            _ => false,
+        }
+    }
+
     /// Execute a SQL query on a `DataTable` and return a `DataView` (for backward compatibility)
     pub fn execute(&self, table: Arc<DataTable>, sql: &str) -> Result<DataView> {
         let (view, _plan) = self.execute_with_plan(table, sql)?;
@@ -1282,6 +1344,7 @@ impl QueryEngine {
                         &statement.select_items,
                         &statement,
                         exec_context,
+                        plan,
                     )?;
                 }
                 // If it's just a single star, no projection needed
@@ -1542,6 +1605,7 @@ impl QueryEngine {
         select_items: &[SelectItem],
         _statement: &SelectStatement,
         exec_context: Option<&ExecutionContext>,
+        plan: &mut ExecutionPlanBuilder,
     ) -> Result<DataView> {
         debug!(
             "QueryEngine::apply_select_items - items: {:?}",
@@ -1551,6 +1615,32 @@ impl QueryEngine {
             "QueryEngine::apply_select_items - input view has {} rows",
             view.row_count()
         );
+
+        // Check if any select items contain window functions
+        let has_window_functions = select_items.iter().any(|item| match item {
+            SelectItem::Expression { expr, .. } => Self::contains_window_function(expr),
+            _ => false,
+        });
+
+        // Count window functions for detailed reporting
+        let window_func_count: usize = select_items
+            .iter()
+            .filter(|item| match item {
+                SelectItem::Expression { expr, .. } => Self::contains_window_function(expr),
+                _ => false,
+            })
+            .count();
+
+        // Start timing for window function evaluation if present
+        let window_start = if has_window_functions {
+            debug!(
+                "QueryEngine::apply_select_items - detected {} window functions",
+                window_func_count
+            );
+            Some(Instant::now())
+        } else {
+            None
+        };
 
         // Check if any SELECT item contains UNNEST - if so, use row expansion mode
         let has_unnest = select_items.iter().any(|item| match item {
@@ -1729,6 +1819,32 @@ impl QueryEngine {
             computed_table
                 .add_row(DataRow::new(row_values))
                 .map_err(|e| anyhow::anyhow!("Failed to add row: {}", e))?;
+        }
+
+        // Log window function timing if applicable
+        if let Some(start) = window_start {
+            let window_duration = start.elapsed();
+            info!(
+                "Window function evaluation took {:.2}ms for {} rows ({} window functions)",
+                window_duration.as_secs_f64() * 1000.0,
+                visible_rows.len(),
+                window_func_count
+            );
+
+            // Add to execution plan
+            plan.begin_step(
+                StepType::WindowFunction,
+                format!("Evaluate {} window function(s)", window_func_count),
+            );
+            plan.set_rows_in(visible_rows.len());
+            plan.set_rows_out(visible_rows.len());
+            plan.add_detail(format!("Input: {} rows", visible_rows.len()));
+            plan.add_detail(format!("{} window functions evaluated", window_func_count));
+            plan.add_detail(format!(
+                "Evaluation time: {:.3}ms",
+                window_duration.as_secs_f64() * 1000.0
+            ));
+            plan.end_step();
         }
 
         // Return a view of the computed result
