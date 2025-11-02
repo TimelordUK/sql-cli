@@ -694,6 +694,7 @@ impl Parser {
             .iter()
             .map(|item| match item {
                 SelectItem::Star { .. } => "*".to_string(),
+                SelectItem::StarExclude { .. } => "*".to_string(), // Treated as * in legacy columns
                 SelectItem::Column {
                     column: col_ref, ..
                 } => col_ref.name.clone(),
@@ -1162,12 +1163,58 @@ impl Parser {
 
             // Check for unqualified *
             if matches!(self.current_token, Token::Star) {
-                items.push(SelectItem::Star {
-                    table_prefix: None,
-                    leading_comments: vec![],
-                    trailing_comment: None,
-                });
-                self.advance();
+                self.advance(); // consume *
+
+                // Check for EXCLUDE clause
+                if matches!(self.current_token, Token::Exclude) {
+                    self.advance(); // consume EXCLUDE
+
+                    // Expect opening paren
+                    if !matches!(self.current_token, Token::LeftParen) {
+                        return Err("Expected '(' after EXCLUDE".to_string());
+                    }
+                    self.advance(); // consume (
+
+                    // Parse column list
+                    let mut excluded_columns = Vec::new();
+                    loop {
+                        match &self.current_token {
+                            Token::Identifier(col_name) | Token::QuotedIdentifier(col_name) => {
+                                excluded_columns.push(col_name.clone());
+                                self.advance();
+                            }
+                            _ => return Err("Expected column name in EXCLUDE list".to_string()),
+                        }
+
+                        // Check for comma or closing paren
+                        if matches!(self.current_token, Token::Comma) {
+                            self.advance();
+                        } else if matches!(self.current_token, Token::RightParen) {
+                            self.advance(); // consume )
+                            break;
+                        } else {
+                            return Err("Expected ',' or ')' in EXCLUDE list".to_string());
+                        }
+                    }
+
+                    if excluded_columns.is_empty() {
+                        return Err("EXCLUDE list cannot be empty".to_string());
+                    }
+
+                    items.push(SelectItem::StarExclude {
+                        table_prefix: None,
+                        excluded_columns,
+                        leading_comments: vec![],
+                        trailing_comment: None,
+                    });
+                } else {
+                    // Regular * without EXCLUDE
+                    items.push(SelectItem::Star {
+                        table_prefix: None,
+                        leading_comments: vec![],
+                        trailing_comment: None,
+                    });
+                }
             } else {
                 // Parse expression or column
                 let expr = self.parse_comparison()?; // Use comparison to support IS NULL and other comparisons

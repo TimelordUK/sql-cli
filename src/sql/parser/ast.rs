@@ -372,6 +372,13 @@ pub enum SelectItem {
         leading_comments: Vec<Comment>,
         trailing_comment: Option<Comment>,
     },
+    /// Star with EXCLUDE: "* EXCLUDE (col1, col2)"
+    StarExclude {
+        table_prefix: Option<String>,
+        excluded_columns: Vec<String>,
+        leading_comments: Vec<Comment>,
+        trailing_comment: Option<Comment>,
+    },
 }
 
 #[derive(Debug, Clone)]

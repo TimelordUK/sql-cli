@@ -245,6 +245,10 @@ impl GroupByExpressions for QueryEngine {
                     // For GROUP BY queries, * includes GROUP BY columns
                     // Already handled by adding group_by_aliases columns
                 }
+                SelectItem::StarExclude { .. } => {
+                    // StarExclude behaves like Star in GROUP BY context
+                    // Expansion happens later in the query execution pipeline
+                }
             }
         }
 

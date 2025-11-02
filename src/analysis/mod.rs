@@ -473,6 +473,15 @@ fn format_select_statement(stmt: &SelectStatement) -> String {
             let prefix = if i == 0 { "    " } else { "  , " };
             match item {
                 SelectItem::Star { .. } => parts.push(format!("{}*", prefix)),
+                SelectItem::StarExclude {
+                    excluded_columns, ..
+                } => {
+                    parts.push(format!(
+                        "{}* EXCLUDE ({})",
+                        prefix,
+                        excluded_columns.join(", ")
+                    ));
+                }
                 SelectItem::Column { column: col, .. } => {
                     parts.push(format!("{}{}", prefix, col.name));
                 }

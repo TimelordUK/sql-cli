@@ -122,6 +122,19 @@ impl SubqueryExecutor {
                         trailing_comment: trailing_comment.clone(),
                     });
                 }
+                SelectItem::StarExclude {
+                    table_prefix,
+                    excluded_columns,
+                    leading_comments,
+                    trailing_comment,
+                } => {
+                    new_select_items.push(SelectItem::StarExclude {
+                        table_prefix: table_prefix.clone(),
+                        excluded_columns: excluded_columns.clone(),
+                        leading_comments: leading_comments.clone(),
+                        trailing_comment: trailing_comment.clone(),
+                    });
+                }
             }
         }
         modified_statement.select_items = new_select_items;

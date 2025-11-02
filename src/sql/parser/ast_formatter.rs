@@ -562,6 +562,13 @@ impl<'a> AstFormatter<'a> {
             .map(|item| {
                 match item {
                     SelectItem::Star { .. } => 1,
+                    SelectItem::StarExclude {
+                        excluded_columns, ..
+                    } => {
+                        // "* EXCLUDE (" + column names + ")"
+                        11 + excluded_columns.iter().map(|c| c.len()).sum::<usize>()
+                            + (excluded_columns.len().saturating_sub(1) * 2) // ", " separators
+                    }
                     SelectItem::Column { column: col, .. } => col.name.len(),
                     SelectItem::Expression { expr, alias, .. } => {
                         self.format_expression(expr).len() + 4 + alias.len() // " AS " = 4
@@ -621,6 +628,17 @@ impl<'a> AstFormatter<'a> {
     fn format_select_item(&self, result: &mut String, item: &SelectItem) {
         match item {
             SelectItem::Star { .. } => write!(result, "*").unwrap(),
+            SelectItem::StarExclude {
+                excluded_columns, ..
+            } => {
+                write!(
+                    result,
+                    "* {} ({})",
+                    self.keyword("EXCLUDE"),
+                    excluded_columns.join(", ")
+                )
+                .unwrap();
+            }
             SelectItem::Column { column: col, .. } => write!(result, "{}", col.to_sql()).unwrap(),
             SelectItem::Expression { expr, alias, .. } => {
                 write!(

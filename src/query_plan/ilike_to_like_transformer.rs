@@ -253,6 +253,17 @@ impl ILikeToLikeTransformer {
                     leading_comments,
                     trailing_comment,
                 },
+                SelectItem::StarExclude {
+                    table_prefix,
+                    excluded_columns,
+                    leading_comments,
+                    trailing_comment,
+                } => SelectItem::StarExclude {
+                    table_prefix,
+                    excluded_columns,
+                    leading_comments,
+                    trailing_comment,
+                },
             })
             .collect()
     }

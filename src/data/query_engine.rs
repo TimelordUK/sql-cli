@@ -1570,12 +1570,14 @@ impl QueryEngine {
             SelectItem::Expression { expr, .. } => contains_aggregate(expr),
             SelectItem::Column { .. } => false,
             SelectItem::Star { .. } => false,
+            SelectItem::StarExclude { .. } => false,
         });
 
         let all_aggregate_compatible = select_items.iter().all(|item| match item {
             SelectItem::Expression { expr, .. } => is_aggregate_compatible(expr),
             SelectItem::Column { .. } => false, // Columns are not aggregate-compatible
             SelectItem::Star { .. } => false,   // Star is not aggregate-compatible
+            SelectItem::StarExclude { .. } => false, // StarExclude is not aggregate-compatible
         });
 
         if has_aggregates && all_aggregate_compatible && view.row_count() > 0 {
@@ -1656,6 +1658,9 @@ impl QueryEngine {
                 } => col_ref.name.clone(),
                 SelectItem::Expression { alias, .. } => alias.clone(),
                 SelectItem::Star { .. } => unreachable!("Star should have been expanded"),
+                SelectItem::StarExclude { .. } => {
+                    unreachable!("StarExclude should have been expanded")
+                }
             };
 
             // Check if this column name has been used before
@@ -1714,6 +1719,9 @@ impl QueryEngine {
                         evaluator.evaluate(&expr, row_idx)?
                     }
                     SelectItem::Star { .. } => unreachable!("Star should have been expanded"),
+                    SelectItem::StarExclude { .. } => {
+                        unreachable!("StarExclude should have been expanded")
+                    }
                 };
                 row_values.push(value);
             }
@@ -1787,6 +1795,9 @@ impl QueryEngine {
                 } => col_ref.name.clone(),
                 SelectItem::Expression { alias, .. } => alias.clone(),
                 SelectItem::Star { .. } => unreachable!("Star should have been expanded"),
+                SelectItem::StarExclude { .. } => {
+                    unreachable!("StarExclude should have been expanded")
+                }
             };
             result_table.add_column(DataColumn::new(&column_name));
         }
@@ -1866,6 +1877,9 @@ impl QueryEngine {
                                 evaluator.evaluate(&expr, row_idx)?
                             }
                             SelectItem::Star { .. } => unreachable!(),
+                            SelectItem::StarExclude { .. } => {
+                                unreachable!("StarExclude should have been expanded")
+                            }
                         }
                     };
 
@@ -2087,6 +2101,33 @@ impl QueryEngine {
                         // Unscoped expansion: * expands to all column indices
                         for i in 0..table_columns.len() {
                             indices.push(i);
+                        }
+                    }
+                }
+                SelectItem::StarExclude {
+                    table_prefix,
+                    excluded_columns,
+                    ..
+                } => {
+                    // Expand all columns (with optional table prefix), then exclude specified ones
+                    if let Some(prefix) = table_prefix {
+                        // Scoped expansion: table.* EXCLUDE expands only columns from that table
+                        for (i, col) in table.columns.iter().enumerate() {
+                            if Self::column_matches_table(col, prefix)
+                                && !excluded_columns.contains(&col.name)
+                            {
+                                indices.push(i);
+                            }
+                        }
+                    } else {
+                        // Unscoped expansion: * EXCLUDE expands to all columns except excluded ones
+                        for (i, col_name) in table_columns.iter().enumerate() {
+                            if !excluded_columns
+                                .iter()
+                                .any(|exc| exc.eq_ignore_ascii_case(col_name))
+                            {
+                                indices.push(i);
+                            }
                         }
                     }
                 }

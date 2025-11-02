@@ -260,26 +260,45 @@ VALUES ('North', 100000), ('South', 120000), ('East', 90000), ('West', 130000)
 
 ### NICE TO HAVE - Syntactic Sugar
 
-#### 10. Column Name Inference (SELECT * EXCLUDE/REPLACE)
-**Status:** ❌ Not implemented
+#### 10. SELECT * EXCLUDE
+**Status:** ✅ **COMPLETED!**
 **Difficulty:** Easy
 **Example:**
 ```sql
 SELECT * EXCLUDE (id, internal_id) FROM sales
+SELECT * EXCLUDE (password, ssn) FROM users WHERE active = true
+```
+
+**Implementation:**
+- ✅ Parser support for `* EXCLUDE (column_list)` syntax
+- ✅ AST extension with `SelectItem::StarExclude` variant
+- ✅ Query engine expands at execution time (no transformer needed)
+- ✅ Case-insensitive column matching
+- ✅ Works with WHERE, ORDER BY, LIMIT, GROUP BY
+- ✅ DuckDB compatibility
+
+**Completed:** 2025-11-02 (v1.66.0)
+
+---
+
+#### 11. SELECT * REPLACE
+**Status:** ❌ Not implemented
+**Difficulty:** Easy
+**Example:**
+```sql
 SELECT * REPLACE (UPPER(region) AS region) FROM sales
 ```
 
 **Implementation Approach:**
-- **Transformer:** `StarExcludeReplaceExpander`
-- Expand `*` to all columns
-- Remove excluded columns
-- Replace specified columns
+- Parser support for `* REPLACE (expr AS column)` syntax
+- Similar to EXCLUDE but replaces column values
+- Expand at execution time in query engine
 
-**Estimated Effort:** 2-3 days
+**Estimated Effort:** 1-2 days
 
 ---
 
-#### 11. ILIKE (Case-Insensitive LIKE)
+#### 12. ILIKE (Case-Insensitive LIKE)
 **Status:** ✅ **COMPLETED!**
 **Difficulty:** Trivial
 **Example:**
@@ -306,7 +325,8 @@ SELECT * FROM sales WHERE region ILIKE '%north%'
 | ~~DISTINCT in aggregates~~ | High | Medium | Yes | ~~**1**~~ | ✅ Done (v1.42.0) |
 | ~~QUALIFY clause~~ | Medium | Easy | No (Snowflake) | ~~**2**~~ | ✅ Done (v1.64.0) |
 | ~~ILIKE~~ | Low | Trivial | No (Postgres) | ~~**1**~~ | ✅ Done (v1.65.0) |
-| SELECT * EXCLUDE | Low | Easy | No (DuckDB) | **1** | 📋 Next |
+| ~~SELECT * EXCLUDE~~ | Low | Easy | No (DuckDB) | ~~**1**~~ | ✅ Done (v1.66.0) |
+| SELECT * REPLACE | Low | Easy | No (DuckDB) | **1** | 📋 Next |
 | PIVOT/UNPIVOT | Medium | Medium | Yes (SQL:2016) | **3** | 📋 Ready |
 | ARRAY_AGG/STRING_AGG | Medium | Medium | Yes | **4** | 📋 Ready |
 | Correlated subqueries | High | Hard | Yes | **5** | ⚠️ Complex |
@@ -326,10 +346,11 @@ SELECT * FROM sales WHERE region ILIKE '%north%'
 
 ### Short-term (1-2 months)
 1. ✅ Add ILIKE operator (case-insensitive LIKE) - **DONE!** (v1.65.0)
-2. Implement SELECT * EXCLUDE/REPLACE - **2-3 days** ⬅️ **NEXT**
-3. Implement PIVOT/UNPIVOT - **3-5 days**
-4. Add ARRAY_AGG and STRING_AGG - **3-4 days**
-5. Improve window function support (PARTITION BY expressions)
+2. ✅ Implement SELECT * EXCLUDE - **DONE!** (v1.66.0)
+3. Implement SELECT * REPLACE - **1-2 days** ⬅️ **NEXT**
+4. Implement PIVOT/UNPIVOT - **3-5 days**
+5. Add ARRAY_AGG and STRING_AGG - **3-4 days**
+6. Improve window function support (PARTITION BY expressions)
 
 ### Medium-term (3-6 months)
 1. Basic JOIN support (INNER, LEFT, RIGHT)
@@ -383,11 +404,12 @@ The transformer-based approach gives us a **powerful lever** to add SQL features
 **Recent Wins:**
 - ✅ v1.64.0: ORDER BY aggregates, QUALIFY clause, Unified execution
 - ✅ v1.65.0: ILIKE operator - PostgreSQL compatibility
+- ✅ v1.66.0: SELECT * EXCLUDE - DuckDB compatibility
 
 **Transformer Count:** 8 active transformers in production pipeline
 
-**Next Quick Win (Perfect for Transformers):**
-1. SELECT * EXCLUDE (2 days) - Column list manipulation ⬅️ **NEXT**
+**Next Quick Win:**
+1. SELECT * REPLACE (1-2 days) - Column value replacement ⬅️ **NEXT**
 2. PIVOT/UNPIVOT (5 days) - CASE expression generation
 
 This approach allows us to **incrementally improve** SQL support without major architectural changes, while keeping the executor simple and focused.
