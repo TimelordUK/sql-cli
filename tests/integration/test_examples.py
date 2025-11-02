@@ -138,7 +138,9 @@ def normalize_json(json_str: str) -> Optional[List]:
             try:
                 # Try to parse accumulated lines as JSON
                 obj = json.loads(line)
-                objects.append(obj)
+                # Skip empty arrays (closing ] lines) - they're not real data
+                if obj != []:
+                    objects.append(obj)
             except:
                 pass
 
