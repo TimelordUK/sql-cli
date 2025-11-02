@@ -5,6 +5,134 @@ All notable changes to SQL CLI will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.66.0] - 2025-11-02
+
+### ✨ Major Features
+
+#### **SELECT * EXCLUDE - DuckDB-Compatible Column Exclusion**
+Implements DuckDB-style `SELECT * EXCLUDE (columns...)` syntax for cleaner queries when you want most columns but not all.
+
+**New Syntax**:
+```sql
+-- Exclude sensitive columns
+SELECT * EXCLUDE (password, ssn, credit_card) FROM users WHERE active = true;
+
+-- Exclude multiple columns for cleaner output
+SELECT * EXCLUDE (created_at, updated_at, deleted_at, internal_id) FROM products;
+
+-- Works with all SQL clauses
+SELECT * EXCLUDE (eccentricity, albedo)
+FROM solar_system
+WHERE type = 'Planet'
+ORDER BY mean_distance_au;
+```
+
+**Benefits**:
+- **Security** - Easy to exclude sensitive columns (passwords, SSNs, tokens)
+- **Performance** - Skip large BLOB/TEXT columns when not needed
+- **Maintainability** - New columns auto-included without query updates
+- **Readability** - Clearer intent than listing 50+ columns manually
+
+**Implementation**:
+- Parser support for `* EXCLUDE (column_list)` syntax
+- AST extension with `SelectItem::StarExclude` variant
+- Query engine expansion at execution time (no transformer needed)
+- Case-insensitive column matching
+- Comprehensive example file: `examples/select_star_exclude.sql`
+- Formal test with 16 query validations
+
+#### **Comprehensive Line Geometry Toolkit**
+Extended vector math with complete line analysis functions for collision detection, CAD, graphics, and geometric computations.
+
+**New Functions**:
+- **`LINE_INTERSECT(p1, p2, p3, p4)`** - Find exact intersection of two infinite 2D lines
+  - Returns intersection point as vector, or NULL if parallel
+  - Example: `LINE_INTERSECT(VEC(0,0), VEC(4,4), VEC(0,4), VEC(4,0))` → `(2,2)`
+
+- **`SEGMENT_INTERSECT(p1, p2, p3, p4)`** - Check if bounded line segments intersect
+  - Returns intersection point if segments cross, NULL otherwise
+  - Crucial for collision detection - checks actual segment overlap, not extended lines
+
+- **`CLOSEST_POINT_ON_LINE(point, line_point, line_dir)`** - Project point onto line
+  - Returns closest point on line to given point
+  - Works in 2D and 3D
+  - Example: `CLOSEST_POINT_ON_LINE(VEC(2,2), VEC(0,0), VEC(1,0))` → `(2,0)`
+
+- **`POINT_LINE_DISTANCE(point, line_point, line_dir)`** - Perpendicular distance
+  - Calculate shortest distance from point to line
+  - Works in 2D and 3D
+
+- **`LINE_REFLECT_POINT(point, line_point, line_dir)`** - Mirror point across line
+  - Reflect point across a line (mirror transformation)
+  - Useful for graphics, physics, symmetry operations
+
+**Use Cases**:
+- **Collision Detection** - Check if moving objects intersect
+- **Snap-to-Grid** - Find closest point on grid lines
+- **CAD/Graphics** - Mirror images, project points
+- **Mapping** - Calculate building-to-road distances
+
+**Example File**: `examples/complete_line_analysis.sql` with 18+ demonstrations
+
+#### **Enhanced Vector Mathematics**
+Comprehensive vector operations for 2D/3D calculations.
+
+**Existing Functions** (documented):
+- `VEC(x, y)` or `VEC(x, y, z)` - Create 2D/3D vectors
+- `VEC_DOT(v1, v2)` - Dot product
+- `VEC_CROSS(v1, v2)` - Cross product
+- `VEC_LENGTH(v)` - Magnitude/length
+- `VEC_NORMALIZE(v)` - Unit vector
+- `VEC_DISTANCE(v1, v2)` - Distance between points
+- `VEC_ADD(v1, v2)` - Vector addition
+- `VEC_SUB(v1, v2)` - Vector subtraction
+- `VEC_SCALE(v, scalar)` - Scalar multiplication
+
+### 🔧 Improvements
+
+**PostgreSQL Compatibility (v1.65.0)**:
+- **ILIKE operator** - Case-insensitive LIKE with transformer
+  - `SELECT * FROM users WHERE email ILIKE '%@gmail.com'`
+  - Rewrites to `UPPER(email) LIKE UPPER('%@gmail.com')`
+  - Full pattern matching with `%` and `_` wildcards
+
+**CI/CD Enhancements**:
+- **Performance benchmarking** in GitHub Actions
+- Tracks query performance trends across pushes
+- Uploads benchmark results as artifacts (30-day retention)
+- Non-blocking - doesn't fail builds
+
+**Test Infrastructure**:
+- **Fixed capture bug** in `test_examples.py`
+- Line-by-line JSON parser now skips empty arrays
+- Multi-statement script capture works correctly
+- All 28 formal tests passing
+
+### 🐛 Bug Fixes
+
+- **REPLACE keyword conflict** - Removed REPLACE as keyword to avoid conflict with REPLACE() function
+- **Temp table persistence** - Restored in `--execute-statement` mode
+- **Test capture** - Fixed normalize_json for multi-statement output
+
+### 📚 Documentation
+
+- **Roadmap updated** - SELECT * EXCLUDE marked complete
+- **Examples enhanced** - New geometry demonstrations
+- **Function documentation** - Complete line analysis toolkit guide
+
+### 🎯 Summary
+
+**New in this release**:
+- ✅ SELECT * EXCLUDE (DuckDB compatibility)
+- ✅ 5 line geometry functions (CAD/graphics/collision detection)
+- ✅ ILIKE operator (PostgreSQL compatibility)
+- ✅ Performance benchmarking CI
+- ✅ Test infrastructure improvements
+
+**Total functions**: 100+ SQL functions including geometry, vector math, astronomy, chemistry, physics, and more!
+
+---
+
 ## [1.64.0] - 2025-11-01
 
 ### ✨ Major Features
