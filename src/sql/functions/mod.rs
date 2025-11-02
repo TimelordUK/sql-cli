@@ -867,9 +867,10 @@ impl FunctionRegistry {
     /// Register vector mathematics functions
     fn register_vector_functions(&mut self) {
         use vector::{
-            VecAddFunction, VecAngleFunction, VecCrossFunction, VecDistanceFunction,
-            VecDotFunction, VecFunction, VecMagFunction, VecNormalizeFunction, VecScaleFunction,
-            VecSubFunction,
+            ClosestPointOnLineFunction, LineIntersectFunction, LineReflectPointFunction,
+            PointLineDistanceFunction, SegmentIntersectFunction, VecAddFunction, VecAngleFunction,
+            VecCrossFunction, VecDistanceFunction, VecDotFunction, VecFunction, VecMagFunction,
+            VecNormalizeFunction, VecScaleFunction, VecSubFunction,
         };
 
         // Vector construction
@@ -887,6 +888,13 @@ impl FunctionRegistry {
         self.register(Box::new(VecDistanceFunction));
         self.register(Box::new(VecCrossFunction));
         self.register(Box::new(VecAngleFunction));
+
+        // Line geometry
+        self.register(Box::new(LineIntersectFunction));
+        self.register(Box::new(SegmentIntersectFunction));
+        self.register(Box::new(ClosestPointOnLineFunction));
+        self.register(Box::new(PointLineDistanceFunction));
+        self.register(Box::new(LineReflectPointFunction));
     }
 }
 
