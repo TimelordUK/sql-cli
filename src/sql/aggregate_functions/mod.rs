@@ -535,6 +535,11 @@ impl AggregateState for StringAggState {
                 self.values.push(dt.to_string());
                 Ok(())
             }
+            DataValue::Vector(v) => {
+                let components: Vec<String> = v.iter().map(|f| f.to_string()).collect();
+                self.values.push(format!("[{}]", components.join(",")));
+                Ok(())
+            }
         }
     }
 

@@ -28,18 +28,30 @@ pub fn compare_datavalues(a: &DataValue, b: &DataValue) -> Ordering {
         // DateTime comparisons
         (DataValue::DateTime(a), DataValue::DateTime(b)) => a.cmp(b),
 
+        // Vector comparisons (lexicographic)
+        (DataValue::Vector(a), DataValue::Vector(b)) => {
+            for (av, bv) in a.iter().zip(b.iter()) {
+                match av.partial_cmp(bv).unwrap_or(Ordering::Equal) {
+                    Ordering::Equal => continue,
+                    other => return other,
+                }
+            }
+            a.len().cmp(&b.len())
+        }
+
         // Null handling
         (DataValue::Null, DataValue::Null) => Ordering::Equal,
         (DataValue::Null, _) => Ordering::Less,
         (_, DataValue::Null) => Ordering::Greater,
 
         // Cross-type comparisons - treat as unequal with consistent ordering
-        // Order: Null < Boolean < Integer < Float < String/InternedString < DateTime
+        // Order: Null < Boolean < Integer < Float < String/InternedString < DateTime < Vector
         (DataValue::Boolean(_), DataValue::Integer(_)) => Ordering::Less,
         (DataValue::Boolean(_), DataValue::Float(_)) => Ordering::Less,
         (DataValue::Boolean(_), DataValue::String(_)) => Ordering::Less,
         (DataValue::Boolean(_), DataValue::InternedString(_)) => Ordering::Less,
         (DataValue::Boolean(_), DataValue::DateTime(_)) => Ordering::Less,
+        (DataValue::Boolean(_), DataValue::Vector(_)) => Ordering::Less,
 
         (DataValue::Integer(_), DataValue::Boolean(_)) => Ordering::Greater,
         (DataValue::Integer(i), DataValue::Float(f)) => {
@@ -49,6 +61,7 @@ pub fn compare_datavalues(a: &DataValue, b: &DataValue) -> Ordering {
         (DataValue::Integer(_), DataValue::String(_)) => Ordering::Less,
         (DataValue::Integer(_), DataValue::InternedString(_)) => Ordering::Less,
         (DataValue::Integer(_), DataValue::DateTime(_)) => Ordering::Less,
+        (DataValue::Integer(_), DataValue::Vector(_)) => Ordering::Less,
 
         (DataValue::Float(_), DataValue::Boolean(_)) => Ordering::Greater,
         (DataValue::Float(f), DataValue::Integer(i)) => {
@@ -58,22 +71,33 @@ pub fn compare_datavalues(a: &DataValue, b: &DataValue) -> Ordering {
         (DataValue::Float(_), DataValue::String(_)) => Ordering::Less,
         (DataValue::Float(_), DataValue::InternedString(_)) => Ordering::Less,
         (DataValue::Float(_), DataValue::DateTime(_)) => Ordering::Less,
+        (DataValue::Float(_), DataValue::Vector(_)) => Ordering::Less,
 
         (DataValue::String(_), DataValue::Boolean(_)) => Ordering::Greater,
         (DataValue::String(_), DataValue::Integer(_)) => Ordering::Greater,
         (DataValue::String(_), DataValue::Float(_)) => Ordering::Greater,
         (DataValue::String(_), DataValue::DateTime(_)) => Ordering::Less,
+        (DataValue::String(_), DataValue::Vector(_)) => Ordering::Less,
 
         (DataValue::InternedString(_), DataValue::Boolean(_)) => Ordering::Greater,
         (DataValue::InternedString(_), DataValue::Integer(_)) => Ordering::Greater,
         (DataValue::InternedString(_), DataValue::Float(_)) => Ordering::Greater,
         (DataValue::InternedString(_), DataValue::DateTime(_)) => Ordering::Less,
+        (DataValue::InternedString(_), DataValue::Vector(_)) => Ordering::Less,
 
         (DataValue::DateTime(_), DataValue::Boolean(_)) => Ordering::Greater,
         (DataValue::DateTime(_), DataValue::Integer(_)) => Ordering::Greater,
         (DataValue::DateTime(_), DataValue::Float(_)) => Ordering::Greater,
         (DataValue::DateTime(_), DataValue::String(_)) => Ordering::Greater,
         (DataValue::DateTime(_), DataValue::InternedString(_)) => Ordering::Greater,
+        (DataValue::DateTime(_), DataValue::Vector(_)) => Ordering::Less,
+
+        (DataValue::Vector(_), DataValue::Boolean(_)) => Ordering::Greater,
+        (DataValue::Vector(_), DataValue::Integer(_)) => Ordering::Greater,
+        (DataValue::Vector(_), DataValue::Float(_)) => Ordering::Greater,
+        (DataValue::Vector(_), DataValue::String(_)) => Ordering::Greater,
+        (DataValue::Vector(_), DataValue::InternedString(_)) => Ordering::Greater,
+        (DataValue::Vector(_), DataValue::DateTime(_)) => Ordering::Greater,
     }
 }
 

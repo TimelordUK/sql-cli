@@ -191,6 +191,7 @@ impl<'a> TemplateExpander<'a> {
             DataValue::InternedString(s) => json!(s.as_str()),
             DataValue::Boolean(b) => json!(b),
             DataValue::DateTime(dt) => json!(dt),
+            DataValue::Vector(v) => json!(v),
             DataValue::Null => Value::Null,
         }
     }

@@ -428,6 +428,10 @@ impl ModeState {
             DataValue::Float(f) => f.to_string(),
             DataValue::Boolean(b) => b.to_string(),
             DataValue::DateTime(dt) => dt.to_string(),
+            DataValue::Vector(v) => {
+                let components: Vec<String> = v.iter().map(|f| f.to_string()).collect();
+                format!("[{}]", components.join(","))
+            }
             DataValue::Null => return Ok(()),
         };
 
@@ -521,6 +525,11 @@ impl StringAggState {
             }
             DataValue::DateTime(dt) => {
                 self.values.push(dt.to_string());
+                Ok(())
+            }
+            DataValue::Vector(v) => {
+                let components: Vec<String> = v.iter().map(|f| f.to_string()).collect();
+                self.values.push(format!("[{}]", components.join(",")));
                 Ok(())
             }
         }

@@ -32,6 +32,10 @@ impl PartitionKey {
                 DataValue::Float(f) => format!("F:{}", f),
                 DataValue::Boolean(b) => format!("B:{}", b),
                 DataValue::DateTime(dt) => format!("D:{}", dt),
+                DataValue::Vector(v) => {
+                    let components: Vec<String> = v.iter().map(|f| f.to_string()).collect();
+                    format!("V:[{}]", components.join(","))
+                }
                 DataValue::Null => "N".to_string(),
             })
             .collect();

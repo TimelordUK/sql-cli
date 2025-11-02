@@ -57,6 +57,10 @@ impl SqlFunction for GroupNumFunction {
             DataValue::Float(f) => f.to_string(),
             DataValue::Boolean(b) => b.to_string(),
             DataValue::DateTime(dt) => dt.to_string(),
+            DataValue::Vector(v) => {
+                let components: Vec<String> = v.iter().map(|f| f.to_string()).collect();
+                format!("[{}]", components.join(","))
+            }
         };
 
         // For now, use a default column identifier
@@ -101,6 +105,10 @@ impl GroupNumWithContext {
             DataValue::Float(f) => f.to_string(),
             DataValue::Boolean(b) => b.to_string(),
             DataValue::DateTime(dt) => dt.to_string(),
+            DataValue::Vector(v) => {
+                let components: Vec<String> = v.iter().map(|f| f.to_string()).collect();
+                format!("[{}]", components.join(","))
+            }
             DataValue::Null => unreachable!(),
         };
 

@@ -1345,6 +1345,10 @@ fn format_datavalue(value: &DataValue) -> String {
         DataValue::InternedString(s) => s.to_string(),
         DataValue::Boolean(b) => b.to_string(),
         DataValue::DateTime(dt) => dt.to_string(),
+        DataValue::Vector(v) => {
+            let components: Vec<String> = v.iter().map(|f| f.to_string()).collect();
+            format!("[{}]", components.join(","))
+        }
     }
 }
 
@@ -1364,6 +1368,17 @@ fn datavalue_to_json(value: &DataValue) -> serde_json::Value {
         DataValue::InternedString(s) => serde_json::Value::String(s.to_string()),
         DataValue::Boolean(b) => serde_json::Value::Bool(*b),
         DataValue::DateTime(dt) => serde_json::Value::String(dt.clone()),
+        DataValue::Vector(v) => serde_json::Value::Array(
+            v.iter()
+                .map(|f| {
+                    if let Some(n) = serde_json::Number::from_f64(*f) {
+                        serde_json::Value::Number(n)
+                    } else {
+                        serde_json::Value::Null
+                    }
+                })
+                .collect(),
+        ),
     }
 }
 

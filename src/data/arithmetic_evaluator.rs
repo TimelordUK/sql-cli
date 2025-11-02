@@ -491,6 +491,11 @@ impl<'a> ArithmeticEvaluator<'a> {
             DataValue::Float(f) => f.to_string(),
             DataValue::Boolean(b) => b.to_string(),
             DataValue::DateTime(dt) => dt.to_string(),
+            DataValue::Vector(v) => {
+                // Format as "[x,y,z]"
+                let components: Vec<String> = v.iter().map(|f| f.to_string()).collect();
+                format!("[{}]", components.join(","))
+            }
             DataValue::Null => String::new(),
         }
     }

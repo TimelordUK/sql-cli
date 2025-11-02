@@ -32,6 +32,10 @@ impl SqlFunction for Md5Function {
             DataValue::Float(f) => f.to_string(),
             DataValue::Boolean(b) => b.to_string(),
             DataValue::DateTime(dt) => dt.to_string(),
+            DataValue::Vector(v) => {
+                let components: Vec<String> = v.iter().map(|f| f.to_string()).collect();
+                format!("[{}]", components.join(","))
+            }
             DataValue::Null => return Ok(DataValue::Null),
         };
 
@@ -66,6 +70,10 @@ impl SqlFunction for Sha1Function {
             DataValue::Float(f) => f.to_string(),
             DataValue::Boolean(b) => b.to_string(),
             DataValue::DateTime(dt) => dt.to_string(),
+            DataValue::Vector(v) => {
+                let components: Vec<String> = v.iter().map(|f| f.to_string()).collect();
+                format!("[{}]", components.join(","))
+            }
             DataValue::Null => return Ok(DataValue::Null),
         };
 
@@ -102,6 +110,10 @@ impl SqlFunction for Sha256Function {
             DataValue::Float(f) => f.to_string(),
             DataValue::Boolean(b) => b.to_string(),
             DataValue::DateTime(dt) => dt.to_string(),
+            DataValue::Vector(v) => {
+                let components: Vec<String> = v.iter().map(|f| f.to_string()).collect();
+                format!("[{}]", components.join(","))
+            }
             DataValue::Null => return Ok(DataValue::Null),
         };
 
@@ -138,6 +150,10 @@ impl SqlFunction for Sha512Function {
             DataValue::Float(f) => f.to_string(),
             DataValue::Boolean(b) => b.to_string(),
             DataValue::DateTime(dt) => dt.to_string(),
+            DataValue::Vector(v) => {
+                let components: Vec<String> = v.iter().map(|f| f.to_string()).collect();
+                format!("[{}]", components.join(","))
+            }
             DataValue::Null => return Ok(DataValue::Null),
         };
 

@@ -1572,6 +1572,7 @@ impl DataView {
                             DataValue::Float(f) => json!(f),
                             DataValue::Boolean(b) => json!(b),
                             DataValue::DateTime(dt) => json!(dt),
+                            DataValue::Vector(v) => json!(v),
                             DataValue::Null => json!(null),
                         };
                         obj.insert(col_name.clone(), json_value);

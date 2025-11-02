@@ -164,6 +164,11 @@ impl SubqueryExecutor {
                             }
                             DataValue::Boolean(b) => SqlExpression::BooleanLiteral(b),
                             DataValue::DateTime(dt) => SqlExpression::StringLiteral(dt),
+                            DataValue::Vector(v) => {
+                                let components: Vec<String> =
+                                    v.iter().map(|f| f.to_string()).collect();
+                                SqlExpression::StringLiteral(format!("[{}]", components.join(",")))
+                            }
                         })
                         .collect(),
                 })
@@ -188,6 +193,11 @@ impl SubqueryExecutor {
                             }
                             DataValue::Boolean(b) => SqlExpression::BooleanLiteral(b),
                             DataValue::DateTime(dt) => SqlExpression::StringLiteral(dt),
+                            DataValue::Vector(v) => {
+                                let components: Vec<String> =
+                                    v.iter().map(|f| f.to_string()).collect();
+                                SqlExpression::StringLiteral(format!("[{}]", components.join(",")))
+                            }
                         })
                         .collect(),
                 })
@@ -359,6 +369,10 @@ impl SubqueryExecutor {
             DataValue::InternedString(s) => SqlExpression::StringLiteral(s.to_string()),
             DataValue::Boolean(b) => SqlExpression::BooleanLiteral(b),
             DataValue::DateTime(dt) => SqlExpression::StringLiteral(dt),
+            DataValue::Vector(v) => {
+                let components: Vec<String> = v.iter().map(|f| f.to_string()).collect();
+                SqlExpression::StringLiteral(format!("[{}]", components.join(",")))
+            }
         }
     }
 }

@@ -744,6 +744,10 @@ impl SqlFunction for TextJoinFunction {
                 DataValue::Float(f) => Some(f.to_string()),
                 DataValue::Boolean(b) => Some(b.to_string()),
                 DataValue::DateTime(dt) => Some(dt.clone()),
+                DataValue::Vector(v) => {
+                    let components: Vec<String> = v.iter().map(|f| f.to_string()).collect();
+                    Some(format!("[{}]", components.join(",")))
+                }
                 DataValue::Null => {
                     if ignore_empty {
                         None

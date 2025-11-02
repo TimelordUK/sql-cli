@@ -779,6 +779,7 @@ fn analyze_column_types(
                 }
                 DataValue::Boolean(_) => *type_counts.entry("BOOLEAN").or_insert(0) += 1,
                 DataValue::DateTime(_) => *type_counts.entry("DATETIME").or_insert(0) += 1,
+                DataValue::Vector(_) => *type_counts.entry("VECTOR").or_insert(0) += 1,
             }
         }
     }

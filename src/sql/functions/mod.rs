@@ -40,6 +40,7 @@ pub mod text_processing;
 pub mod trigonometry;
 pub mod type_checking;
 pub mod utility;
+pub mod vector;
 
 // Re-export MethodFunction trait
 pub use string_methods::MethodFunction;
@@ -188,6 +189,7 @@ impl FunctionRegistry {
         registry.register_utility_functions();
         registry.register_bitwise_functions();
         registry.register_ansi_functions();
+        registry.register_vector_functions();
 
         registry
     }
@@ -860,6 +862,31 @@ impl FunctionRegistry {
         self.register(Box::new(AnsiBlinkFunction));
         self.register(Box::new(AnsiReverseFunction));
         self.register(Box::new(AnsiStrikethroughFunction));
+    }
+
+    /// Register vector mathematics functions
+    fn register_vector_functions(&mut self) {
+        use vector::{
+            VecAddFunction, VecAngleFunction, VecCrossFunction, VecDistanceFunction,
+            VecDotFunction, VecFunction, VecMagFunction, VecNormalizeFunction, VecScaleFunction,
+            VecSubFunction,
+        };
+
+        // Vector construction
+        self.register(Box::new(VecFunction));
+
+        // Vector operations
+        self.register(Box::new(VecAddFunction));
+        self.register(Box::new(VecSubFunction));
+        self.register(Box::new(VecScaleFunction));
+
+        // Vector analysis
+        self.register(Box::new(VecDotFunction));
+        self.register(Box::new(VecMagFunction));
+        self.register(Box::new(VecNormalizeFunction));
+        self.register(Box::new(VecDistanceFunction));
+        self.register(Box::new(VecCrossFunction));
+        self.register(Box::new(VecAngleFunction));
     }
 }
 

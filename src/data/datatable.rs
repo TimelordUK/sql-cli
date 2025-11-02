@@ -128,6 +128,7 @@ pub enum DataValue {
     Float(f64),
     Boolean(bool),
     DateTime(String), // Store as ISO 8601 string for now
+    Vector(Vec<f64>), // For vector mathematics (physics, geometry, etc.)
     Null,
 }
 
@@ -160,8 +161,15 @@ impl std::hash::Hash for DataValue {
                 5u8.hash(state);
                 dt.hash(state);
             }
-            DataValue::Null => {
+            DataValue::Vector(v) => {
                 6u8.hash(state);
+                // Hash each float's bits
+                for f in v {
+                    f.to_bits().hash(state);
+                }
+            }
+            DataValue::Null => {
+                7u8.hash(state);
             }
         }
     }
@@ -196,7 +204,10 @@ impl Serialize for DataValue {
             DataValue::DateTime(dt) => {
                 serializer.serialize_newtype_variant("DataValue", 5, "DateTime", dt)
             }
-            DataValue::Null => serializer.serialize_unit_variant("DataValue", 6, "Null"),
+            DataValue::Vector(v) => {
+                serializer.serialize_newtype_variant("DataValue", 6, "Vector", v)
+            }
+            DataValue::Null => serializer.serialize_unit_variant("DataValue", 7, "Null"),
         }
     }
 }
@@ -216,6 +227,7 @@ impl<'de> Deserialize<'de> for DataValue {
             Float,
             Boolean,
             DateTime,
+            Vector,
             Null,
         }
 
@@ -258,6 +270,10 @@ impl<'de> Deserialize<'de> for DataValue {
                         let dt: String = variant.newtype_variant()?;
                         Ok(DataValue::DateTime(dt))
                     }
+                    Field::Vector => {
+                        let v: Vec<f64> = variant.newtype_variant()?;
+                        Ok(DataValue::Vector(v))
+                    }
                     Field::Null => {
                         variant.unit_variant()?;
                         Ok(DataValue::Null)
@@ -275,6 +291,7 @@ impl<'de> Deserialize<'de> for DataValue {
                 "Float",
                 "Boolean",
                 "DateTime",
+                "Vector",
                 "Null",
             ],
             DataValueVisitor,
@@ -326,6 +343,7 @@ impl DataValue {
             DataValue::Float(_) => DataType::Float,
             DataValue::Boolean(_) => DataType::Boolean,
             DataValue::DateTime(_) => DataType::DateTime,
+            DataValue::Vector(_) => DataType::String, // Display as string "[x,y,z]"
             DataValue::Null => DataType::Null,
         }
     }
@@ -347,6 +365,11 @@ impl DataValue {
                     "false".to_string()
                 }
             }
+            DataValue::Vector(v) => {
+                // Format as "[x,y,z]"
+                let components: Vec<String> = v.iter().map(|f| f.to_string()).collect();
+                format!("[{}]", components.join(","))
+            }
             DataValue::Null => String::new(), // Empty string, minimal allocation
         }
     }
@@ -361,6 +384,10 @@ impl fmt::Display for DataValue {
             DataValue::Float(fl) => write!(f, "{fl}"),
             DataValue::Boolean(b) => write!(f, "{b}"),
             DataValue::DateTime(dt) => write!(f, "{dt}"),
+            DataValue::Vector(v) => {
+                let components: Vec<String> = v.iter().map(|fl| fl.to_string()).collect();
+                write!(f, "[{}]", components.join(","))
+            }
             DataValue::Null => write!(f, ""),
         }
     }
@@ -651,6 +678,7 @@ impl DataTable {
                 // Add string content size
                 match value {
                     DataValue::String(s) | DataValue::DateTime(s) => size += s.len(),
+                    DataValue::Vector(v) => size += v.len() * std::mem::size_of::<f64>(),
                     _ => {} // Numbers and booleans are inline
                 }
             }
@@ -1010,6 +1038,7 @@ impl DataTable {
                     DataValue::String(s) => size += s.capacity(),
                     DataValue::InternedString(_) => size += std::mem::size_of::<Arc<String>>(),
                     DataValue::DateTime(s) => size += s.capacity(),
+                    DataValue::Vector(v) => size += v.capacity() * std::mem::size_of::<f64>(),
                     _ => {} // Other types are inline
                 }
             }
