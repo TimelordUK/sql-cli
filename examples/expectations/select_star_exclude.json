@@ -1,0 +1,290 @@
+[
+  [
+    {
+      "demo": "=== Exclude Single Column ==="
+    }
+  ],
+  [
+    {
+      "albedo": 0.0,
+      "atmosphere": "Hydrogen/Helium",
+      "axial_tilt_deg": 7.25,
+      "eccentricity": 0.0,
+      "inclination_deg": 0.0,
+      "mean_distance_au": 0.0,
+      "name": "Sun",
+      "position": 0
+    },
+    {
+      "albedo": 0.142,
+      "atmosphere": "None",
+      "axial_tilt_deg": 0.034,
+      "eccentricity": 0.2056,
+      "inclination_deg": 7.0,
+      "mean_distance_au": 0.387,
+      "name": "Mercury",
+      "position": 1
+    },
+    {
+      "albedo": 0.689,
+      "atmosphere": "CO2",
+      "axial_tilt_deg": 177.4,
+      "eccentricity": 0.0067,
+      "inclination_deg": 3.4,
+      "mean_distance_au": 0.723,
+      "name": "Venus",
+      "position": 2
+    }
+  ],
+  [
+    {
+      "demo": "=== Exclude Multiple Columns ==="
+    }
+  ],
+  [
+    {
+      "albedo": 0.306,
+      "atmosphere": "N2/O2",
+      "mean_distance_au": 1.0,
+      "name": "Earth",
+      "position": 3,
+      "type": "Terrestrial"
+    },
+    {
+      "albedo": 0.17,
+      "atmosphere": "CO2",
+      "mean_distance_au": 1.524,
+      "name": "Mars",
+      "position": 4,
+      "type": "Terrestrial"
+    },
+    {
+      "albedo": 0.343,
+      "atmosphere": "H2/He",
+      "mean_distance_au": 5.204,
+      "name": "Jupiter",
+      "position": 6,
+      "type": "Gas Giant"
+    }
+  ],
+  [
+    {
+      "demo": "=== With Filtering ==="
+    }
+  ],
+  [
+    {
+      "albedo": 0.96,
+      "atmosphere": "CH4",
+      "axial_tilt_deg": 78.0,
+      "mean_distance_au": 67.668,
+      "name": "Eris",
+      "position": 11,
+      "type": "Dwarf Planet"
+    },
+    {
+      "albedo": 0.72,
+      "atmosphere": "N2/CH4/CO",
+      "axial_tilt_deg": 122.5,
+      "mean_distance_au": 39.482,
+      "name": "Pluto",
+      "position": 10,
+      "type": "Dwarf Planet"
+    },
+    {
+      "albedo": 0.29,
+      "atmosphere": "H2/He/CH4",
+      "axial_tilt_deg": 28.3,
+      "mean_distance_au": 30.047,
+      "name": "Neptune",
+      "position": 9,
+      "type": "Ice Giant"
+    },
+    {
+      "albedo": 0.3,
+      "atmosphere": "H2/He/CH4",
+      "axial_tilt_deg": 97.8,
+      "mean_distance_au": 19.201,
+      "name": "Uranus",
+      "position": 8,
+      "type": "Ice Giant"
+    },
+    {
+      "albedo": 0.342,
+      "atmosphere": "H2/He",
+      "axial_tilt_deg": 26.7,
+      "mean_distance_au": 9.582,
+      "name": "Saturn",
+      "position": 7,
+      "type": "Gas Giant"
+    },
+    {
+      "albedo": 0.343,
+      "atmosphere": "H2/He",
+      "axial_tilt_deg": 3.1,
+      "mean_distance_au": 5.204,
+      "name": "Jupiter",
+      "position": 6,
+      "type": "Gas Giant"
+    }
+  ],
+  [
+    {
+      "demo": "=== With GROUP BY ==="
+    }
+  ],
+  [
+    {
+      "avg_distance": 0.0,
+      "avg_tilt": 7.3,
+      "count": 1,
+      "type": "Star"
+    },
+    {
+      "avg_distance": 0.91,
+      "avg_tilt": 56.5,
+      "count": 4,
+      "type": "Terrestrial"
+    },
+    {
+      "avg_distance": 1.0,
+      "avg_tilt": 6.7,
+      "count": 1,
+      "type": "Moon"
+    },
+    {
+      "avg_distance": 7.39,
+      "avg_tilt": 14.9,
+      "count": 2,
+      "type": "Gas Giant"
+    },
+    {
+      "avg_distance": 24.62,
+      "avg_tilt": 63.1,
+      "count": 2,
+      "type": "Ice Giant"
+    },
+    {
+      "avg_distance": 36.64,
+      "avg_tilt": 68.2,
+      "count": 3,
+      "type": "Dwarf Planet"
+    }
+  ],
+  [
+    {
+      "demo": "=== Security: Hiding Sensitive Data ==="
+    }
+  ],
+  [
+    {
+      "atmosphere": "None",
+      "eccentricity": 0.2056,
+      "inclination_deg": 7.0,
+      "mean_distance_au": 0.387,
+      "name": "Mercury",
+      "position": 1,
+      "type": "Terrestrial"
+    },
+    {
+      "atmosphere": "CO2",
+      "eccentricity": 0.0067,
+      "inclination_deg": 3.4,
+      "mean_distance_au": 0.723,
+      "name": "Venus",
+      "position": 2,
+      "type": "Terrestrial"
+    },
+    {
+      "atmosphere": "N2/O2",
+      "eccentricity": 0.0167,
+      "inclination_deg": 0.0,
+      "mean_distance_au": 1.0,
+      "name": "Earth",
+      "position": 3,
+      "type": "Terrestrial"
+    }
+  ],
+  [
+    {
+      "demo": "=== Performance: Skip Large Columns ==="
+    }
+  ],
+  [
+    {
+      "albedo": 0.142,
+      "axial_tilt_deg": 0.034,
+      "eccentricity": 0.2056,
+      "inclination_deg": 7.0,
+      "mean_distance_au": 0.387,
+      "name": "Mercury",
+      "position": 1,
+      "type": "Terrestrial"
+    },
+    {
+      "albedo": 0.689,
+      "axial_tilt_deg": 177.4,
+      "eccentricity": 0.0067,
+      "inclination_deg": 3.4,
+      "mean_distance_au": 0.723,
+      "name": "Venus",
+      "position": 2,
+      "type": "Terrestrial"
+    },
+    {
+      "albedo": 0.306,
+      "axial_tilt_deg": 23.4,
+      "eccentricity": 0.0167,
+      "inclination_deg": 0.0,
+      "mean_distance_au": 1.0,
+      "name": "Earth",
+      "position": 3,
+      "type": "Terrestrial"
+    }
+  ],
+  [
+    {
+      "demo": "=== Readability: Clean Output ==="
+    }
+  ],
+  [
+    {
+      "atmosphere": "CO2",
+      "axial_tilt_deg": 177.4,
+      "eccentricity": 0.0067,
+      "inclination_deg": 3.4,
+      "mean_distance_au": 0.723,
+      "name": "Venus"
+    },
+    {
+      "atmosphere": "N2/O2",
+      "axial_tilt_deg": 23.4,
+      "eccentricity": 0.0167,
+      "inclination_deg": 0.0,
+      "mean_distance_au": 1.0,
+      "name": "Earth"
+    },
+    {
+      "atmosphere": "None",
+      "axial_tilt_deg": 6.7,
+      "eccentricity": 0.0549,
+      "inclination_deg": 5.1,
+      "mean_distance_au": 1.0,
+      "name": "Moon"
+    },
+    {
+      "atmosphere": "CO2",
+      "axial_tilt_deg": 25.2,
+      "eccentricity": 0.0935,
+      "inclination_deg": 1.9,
+      "mean_distance_au": 1.524,
+      "name": "Mars"
+    }
+  ],
+  [
+    {
+      "demo": "=== Without EXCLUDE (verbose) ==="
+    }
+  ],
+  []
+]

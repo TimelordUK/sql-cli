@@ -73,7 +73,7 @@ GO
 -- For demo purposes using solar_system:
 SELECT * EXCLUDE (axial_tilt_deg, albedo)  -- Exclude less important columns
 FROM solar_system
-WHERE type = 'Planet'
+WHERE type = 'Terrestrial'
 LIMIT 3;
 GO
 
