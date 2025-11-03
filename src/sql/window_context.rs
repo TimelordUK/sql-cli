@@ -5,8 +5,10 @@
 
 use std::collections::{BTreeMap, HashMap};
 use std::sync::Arc;
+use std::time::Instant;
 
 use anyhow::{anyhow, Result};
+use tracing::{debug, info};
 
 use crate::data::data_view::DataView;
 use crate::data::datatable::{DataTable, DataValue};
@@ -132,11 +134,19 @@ impl WindowContext {
 
     /// Create a new window context with a full window specification
     pub fn new_with_spec(view: Arc<DataView>, spec: WindowSpec) -> Result<Self> {
+        let overall_start = Instant::now();
         let partition_by = spec.partition_by.clone();
         let order_by = spec.order_by.clone();
+        let row_count = view.row_count();
 
         // If no partition columns, treat entire view as single partition
         if partition_by.is_empty() {
+            info!(
+                "Creating single partition (no PARTITION BY) for {} rows",
+                row_count
+            );
+            let partition_start = Instant::now();
+
             let single_partition = Self::create_single_partition(&view, &order_by)?;
             let partition_key = PartitionKey::from_values(vec![]);
 
@@ -149,6 +159,17 @@ impl WindowContext {
             let mut partitions = BTreeMap::new();
             partitions.insert(partition_key, single_partition);
 
+            info!(
+                "Single partition created in {:.2}ms (1 partition, {} rows)",
+                partition_start.elapsed().as_secs_f64() * 1000.0,
+                row_count
+            );
+
+            info!(
+                "WindowContext::new_with_spec (single partition) took {:.2}ms total",
+                overall_start.elapsed().as_secs_f64() * 1000.0
+            );
+
             return Ok(Self {
                 source: view,
                 partitions,
@@ -158,6 +179,12 @@ impl WindowContext {
         }
 
         // Create partitions based on partition_by columns
+        info!(
+            "Creating partitions with PARTITION BY for {} rows",
+            row_count
+        );
+        let partition_start = Instant::now();
+
         let mut partition_map: BTreeMap<PartitionKey, Vec<usize>> = BTreeMap::new();
         let mut row_to_partition = HashMap::new();
 
@@ -173,6 +200,7 @@ impl WindowContext {
             .collect::<Result<Vec<_>>>()?;
 
         // Group rows by partition key
+        let grouping_start = Instant::now();
         for row_idx in view.get_visible_rows() {
             // Build partition key from row values
             let mut key_values = Vec::new();
@@ -190,8 +218,17 @@ impl WindowContext {
             row_to_partition.insert(row_idx, key);
         }
 
+        info!(
+            "Partition grouping took {:.2}ms ({} partitions created)",
+            grouping_start.elapsed().as_secs_f64() * 1000.0,
+            partition_map.len()
+        );
+
         // Sort each partition according to ORDER BY
+        let sort_start = Instant::now();
         let mut partitions = BTreeMap::new();
+        let partition_count = partition_map.len();
+
         for (key, mut rows) in partition_map {
             // Sort rows within partition
             if !order_by.is_empty() {
@@ -200,6 +237,23 @@ impl WindowContext {
 
             partitions.insert(key, OrderedPartition::new(rows));
         }
+
+        info!(
+            "Partition sorting took {:.2}ms ({} partitions, ORDER BY: {})",
+            sort_start.elapsed().as_secs_f64() * 1000.0,
+            partition_count,
+            !order_by.is_empty()
+        );
+
+        info!(
+            "Total partition creation took {:.2}ms",
+            partition_start.elapsed().as_secs_f64() * 1000.0
+        );
+
+        info!(
+            "WindowContext::new_with_spec (multi-partition) took {:.2}ms total",
+            overall_start.elapsed().as_secs_f64() * 1000.0
+        );
 
         Ok(Self {
             source: view,
@@ -217,7 +271,13 @@ impl WindowContext {
         let mut rows: Vec<usize> = view.get_visible_rows();
 
         if !order_by.is_empty() {
+            let sort_start = Instant::now();
             Self::sort_rows(&mut rows, view.source(), order_by)?;
+            debug!(
+                "Single partition sort took {:.2}ms ({} rows)",
+                sort_start.elapsed().as_secs_f64() * 1000.0,
+                rows.len()
+            );
         }
 
         Ok(OrderedPartition::new(rows))
@@ -225,6 +285,8 @@ impl WindowContext {
 
     /// Sort row indices according to ORDER BY specification
     fn sort_rows(rows: &mut Vec<usize>, table: &DataTable, order_by: &[OrderByItem]) -> Result<()> {
+        let prep_start = Instant::now();
+
         // Get column indices for ORDER BY columns
         let sort_cols: Vec<(usize, bool)> = order_by
             .iter()
@@ -243,6 +305,14 @@ impl WindowContext {
                 Ok((idx, ascending))
             })
             .collect::<Result<Vec<_>>>()?;
+
+        debug!(
+            "Sort preparation took {:.2}μs ({} sort columns)",
+            prep_start.elapsed().as_micros(),
+            sort_cols.len()
+        );
+
+        let sort_start = Instant::now();
 
         // Sort rows based on column values
         rows.sort_by(|&a, &b| {
@@ -278,6 +348,12 @@ impl WindowContext {
             std::cmp::Ordering::Equal
         });
 
+        debug!(
+            "Actual sort operation took {:.2}μs ({} rows)",
+            sort_start.elapsed().as_micros(),
+            rows.len()
+        );
+
         Ok(())
     }
 
@@ -288,17 +364,41 @@ impl WindowContext {
         offset: i32,
         column: &str,
     ) -> Option<DataValue> {
+        // Note: This method is called once per row, so we use trace-level logging
+        // to avoid overwhelming the debug output
+        let start = Instant::now();
+
         // Find which partition this row belongs to
+        let partition_lookup_start = Instant::now();
         let partition_key = self.row_to_partition.get(&current_row)?;
         let partition = self.partitions.get(partition_key)?;
+        let partition_lookup_time = partition_lookup_start.elapsed();
 
         // Navigate to target row
+        let offset_nav_start = Instant::now();
         let target_row = partition.get_row_at_offset(current_row, offset)?;
+        let offset_nav_time = offset_nav_start.elapsed();
 
         // Get column value from target row
+        let value_access_start = Instant::now();
         let source_table = self.source.source();
         let col_idx = source_table.get_column_index(column)?;
-        source_table.get_value(target_row, col_idx).cloned()
+        let value = source_table.get_value(target_row, col_idx).cloned();
+        let value_access_time = value_access_start.elapsed();
+
+        // Only log if this takes more than 10 microseconds (to avoid spam)
+        let total_time = start.elapsed();
+        if total_time.as_micros() > 10 {
+            debug!(
+                "get_offset_value slow: total={:.2}μs, partition_lookup={:.2}μs, offset_nav={:.2}μs, value_access={:.2}μs",
+                total_time.as_micros(),
+                partition_lookup_time.as_micros(),
+                offset_nav_time.as_micros(),
+                value_access_time.as_micros()
+            );
+        }
+
+        value
     }
 
     /// Get row number within partition (1-based)

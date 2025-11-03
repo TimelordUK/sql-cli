@@ -284,7 +284,9 @@ pub fn get_log_buffer() -> Option<LogRingBuffer> {
 
 /// Initialize tracing with dual logging (ring buffer + file)
 pub fn init_tracing_with_dual_logging() {
-    use tracing_subscriber::{fmt, layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
+    use tracing_subscriber::{
+        fmt, layer::SubscriberExt, util::SubscriberInitExt, EnvFilter, Layer,
+    };
 
     // Initialize the dual logger (ring buffer + file)
     let dual_logger = crate::dual_logging::init_dual_logger();
@@ -307,10 +309,30 @@ pub fn init_tracing_with_dual_logging() {
     // Set up env filter - default to TRACE for everything to catch all logs
     let filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("trace"));
 
-    tracing_subscriber::registry()
-        .with(filter)
-        .with(fmt_layer)
-        .init();
+    // If RUST_LOG is set, also output to stderr for non-interactive mode
+    let use_stderr = std::env::var("RUST_LOG").is_ok();
+
+    if use_stderr {
+        // Create a stderr layer for non-interactive mode
+        let stderr_layer = fmt::layer()
+            .with_writer(std::io::stderr)
+            .with_target(true)
+            .with_level(true)
+            .with_ansi(true)
+            .compact()
+            .with_filter(filter.clone());
+
+        tracing_subscriber::registry()
+            .with(filter)
+            .with(fmt_layer)
+            .with(stderr_layer)
+            .init();
+    } else {
+        tracing_subscriber::registry()
+            .with(filter)
+            .with(fmt_layer)
+            .init();
+    }
 
     // Log initial message
     tracing::info!(target: "EnhancedTuiApp", "Logging system initialized with dual output");

@@ -23,6 +23,7 @@ use crate::sql::aggregates::{contains_aggregate, is_aggregate_compatible};
 use crate::sql::parser::ast::ColumnRef;
 use crate::sql::parser::ast::SetOperation;
 use crate::sql::parser::ast::TableSource;
+use crate::sql::parser::ast::WindowSpec;
 use crate::sql::recursive_parser::{
     CTEType, OrderByItem, Parser, SelectItem, SelectStatement, SortDirection, SqlExpression,
     TableFunction,
@@ -399,6 +400,83 @@ impl QueryEngine {
                 Self::contains_unnest(base) || args.iter().any(Self::contains_unnest)
             }
             _ => false,
+        }
+    }
+
+    /// Collect all WindowSpecs from an expression (helper for pre-creating contexts)
+    fn collect_window_specs(expr: &SqlExpression, specs: &mut Vec<WindowSpec>) {
+        match expr {
+            SqlExpression::WindowFunction {
+                window_spec, args, ..
+            } => {
+                // Add this window spec
+                specs.push(window_spec.clone());
+                // Recursively check arguments
+                for arg in args {
+                    Self::collect_window_specs(arg, specs);
+                }
+            }
+            SqlExpression::BinaryOp { left, right, .. } => {
+                Self::collect_window_specs(left, specs);
+                Self::collect_window_specs(right, specs);
+            }
+            SqlExpression::Not { expr } => {
+                Self::collect_window_specs(expr, specs);
+            }
+            SqlExpression::FunctionCall { args, .. } => {
+                for arg in args {
+                    Self::collect_window_specs(arg, specs);
+                }
+            }
+            SqlExpression::CaseExpression {
+                when_branches,
+                else_branch,
+            } => {
+                for branch in when_branches {
+                    Self::collect_window_specs(&branch.condition, specs);
+                    Self::collect_window_specs(&branch.result, specs);
+                }
+                if let Some(else_expr) = else_branch {
+                    Self::collect_window_specs(else_expr, specs);
+                }
+            }
+            SqlExpression::SimpleCaseExpression {
+                expr,
+                when_branches,
+                else_branch,
+            } => {
+                Self::collect_window_specs(expr, specs);
+                for branch in when_branches {
+                    Self::collect_window_specs(&branch.value, specs);
+                    Self::collect_window_specs(&branch.result, specs);
+                }
+                if let Some(else_expr) = else_branch {
+                    Self::collect_window_specs(else_expr, specs);
+                }
+            }
+            SqlExpression::InList { expr, values, .. } => {
+                Self::collect_window_specs(expr, specs);
+                for item in values {
+                    Self::collect_window_specs(item, specs);
+                }
+            }
+            SqlExpression::ChainedMethodCall { base, args, .. } => {
+                Self::collect_window_specs(base, specs);
+                for arg in args {
+                    Self::collect_window_specs(arg, specs);
+                }
+            }
+            // Leaf nodes - no recursion needed
+            SqlExpression::Column(_)
+            | SqlExpression::NumberLiteral(_)
+            | SqlExpression::StringLiteral(_)
+            | SqlExpression::BooleanLiteral(_)
+            | SqlExpression::Null
+            | SqlExpression::DateTimeToday { .. }
+            | SqlExpression::DateTimeConstructor { .. }
+            | SqlExpression::MethodCall { .. } => {}
+            // Catch-all for any other variants
+            _ => {}
         }
     }
 
@@ -1782,6 +1860,31 @@ impl QueryEngine {
                 );
                 evaluator = evaluator.with_table_aliases(aliases);
             }
+        }
+
+        // OPTIMIZATION: Pre-create WindowContexts before the row loop
+        // This avoids 50,000+ redundant context lookups
+        if has_window_functions {
+            let preload_start = Instant::now();
+
+            // Extract all unique WindowSpecs from SELECT items
+            let mut window_specs = Vec::new();
+            for item in &expanded_items {
+                if let SelectItem::Expression { expr, .. } = item {
+                    Self::collect_window_specs(expr, &mut window_specs);
+                }
+            }
+
+            // Pre-create all WindowContexts
+            for spec in &window_specs {
+                let _ = evaluator.get_or_create_window_context(spec);
+            }
+
+            debug!(
+                "Pre-created {} WindowContext(s) in {:.2}ms",
+                window_specs.len(),
+                preload_start.elapsed().as_secs_f64() * 1000.0
+            );
         }
 
         for &row_idx in visible_rows {

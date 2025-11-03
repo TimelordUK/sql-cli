@@ -1,0 +1,10 @@
+Window Function Baseline - 10000 rows
+Date: Mon Nov  3 21:09:28 GMT 2025
+Binary: /home/me/dev/sql-cli/target/release/sql-cli
+
+row_number_no_partition: 311ms
+lag_with_partition: 389ms
+multiple_functions: 917ms
+lead_no_partition: 387ms
+row_number_with_partition: 367ms
+lag_no_partition: 348ms

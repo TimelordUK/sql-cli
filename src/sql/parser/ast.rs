@@ -267,6 +267,15 @@ pub enum SortDirection {
     Desc,
 }
 
+impl SortDirection {
+    pub fn as_u8(&self) -> u8 {
+        match self {
+            SortDirection::Asc => 0,
+            SortDirection::Desc => 1,
+        }
+    }
+}
+
 /// Legacy structure - kept for backward compatibility
 /// New code should use OrderByItem
 #[derive(Debug, Clone)]
@@ -314,10 +323,19 @@ pub enum FrameBound {
 }
 
 /// Window frame unit (ROWS or RANGE)
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub enum FrameUnit {
     Rows,
     Range,
+}
+
+impl FrameUnit {
+    pub fn as_u8(&self) -> u8 {
+        match self {
+            FrameUnit::Rows => 0,
+            FrameUnit::Range => 1,
+        }
+    }
 }
 
 /// Window frame specification
@@ -333,6 +351,41 @@ pub struct WindowSpec {
     pub partition_by: Vec<String>,
     pub order_by: Vec<OrderByItem>,
     pub frame: Option<WindowFrame>, // Optional window frame
+}
+
+impl WindowSpec {
+    /// Compute a fast hash for cache key purposes
+    /// Much faster than format!("{:?}", spec) used previously
+    pub fn compute_hash(&self) -> u64 {
+        use std::collections::hash_map::DefaultHasher;
+        use std::hash::{Hash, Hasher};
+
+        let mut hasher = DefaultHasher::new();
+
+        // Hash partition_by columns
+        for col in &self.partition_by {
+            col.hash(&mut hasher);
+        }
+
+        // Hash order_by items (just the column names for simplicity)
+        for item in &self.order_by {
+            // For ORDER BY, we typically just have column references
+            // Hash a string representation for simplicity
+            format!("{:?}", item.expr).hash(&mut hasher);
+            item.direction.as_u8().hash(&mut hasher);
+        }
+
+        // Hash frame specification
+        if let Some(ref frame) = self.frame {
+            frame.unit.as_u8().hash(&mut hasher);
+            format!("{:?}", frame.start).hash(&mut hasher);
+            if let Some(ref end) = frame.end {
+                format!("{:?}", end).hash(&mut hasher);
+            }
+        }
+
+        hasher.finish()
+    }
 }
 
 // ===== SELECT Statement Types =====

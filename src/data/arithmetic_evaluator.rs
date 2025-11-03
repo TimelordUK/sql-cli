@@ -12,7 +12,8 @@ use crate::sql::window_functions::{ExpressionEvaluator, WindowFunctionRegistry};
 use anyhow::{anyhow, Result};
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
-use tracing::debug;
+use std::time::Instant;
+use tracing::{debug, info};
 
 /// Evaluates SQL expressions to compute `DataValues` (for SELECT clauses)
 /// This is different from `RecursiveWhereEvaluator` which returns boolean
@@ -24,7 +25,7 @@ pub struct ArithmeticEvaluator<'a> {
     new_aggregate_registry: Arc<AggregateFunctionRegistry>, // New registry
     window_function_registry: Arc<WindowFunctionRegistry>,
     visible_rows: Option<Vec<usize>>, // For aggregate functions on filtered views
-    window_contexts: HashMap<String, Arc<WindowContext>>, // Cache window contexts by spec
+    window_contexts: HashMap<u64, Arc<WindowContext>>, // Cache window contexts by hash
     table_aliases: HashMap<String, String>, // Map alias -> table name for qualified columns
 }
 
@@ -860,13 +861,26 @@ impl<'a> ArithmeticEvaluator<'a> {
     }
 
     /// Get or create a WindowContext for the given specification
-    fn get_or_create_window_context(&mut self, spec: &WindowSpec) -> Result<Arc<WindowContext>> {
-        // Create a key for caching based on the spec
-        let key = format!("{:?}", spec);
+    /// Public to allow pre-creation of contexts in query engine (optimization)
+    pub fn get_or_create_window_context(
+        &mut self,
+        spec: &WindowSpec,
+    ) -> Result<Arc<WindowContext>> {
+        let overall_start = Instant::now();
+
+        // Create a hash-based key for fast caching (much faster than format!("{:?}", spec))
+        let key = spec.compute_hash();
 
         if let Some(context) = self.window_contexts.get(&key) {
+            info!(
+                "WindowContext cache hit for spec (lookup: {:.2}μs)",
+                overall_start.elapsed().as_micros()
+            );
             return Ok(Arc::clone(context));
         }
+
+        info!("WindowContext cache miss - creating new context");
+        let dataview_start = Instant::now();
 
         // Create a DataView from the table (with visible rows if filtered)
         let data_view = if let Some(ref _visible_rows) = self.visible_rows {
@@ -879,11 +893,29 @@ impl<'a> ArithmeticEvaluator<'a> {
             DataView::new(Arc::new(self.table.clone()))
         };
 
+        info!(
+            "DataView creation took {:.2}μs",
+            dataview_start.elapsed().as_micros()
+        );
+        let context_start = Instant::now();
+
         // Create the WindowContext with the full spec (including frame)
         let context = WindowContext::new_with_spec(Arc::new(data_view), spec.clone())?;
 
+        info!(
+            "WindowContext::new_with_spec took {:.2}ms (rows: {})",
+            context_start.elapsed().as_secs_f64() * 1000.0,
+            self.table.row_count()
+        );
+
         let context = Arc::new(context);
         self.window_contexts.insert(key, Arc::clone(&context));
+
+        info!(
+            "Total WindowContext creation (cache miss) took {:.2}ms",
+            overall_start.elapsed().as_secs_f64() * 1000.0
+        );
+
         Ok(context)
     }
 
@@ -895,6 +927,7 @@ impl<'a> ArithmeticEvaluator<'a> {
         spec: &WindowSpec,
         row_index: usize,
     ) -> Result<DataValue> {
+        let func_start = Instant::now();
         let name_upper = name.to_uppercase();
 
         // First check if this is a syntactic sugar function in the registry
@@ -935,14 +968,28 @@ impl<'a> ArithmeticEvaluator<'a> {
                 row_index,
             };
 
+            let compute_start = Instant::now();
             // Call the window function's compute method
-            return window_fn.compute(&context, row_index, args, &mut adapter);
+            let result = window_fn.compute(&context, row_index, args, &mut adapter);
+
+            info!(
+                "{} (registry) evaluation: total={:.2}μs, compute={:.2}μs",
+                name_upper,
+                func_start.elapsed().as_micros(),
+                compute_start.elapsed().as_micros()
+            );
+
+            return result;
         }
 
         // Fall back to built-in window functions
+        let context_start = Instant::now();
         let context = self.get_or_create_window_context(spec)?;
+        let context_time = context_start.elapsed();
 
-        match name_upper.as_str() {
+        let eval_start = Instant::now();
+
+        let result = match name_upper.as_str() {
             "LAG" => {
                 // LAG(column, offset, default)
                 if args.is_empty() {
@@ -965,10 +1012,19 @@ impl<'a> ArithmeticEvaluator<'a> {
                     1
                 };
 
+                let offset_start = Instant::now();
                 // Get value at offset
-                Ok(context
+                let value = context
                     .get_offset_value(row_index, -offset, &column.name)
-                    .unwrap_or(DataValue::Null))
+                    .unwrap_or(DataValue::Null);
+
+                debug!(
+                    "LAG offset access took {:.2}μs (offset={})",
+                    offset_start.elapsed().as_micros(),
+                    offset
+                );
+
+                Ok(value)
             }
             "LEAD" => {
                 // LEAD(column, offset, default)
@@ -992,10 +1048,19 @@ impl<'a> ArithmeticEvaluator<'a> {
                     1
                 };
 
+                let offset_start = Instant::now();
                 // Get value at offset
-                Ok(context
+                let value = context
                     .get_offset_value(row_index, offset, &column.name)
-                    .unwrap_or(DataValue::Null))
+                    .unwrap_or(DataValue::Null);
+
+                debug!(
+                    "LEAD offset access took {:.2}μs (offset={})",
+                    offset_start.elapsed().as_micros(),
+                    offset
+                );
+
+                Ok(value)
             }
             "ROW_NUMBER" => {
                 // ROW_NUMBER() - no arguments
@@ -1251,7 +1316,19 @@ impl<'a> ArithmeticEvaluator<'a> {
                 }
             }
             _ => Err(anyhow!("Unknown window function: {}", name)),
-        }
+        };
+
+        let eval_time = eval_start.elapsed();
+
+        info!(
+            "{} (built-in) evaluation: total={:.2}μs, context={:.2}μs, eval={:.2}μs",
+            name_upper,
+            func_start.elapsed().as_micros(),
+            context_time.as_micros(),
+            eval_time.as_micros()
+        );
+
+        result
     }
 
     /// Evaluate a method call on a column (e.g., `column.Trim()`)
