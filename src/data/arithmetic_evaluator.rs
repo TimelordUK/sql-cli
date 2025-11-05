@@ -957,9 +957,9 @@ impl<'a> ArithmeticEvaluator<'a> {
                 fn evaluate(
                     &mut self,
                     expr: &SqlExpression,
-                    _row_index: usize,
+                    row_index: usize,
                 ) -> Result<DataValue> {
-                    self.evaluator.evaluate(expr, self.row_index)
+                    self.evaluator.evaluate(expr, row_index)
                 }
             }
 
@@ -1151,9 +1151,16 @@ impl<'a> ArithmeticEvaluator<'a> {
                     _ => return Err(anyhow!("AVG argument must be a column")),
                 };
 
-                Ok(context
-                    .get_frame_avg(row_index, &column.name)
-                    .unwrap_or(DataValue::Null))
+                // Use frame-aware avg if frame is specified, otherwise use partition avg
+                if context.has_frame() {
+                    Ok(context
+                        .get_frame_avg(row_index, &column.name)
+                        .unwrap_or(DataValue::Null))
+                } else {
+                    Ok(context
+                        .get_partition_avg(row_index, &column.name)
+                        .unwrap_or(DataValue::Null))
+                }
             }
             "STDDEV" | "STDEV" => {
                 // STDDEV(column) OVER (PARTITION BY ... ROWS n PRECEDING)

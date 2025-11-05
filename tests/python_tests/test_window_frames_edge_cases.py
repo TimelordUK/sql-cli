@@ -79,7 +79,7 @@ def test_edge_case_1():
         print(merged)
 
     os.remove(test_file)
-    return avg_match and min_match and max_match
+    assert avg_match and min_match and max_match, "Window frame calculations do not match expected values"
 
 def test_edge_case_2():
     """Test BETWEEN with various combinations"""
@@ -128,7 +128,7 @@ def test_edge_case_2():
         print(merged[['id', 'value', 'avg_5', 'avg_5_manual']])
 
     os.remove(test_file)
-    return avg_match
+    assert avg_match, "Test assertion failed"
 
 def test_edge_case_3():
     """Test with NULL values"""
@@ -179,7 +179,7 @@ def test_edge_case_3():
         print(merged)
 
     os.remove(test_file)
-    return avg_match and count_match and count_all_match
+    assert avg_match and count_match and count_all_match, "NULL value handling is not correct"
 
 def test_edge_case_4():
     """Test FIRST_VALUE and LAST_VALUE with frames"""
@@ -239,7 +239,7 @@ def test_edge_case_4():
         print(sql_df)
 
     os.remove(test_file)
-    return match
+    assert match, "FIRST_VALUE/LAST_VALUE with frames not working correctly"
 
 def test_edge_case_5():
     """Test window frames with duplicate values and ordering"""
@@ -281,7 +281,7 @@ def test_edge_case_5():
         print("  ✗ Row numbers not unique with duplicate values")
 
     os.remove(test_file)
-    return rn_unique
+    assert rn_unique, "Row numbers not unique with duplicate values"
 
 def main():
     """Run all edge case tests"""

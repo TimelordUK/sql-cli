@@ -70,7 +70,7 @@ def test_moving_average():
         print("  ✗ Moving average has discrepancies:")
         print(comparison[comparison['diff'] > 0.0001])
 
-    return comparison
+    assert max_diff < 0.0001, f"Moving average has discrepancies. Max difference: {max_diff}"
 
 def test_min_max_window():
     """Test MIN/MAX over window frames"""
@@ -126,7 +126,7 @@ def test_min_max_window():
             print("  MAX issues:")
             print(comparison[comparison['max_diff'] > 0.0001][['date', 'close', 'max_3day', 'max_3day_pandas']])
 
-    return comparison
+    assert max_min_diff < 0.0001 and max_max_diff < 0.0001, f"MIN/MAX has discrepancies. Min diff: {max_min_diff}, Max diff: {max_max_diff}"
 
 def test_unbounded_preceding():
     """Test UNBOUNDED PRECEDING (cumulative calculations)"""
@@ -189,7 +189,7 @@ def test_unbounded_preceding():
             print("  AVG issues:")
             print(comparison[comparison['avg_diff'] > 0.0001][['date', 'avg_cumulative', 'avg_cumulative_pandas']])
 
-    return comparison
+    assert max_min_diff < 0.0001 and max_max_diff < 0.0001 and max_avg_diff < 0.0001, f"UNBOUNDED PRECEDING has discrepancies. Min diff: {max_min_diff}, Max diff: {max_max_diff}, Avg diff: {max_avg_diff}"
 
 def test_sum_window():
     """Test SUM over window frames"""
@@ -232,7 +232,7 @@ def test_sum_window():
         print("  ✗ SUM has discrepancies:")
         print(comparison[comparison['diff'] > 0.0001])
 
-    return comparison
+    assert max_diff < 0.0001, f"Moving average has discrepancies. Max difference: {max_diff}"
 
 def test_lag_lead():
     """Test LAG/LEAD functions"""
@@ -298,7 +298,7 @@ def test_lag_lead():
             print("  LEAD(1) issues:")
             print(comparison[~comparison['lead_1_match']][['date', 'lead_1', 'lead_1_pandas']])
 
-    return comparison
+    assert all_match, "LAG/LEAD has discrepancies"
 
 def main():
     """Run all verification tests"""
