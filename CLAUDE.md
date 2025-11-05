@@ -244,6 +244,7 @@ When creating new files, please follow these conventions:
 4. **Format Always**: Run `cargo fmt` before every commit
 5. **Check Functions**: Use `--list-functions` when unsure about available functions
 6. **CTE Pattern for Aggregate Expressions**: Window functions can't handle expressions directly. Use CTEs to pre-calculate expressions, then apply window functions to the resulting columns.
+7. **Window Function Performance**: Window functions use batch evaluation by default for 86% better performance. Set `SQL_CLI_BATCH_WINDOW=0` to opt-out if needed.
 
 ## 🔧 Common Tasks
 

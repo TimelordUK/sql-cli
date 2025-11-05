@@ -1962,10 +1962,27 @@ impl QueryEngine {
             computed_table.add_column(DataColumn::new(&column_name));
         }
 
-        // Check feature flag for batch evaluation (Step 3)
-        let use_batch_evaluation = std::env::var("SQL_CLI_BATCH_WINDOW")
-            .map(|v| v == "1" || v.to_lowercase() == "true")
-            .unwrap_or(false);
+        // Check if batch evaluation can be used
+        // Batch evaluation is the default but we need to check if all window functions
+        // are standalone (not embedded in expressions)
+        let can_use_batch = expanded_items.iter().all(|item| {
+            match item {
+                SelectItem::Expression { expr, .. } => {
+                    // Only use batch evaluation if the expression IS a window function,
+                    // not if it CONTAINS a window function
+                    matches!(expr, SqlExpression::WindowFunction { .. })
+                        || !Self::contains_window_function(expr)
+                }
+                _ => true, // Non-expressions are fine
+            }
+        });
+
+        // Batch evaluation is now the default mode for improved performance
+        // Users can opt-out by setting SQL_CLI_BATCH_WINDOW=0 or false
+        let use_batch_evaluation = can_use_batch
+            && std::env::var("SQL_CLI_BATCH_WINDOW")
+                .map(|v| v != "0" && v.to_lowercase() != "false")
+                .unwrap_or(true);
 
         // Store window specs for batch evaluation if needed
         let batch_window_specs = if use_batch_evaluation && has_window_functions {
@@ -2245,11 +2262,14 @@ impl QueryEngine {
                             }
                         }
                         SelectItem::Expression { expr, .. } => {
-                            // Check if this is a window function expression
-                            if Self::contains_window_function(expr) {
-                                // Already handled above
+                            // For batch evaluation, we need to handle expressions differently
+                            // If this is just a window function by itself, we already computed it
+                            if matches!(expr, SqlExpression::WindowFunction { .. }) {
+                                // Pure window function - already handled in batch evaluation
                                 continue;
                             }
+                            // For expressions containing window functions or regular expressions,
+                            // evaluate them normally
                             evaluator.evaluate(&expr, source_row_idx)?
                         }
                         SelectItem::Star { .. } => unreachable!("Star should have been expanded"),
