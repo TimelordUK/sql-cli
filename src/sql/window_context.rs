@@ -480,6 +480,16 @@ impl WindowContext {
         self.spec.frame.is_some()
     }
 
+    /// Check if this is a running aggregate frame (UNBOUNDED PRECEDING to CURRENT ROW)
+    pub fn is_running_aggregate_frame(&self) -> bool {
+        if let Some(frame) = &self.spec.frame {
+            matches!(frame.start, FrameBound::UnboundedPreceding) && frame.end.is_none()
+        // None means CURRENT ROW
+        } else {
+            false
+        }
+    }
+
     /// Get the source DataView
     pub fn source(&self) -> &DataTable {
         self.source.source()
@@ -813,6 +823,166 @@ impl WindowContext {
         }
     }
 
+    /// Calculate average of a column over the partition containing the given row
+    pub fn get_partition_avg(&self, row_index: usize, column: &str) -> Option<DataValue> {
+        let partition_key = self.row_to_partition.get(&row_index)?;
+        let partition = self.partitions.get(partition_key)?;
+        let source_table = self.source.source();
+        let col_idx = source_table.get_column_index(column)?;
+
+        let mut sum = 0.0;
+        let mut count = 0;
+
+        // Sum all values in the partition
+        for &row_idx in &partition.rows {
+            if let Some(value) = source_table.get_value(row_idx, col_idx) {
+                match value {
+                    DataValue::Integer(i) => {
+                        sum += *i as f64;
+                        count += 1;
+                    }
+                    DataValue::Float(f) => {
+                        sum += f;
+                        count += 1;
+                    }
+                    DataValue::Null => {
+                        // Skip NULL values
+                    }
+                    _ => {
+                        // Non-numeric values - return NULL
+                        return Some(DataValue::Null);
+                    }
+                }
+            }
+        }
+
+        if count == 0 {
+            Some(DataValue::Null)
+        } else {
+            Some(DataValue::Float(sum / count as f64))
+        }
+    }
+
+    /// Calculate minimum value of a column over the partition containing the given row
+    pub fn get_partition_min(&self, row_index: usize, column: &str) -> Option<DataValue> {
+        let partition_key = self.row_to_partition.get(&row_index)?;
+        let partition = self.partitions.get(partition_key)?;
+        let source_table = self.source.source();
+        let col_idx = source_table.get_column_index(column)?;
+
+        let mut min_value: Option<DataValue> = None;
+
+        for &row_idx in &partition.rows {
+            if let Some(value) = source_table.get_value(row_idx, col_idx) {
+                if !matches!(value, DataValue::Null) {
+                    match &min_value {
+                        None => min_value = Some(value.clone()),
+                        Some(current_min) => {
+                            use crate::data::datavalue_compare::compare_datavalues;
+                            if compare_datavalues(value, current_min).is_lt() {
+                                min_value = Some(value.clone());
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        min_value.or(Some(DataValue::Null))
+    }
+
+    /// Calculate maximum value of a column over the partition containing the given row
+    pub fn get_partition_max(&self, row_index: usize, column: &str) -> Option<DataValue> {
+        let partition_key = self.row_to_partition.get(&row_index)?;
+        let partition = self.partitions.get(partition_key)?;
+        let source_table = self.source.source();
+        let col_idx = source_table.get_column_index(column)?;
+
+        let mut max_value: Option<DataValue> = None;
+
+        for &row_idx in &partition.rows {
+            if let Some(value) = source_table.get_value(row_idx, col_idx) {
+                if !matches!(value, DataValue::Null) {
+                    match &max_value {
+                        None => max_value = Some(value.clone()),
+                        Some(current_max) => {
+                            use crate::data::datavalue_compare::compare_datavalues;
+                            if compare_datavalues(value, current_max).is_gt() {
+                                max_value = Some(value.clone());
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        max_value.or(Some(DataValue::Null))
+    }
+
+    /// Get all row indices in the partition containing the given row
+    pub fn get_partition_rows(&self, row_index: usize) -> Vec<usize> {
+        if let Some(partition_key) = self.row_to_partition.get(&row_index) {
+            if let Some(partition) = self.partitions.get(partition_key) {
+                return partition.rows.clone();
+            }
+        }
+        vec![]
+    }
+
+    /// Calculate minimum value within the frame for a given row
+    pub fn get_frame_min(&self, row_index: usize, column: &str) -> Option<DataValue> {
+        let frame_rows = self.get_frame_rows(row_index);
+        let source_table = self.source.source();
+        let col_idx = source_table.get_column_index(column)?;
+
+        let mut min_value: Option<DataValue> = None;
+
+        for &frame_row_idx in &frame_rows {
+            if let Some(value) = source_table.get_value(frame_row_idx, col_idx) {
+                if !matches!(value, DataValue::Null) {
+                    match &min_value {
+                        None => min_value = Some(value.clone()),
+                        Some(current_min) => {
+                            use crate::data::datavalue_compare::compare_datavalues;
+                            if compare_datavalues(value, current_min).is_lt() {
+                                min_value = Some(value.clone());
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        min_value.or(Some(DataValue::Null))
+    }
+
+    /// Calculate maximum value within the frame for a given row
+    pub fn get_frame_max(&self, row_index: usize, column: &str) -> Option<DataValue> {
+        let frame_rows = self.get_frame_rows(row_index);
+        let source_table = self.source.source();
+        let col_idx = source_table.get_column_index(column)?;
+
+        let mut max_value: Option<DataValue> = None;
+
+        for &frame_row_idx in &frame_rows {
+            if let Some(value) = source_table.get_value(frame_row_idx, col_idx) {
+                if !matches!(value, DataValue::Null) {
+                    match &max_value {
+                        None => max_value = Some(value.clone()),
+                        Some(current_max) => {
+                            use crate::data::datavalue_compare::compare_datavalues;
+                            if compare_datavalues(value, current_max).is_gt() {
+                                max_value = Some(value.clone());
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        max_value.or(Some(DataValue::Null))
+    }
+
     /// Batch evaluate LAG function for multiple rows
     /// This is significantly faster than calling get_offset_value for each row
     pub fn evaluate_lag_batch(
@@ -823,29 +993,31 @@ impl WindowContext {
     ) -> Result<Vec<DataValue>> {
         let start = Instant::now();
         let mut results = Vec::with_capacity(visible_rows.len());
-        
+
         // Validate column exists
         let source_table = self.source.source();
-        let _ = source_table.get_column_index(column_name)
+        let _ = source_table
+            .get_column_index(column_name)
             .ok_or_else(|| anyhow!("Column '{}' not found", column_name))?;
-        
+
         for &row_idx in visible_rows {
             // LAG uses negative offset internally
-            let value = if let Some(val) = self.get_offset_value(row_idx, -(offset as i32), column_name) {
-                val
-            } else {
-                DataValue::Null
-            };
+            let value =
+                if let Some(val) = self.get_offset_value(row_idx, -(offset as i32), column_name) {
+                    val
+                } else {
+                    DataValue::Null
+                };
             results.push(value);
         }
-        
+
         debug!(
             "evaluate_lag_batch: {} rows in {:.3}ms ({:.2}μs/row)",
             visible_rows.len(),
             start.elapsed().as_secs_f64() * 1000.0,
             start.elapsed().as_micros() as f64 / visible_rows.len() as f64
         );
-        
+
         Ok(results)
     }
 
@@ -858,40 +1030,39 @@ impl WindowContext {
     ) -> Result<Vec<DataValue>> {
         let start = Instant::now();
         let mut results = Vec::with_capacity(visible_rows.len());
-        
+
         // Validate column exists
         let source_table = self.source.source();
-        let _ = source_table.get_column_index(column_name)
+        let _ = source_table
+            .get_column_index(column_name)
             .ok_or_else(|| anyhow!("Column '{}' not found", column_name))?;
-        
+
         for &row_idx in visible_rows {
             // LEAD uses positive offset
-            let value = if let Some(val) = self.get_offset_value(row_idx, offset as i32, column_name) {
-                val
-            } else {
-                DataValue::Null
-            };
+            let value =
+                if let Some(val) = self.get_offset_value(row_idx, offset as i32, column_name) {
+                    val
+                } else {
+                    DataValue::Null
+                };
             results.push(value);
         }
-        
+
         debug!(
             "evaluate_lead_batch: {} rows in {:.3}ms ({:.2}μs/row)",
             visible_rows.len(),
             start.elapsed().as_secs_f64() * 1000.0,
             start.elapsed().as_micros() as f64 / visible_rows.len() as f64
         );
-        
+
         Ok(results)
     }
 
     /// Batch evaluate ROW_NUMBER function for multiple rows
-    pub fn evaluate_row_number_batch(
-        &self,
-        visible_rows: &[usize],
-    ) -> Result<Vec<DataValue>> {
+    pub fn evaluate_row_number_batch(&self, visible_rows: &[usize]) -> Result<Vec<DataValue>> {
         let start = Instant::now();
         let mut results = Vec::with_capacity(visible_rows.len());
-        
+
         for &row_idx in visible_rows {
             let row_num = self.get_row_number(row_idx);
             if row_num > 0 {
@@ -901,14 +1072,731 @@ impl WindowContext {
                 results.push(DataValue::Null);
             }
         }
-        
+
         debug!(
             "evaluate_row_number_batch: {} rows in {:.3}ms ({:.2}μs/row)",
             visible_rows.len(),
             start.elapsed().as_secs_f64() * 1000.0,
             start.elapsed().as_micros() as f64 / visible_rows.len() as f64
         );
-        
+
+        Ok(results)
+    }
+
+    /// Get rank of a row within its partition
+    /// Ties get the same rank, and next rank(s) are skipped
+    pub fn get_rank(&self, row_index: usize) -> i64 {
+        if let Some(partition_key) = self.row_to_partition.get(&row_index) {
+            if let Some(partition) = self.partitions.get(partition_key) {
+                // Get the value at this row for comparison
+                if let Some(position) = partition.get_position(row_index) {
+                    let mut rows_before = 0;
+
+                    // Compare with all previous rows in the partition
+                    for i in 0..position {
+                        let prev_row = partition.rows[i];
+                        if self.compare_rows_for_rank(prev_row, row_index) < 0 {
+                            rows_before += 1;
+                        }
+                    }
+
+                    let rank = rows_before + 1;
+                    return rank;
+                }
+            }
+        }
+        1 // Default if not found
+    }
+
+    /// Get dense rank of a row within its partition
+    /// Ties get the same rank, but ranks are not skipped
+    pub fn get_dense_rank(&self, row_index: usize) -> i64 {
+        if let Some(partition_key) = self.row_to_partition.get(&row_index) {
+            if let Some(partition) = self.partitions.get(partition_key) {
+                if let Some(position) = partition.get_position(row_index) {
+                    let mut dense_rank = 1;
+                    let mut last_value_seen = None;
+
+                    // Look at all rows before this one
+                    for i in 0..position {
+                        let prev_row = partition.rows[i];
+                        let cmp = self.compare_rows_for_rank(prev_row, row_index);
+
+                        if cmp < 0 {
+                            // This row has a better rank
+                            if last_value_seen.is_none()
+                                || last_value_seen.map_or(true, |last| {
+                                    self.compare_rows_for_rank(last, prev_row) != 0
+                                })
+                            {
+                                dense_rank += 1;
+                                last_value_seen = Some(prev_row);
+                            }
+                        }
+                    }
+
+                    return dense_rank;
+                }
+            }
+        }
+        1 // Default if not found
+    }
+
+    /// Compare two rows based on ORDER BY columns for ranking
+    /// Returns -1 if row1 < row2, 0 if equal, 1 if row1 > row2
+    fn compare_rows_for_rank(&self, row1: usize, row2: usize) -> i32 {
+        let source_table = self.source.source();
+
+        for order_item in &self.spec.order_by {
+            if let SqlExpression::Column(col) = &order_item.expr {
+                if let Some(col_idx) = source_table.get_column_index(&col.name) {
+                    let val1 = source_table.get_value(row1, col_idx);
+                    let val2 = source_table.get_value(row2, col_idx);
+
+                    let cmp = match (val1, val2) {
+                        (Some(v1), Some(v2)) => {
+                            crate::data::datavalue_compare::compare_datavalues(v1, v2)
+                        }
+                        (None, Some(_)) => std::cmp::Ordering::Less,
+                        (Some(_), None) => std::cmp::Ordering::Greater,
+                        (None, None) => std::cmp::Ordering::Equal,
+                    };
+
+                    if cmp != std::cmp::Ordering::Equal {
+                        let result = match order_item.direction {
+                            SortDirection::Asc => cmp,
+                            SortDirection::Desc => cmp.reverse(),
+                        };
+
+                        return match result {
+                            std::cmp::Ordering::Less => -1,
+                            std::cmp::Ordering::Equal => 0,
+                            std::cmp::Ordering::Greater => 1,
+                        };
+                    }
+                }
+            }
+        }
+
+        0 // All columns equal
+    }
+
+    /// Batch evaluate RANK function for multiple rows
+    pub fn evaluate_rank_batch(&self, visible_rows: &[usize]) -> Result<Vec<DataValue>> {
+        let start = Instant::now();
+        let mut results = Vec::with_capacity(visible_rows.len());
+
+        for &row_idx in visible_rows {
+            let rank = self.get_rank(row_idx);
+            results.push(DataValue::Integer(rank));
+        }
+
+        debug!(
+            "evaluate_rank_batch: {} rows in {:.3}ms ({:.2}μs/row)",
+            visible_rows.len(),
+            start.elapsed().as_secs_f64() * 1000.0,
+            start.elapsed().as_micros() as f64 / visible_rows.len() as f64
+        );
+
+        Ok(results)
+    }
+
+    /// Batch evaluate DENSE_RANK function for multiple rows
+    pub fn evaluate_dense_rank_batch(&self, visible_rows: &[usize]) -> Result<Vec<DataValue>> {
+        let start = Instant::now();
+        let mut results = Vec::with_capacity(visible_rows.len());
+
+        for &row_idx in visible_rows {
+            let rank = self.get_dense_rank(row_idx);
+            results.push(DataValue::Integer(rank));
+        }
+
+        debug!(
+            "evaluate_dense_rank_batch: {} rows in {:.3}ms ({:.2}μs/row)",
+            visible_rows.len(),
+            start.elapsed().as_secs_f64() * 1000.0,
+            start.elapsed().as_micros() as f64 / visible_rows.len() as f64
+        );
+
+        Ok(results)
+    }
+
+    /// Batch evaluate SUM window aggregate
+    pub fn evaluate_sum_batch(
+        &self,
+        visible_rows: &[usize],
+        column_name: &str,
+    ) -> Result<Vec<DataValue>> {
+        let start = Instant::now();
+        let mut results = Vec::with_capacity(visible_rows.len());
+
+        // Check if this is a running aggregate (UNBOUNDED PRECEDING to CURRENT ROW)
+        let is_running_aggregate = self.is_running_aggregate_frame();
+
+        if is_running_aggregate && !visible_rows.is_empty() {
+            // Optimized path for running aggregates
+            debug!(
+                "Using optimized running sum for {} rows",
+                visible_rows.len()
+            );
+
+            // Group visible rows by partition
+            let mut partition_groups: BTreeMap<PartitionKey, Vec<(usize, usize)>> = BTreeMap::new();
+            for (idx, &row_idx) in visible_rows.iter().enumerate() {
+                if let Some(partition_key) = self.row_to_partition.get(&row_idx) {
+                    partition_groups
+                        .entry(partition_key.clone())
+                        .or_insert_with(Vec::new)
+                        .push((idx, row_idx));
+                }
+            }
+
+            let source_table = self.source.source();
+            let col_idx = source_table
+                .get_column_index(column_name)
+                .ok_or_else(|| anyhow!("Column '{}' not found", column_name))?;
+
+            // Initialize results with nulls
+            results.resize(visible_rows.len(), DataValue::Null);
+
+            // Process each partition
+            for (_partition_key, rows) in partition_groups {
+                if let Some(partition) = self.partitions.get(&_partition_key) {
+                    let mut running_sum = 0.0;
+                    let mut has_float = false;
+                    let mut position_to_sum: HashMap<usize, DataValue> = HashMap::new();
+
+                    // Calculate running sum for all positions in this partition
+                    for (pos, &row_idx) in partition.rows.iter().enumerate() {
+                        if let Some(value) = source_table.get_value(row_idx, col_idx) {
+                            match value {
+                                DataValue::Integer(i) => {
+                                    running_sum += *i as f64;
+                                }
+                                DataValue::Float(f) => {
+                                    running_sum += f;
+                                    has_float = true;
+                                }
+                                DataValue::Null => {
+                                    // Skip NULL values
+                                }
+                                _ => {
+                                    // Non-numeric value
+                                }
+                            }
+                        }
+
+                        // Store the running sum for this position
+                        if !has_float
+                            && running_sum.fract() == 0.0
+                            && running_sum >= i64::MIN as f64
+                            && running_sum <= i64::MAX as f64
+                        {
+                            position_to_sum.insert(pos, DataValue::Integer(running_sum as i64));
+                        } else {
+                            position_to_sum.insert(pos, DataValue::Float(running_sum));
+                        }
+                    }
+
+                    // Fill in results for visible rows in this partition
+                    for (result_idx, row_idx) in rows {
+                        if let Some(pos) = partition.get_position(row_idx) {
+                            results[result_idx] = position_to_sum
+                                .get(&pos)
+                                .cloned()
+                                .unwrap_or(DataValue::Null);
+                        }
+                    }
+                }
+            }
+        } else {
+            // Regular path for non-running aggregates or other frame types
+            for &row_idx in visible_rows {
+                let value = if self.has_frame() {
+                    self.get_frame_sum(row_idx, column_name)
+                        .unwrap_or(DataValue::Null)
+                } else {
+                    self.get_partition_sum(row_idx, column_name)
+                        .unwrap_or(DataValue::Null)
+                };
+                results.push(value);
+            }
+        }
+
+        debug!(
+            "evaluate_sum_batch: {} rows in {:.3}ms ({:.2}μs/row)",
+            visible_rows.len(),
+            start.elapsed().as_secs_f64() * 1000.0,
+            start.elapsed().as_micros() as f64 / visible_rows.len() as f64
+        );
+
+        Ok(results)
+    }
+
+    /// Batch evaluate AVG window aggregate
+    pub fn evaluate_avg_batch(
+        &self,
+        visible_rows: &[usize],
+        column_name: &str,
+    ) -> Result<Vec<DataValue>> {
+        let start = Instant::now();
+        let mut results = Vec::with_capacity(visible_rows.len());
+
+        // Check if this is a running aggregate (UNBOUNDED PRECEDING to CURRENT ROW)
+        let is_running_aggregate = self.is_running_aggregate_frame();
+
+        if is_running_aggregate && !visible_rows.is_empty() {
+            // Optimized path for running averages
+            debug!(
+                "Using optimized running average for {} rows",
+                visible_rows.len()
+            );
+
+            // Group visible rows by partition
+            let mut partition_groups: BTreeMap<PartitionKey, Vec<(usize, usize)>> = BTreeMap::new();
+            for (idx, &row_idx) in visible_rows.iter().enumerate() {
+                if let Some(partition_key) = self.row_to_partition.get(&row_idx) {
+                    partition_groups
+                        .entry(partition_key.clone())
+                        .or_insert_with(Vec::new)
+                        .push((idx, row_idx));
+                }
+            }
+
+            let source_table = self.source.source();
+            let col_idx = source_table
+                .get_column_index(column_name)
+                .ok_or_else(|| anyhow!("Column '{}' not found", column_name))?;
+
+            // Initialize results with nulls
+            results.resize(visible_rows.len(), DataValue::Null);
+
+            // Process each partition
+            for (_partition_key, rows) in partition_groups {
+                if let Some(partition) = self.partitions.get(&_partition_key) {
+                    let mut running_sum = 0.0;
+                    let mut count = 0;
+                    let mut position_to_avg: HashMap<usize, DataValue> = HashMap::new();
+
+                    // Calculate running average for all positions in this partition
+                    for (pos, &row_idx) in partition.rows.iter().enumerate() {
+                        if let Some(value) = source_table.get_value(row_idx, col_idx) {
+                            match value {
+                                DataValue::Integer(i) => {
+                                    running_sum += *i as f64;
+                                    count += 1;
+                                }
+                                DataValue::Float(f) => {
+                                    running_sum += f;
+                                    count += 1;
+                                }
+                                DataValue::Null => {
+                                    // Skip NULL values
+                                }
+                                _ => {
+                                    // Non-numeric value
+                                }
+                            }
+                        }
+
+                        // Store the running average for this position
+                        if count > 0 {
+                            position_to_avg
+                                .insert(pos, DataValue::Float(running_sum / count as f64));
+                        } else {
+                            position_to_avg.insert(pos, DataValue::Null);
+                        }
+                    }
+
+                    // Fill in results for visible rows in this partition
+                    for (result_idx, row_idx) in rows {
+                        if let Some(pos) = partition.get_position(row_idx) {
+                            results[result_idx] = position_to_avg
+                                .get(&pos)
+                                .cloned()
+                                .unwrap_or(DataValue::Null);
+                        }
+                    }
+                }
+            }
+        } else {
+            // Regular path for non-running aggregates or other frame types
+            for &row_idx in visible_rows {
+                let value = if self.has_frame() {
+                    self.get_frame_avg(row_idx, column_name)
+                        .unwrap_or(DataValue::Null)
+                } else {
+                    self.get_partition_avg(row_idx, column_name)
+                        .unwrap_or(DataValue::Null)
+                };
+                results.push(value);
+            }
+        }
+
+        debug!(
+            "evaluate_avg_batch: {} rows in {:.3}ms ({:.2}μs/row)",
+            visible_rows.len(),
+            start.elapsed().as_secs_f64() * 1000.0,
+            start.elapsed().as_micros() as f64 / visible_rows.len() as f64
+        );
+
+        Ok(results)
+    }
+
+    /// Batch evaluate MIN window aggregate
+    pub fn evaluate_min_batch(
+        &self,
+        visible_rows: &[usize],
+        column_name: &str,
+    ) -> Result<Vec<DataValue>> {
+        let start = Instant::now();
+        let mut results = Vec::with_capacity(visible_rows.len());
+
+        // Check if this is a running aggregate (UNBOUNDED PRECEDING to CURRENT ROW)
+        let is_running_aggregate = self.is_running_aggregate_frame();
+
+        if is_running_aggregate && !visible_rows.is_empty() {
+            // Optimized path for running minimum
+            debug!(
+                "Using optimized running minimum for {} rows",
+                visible_rows.len()
+            );
+
+            // Group visible rows by partition
+            let mut partition_groups: BTreeMap<PartitionKey, Vec<(usize, usize)>> = BTreeMap::new();
+            for (idx, &row_idx) in visible_rows.iter().enumerate() {
+                if let Some(partition_key) = self.row_to_partition.get(&row_idx) {
+                    partition_groups
+                        .entry(partition_key.clone())
+                        .or_insert_with(Vec::new)
+                        .push((idx, row_idx));
+                }
+            }
+
+            let source_table = self.source.source();
+            let col_idx = source_table
+                .get_column_index(column_name)
+                .ok_or_else(|| anyhow!("Column '{}' not found", column_name))?;
+
+            // Initialize results with nulls
+            results.resize(visible_rows.len(), DataValue::Null);
+
+            // Process each partition
+            for (_partition_key, rows) in partition_groups {
+                if let Some(partition) = self.partitions.get(&_partition_key) {
+                    let mut running_min: Option<DataValue> = None;
+                    let mut position_to_min: HashMap<usize, DataValue> = HashMap::new();
+
+                    // Calculate running minimum for all positions in this partition
+                    for (pos, &row_idx) in partition.rows.iter().enumerate() {
+                        if let Some(value) = source_table.get_value(row_idx, col_idx) {
+                            if !matches!(value, DataValue::Null) {
+                                match &running_min {
+                                    None => running_min = Some(value.clone()),
+                                    Some(current_min) => {
+                                        use crate::data::datavalue_compare::compare_datavalues;
+                                        if compare_datavalues(value, current_min).is_lt() {
+                                            running_min = Some(value.clone());
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        // Store the running minimum for this position
+                        position_to_min.insert(pos, running_min.clone().unwrap_or(DataValue::Null));
+                    }
+
+                    // Fill in results for visible rows in this partition
+                    for (result_idx, row_idx) in rows {
+                        if let Some(pos) = partition.get_position(row_idx) {
+                            results[result_idx] = position_to_min
+                                .get(&pos)
+                                .cloned()
+                                .unwrap_or(DataValue::Null);
+                        }
+                    }
+                }
+            }
+        } else {
+            // Regular path for non-running aggregates or other frame types
+            for &row_idx in visible_rows {
+                let value = if self.has_frame() {
+                    self.get_frame_min(row_idx, column_name)
+                        .unwrap_or(DataValue::Null)
+                } else {
+                    self.get_partition_min(row_idx, column_name)
+                        .unwrap_or(DataValue::Null)
+                };
+                results.push(value);
+            }
+        }
+
+        debug!(
+            "evaluate_min_batch: {} rows in {:.3}ms ({:.2}μs/row)",
+            visible_rows.len(),
+            start.elapsed().as_secs_f64() * 1000.0,
+            start.elapsed().as_micros() as f64 / visible_rows.len() as f64
+        );
+
+        Ok(results)
+    }
+
+    /// Batch evaluate MAX window aggregate
+    pub fn evaluate_max_batch(
+        &self,
+        visible_rows: &[usize],
+        column_name: &str,
+    ) -> Result<Vec<DataValue>> {
+        let start = Instant::now();
+        let mut results = Vec::with_capacity(visible_rows.len());
+
+        // Check if this is a running aggregate (UNBOUNDED PRECEDING to CURRENT ROW)
+        let is_running_aggregate = self.is_running_aggregate_frame();
+
+        if is_running_aggregate && !visible_rows.is_empty() {
+            // Optimized path for running maximum
+            debug!(
+                "Using optimized running maximum for {} rows",
+                visible_rows.len()
+            );
+
+            // Group visible rows by partition
+            let mut partition_groups: BTreeMap<PartitionKey, Vec<(usize, usize)>> = BTreeMap::new();
+            for (idx, &row_idx) in visible_rows.iter().enumerate() {
+                if let Some(partition_key) = self.row_to_partition.get(&row_idx) {
+                    partition_groups
+                        .entry(partition_key.clone())
+                        .or_insert_with(Vec::new)
+                        .push((idx, row_idx));
+                }
+            }
+
+            let source_table = self.source.source();
+            let col_idx = source_table
+                .get_column_index(column_name)
+                .ok_or_else(|| anyhow!("Column '{}' not found", column_name))?;
+
+            // Initialize results with nulls
+            results.resize(visible_rows.len(), DataValue::Null);
+
+            // Process each partition
+            for (_partition_key, rows) in partition_groups {
+                if let Some(partition) = self.partitions.get(&_partition_key) {
+                    let mut running_max: Option<DataValue> = None;
+                    let mut position_to_max: HashMap<usize, DataValue> = HashMap::new();
+
+                    // Calculate running maximum for all positions in this partition
+                    for (pos, &row_idx) in partition.rows.iter().enumerate() {
+                        if let Some(value) = source_table.get_value(row_idx, col_idx) {
+                            if !matches!(value, DataValue::Null) {
+                                match &running_max {
+                                    None => running_max = Some(value.clone()),
+                                    Some(current_max) => {
+                                        use crate::data::datavalue_compare::compare_datavalues;
+                                        if compare_datavalues(value, current_max).is_gt() {
+                                            running_max = Some(value.clone());
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        // Store the running maximum for this position
+                        position_to_max.insert(pos, running_max.clone().unwrap_or(DataValue::Null));
+                    }
+
+                    // Fill in results for visible rows in this partition
+                    for (result_idx, row_idx) in rows {
+                        if let Some(pos) = partition.get_position(row_idx) {
+                            results[result_idx] = position_to_max
+                                .get(&pos)
+                                .cloned()
+                                .unwrap_or(DataValue::Null);
+                        }
+                    }
+                }
+            }
+        } else {
+            // Regular path for non-running aggregates or other frame types
+            for &row_idx in visible_rows {
+                let value = if self.has_frame() {
+                    self.get_frame_max(row_idx, column_name)
+                        .unwrap_or(DataValue::Null)
+                } else {
+                    self.get_partition_max(row_idx, column_name)
+                        .unwrap_or(DataValue::Null)
+                };
+                results.push(value);
+            }
+        }
+
+        debug!(
+            "evaluate_max_batch: {} rows in {:.3}ms ({:.2}μs/row)",
+            visible_rows.len(),
+            start.elapsed().as_secs_f64() * 1000.0,
+            start.elapsed().as_micros() as f64 / visible_rows.len() as f64
+        );
+
+        Ok(results)
+    }
+
+    /// Batch evaluate COUNT window aggregate
+    pub fn evaluate_count_batch(
+        &self,
+        visible_rows: &[usize],
+        column_name: Option<&str>,
+    ) -> Result<Vec<DataValue>> {
+        let start = Instant::now();
+        let mut results = Vec::with_capacity(visible_rows.len());
+
+        // Check if this is a running aggregate (UNBOUNDED PRECEDING to CURRENT ROW)
+        let is_running_aggregate = self.is_running_aggregate_frame();
+
+        if is_running_aggregate && !visible_rows.is_empty() {
+            // Optimized path for running count
+            debug!(
+                "Using optimized running count for {} rows",
+                visible_rows.len()
+            );
+
+            // Group visible rows by partition
+            let mut partition_groups: BTreeMap<PartitionKey, Vec<(usize, usize)>> = BTreeMap::new();
+            for (idx, &row_idx) in visible_rows.iter().enumerate() {
+                if let Some(partition_key) = self.row_to_partition.get(&row_idx) {
+                    partition_groups
+                        .entry(partition_key.clone())
+                        .or_insert_with(Vec::new)
+                        .push((idx, row_idx));
+                }
+            }
+
+            let source_table = self.source.source();
+            let col_idx = if let Some(col_name) = column_name {
+                source_table.get_column_index(col_name)
+            } else {
+                None
+            };
+
+            // Initialize results with nulls
+            results.resize(visible_rows.len(), DataValue::Null);
+
+            // Process each partition
+            for (_partition_key, rows) in partition_groups {
+                if let Some(partition) = self.partitions.get(&_partition_key) {
+                    let mut running_count = 0i64;
+                    let mut position_to_count: HashMap<usize, DataValue> = HashMap::new();
+
+                    // Calculate running count for all positions in this partition
+                    for (pos, &row_idx) in partition.rows.iter().enumerate() {
+                        if let Some(col_idx) = col_idx {
+                            // COUNT(column) - count non-null values
+                            if let Some(value) = source_table.get_value(row_idx, col_idx) {
+                                if !matches!(value, DataValue::Null) {
+                                    running_count += 1;
+                                }
+                            }
+                        } else {
+                            // COUNT(*) - always increment
+                            running_count += 1;
+                        }
+
+                        // Store the running count for this position
+                        position_to_count.insert(pos, DataValue::Integer(running_count));
+                    }
+
+                    // Fill in results for visible rows in this partition
+                    for (result_idx, row_idx) in rows {
+                        if let Some(pos) = partition.get_position(row_idx) {
+                            results[result_idx] = position_to_count
+                                .get(&pos)
+                                .cloned()
+                                .unwrap_or(DataValue::Null);
+                        }
+                    }
+                }
+            }
+        } else {
+            // Regular path for non-running aggregates or other frame types
+            for &row_idx in visible_rows {
+                let value = if self.has_frame() {
+                    self.get_frame_count(row_idx, column_name)
+                        .unwrap_or(DataValue::Null)
+                } else {
+                    self.get_partition_count(row_idx, column_name)
+                        .unwrap_or(DataValue::Null)
+                };
+                results.push(value);
+            }
+        }
+
+        debug!(
+            "evaluate_count_batch: {} rows in {:.3}ms ({:.2}μs/row)",
+            visible_rows.len(),
+            start.elapsed().as_secs_f64() * 1000.0,
+            start.elapsed().as_micros() as f64 / visible_rows.len() as f64
+        );
+
+        Ok(results)
+    }
+
+    /// Batch evaluate FIRST_VALUE window function
+    pub fn evaluate_first_value_batch(
+        &self,
+        visible_rows: &[usize],
+        column_name: &str,
+    ) -> Result<Vec<DataValue>> {
+        let start = Instant::now();
+        let mut results = Vec::with_capacity(visible_rows.len());
+
+        for &row_idx in visible_rows {
+            let value = if self.has_frame() {
+                self.get_frame_first_value(row_idx, column_name)
+                    .unwrap_or(DataValue::Null)
+            } else {
+                self.get_first_value(row_idx, column_name)
+                    .unwrap_or(DataValue::Null)
+            };
+            results.push(value);
+        }
+
+        debug!(
+            "evaluate_first_value_batch: {} rows in {:.3}ms ({:.2}μs/row)",
+            visible_rows.len(),
+            start.elapsed().as_secs_f64() * 1000.0,
+            start.elapsed().as_micros() as f64 / visible_rows.len() as f64
+        );
+
+        Ok(results)
+    }
+
+    /// Batch evaluate LAST_VALUE window function
+    pub fn evaluate_last_value_batch(
+        &self,
+        visible_rows: &[usize],
+        column_name: &str,
+    ) -> Result<Vec<DataValue>> {
+        let start = Instant::now();
+        let mut results = Vec::with_capacity(visible_rows.len());
+
+        for &row_idx in visible_rows {
+            let value = if self.has_frame() {
+                self.get_frame_last_value(row_idx, column_name)
+                    .unwrap_or(DataValue::Null)
+            } else {
+                self.get_last_value(row_idx, column_name)
+                    .unwrap_or(DataValue::Null)
+            };
+            results.push(value);
+        }
+
+        debug!(
+            "evaluate_last_value_batch: {} rows in {:.3}ms ({:.2}μs/row)",
+            visible_rows.len(),
+            start.elapsed().as_secs_f64() * 1000.0,
+            start.elapsed().as_micros() as f64 / visible_rows.len() as f64
+        );
+
         Ok(results)
     }
 }

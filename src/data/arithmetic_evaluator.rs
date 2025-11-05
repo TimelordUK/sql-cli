@@ -1066,6 +1066,14 @@ impl<'a> ArithmeticEvaluator<'a> {
                 // ROW_NUMBER() - no arguments
                 Ok(DataValue::Integer(context.get_row_number(row_index) as i64))
             }
+            "RANK" => {
+                // RANK() - no arguments
+                Ok(DataValue::Integer(context.get_rank(row_index)))
+            }
+            "DENSE_RANK" => {
+                // DENSE_RANK() - no arguments
+                Ok(DataValue::Integer(context.get_dense_rank(row_index)))
+            }
             "FIRST_VALUE" => {
                 // FIRST_VALUE(column) OVER (... ROWS ...)
                 if args.is_empty() {

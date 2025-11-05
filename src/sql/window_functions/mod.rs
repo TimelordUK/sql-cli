@@ -9,6 +9,10 @@ use crate::data::datatable::DataValue;
 use crate::sql::parser::ast::{SqlExpression, WindowSpec};
 use crate::sql::window_context::WindowContext;
 
+// Aggregate window functions module
+mod aggregates;
+use aggregates::*;
+
 /// Window function computation trait
 /// Each window function receives:
 /// - The window context (partitions, ordering, frames)
@@ -94,6 +98,17 @@ impl WindowFunctionRegistry {
 
     /// Register built-in syntactic sugar functions
     fn register_builtin_functions(&mut self) {
+        // Window aggregate functions that can handle expressions
+        self.register(Box::new(WindowSumFunction));
+        self.register(Box::new(WindowAvgFunction));
+        self.register(Box::new(WindowMinFunction));
+        self.register(Box::new(WindowMaxFunction));
+        self.register(Box::new(WindowCountFunction));
+        self.register(Box::new(WindowStddevFunction));
+        self.register(Box::new(WindowStdevFunction)); // Alias for STDDEV
+        self.register(Box::new(WindowVarianceFunction));
+        self.register(Box::new(WindowVarFunction)); // Alias for VARIANCE
+
         // Moving average and statistics
         self.register(Box::new(MovingAvgFunction));
         self.register(Box::new(RollingStddevFunction));
