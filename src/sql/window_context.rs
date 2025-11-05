@@ -812,4 +812,103 @@ impl WindowContext {
             Some(DataValue::Integer(partition.rows.len() as i64))
         }
     }
+
+    /// Batch evaluate LAG function for multiple rows
+    /// This is significantly faster than calling get_offset_value for each row
+    pub fn evaluate_lag_batch(
+        &self,
+        visible_rows: &[usize],
+        column_name: &str,
+        offset: i64,
+    ) -> Result<Vec<DataValue>> {
+        let start = Instant::now();
+        let mut results = Vec::with_capacity(visible_rows.len());
+        
+        // Validate column exists
+        let source_table = self.source.source();
+        let _ = source_table.get_column_index(column_name)
+            .ok_or_else(|| anyhow!("Column '{}' not found", column_name))?;
+        
+        for &row_idx in visible_rows {
+            // LAG uses negative offset internally
+            let value = if let Some(val) = self.get_offset_value(row_idx, -(offset as i32), column_name) {
+                val
+            } else {
+                DataValue::Null
+            };
+            results.push(value);
+        }
+        
+        debug!(
+            "evaluate_lag_batch: {} rows in {:.3}ms ({:.2}μs/row)",
+            visible_rows.len(),
+            start.elapsed().as_secs_f64() * 1000.0,
+            start.elapsed().as_micros() as f64 / visible_rows.len() as f64
+        );
+        
+        Ok(results)
+    }
+
+    /// Batch evaluate LEAD function for multiple rows
+    pub fn evaluate_lead_batch(
+        &self,
+        visible_rows: &[usize],
+        column_name: &str,
+        offset: i64,
+    ) -> Result<Vec<DataValue>> {
+        let start = Instant::now();
+        let mut results = Vec::with_capacity(visible_rows.len());
+        
+        // Validate column exists
+        let source_table = self.source.source();
+        let _ = source_table.get_column_index(column_name)
+            .ok_or_else(|| anyhow!("Column '{}' not found", column_name))?;
+        
+        for &row_idx in visible_rows {
+            // LEAD uses positive offset
+            let value = if let Some(val) = self.get_offset_value(row_idx, offset as i32, column_name) {
+                val
+            } else {
+                DataValue::Null
+            };
+            results.push(value);
+        }
+        
+        debug!(
+            "evaluate_lead_batch: {} rows in {:.3}ms ({:.2}μs/row)",
+            visible_rows.len(),
+            start.elapsed().as_secs_f64() * 1000.0,
+            start.elapsed().as_micros() as f64 / visible_rows.len() as f64
+        );
+        
+        Ok(results)
+    }
+
+    /// Batch evaluate ROW_NUMBER function for multiple rows
+    pub fn evaluate_row_number_batch(
+        &self,
+        visible_rows: &[usize],
+    ) -> Result<Vec<DataValue>> {
+        let start = Instant::now();
+        let mut results = Vec::with_capacity(visible_rows.len());
+        
+        for &row_idx in visible_rows {
+            let row_num = self.get_row_number(row_idx);
+            if row_num > 0 {
+                results.push(DataValue::Integer(row_num as i64));
+            } else {
+                // This shouldn't happen if WindowContext is properly constructed
+                results.push(DataValue::Null);
+            }
+        }
+        
+        debug!(
+            "evaluate_row_number_batch: {} rows in {:.3}ms ({:.2}μs/row)",
+            visible_rows.len(),
+            start.elapsed().as_secs_f64() * 1000.0,
+            start.elapsed().as_micros() as f64 / visible_rows.len() as f64
+        );
+        
+        Ok(results)
+    }
 }

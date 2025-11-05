@@ -542,6 +542,101 @@ impl QueryEngine {
         }
     }
 
+    /// Extract all window function specifications from select items
+    fn extract_window_specs(items: &[SelectItem]) -> Vec<crate::data::batch_window_evaluator::WindowFunctionSpec> {
+        let mut specs = Vec::new();
+        for (idx, item) in items.iter().enumerate() {
+            if let SelectItem::Expression { expr, .. } = item {
+                Self::collect_window_function_specs(expr, idx, &mut specs);
+            }
+        }
+        specs
+    }
+
+    /// Recursively collect window function specs from an expression
+    fn collect_window_function_specs(
+        expr: &SqlExpression,
+        output_column_index: usize,
+        specs: &mut Vec<crate::data::batch_window_evaluator::WindowFunctionSpec>,
+    ) {
+        match expr {
+            SqlExpression::WindowFunction { name, args, window_spec } => {
+                specs.push(crate::data::batch_window_evaluator::WindowFunctionSpec {
+                    spec: window_spec.clone(),
+                    function_name: name.clone(),
+                    args: args.clone(),
+                    output_column_index,
+                });
+            }
+            SqlExpression::BinaryOp { left, right, .. } => {
+                Self::collect_window_function_specs(left, output_column_index, specs);
+                Self::collect_window_function_specs(right, output_column_index, specs);
+            }
+            SqlExpression::Not { expr } => {
+                Self::collect_window_function_specs(expr, output_column_index, specs);
+            }
+            SqlExpression::FunctionCall { args, .. } => {
+                for arg in args {
+                    Self::collect_window_function_specs(arg, output_column_index, specs);
+                }
+            }
+            SqlExpression::CaseExpression { when_branches, else_branch } => {
+                for branch in when_branches {
+                    Self::collect_window_function_specs(&branch.condition, output_column_index, specs);
+                    Self::collect_window_function_specs(&branch.result, output_column_index, specs);
+                }
+                if let Some(e) = else_branch {
+                    Self::collect_window_function_specs(e, output_column_index, specs);
+                }
+            }
+            SqlExpression::SimpleCaseExpression { expr, when_branches, else_branch } => {
+                Self::collect_window_function_specs(expr, output_column_index, specs);
+                for branch in when_branches {
+                    Self::collect_window_function_specs(&branch.value, output_column_index, specs);
+                    Self::collect_window_function_specs(&branch.result, output_column_index, specs);
+                }
+                if let Some(e) = else_branch {
+                    Self::collect_window_function_specs(e, output_column_index, specs);
+                }
+            }
+            SqlExpression::InList { expr, values } => {
+                Self::collect_window_function_specs(expr, output_column_index, specs);
+                for val in values {
+                    Self::collect_window_function_specs(val, output_column_index, specs);
+                }
+            }
+            SqlExpression::NotInList { expr, values } => {
+                Self::collect_window_function_specs(expr, output_column_index, specs);
+                for val in values {
+                    Self::collect_window_function_specs(val, output_column_index, specs);
+                }
+            }
+            SqlExpression::Between { expr, lower, upper } => {
+                Self::collect_window_function_specs(expr, output_column_index, specs);
+                Self::collect_window_function_specs(lower, output_column_index, specs);
+                Self::collect_window_function_specs(upper, output_column_index, specs);
+            }
+            SqlExpression::InSubquery { expr, .. } => {
+                Self::collect_window_function_specs(expr, output_column_index, specs);
+            }
+            SqlExpression::NotInSubquery { expr, .. } => {
+                Self::collect_window_function_specs(expr, output_column_index, specs);
+            }
+            SqlExpression::MethodCall { args, .. } => {
+                for arg in args {
+                    Self::collect_window_function_specs(arg, output_column_index, specs);
+                }
+            }
+            SqlExpression::ChainedMethodCall { base, args, .. } => {
+                Self::collect_window_function_specs(base, output_column_index, specs);
+                for arg in args {
+                    Self::collect_window_function_specs(arg, output_column_index, specs);
+                }
+            }
+            _ => {} // Other expression types don't contain window functions
+        }
+    }
+
     /// Execute a SQL query on a `DataTable` and return a `DataView` (for backward compatibility)
     pub fn execute(&self, table: Arc<DataTable>, sql: &str) -> Result<DataView> {
         let (view, _plan) = self.execute_with_plan(table, sql)?;
@@ -1715,6 +1810,11 @@ impl QueryEngine {
                 "QueryEngine::apply_select_items - detected {} window functions",
                 window_func_count
             );
+            
+            // Extract window specs (Step 2: parallel path, not used yet)
+            let window_specs = Self::extract_window_specs(select_items);
+            debug!("Extracted {} window function specs", window_specs.len());
+            
             Some(Instant::now())
         } else {
             None
@@ -1845,6 +1945,22 @@ impl QueryEngine {
             computed_table.add_column(DataColumn::new(&column_name));
         }
 
+        // Check feature flag for batch evaluation (Step 3)
+        let use_batch_evaluation = std::env::var("SQL_CLI_BATCH_WINDOW")
+            .map(|v| v == "1" || v.to_lowercase() == "true")
+            .unwrap_or(false);
+        
+        // Store window specs for batch evaluation if needed
+        let batch_window_specs = if use_batch_evaluation && has_window_functions {
+            debug!("BATCH window function evaluation flag is enabled");
+            // Extract window specs before timing starts
+            let specs = Self::extract_window_specs(&expanded_items);
+            debug!("Extracted {} window function specs for batch evaluation", specs.len());
+            Some(specs)
+        } else {
+            None
+        };
+        
         // Calculate values for each row
         let mut evaluator =
             ArithmeticEvaluator::with_date_notation(source_table, self.date_notation.clone());
@@ -1887,41 +2003,169 @@ impl QueryEngine {
             );
         }
 
-        for &row_idx in visible_rows {
-            let mut row_values = Vec::new();
-
-            for item in &expanded_items {
-                let value = match item {
-                    SelectItem::Column {
-                        column: col_ref, ..
-                    } => {
-                        // Use evaluator for column resolution (handles aliases properly)
-                        match evaluator.evaluate(&SqlExpression::Column(col_ref.clone()), row_idx) {
-                            Ok(val) => val,
-                            Err(e) => {
-                                return Err(anyhow!(
-                                    "Failed to evaluate column {}: {}",
-                                    col_ref.to_sql(),
-                                    e
-                                ));
+        // Batch evaluation path for window functions
+        if let Some(window_specs) = batch_window_specs {
+            debug!("Starting batch window function evaluation");
+            let batch_start = Instant::now();
+            
+            // Initialize result table with all rows
+            let mut batch_results: Vec<Vec<DataValue>> = vec![vec![DataValue::Null; expanded_items.len()]; visible_rows.len()];
+            
+            // Use the window specs we extracted earlier
+            let detailed_window_specs = &window_specs;
+            
+            // Group window specs by their WindowSpec for batch processing
+            let mut specs_by_window: HashMap<u64, Vec<&crate::data::batch_window_evaluator::WindowFunctionSpec>> = HashMap::new();
+            for spec in detailed_window_specs {
+                let hash = spec.spec.compute_hash();
+                specs_by_window.entry(hash).or_insert_with(Vec::new).push(spec);
+            }
+            
+            // Process each unique window specification
+            for (window_hash, specs) in specs_by_window {
+                // Get the window context (already pre-created)
+                let context = evaluator.get_or_create_window_context(&specs[0].spec)?;
+                
+                // Process each function using this window
+                for spec in specs {
+                    match spec.function_name.as_str() {
+                        "LAG" => {
+                            // Extract column and offset from arguments
+                            if let Some(SqlExpression::Column(col_ref)) = spec.args.get(0) {
+                                let column_name = col_ref.name.as_str();
+                                let offset = if let Some(SqlExpression::NumberLiteral(n)) = spec.args.get(1) {
+                                    n.parse::<i64>().unwrap_or(1)
+                                } else {
+                                    1 // default offset
+                                };
+                                
+                                let values = context.evaluate_lag_batch(visible_rows, column_name, offset)?;
+                                
+                                // Write results to the output column
+                                for (row_idx, value) in values.into_iter().enumerate() {
+                                    batch_results[row_idx][spec.output_column_index] = value;
+                                }
                             }
                         }
+                        "LEAD" => {
+                            // Extract column and offset from arguments
+                            if let Some(SqlExpression::Column(col_ref)) = spec.args.get(0) {
+                                let column_name = col_ref.name.as_str();
+                                let offset = if let Some(SqlExpression::NumberLiteral(n)) = spec.args.get(1) {
+                                    n.parse::<i64>().unwrap_or(1)
+                                } else {
+                                    1 // default offset
+                                };
+                                
+                                let values = context.evaluate_lead_batch(visible_rows, column_name, offset)?;
+                                
+                                // Write results to the output column
+                                for (row_idx, value) in values.into_iter().enumerate() {
+                                    batch_results[row_idx][spec.output_column_index] = value;
+                                }
+                            }
+                        }
+                        "ROW_NUMBER" => {
+                            let values = context.evaluate_row_number_batch(visible_rows)?;
+                            
+                            // Write results to the output column
+                            for (row_idx, value) in values.into_iter().enumerate() {
+                                batch_results[row_idx][spec.output_column_index] = value;
+                            }
+                        }
+                        _ => {
+                            // Fall back to per-row evaluation for unsupported functions
+                            debug!("Window function {} not supported in batch mode, using per-row", spec.function_name);
+                        }
                     }
-                    SelectItem::Expression { expr, .. } => {
-                        // Computed expression
-                        evaluator.evaluate(&expr, row_idx)?
-                    }
-                    SelectItem::Star { .. } => unreachable!("Star should have been expanded"),
-                    SelectItem::StarExclude { .. } => {
-                        unreachable!("StarExclude should have been expanded")
-                    }
-                };
-                row_values.push(value);
+                }
             }
+            
+            // Now evaluate non-window columns
+            for (result_row_idx, &source_row_idx) in visible_rows.iter().enumerate() {
+                for (col_idx, item) in expanded_items.iter().enumerate() {
+                    // Skip if this column was already filled by a window function
+                    if !matches!(batch_results[result_row_idx][col_idx], DataValue::Null) {
+                        continue;
+                    }
+                    
+                    let value = match item {
+                        SelectItem::Column { column: col_ref, .. } => {
+                            match evaluator.evaluate(&SqlExpression::Column(col_ref.clone()), source_row_idx) {
+                                Ok(val) => val,
+                                Err(e) => {
+                                    return Err(anyhow!(
+                                        "Failed to evaluate column {}: {}",
+                                        col_ref.to_sql(),
+                                        e
+                                    ));
+                                }
+                            }
+                        }
+                        SelectItem::Expression { expr, .. } => {
+                            // Check if this is a window function expression
+                            if Self::contains_window_function(expr) {
+                                // Already handled above
+                                continue;
+                            }
+                            evaluator.evaluate(&expr, source_row_idx)?
+                        }
+                        SelectItem::Star { .. } => unreachable!("Star should have been expanded"),
+                        SelectItem::StarExclude { .. } => unreachable!("StarExclude should have been expanded")
+                    };
+                    batch_results[result_row_idx][col_idx] = value;
+                }
+            }
+            
+            // Add all rows to the table
+            for row_values in batch_results {
+                computed_table
+                    .add_row(DataRow::new(row_values))
+                    .map_err(|e| anyhow::anyhow!("Failed to add row: {}", e))?;
+            }
+            
+            debug!(
+                "Batch window evaluation completed in {:.3}ms",
+                batch_start.elapsed().as_secs_f64() * 1000.0
+            );
+        } else {
+            // Original per-row evaluation path
+            for &row_idx in visible_rows {
+                let mut row_values = Vec::new();
 
-            computed_table
-                .add_row(DataRow::new(row_values))
-                .map_err(|e| anyhow::anyhow!("Failed to add row: {}", e))?;
+                for item in &expanded_items {
+                    let value = match item {
+                        SelectItem::Column {
+                            column: col_ref, ..
+                        } => {
+                            // Use evaluator for column resolution (handles aliases properly)
+                            match evaluator.evaluate(&SqlExpression::Column(col_ref.clone()), row_idx) {
+                                Ok(val) => val,
+                                Err(e) => {
+                                    return Err(anyhow!(
+                                        "Failed to evaluate column {}: {}",
+                                        col_ref.to_sql(),
+                                        e
+                                    ));
+                                }
+                            }
+                        }
+                        SelectItem::Expression { expr, .. } => {
+                            // Computed expression
+                            evaluator.evaluate(&expr, row_idx)?
+                        }
+                        SelectItem::Star { .. } => unreachable!("Star should have been expanded"),
+                        SelectItem::StarExclude { .. } => {
+                            unreachable!("StarExclude should have been expanded")
+                        }
+                    };
+                    row_values.push(value);
+                }
+
+                computed_table
+                    .add_row(DataRow::new(row_values))
+                    .map_err(|e| anyhow::anyhow!("Failed to add row: {}", e))?;
+            }
         }
 
         // Log window function timing if applicable
