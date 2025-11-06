@@ -56,7 +56,7 @@ def test_nested_cte_with_data():
         SELECT * FROM (
             WITH summary AS (
                 SELECT id, name, value
-                FROM test_nested_ctes
+                FROM test
             )
             SELECT * FROM summary
         ) t
@@ -142,7 +142,7 @@ def test_trade_reconciliation_pattern():
                     END as order_id,
                     DealId as prod_deal_id,
                     Environment
-                FROM test_trade_recon
+                FROM test
             )
             SELECT * FROM extracted
         ) t

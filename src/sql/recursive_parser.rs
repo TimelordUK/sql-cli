@@ -383,14 +383,20 @@ impl Parser {
                 false
             };
 
-            // Parse CTE name
+            // Parse CTE name - allow keywords as CTE names since they're valid identifiers in this context
             let name = match &self.current_token {
                 Token::Identifier(name) => name.clone(),
-                _ => {
-                    return Err(format!(
-                        "Expected CTE name after {}",
-                        if is_web { "WEB" } else { "WITH or comma" }
-                    ))
+                token => {
+                    // Check if this is a keyword that can be used as an identifier
+                    if let Some(keyword) = token.as_keyword_str() {
+                        // Allow keywords as CTE names (they're valid in this context)
+                        keyword.to_lowercase()
+                    } else {
+                        return Err(format!(
+                            "Expected CTE name after {}",
+                            if is_web { "WEB" } else { "WITH or comma" }
+                        ));
+                    }
                 }
             };
             self.advance();
@@ -718,7 +724,16 @@ impl Parser {
             self.advance();
 
             // Check for table function like RANGE()
-            if let Token::Identifier(name) = &self.current_token.clone() {
+            // Also handle keywords that could be table/CTE names
+            let table_or_function_name = match &self.current_token {
+                Token::Identifier(name) => Some(name.clone()),
+                token => {
+                    // Check if it's a keyword that can be used as table/CTE name
+                    token.as_keyword_str().map(|k| k.to_lowercase())
+                }
+            };
+
+            if let Some(name) = table_or_function_name {
                 // Check if this is a table function by consulting the registry
                 // We need to lookahead to see if there's a parenthesis to distinguish
                 // between a function call and a table with the same name
@@ -889,29 +904,26 @@ impl Parser {
 
                 (None, Some(Box::new(subquery)), None, Some(alias))
             } else {
-                // Regular table name
-                match &self.current_token {
-                    Token::Identifier(table) => {
-                        let table_name = table.clone();
-                        self.advance();
-
-                        // Check for optional alias
-                        let alias = self.parse_optional_alias()?;
-
-                        (Some(table_name), None, None, alias)
+                // Regular table name - handle identifiers and keywords
+                let table_name = match &self.current_token {
+                    Token::Identifier(table) => table.clone(),
+                    Token::QuotedIdentifier(table) => table.clone(),
+                    token => {
+                        // Check if it's a keyword that can be used as table/CTE name
+                        if let Some(keyword) = token.as_keyword_str() {
+                            keyword.to_lowercase()
+                        } else {
+                            return Err("Expected table name or subquery after FROM".to_string());
+                        }
                     }
-                    Token::QuotedIdentifier(table) => {
-                        // Handle quoted table names
-                        let table_name = table.clone();
-                        self.advance();
+                };
 
-                        // Check for optional alias
-                        let alias = self.parse_optional_alias()?;
+                self.advance();
 
-                        (Some(table_name), None, None, alias)
-                    }
-                    _ => return Err("Expected table name or subquery after FROM".to_string()),
-                }
+                // Check for optional alias
+                let alias = self.parse_optional_alias()?;
+
+                (Some(table_name), None, None, alias)
             }
         } else {
             (None, None, None, None)
@@ -1360,7 +1372,18 @@ impl Parser {
         }
 
         // Parse optional window frame (ROWS/RANGE BETWEEN ... AND ...)
-        let frame = self.parse_window_frame()?;
+        let mut frame = self.parse_window_frame()?;
+
+        // SQL Standard: If ORDER BY is present but no frame is specified,
+        // default to RANGE BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
+        // This matches behavior of PostgreSQL, MySQL, SQL Server, etc.
+        if !order_by.is_empty() && frame.is_none() {
+            frame = Some(WindowFrame {
+                unit: FrameUnit::Range,
+                start: FrameBound::UnboundedPreceding,
+                end: Some(FrameBound::CurrentRow),
+            });
+        }
 
         Ok(WindowSpec {
             partition_by,

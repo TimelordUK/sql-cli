@@ -249,17 +249,18 @@ def test_first_last_value():
         for row in group_a:
             assert row['first_val'] == '100'
         
-        # Our implementation shows LAST_VALUE for the entire partition
-        # rather than the default frame (up to current row)
-        assert group_a[0]['last_val'] == '300'  # Last value in partition A
-        assert group_a[1]['last_val'] == '300'  # Last value in partition A
-        assert group_a[2]['last_val'] == '300'  # Last value in partition A
+        # With SQL standard implicit frame (RANGE UNBOUNDED PRECEDING to CURRENT ROW),
+        # LAST_VALUE shows the last value in the frame up to the current row
+        assert group_a[0]['last_val'] == '100'  # seq=1, last value up to current row
+        assert group_a[1]['last_val'] == '200'  # seq=2, last value up to current row
+        assert group_a[2]['last_val'] == '300'  # seq=3, last value up to current row
         
-        # Group B - all rows should have first_val=400 and last_val=500
+        # Group B - first_val is always 400, last_val changes based on frame
         group_b = [r for r in results if r['group_id'] == 'B']
-        for row in group_b:
-            assert row['first_val'] == '400'
-            assert row['last_val'] == '500'
+        assert group_b[0]['first_val'] == '400'
+        assert group_b[0]['last_val'] == '400'  # seq=1, last value up to current row
+        assert group_b[1]['first_val'] == '400'
+        assert group_b[1]['last_val'] == '500'  # seq=2, last value up to current row
         
         print("✓ test_first_last_value passed")
     finally:
