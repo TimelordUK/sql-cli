@@ -1077,6 +1077,52 @@ impl<'a> AstFormatter<'a> {
                 writeln!(result).unwrap();
                 write!(result, "{}) {} {}", indent, self.keyword("AS"), alias).unwrap();
             }
+            TableSource::Pivot {
+                source,
+                aggregate,
+                pivot_column,
+                pivot_values,
+                alias,
+            } => {
+                // Format the source table first
+                match source.as_ref() {
+                    TableSource::Table(name) => write!(result, "{}", name).unwrap(),
+                    TableSource::DerivedTable { query, alias } => {
+                        writeln!(result, "(").unwrap();
+                        let subquery_sql = self.format_select(query, indent_level + 1);
+                        write!(result, "{}", subquery_sql).unwrap();
+                        writeln!(result).unwrap();
+                        write!(result, "{}) {} {}", indent, self.keyword("AS"), alias).unwrap();
+                    }
+                    TableSource::Pivot { .. } => {
+                        // Nested pivots (rare, but handle recursively)
+                        write!(result, "[NESTED_PIVOT]").unwrap();
+                    }
+                }
+
+                // Format PIVOT clause
+                write!(result, " {} (", self.keyword("PIVOT")).unwrap();
+                write!(result, "{}({}) ", aggregate.function, aggregate.column).unwrap();
+                write!(
+                    result,
+                    "{} {} {} (",
+                    self.keyword("FOR"),
+                    pivot_column,
+                    self.keyword("IN")
+                )
+                .unwrap();
+                for (i, val) in pivot_values.iter().enumerate() {
+                    if i > 0 {
+                        write!(result, ", ").unwrap();
+                    }
+                    write!(result, "'{}'", val).unwrap();
+                }
+                write!(result, "))").unwrap();
+
+                if let Some(pivot_alias) = alias {
+                    write!(result, " {} {}", self.keyword("AS"), pivot_alias).unwrap();
+                }
+            }
         }
 
         if let Some(ref alias) = join.alias {

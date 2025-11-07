@@ -76,6 +76,12 @@ fn extract_cte_dependencies(cte: &CTE) -> Vec<String> {
                 TableSource::DerivedTable { alias, .. } => {
                     deps.push(alias.clone());
                 }
+                TableSource::Pivot { alias, .. } => {
+                    // Use the pivot alias if available
+                    if let Some(pivot_alias) = alias {
+                        deps.push(pivot_alias.clone());
+                    }
+                }
             }
         }
     }

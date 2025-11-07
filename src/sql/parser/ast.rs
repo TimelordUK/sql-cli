@@ -562,6 +562,14 @@ pub enum DataFormat {
     Auto, // Auto-detect from Content-Type or extension
 }
 
+/// PIVOT aggregate specification
+/// Example: MAX(AmountEaten)
+#[derive(Debug, Clone)]
+pub struct PivotAggregate {
+    pub function: String, // e.g., "MAX", "SUM", "MIN", "AVG", "COUNT"
+    pub column: String,   // e.g., "AmountEaten"
+}
+
 /// Table source - either a file/table name or a derived table (subquery/CTE)
 #[derive(Debug, Clone)]
 pub enum TableSource {
@@ -570,6 +578,15 @@ pub enum TableSource {
         // Both CTE and subquery
         query: Box<SelectStatement>,
         alias: String, // Required alias for subqueries
+    },
+    /// PIVOT operation - transforms rows into columns
+    /// Example: PIVOT (MAX(AmountEaten) FOR FoodName IN ('Sammich', 'Pickle'))
+    Pivot {
+        source: Box<TableSource>,  // The input table/subquery to pivot
+        aggregate: PivotAggregate, // The aggregate function to apply
+        pivot_column: String,      // Column whose values become new columns
+        pivot_values: Vec<String>, // Specific values to pivot (becomes column names)
+        alias: Option<String>,     // Optional alias for the pivoted result
     },
 }
 

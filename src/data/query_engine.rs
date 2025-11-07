@@ -1280,6 +1280,10 @@ impl QueryEngine {
                         let materialized = self.materialize_view(subquery_result)?;
                         Arc::new(materialized)
                     }
+                    TableSource::Pivot { .. } => {
+                        // PIVOT in JOIN is not supported yet (will be handled by transformer)
+                        return Err(anyhow!("PIVOT in JOIN clause is not yet supported"));
+                    }
                 };
 
                 // Execute the join

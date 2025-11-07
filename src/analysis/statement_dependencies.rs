@@ -223,6 +223,10 @@ impl DependencyAnalyzer {
                     refs.add_read(table);
                 }
             }
+            TableSource::Pivot { source, .. } => {
+                // Recursively extract from the pivot source
+                Self::extract_from_table_source(source, refs)?;
+            }
         }
         Ok(())
     }
