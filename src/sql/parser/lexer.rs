@@ -58,6 +58,11 @@ pub enum Token {
     // Note: REPLACE is NOT a keyword - it's handled as a function name
     // to avoid conflicting with the REPLACE() string function
 
+    // PIVOT/UNPIVOT keywords
+    Pivot,   // PIVOT keyword for row-to-column transformation
+    Unpivot, // UNPIVOT keyword for column-to-row transformation
+    For,     // FOR keyword (used in PIVOT: FOR column IN (...))
+
     // Window frame keywords
     Rows,      // ROWS frame type
     Range,     // RANGE frame type
@@ -155,6 +160,9 @@ impl Token {
             "INTO" => Some(Token::Into),
             "DISTINCT" => Some(Token::Distinct),
             "EXCLUDE" => Some(Token::Exclude),
+            "PIVOT" => Some(Token::Pivot),
+            "UNPIVOT" => Some(Token::Unpivot),
+            "FOR" => Some(Token::For),
             "CASE" => Some(Token::Case),
             "WHEN" => Some(Token::When),
             "THEN" => Some(Token::Then),
@@ -244,6 +252,9 @@ impl Token {
             Token::Into => Some("INTO"),
             Token::Distinct => Some("DISTINCT"),
             Token::Exclude => Some("EXCLUDE"),
+            Token::Pivot => Some("PIVOT"),
+            Token::Unpivot => Some("UNPIVOT"),
+            Token::For => Some("FOR"),
             Token::Case => Some("CASE"),
             Token::When => Some("WHEN"),
             Token::Then => Some("THEN"),
@@ -862,6 +873,9 @@ impl Lexer {
                     "END" => Token::End,
                     "DISTINCT" => Token::Distinct,
                     "EXCLUDE" => Token::Exclude,
+                    "PIVOT" => Token::Pivot,
+                    "UNPIVOT" => Token::Unpivot,
+                    "FOR" => Token::For,
                     "OVER" => Token::Over,
                     "PARTITION" => Token::Partition,
                     "BY" => Token::By,
@@ -1151,6 +1165,39 @@ mod tests {
         // FROM table
         assert_eq!(lexer.next_token(), Token::From);
         assert_eq!(lexer.next_token(), Token::Identifier("table".into()));
+        assert_eq!(lexer.next_token(), Token::Eof);
+    }
+
+    #[test]
+    fn test_pivot_keywords() {
+        let sql = "PIVOT (MAX(amount) FOR month IN (val1, val2)) UNPIVOT";
+        let mut lexer = Lexer::new(sql);
+
+        // Test individual token recognition
+        assert_eq!(
+            lexer.next_token(),
+            Token::Pivot,
+            "First token should be PIVOT"
+        );
+        assert_eq!(lexer.next_token(), Token::LeftParen);
+        assert!(matches!(lexer.next_token(), Token::Identifier(_))); // MAX
+        assert_eq!(lexer.next_token(), Token::LeftParen);
+        assert!(matches!(lexer.next_token(), Token::Identifier(_))); // amount
+        assert_eq!(lexer.next_token(), Token::RightParen);
+        assert_eq!(lexer.next_token(), Token::For, "Should tokenize FOR");
+        assert!(matches!(lexer.next_token(), Token::Identifier(_))); // month
+        assert_eq!(lexer.next_token(), Token::In, "Should tokenize IN");
+        assert_eq!(lexer.next_token(), Token::LeftParen);
+        assert!(matches!(lexer.next_token(), Token::Identifier(_))); // val1
+        assert_eq!(lexer.next_token(), Token::Comma);
+        assert!(matches!(lexer.next_token(), Token::Identifier(_))); // val2
+        assert_eq!(lexer.next_token(), Token::RightParen);
+        assert_eq!(lexer.next_token(), Token::RightParen);
+        assert_eq!(
+            lexer.next_token(),
+            Token::Unpivot,
+            "Should tokenize UNPIVOT"
+        );
         assert_eq!(lexer.next_token(), Token::Eof);
     }
 }
