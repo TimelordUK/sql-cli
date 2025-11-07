@@ -13,6 +13,7 @@ pub mod in_operator_lifter;
 pub mod into_clause_remover;
 pub mod order_by_alias_transformer;
 pub mod pipeline;
+pub mod pivot_expander;
 pub mod qualify_to_where_transformer;
 pub mod transformer_adapters;
 pub mod where_alias_expander;
@@ -36,6 +37,7 @@ pub use ilike_to_like_transformer::ILikeToLikeTransformer;
 pub use in_operator_lifter::{InOperatorLifter, LiftedInExpression};
 pub use into_clause_remover::IntoClauseRemover;
 pub use order_by_alias_transformer::OrderByAliasTransformer;
+pub use pivot_expander::PivotExpander;
 pub use qualify_to_where_transformer::QualifyToWhereTransformer;
 pub use where_alias_expander::WhereAliasExpander;
 
