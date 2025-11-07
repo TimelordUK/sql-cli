@@ -4,8 +4,9 @@
 pub use super::parser::ast::{
     CTEType, Comment, Condition, DataFormat, FrameBound, FrameUnit, HttpMethod, IntoTable,
     JoinClause, JoinCondition, JoinOperator, JoinType, LogicalOp, OrderByColumn, OrderByItem,
-    SelectItem, SelectStatement, SetOperation, SingleJoinCondition, SortDirection, SqlExpression,
-    TableFunction, TableSource, WebCTESpec, WhenBranch, WhereClause, WindowFrame, WindowSpec, CTE,
+    PivotAggregate, SelectItem, SelectStatement, SetOperation, SingleJoinCondition, SortDirection,
+    SqlExpression, TableFunction, TableSource, WebCTESpec, WhenBranch, WhereClause, WindowFrame,
+    WindowSpec, CTE,
 };
 pub use super::parser::legacy::{ParseContext, ParseState, Schema, SqlParser, SqlToken, TableInfo};
 pub use super::parser::lexer::{Lexer, LexerMode, Token};
@@ -928,6 +929,54 @@ impl Parser {
         } else {
             (None, None, None, None)
         };
+
+        // Check for PIVOT after FROM table source
+        // PIVOT wraps the FROM table/subquery before JOINs are processed
+        let (from_table, from_subquery, from_function, from_alias) =
+            if matches!(self.current_token, Token::Pivot) {
+                // Build a TableSource from the current FROM clause
+                let source = if let Some(ref table_name) = from_table {
+                    TableSource::Table(table_name.clone())
+                } else if let Some(ref subquery) = from_subquery {
+                    TableSource::DerivedTable {
+                        query: subquery.clone(),
+                        alias: from_alias.clone().unwrap_or_default(),
+                    }
+                } else {
+                    return Err("PIVOT requires a table or subquery source".to_string());
+                };
+
+                // Parse the PIVOT clause
+                let pivoted_source = self.parse_pivot_clause(source)?;
+
+                // Extract alias from the pivoted source
+                let pivot_alias = if let TableSource::Pivot { ref alias, .. } = pivoted_source {
+                    alias.clone()
+                } else {
+                    None
+                };
+
+                // Return as a derived table so it can be processed by the query engine
+                // The actual PIVOT transformation will be done by the PivotExpander transformer
+                // For now, we store it as a placeholder - the transformer will handle it
+                // We need to signal this is a PIVOT by... actually, we have the PIVOT in TableSource
+                // But the FROM clause expects the old tuple format.
+                // We need to think about this differently.
+
+                // Actually, the better approach: keep the PIVOT in the TableSource
+                // and have the query engine recognize it. But the current SelectStatement
+                // doesn't have a field for TableSource - it has separate fields.
+
+                // For now, let's return an error and document that PIVOT is not yet integrated
+                // into the execution pipeline. The parser can parse it, but execution needs work.
+                return Err(
+                    "PIVOT parsing is implemented but execution is not yet supported. \
+                     See docs/PIVOT_IMPLEMENTATION_PLAN.md for next steps."
+                        .to_string(),
+                );
+            } else {
+                (from_table, from_subquery, from_function, from_alias)
+            };
 
         // Parse JOIN clauses
         let mut joins = Vec::new();
@@ -1908,6 +1957,178 @@ impl Parser {
             _ => Err("Expected column reference".to_string()),
         }
     }
+
+    // ===== PIVOT Parsing =====
+
+    /// Parse a PIVOT clause after a table source
+    /// Syntax: PIVOT (aggregate_function FOR pivot_column IN (value1, value2, ...))
+    fn parse_pivot_clause(&mut self, source: TableSource) -> Result<TableSource, String> {
+        // Consume PIVOT keyword
+        self.consume(Token::Pivot)?;
+
+        // Consume opening parenthesis
+        self.consume(Token::LeftParen)?;
+
+        // Parse aggregate function (e.g., MAX(AmountEaten))
+        let aggregate = self.parse_pivot_aggregate()?;
+
+        // Parse FOR keyword
+        self.consume(Token::For)?;
+
+        // Parse pivot column name
+        let pivot_column = match &self.current_token {
+            Token::Identifier(col) => {
+                let column = col.clone();
+                self.advance();
+                column
+            }
+            Token::QuotedIdentifier(col) => {
+                let column = col.clone();
+                self.advance();
+                column
+            }
+            _ => return Err("Expected column name after FOR in PIVOT".to_string()),
+        };
+
+        // Parse IN keyword
+        if !matches!(self.current_token, Token::In) {
+            return Err("Expected IN keyword in PIVOT clause".to_string());
+        }
+        self.advance();
+
+        // Parse pivot values
+        let pivot_values = self.parse_pivot_in_clause()?;
+
+        // Consume closing parenthesis for PIVOT
+        self.consume(Token::RightParen)?;
+
+        // Check for optional alias
+        let alias = self.parse_optional_alias()?;
+
+        Ok(TableSource::Pivot {
+            source: Box::new(source),
+            aggregate,
+            pivot_column,
+            pivot_values,
+            alias,
+        })
+    }
+
+    /// Parse the aggregate function specification in PIVOT
+    /// Example: MAX(AmountEaten), SUM(sales), COUNT(*)
+    fn parse_pivot_aggregate(&mut self) -> Result<PivotAggregate, String> {
+        // Parse aggregate function name
+        let function = match &self.current_token {
+            Token::Identifier(name) => {
+                let func_name = name.to_uppercase();
+                // Validate it's an aggregate function
+                match func_name.as_str() {
+                    "MAX" | "MIN" | "SUM" | "AVG" | "COUNT" => {
+                        self.advance();
+                        func_name
+                    }
+                    _ => {
+                        return Err(format!(
+                            "Expected aggregate function (MAX, MIN, SUM, AVG, COUNT), got {}",
+                            func_name
+                        ))
+                    }
+                }
+            }
+            _ => return Err("Expected aggregate function in PIVOT".to_string()),
+        };
+
+        // Consume opening parenthesis
+        self.consume(Token::LeftParen)?;
+
+        // Parse column name (or * for COUNT)
+        let column = match &self.current_token {
+            Token::Identifier(col) => {
+                let column = col.clone();
+                self.advance();
+                column
+            }
+            Token::QuotedIdentifier(col) => {
+                let column = col.clone();
+                self.advance();
+                column
+            }
+            Token::Star => {
+                // COUNT(*) is allowed
+                if function == "COUNT" {
+                    self.advance();
+                    "*".to_string()
+                } else {
+                    return Err(format!("Only COUNT can use *, not {}", function));
+                }
+            }
+            _ => return Err("Expected column name in aggregate function".to_string()),
+        };
+
+        // Consume closing parenthesis
+        self.consume(Token::RightParen)?;
+
+        Ok(PivotAggregate { function, column })
+    }
+
+    /// Parse the IN clause values in PIVOT
+    /// Example: IN ('Sammich', 'Pickle', 'Apple')
+    /// Returns vector of pivot values
+    fn parse_pivot_in_clause(&mut self) -> Result<Vec<String>, String> {
+        // Consume opening parenthesis
+        self.consume(Token::LeftParen)?;
+
+        let mut values = Vec::new();
+
+        // Parse first value
+        match &self.current_token {
+            Token::StringLiteral(val) => {
+                values.push(val.clone());
+                self.advance();
+            }
+            Token::Identifier(val) => {
+                // Allow unquoted identifiers as well
+                values.push(val.clone());
+                self.advance();
+            }
+            Token::NumberLiteral(val) => {
+                // Allow numeric values
+                values.push(val.clone());
+                self.advance();
+            }
+            _ => return Err("Expected value in PIVOT IN clause".to_string()),
+        }
+
+        // Parse additional values separated by commas
+        while matches!(self.current_token, Token::Comma) {
+            self.advance(); // consume comma
+
+            match &self.current_token {
+                Token::StringLiteral(val) => {
+                    values.push(val.clone());
+                    self.advance();
+                }
+                Token::Identifier(val) => {
+                    values.push(val.clone());
+                    self.advance();
+                }
+                Token::NumberLiteral(val) => {
+                    values.push(val.clone());
+                    self.advance();
+                }
+                _ => return Err("Expected value after comma in PIVOT IN clause".to_string()),
+            }
+        }
+
+        // Consume closing parenthesis
+        self.consume(Token::RightParen)?;
+
+        if values.is_empty() {
+            return Err("PIVOT IN clause must have at least one value".to_string());
+        }
+
+        Ok(values)
+    }
 }
 
 // Context detection for cursor position
@@ -2789,5 +3010,70 @@ mod tests {
         assert_eq!(stmt1.where_clause.is_some(), stmt2.where_clause.is_some());
         assert!(stmt1.leading_comments.is_empty());
         assert!(stmt2.leading_comments.is_empty());
+    }
+
+    /// Test PIVOT parsing - currently returns error as execution is not implemented
+    #[test]
+    fn test_pivot_parsing_not_yet_supported() {
+        let sql = "SELECT * FROM food_eaten PIVOT (MAX(AmountEaten) FOR FoodName IN ('Sammich', 'Pickle', 'Apple'))";
+        let mut parser = Parser::new(sql);
+        let result = parser.parse();
+
+        // Parser should recognize PIVOT but return error since execution not implemented
+        assert!(result.is_err());
+        assert!(result
+            .unwrap_err()
+            .contains("PIVOT parsing is implemented but execution is not yet supported"));
+    }
+
+    /// Test PIVOT syntax with different aggregate functions
+    #[test]
+    fn test_pivot_aggregate_functions() {
+        // Test with SUM
+        let sql = "SELECT * FROM sales PIVOT (SUM(amount) FOR month IN ('Jan', 'Feb', 'Mar'))";
+        let mut parser = Parser::new(sql);
+        let result = parser.parse();
+        assert!(result.is_err());
+
+        // Test with COUNT
+        let sql2 = "SELECT * FROM sales PIVOT (COUNT(*) FOR month IN ('Jan', 'Feb'))";
+        let mut parser2 = Parser::new(sql2);
+        let result2 = parser2.parse();
+        assert!(result2.is_err());
+
+        // Test with AVG
+        let sql3 = "SELECT * FROM sales PIVOT (AVG(price) FOR category IN ('A', 'B'))";
+        let mut parser3 = Parser::new(sql3);
+        let result3 = parser3.parse();
+        assert!(result3.is_err());
+    }
+
+    /// Test PIVOT with subquery source
+    #[test]
+    fn test_pivot_with_subquery() {
+        let sql = "SELECT * FROM (SELECT * FROM food_eaten WHERE Id > 5) AS t \
+                   PIVOT (MAX(AmountEaten) FOR FoodName IN ('Sammich', 'Pickle'))";
+        let mut parser = Parser::new(sql);
+        let result = parser.parse();
+
+        // Should parse the subquery but fail on PIVOT execution
+        assert!(result.is_err());
+        assert!(result
+            .unwrap_err()
+            .contains("PIVOT parsing is implemented but execution is not yet supported"));
+    }
+
+    /// Test PIVOT with alias
+    #[test]
+    fn test_pivot_with_alias() {
+        let sql =
+            "SELECT * FROM sales PIVOT (SUM(amount) FOR month IN ('Jan', 'Feb')) AS pivot_table";
+        let mut parser = Parser::new(sql);
+        let result = parser.parse();
+
+        assert!(result.is_err());
+        assert!(result
+            .unwrap_err()
+            .contains("PIVOT parsing is implemented but execution is not yet supported"));
     }
 }
