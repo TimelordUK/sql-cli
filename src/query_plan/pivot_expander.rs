@@ -354,9 +354,14 @@ mod tests {
                     trailing_comment: None,
                 },
             ],
+            from_source: None,
+            #[allow(deprecated)]
             from_table: Some("food_eaten".to_string()),
+            #[allow(deprecated)]
             from_subquery: None,
+            #[allow(deprecated)]
             from_function: None,
+            #[allow(deprecated)]
             from_alias: None,
             joins: Vec::new(),
             where_clause: None,

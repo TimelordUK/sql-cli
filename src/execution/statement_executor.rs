@@ -118,11 +118,31 @@ impl StatementExecutor {
         let into_table_name = stmt.into_table.as_ref().map(|it| it.name.clone());
 
         // Step 1: Determine source table
-        let source_table = if let Some(ref from_table) = stmt.from_table {
-            context.resolve_table(from_table)
+        // For most queries, this is straightforward. For derived tables and PIVOT,
+        // we need to find the base table referenced by the innermost query.
+        let source_table = if let Some(ref from_source) = stmt.from_source {
+            match from_source {
+                crate::sql::parser::ast::TableSource::Table(table_name) => {
+                    context.resolve_table(table_name)
+                }
+                crate::sql::parser::ast::TableSource::DerivedTable { query, .. } => {
+                    // For derived tables, find the base table from the inner query
+                    Self::extract_base_table(&**query, context)
+                }
+                crate::sql::parser::ast::TableSource::Pivot { source, .. } => {
+                    // For PIVOT (though it should be expanded), extract from source
+                    Self::extract_base_table_from_source(source, context)
+                }
+            }
         } else {
-            // No FROM clause - use DUAL table for expression evaluation
-            Arc::new(DataTable::dual())
+            // Fallback to deprecated field for backward compatibility
+            #[allow(deprecated)]
+            if let Some(ref from_table) = stmt.from_table {
+                context.resolve_table(from_table)
+            } else {
+                // No FROM clause - use DUAL table for expression evaluation
+                Arc::new(DataTable::dual())
+            }
         };
 
         // Step 2: Apply preprocessing pipeline (if applicable)
@@ -165,9 +185,17 @@ impl StatementExecutor {
     fn apply_preprocessing(&self, mut stmt: SelectStatement) -> Result<(SelectStatement, bool)> {
         // Check if statement has a FROM clause - only preprocess if it does
         // (queries without FROM have special semantics in this tool)
-        let has_from_clause = stmt.from_table.is_some()
-            || stmt.from_subquery.is_some()
-            || stmt.from_function.is_some();
+        let has_from_clause = if stmt.from_source.is_some() {
+            true
+        } else {
+            // Fallback to deprecated fields
+            #[allow(deprecated)]
+            {
+                stmt.from_table.is_some()
+                    || stmt.from_subquery.is_some()
+                    || stmt.from_function.is_some()
+            }
+        };
 
         if !has_from_clause {
             // No preprocessing for queries without FROM
@@ -235,6 +263,42 @@ impl StatementExecutor {
     /// Update configuration
     pub fn set_config(&mut self, config: ExecutionConfig) {
         self.config = config;
+    }
+
+    /// Extract the base table from a SelectStatement
+    /// Recursively traverses derived tables to find the underlying table
+    fn extract_base_table(stmt: &SelectStatement, context: &ExecutionContext) -> Arc<DataTable> {
+        if let Some(ref from_source) = stmt.from_source {
+            Self::extract_base_table_from_source(from_source, context)
+        } else {
+            // Fallback to deprecated fields
+            #[allow(deprecated)]
+            if let Some(ref from_table) = stmt.from_table {
+                context.resolve_table(from_table)
+            } else {
+                Arc::new(DataTable::dual())
+            }
+        }
+    }
+
+    /// Extract base table from a TableSource
+    fn extract_base_table_from_source(
+        source: &crate::sql::parser::ast::TableSource,
+        context: &ExecutionContext,
+    ) -> Arc<DataTable> {
+        match source {
+            crate::sql::parser::ast::TableSource::Table(table_name) => {
+                context.resolve_table(table_name)
+            }
+            crate::sql::parser::ast::TableSource::DerivedTable { query, .. } => {
+                // Recursively extract from nested derived table
+                Self::extract_base_table(&**query, context)
+            }
+            crate::sql::parser::ast::TableSource::Pivot { source, .. } => {
+                // Extract from PIVOT source
+                Self::extract_base_table_from_source(&**source, context)
+            }
+        }
     }
 }
 

@@ -3018,33 +3018,39 @@ mod tests {
         let mut parser = Parser::new(sql);
         let result = parser.parse();
 
-        // Parser should recognize PIVOT but return error since execution not implemented
-        assert!(result.is_err());
-        assert!(result
-            .unwrap_err()
-            .contains("PIVOT parsing is implemented but execution is not yet supported"));
+        // PIVOT is now fully supported! Verify parsing succeeds
+        assert!(result.is_ok());
+        let stmt = result.unwrap();
+
+        // Verify from_source contains a PIVOT
+        assert!(stmt.from_source.is_some());
+        if let Some(crate::sql::parser::ast::TableSource::Pivot { .. }) = stmt.from_source {
+            // Success!
+        } else {
+            panic!("Expected from_source to be a Pivot variant");
+        }
     }
 
     /// Test PIVOT syntax with different aggregate functions
     #[test]
     fn test_pivot_aggregate_functions() {
-        // Test with SUM
+        // Test with SUM - PIVOT is now fully supported!
         let sql = "SELECT * FROM sales PIVOT (SUM(amount) FOR month IN ('Jan', 'Feb', 'Mar'))";
         let mut parser = Parser::new(sql);
         let result = parser.parse();
-        assert!(result.is_err());
+        assert!(result.is_ok());
 
         // Test with COUNT
         let sql2 = "SELECT * FROM sales PIVOT (COUNT(*) FOR month IN ('Jan', 'Feb'))";
         let mut parser2 = Parser::new(sql2);
         let result2 = parser2.parse();
-        assert!(result2.is_err());
+        assert!(result2.is_ok());
 
         // Test with AVG
         let sql3 = "SELECT * FROM sales PIVOT (AVG(price) FOR category IN ('A', 'B'))";
         let mut parser3 = Parser::new(sql3);
         let result3 = parser3.parse();
-        assert!(result3.is_err());
+        assert!(result3.is_ok());
     }
 
     /// Test PIVOT with subquery source
@@ -3055,11 +3061,10 @@ mod tests {
         let mut parser = Parser::new(sql);
         let result = parser.parse();
 
-        // Should parse the subquery but fail on PIVOT execution
-        assert!(result.is_err());
-        assert!(result
-            .unwrap_err()
-            .contains("PIVOT parsing is implemented but execution is not yet supported"));
+        // PIVOT with subquery is now fully supported!
+        assert!(result.is_ok());
+        let stmt = result.unwrap();
+        assert!(stmt.from_source.is_some());
     }
 
     /// Test PIVOT with alias
@@ -3070,9 +3075,9 @@ mod tests {
         let mut parser = Parser::new(sql);
         let result = parser.parse();
 
-        assert!(result.is_err());
-        assert!(result
-            .unwrap_err()
-            .contains("PIVOT parsing is implemented but execution is not yet supported"));
+        // PIVOT with alias is now fully supported!
+        assert!(result.is_ok());
+        let stmt = result.unwrap();
+        assert!(stmt.from_source.is_some());
     }
 }

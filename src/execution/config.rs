@@ -251,6 +251,7 @@ mod tests {
     #[test]
     fn test_custom_transformer_config() {
         let custom_transformer = TransformerConfig {
+            enable_pivot_expander: true,
             enable_expression_lifter: true,
             enable_where_expansion: false,
             enable_group_by_expansion: true,

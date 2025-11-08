@@ -848,8 +848,18 @@ impl QueryEngine {
             .parse()
             .map_err(|e| anyhow::anyhow!("Parse error: {}", e))?;
         plan_builder.add_detail(format!("Parsed successfully"));
-        if let Some(from) = &statement.from_table {
-            plan_builder.add_detail(format!("FROM: {}", from));
+        if let Some(ref from_source) = statement.from_source {
+            match from_source {
+                TableSource::Table(name) => {
+                    plan_builder.add_detail(format!("FROM: {}", name));
+                }
+                TableSource::DerivedTable { alias, .. } => {
+                    plan_builder.add_detail(format!("FROM: derived table (alias: {})", alias));
+                }
+                TableSource::Pivot { .. } => {
+                    plan_builder.add_detail("FROM: PIVOT".to_string());
+                }
+            }
         }
         if statement.where_clause.is_some() {
             plan_builder.add_detail("WHERE clause present".to_string());
@@ -883,8 +893,19 @@ impl QueryEngine {
                 let cte_result = match &cte.cte_type {
                     CTEType::Standard(query) => {
                         // Add CTE query details
-                        if let Some(from) = &query.from_table {
-                            plan_builder.add_detail(format!("Source: {}", from));
+                        if let Some(ref from_source) = query.from_source {
+                            match from_source {
+                                TableSource::Table(name) => {
+                                    plan_builder.add_detail(format!("Source: {}", name));
+                                }
+                                TableSource::DerivedTable { alias, .. } => {
+                                    plan_builder
+                                        .add_detail(format!("Source: derived table ({})", alias));
+                                }
+                                TableSource::Pivot { .. } => {
+                                    plan_builder.add_detail("Source: PIVOT".to_string());
+                                }
+                            }
                         }
                         if query.where_clause.is_some() {
                             plan_builder.add_detail("Has WHERE clause".to_string());
@@ -1125,90 +1146,176 @@ impl QueryEngine {
         }
 
         // Determine the source table for the main query
-        let source_table = if let Some(ref table_func) = statement.from_function {
-            // Handle table functions like RANGE()
-            debug!("QueryEngine: Processing table function...");
-            match table_func {
-                TableFunction::Generator { name, args } => {
-                    // Use the generator registry to create the table
-                    use crate::sql::generators::GeneratorRegistry;
+        let source_table = if let Some(ref from_source) = statement.from_source {
+            match from_source {
+                TableSource::Table(table_name) => {
+                    // Check if this references a CTE
+                    if let Some(cte_view) = cte_context.get(table_name) {
+                        debug!("QueryEngine: Using CTE '{}' as source table", table_name);
+                        // Materialize the CTE view as a table
+                        let mut materialized = self.materialize_view((**cte_view).clone())?;
 
-                    // Create generator registry (could be cached in QueryEngine)
-                    let registry = GeneratorRegistry::new();
-
-                    if let Some(generator) = registry.get(name) {
-                        // Evaluate arguments
-                        let mut evaluator = ArithmeticEvaluator::with_date_notation(
-                            &table,
-                            self.date_notation.clone(),
-                        );
-                        let dummy_row = 0;
-
-                        let mut evaluated_args = Vec::new();
-                        for arg in args {
-                            evaluated_args.push(evaluator.evaluate(arg, dummy_row)?);
-                        }
-
-                        // Generate the table
-                        generator.generate(evaluated_args)?
-                    } else {
-                        return Err(anyhow!("Unknown generator function: {}", name));
-                    }
-                }
-            }
-        } else if let Some(ref subquery) = statement.from_subquery {
-            // Execute the subquery and use its result as the source
-            debug!("QueryEngine: Processing FROM subquery...");
-            let subquery_result =
-                self.build_view_with_context(table.clone(), *subquery.clone(), cte_context)?;
-
-            // Convert the DataView to a DataTable for use as source
-            // This materializes the subquery result
-            let materialized = self.materialize_view(subquery_result)?;
-            Arc::new(materialized)
-        } else if let Some(ref table_name) = statement.from_table {
-            // Check if this references a CTE
-            if let Some(cte_view) = cte_context.get(table_name) {
-                debug!("QueryEngine: Using CTE '{}' as source table", table_name);
-                // Materialize the CTE view as a table
-                let mut materialized = self.materialize_view((**cte_view).clone())?;
-
-                // Apply alias to qualified column names if present
-                if let Some(ref alias) = statement.from_alias {
-                    debug!(
-                        "QueryEngine: Applying alias '{}' to CTE '{}' qualified column names",
-                        alias, table_name
-                    );
-                    for column in materialized.columns_mut() {
-                        // Replace the CTE name with the alias in qualified names
-                        if let Some(ref qualified_name) = column.qualified_name {
-                            if qualified_name.starts_with(&format!("{}.", table_name)) {
-                                column.qualified_name =
-                                    Some(qualified_name.replace(
-                                        &format!("{}.", table_name),
-                                        &format!("{}.", alias),
-                                    ));
+                        // Apply alias to qualified column names if present
+                        #[allow(deprecated)]
+                        if let Some(ref alias) = statement.from_alias {
+                            debug!(
+                                "QueryEngine: Applying alias '{}' to CTE '{}' qualified column names",
+                                alias, table_name
+                            );
+                            for column in materialized.columns_mut() {
+                                // Replace the CTE name with the alias in qualified names
+                                if let Some(ref qualified_name) = column.qualified_name {
+                                    if qualified_name.starts_with(&format!("{}.", table_name)) {
+                                        column.qualified_name = Some(qualified_name.replace(
+                                            &format!("{}.", table_name),
+                                            &format!("{}.", alias),
+                                        ));
+                                    }
+                                }
+                                // Update source table to reflect the alias
+                                if column.source_table.as_ref() == Some(table_name) {
+                                    column.source_table = Some(alias.clone());
+                                }
                             }
                         }
-                        // Update source table to reflect the alias
-                        if column.source_table.as_ref() == Some(table_name) {
-                            column.source_table = Some(alias.clone());
+
+                        Arc::new(materialized)
+                    } else {
+                        // Regular table reference - use the provided table
+                        table.clone()
+                    }
+                }
+                TableSource::DerivedTable { query, alias } => {
+                    // Execute the subquery and use its result as the source
+                    debug!(
+                        "QueryEngine: Processing FROM derived table (alias: {})",
+                        alias
+                    );
+                    let subquery_result =
+                        self.build_view_with_context(table.clone(), *query.clone(), cte_context)?;
+
+                    // Convert the DataView to a DataTable for use as source
+                    // This materializes the subquery result
+                    let mut materialized = self.materialize_view(subquery_result)?;
+
+                    // Apply the alias to all columns in the derived table
+                    // Note: We set source_table but keep the column names unqualified
+                    // so they can be referenced without the table prefix
+                    for column in materialized.columns_mut() {
+                        column.source_table = Some(alias.clone());
+                    }
+
+                    Arc::new(materialized)
+                }
+                TableSource::Pivot { .. } => {
+                    // PIVOT should have been expanded by PivotExpander transformer
+                    return Err(anyhow!(
+                        "PIVOT in FROM clause should have been expanded by preprocessing pipeline"
+                    ));
+                }
+            }
+        } else {
+            // Fallback to deprecated fields for backward compatibility
+            #[allow(deprecated)]
+            if let Some(ref table_func) = statement.from_function {
+                // Handle table functions like RANGE()
+                debug!("QueryEngine: Processing table function (deprecated field)...");
+                match table_func {
+                    TableFunction::Generator { name, args } => {
+                        // Use the generator registry to create the table
+                        use crate::sql::generators::GeneratorRegistry;
+
+                        // Create generator registry (could be cached in QueryEngine)
+                        let registry = GeneratorRegistry::new();
+
+                        if let Some(generator) = registry.get(name) {
+                            // Evaluate arguments
+                            let mut evaluator = ArithmeticEvaluator::with_date_notation(
+                                &table,
+                                self.date_notation.clone(),
+                            );
+                            let dummy_row = 0;
+
+                            let mut evaluated_args = Vec::new();
+                            for arg in args {
+                                evaluated_args.push(evaluator.evaluate(arg, dummy_row)?);
+                            }
+
+                            // Generate the table
+                            generator.generate(evaluated_args)?
+                        } else {
+                            return Err(anyhow!("Unknown generator function: {}", name));
                         }
                     }
                 }
-
-                Arc::new(materialized)
             } else {
-                // Regular table reference - use the provided table
-                table.clone()
+                #[allow(deprecated)]
+                if let Some(ref subquery) = statement.from_subquery {
+                    // Execute the subquery and use its result as the source
+                    debug!("QueryEngine: Processing FROM subquery (deprecated field)...");
+                    let subquery_result = self.build_view_with_context(
+                        table.clone(),
+                        *subquery.clone(),
+                        cte_context,
+                    )?;
+
+                    // Convert the DataView to a DataTable for use as source
+                    // This materializes the subquery result
+                    let materialized = self.materialize_view(subquery_result)?;
+                    Arc::new(materialized)
+                } else {
+                    #[allow(deprecated)]
+                    if let Some(ref table_name) = statement.from_table {
+                        // Check if this references a CTE
+                        if let Some(cte_view) = cte_context.get(table_name) {
+                            debug!(
+                                "QueryEngine: Using CTE '{}' as source table (deprecated field)",
+                                table_name
+                            );
+                            // Materialize the CTE view as a table
+                            let mut materialized = self.materialize_view((**cte_view).clone())?;
+
+                            // Apply alias to qualified column names if present
+                            #[allow(deprecated)]
+                            if let Some(ref alias) = statement.from_alias {
+                                debug!(
+                                    "QueryEngine: Applying alias '{}' to CTE '{}' qualified column names",
+                                    alias, table_name
+                                );
+                                for column in materialized.columns_mut() {
+                                    // Replace the CTE name with the alias in qualified names
+                                    if let Some(ref qualified_name) = column.qualified_name {
+                                        if qualified_name.starts_with(&format!("{}.", table_name)) {
+                                            column.qualified_name = Some(qualified_name.replace(
+                                                &format!("{}.", table_name),
+                                                &format!("{}.", alias),
+                                            ));
+                                        }
+                                    }
+                                    // Update source table to reflect the alias
+                                    if column.source_table.as_ref() == Some(table_name) {
+                                        column.source_table = Some(alias.clone());
+                                    }
+                                }
+                            }
+
+                            Arc::new(materialized)
+                        } else {
+                            // Regular table reference - use the provided table
+                            table.clone()
+                        }
+                    } else {
+                        // No FROM clause - use the provided table
+                        table.clone()
+                    }
+                }
             }
-        } else {
-            // No FROM clause - use the provided table
-            table.clone()
         };
 
         // Register alias in execution context if present
+        #[allow(deprecated)]
         if let Some(ref alias) = statement.from_alias {
+            #[allow(deprecated)]
             if let Some(ref table_name) = statement.from_table {
                 exec_context.register_alias(alias.clone(), table_name.clone());
             }
