@@ -118,20 +118,23 @@ impl StatementExecutor {
         let into_table_name = stmt.into_table.as_ref().map(|it| it.name.clone());
 
         // Step 1: Determine source table
-        // For most queries, this is straightforward. For derived tables and PIVOT,
-        // we need to find the base table referenced by the innermost query.
+        // NOTE: This is determined BEFORE preprocessing, so any CTEs added by
+        // transformers (like ExpressionLifter) won't be visible yet.
+        // For queries that will have CTEs added during preprocessing, we extract
+        // the base table from the inner query structure.
         let source_table = if let Some(ref from_source) = stmt.from_source {
             match from_source {
                 crate::sql::parser::ast::TableSource::Table(table_name) => {
+                    // Could be a regular table or will become a CTE reference after preprocessing
                     context.resolve_table(table_name)
                 }
                 crate::sql::parser::ast::TableSource::DerivedTable { query, .. } => {
-                    // For derived tables, find the base table from the inner query
+                    // For derived tables, recursively find the base table
                     Self::extract_base_table(&**query, context)
                 }
                 crate::sql::parser::ast::TableSource::Pivot { source, .. } => {
                     // For PIVOT (though it should be expanded), extract from source
-                    Self::extract_base_table_from_source(source, context)
+                    Self::extract_base_table_from_source(source, context, &stmt)
                 }
             }
         } else {
@@ -266,10 +269,16 @@ impl StatementExecutor {
     }
 
     /// Extract the base table from a SelectStatement
-    /// Recursively traverses derived tables to find the underlying table
+    /// Recursively traverses derived tables and CTEs to find the underlying table
     fn extract_base_table(stmt: &SelectStatement, context: &ExecutionContext) -> Arc<DataTable> {
+        // If the query has CTEs, we need to find the base table by looking into them
+        if !stmt.ctes.is_empty() {
+            // Find the ultimate base table by traversing CTEs
+            return Self::extract_base_table_from_ctes(stmt, context);
+        }
+
         if let Some(ref from_source) = stmt.from_source {
-            Self::extract_base_table_from_source(from_source, context)
+            Self::extract_base_table_from_source(from_source, context, stmt)
         } else {
             // Fallback to deprecated fields
             #[allow(deprecated)]
@@ -281,13 +290,60 @@ impl StatementExecutor {
         }
     }
 
+    /// Extract base table when the statement has CTEs
+    fn extract_base_table_from_ctes(
+        stmt: &SelectStatement,
+        context: &ExecutionContext,
+    ) -> Arc<DataTable> {
+        use crate::sql::parser::ast::CTEType;
+
+        // Start from the main query's FROM and recursively find the base table
+        if let Some(ref from_source) = stmt.from_source {
+            match from_source {
+                crate::sql::parser::ast::TableSource::Table(table_name) => {
+                    // Check if this references a CTE
+                    for cte in &stmt.ctes {
+                        if &cte.name == table_name {
+                            // Found the CTE - extract from its query
+                            if let CTEType::Standard(cte_query) = &cte.cte_type {
+                                return Self::extract_base_table(cte_query, context);
+                            }
+                        }
+                    }
+                    // Not a CTE - resolve as regular table
+                    context.resolve_table(table_name)
+                }
+                crate::sql::parser::ast::TableSource::DerivedTable { query, .. } => {
+                    Self::extract_base_table(&**query, context)
+                }
+                crate::sql::parser::ast::TableSource::Pivot { source, .. } => {
+                    Self::extract_base_table_from_source(&**source, context, stmt)
+                }
+            }
+        } else {
+            Arc::new(DataTable::dual())
+        }
+    }
+
     /// Extract base table from a TableSource
     fn extract_base_table_from_source(
         source: &crate::sql::parser::ast::TableSource,
         context: &ExecutionContext,
+        stmt: &SelectStatement,
     ) -> Arc<DataTable> {
         match source {
             crate::sql::parser::ast::TableSource::Table(table_name) => {
+                // Check if this is a CTE reference
+                for cte in &stmt.ctes {
+                    if &cte.name == table_name {
+                        // This is a CTE - extract from it
+                        use crate::sql::parser::ast::CTEType;
+                        if let CTEType::Standard(cte_query) = &cte.cte_type {
+                            return Self::extract_base_table(cte_query, context);
+                        }
+                    }
+                }
+                // Not a CTE - resolve as regular table
                 context.resolve_table(table_name)
             }
             crate::sql::parser::ast::TableSource::DerivedTable { query, .. } => {
@@ -296,7 +352,7 @@ impl StatementExecutor {
             }
             crate::sql::parser::ast::TableSource::Pivot { source, .. } => {
                 // Extract from PIVOT source
-                Self::extract_base_table_from_source(&**source, context)
+                Self::extract_base_table_from_source(&**source, context, stmt)
             }
         }
     }
