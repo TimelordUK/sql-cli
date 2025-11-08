@@ -422,9 +422,14 @@ mod tests {
             distinct: false,
             columns: vec!["col1".to_string()],
             select_items: vec![],
+            from_source: None,
+            #[allow(deprecated)]
             from_table: Some("table1".to_string()),
+            #[allow(deprecated)]
             from_subquery: None,
+            #[allow(deprecated)]
             from_function: None,
+            #[allow(deprecated)]
             from_alias: None,
             joins: vec![],
             where_clause: None,
@@ -445,6 +450,8 @@ mod tests {
             distinct: false,
             columns: vec![],
             select_items: vec![],
+            from_source: None,
+            #[allow(deprecated)]
             from_subquery: Some(Box::new(SelectStatement {
                 distinct: false,
                 columns: vec![],
@@ -454,9 +461,14 @@ mod tests {
                     column_list: None,
                     cte_type: CTEType::Standard(inner_query),
                 }],
+                from_source: None,
+                #[allow(deprecated)]
                 from_table: Some("inner".to_string()),
+                #[allow(deprecated)]
                 from_subquery: None,
+                #[allow(deprecated)]
                 from_function: None,
+                #[allow(deprecated)]
                 from_alias: None,
                 joins: vec![],
                 where_clause: None,
@@ -471,8 +483,11 @@ mod tests {
                 leading_comments: vec![],
                 trailing_comment: None,
             })),
+            #[allow(deprecated)]
             from_table: None,
+            #[allow(deprecated)]
             from_function: None,
+            #[allow(deprecated)]
             from_alias: None,
             joins: vec![],
             where_clause: None,

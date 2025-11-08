@@ -36,24 +36,41 @@ pub struct PivotExpander;
 
 impl PivotExpander {
     /// Transform a SELECT statement, expanding any PIVOT operations
-    pub fn expand(statement: SelectStatement) -> Result<SelectStatement> {
+    pub fn expand(mut statement: SelectStatement) -> Result<SelectStatement> {
         // Check if FROM contains a PIVOT
-        if let Some(ref from_subquery) = statement.from_subquery {
-            // Check if the subquery's FROM is a PIVOT (wrapped subquery pattern)
-            return Self::expand_from_subquery(statement);
-        }
-
-        // Check if there's a direct PIVOT in FROM (this won't happen with current parser
-        // as parser wraps PIVOT in a subquery, but handle it for completeness)
-        Ok(statement)
-    }
-
-    /// Handle PIVOT in a subquery context
-    fn expand_from_subquery(mut statement: SelectStatement) -> Result<SelectStatement> {
-        if let Some(subquery) = statement.from_subquery.take() {
-            // Recursively process the subquery first
-            let processed_subquery = Self::expand(*subquery)?;
-            statement.from_subquery = Some(Box::new(processed_subquery));
+        if let Some(ref from_source) = statement.from_source {
+            match from_source {
+                TableSource::Pivot {
+                    source,
+                    aggregate,
+                    pivot_column,
+                    pivot_values,
+                    alias,
+                } => {
+                    // This is a PIVOT! Expand it to CASE expressions + GROUP BY
+                    return Self::expand_pivot(
+                        source,
+                        aggregate,
+                        pivot_column,
+                        pivot_values,
+                        alias,
+                    );
+                }
+                TableSource::DerivedTable { query, .. } => {
+                    // Recursively process the derived table (subquery)
+                    let processed_subquery = Self::expand(*query.clone())?;
+                    statement.from_source = Some(TableSource::DerivedTable {
+                        query: Box::new(processed_subquery),
+                        alias: match from_source {
+                            TableSource::DerivedTable { alias, .. } => alias.clone(),
+                            _ => String::new(),
+                        },
+                    });
+                }
+                TableSource::Table(_) => {
+                    // Regular table, nothing to expand
+                }
+            }
         }
 
         Ok(statement)
@@ -110,13 +127,30 @@ impl PivotExpander {
         }
 
         // Build the transformed statement
+        // Build from_source from the extracted base
+        let from_source = if let Some(ref table) = base_table {
+            Some(TableSource::Table(table.clone()))
+        } else if let Some(ref subquery) = base_subquery {
+            Some(TableSource::DerivedTable {
+                query: subquery.clone(),
+                alias: base_alias.clone().unwrap_or_default(),
+            })
+        } else {
+            None
+        };
+
         let mut result = SelectStatement {
             distinct: false,
             columns: Vec::new(), // Deprecated field
             select_items,
+            from_source,
+            #[allow(deprecated)]
             from_table: base_table,
+            #[allow(deprecated)]
             from_subquery: base_subquery,
+            #[allow(deprecated)]
             from_function: None,
+            #[allow(deprecated)]
             from_alias: base_alias.or_else(|| alias.clone()),
             joins: Vec::new(),
             where_clause: None,

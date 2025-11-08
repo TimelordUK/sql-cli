@@ -224,6 +224,7 @@ pub struct NonInteractiveConfig {
 /// Convert NonInteractiveConfig flags to TransformerConfig
 fn make_transformer_config(config: &NonInteractiveConfig) -> crate::query_plan::TransformerConfig {
     crate::query_plan::TransformerConfig {
+        enable_pivot_expander: true, // Always enabled
         enable_expression_lifter: !config.no_expression_lifter,
         enable_where_expansion: !config.no_where_expansion,
         enable_group_by_expansion: !config.no_group_by_expansion,

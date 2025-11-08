@@ -439,11 +439,21 @@ pub struct SelectStatement {
     pub distinct: bool,                // SELECT DISTINCT flag
     pub columns: Vec<String>,          // Keep for backward compatibility, will be deprecated
     pub select_items: Vec<SelectItem>, // New field for computed expressions
+
+    // Modern unified FROM source (preferred)
+    pub from_source: Option<TableSource>, // Unified FROM source (table, subquery, function, PIVOT, etc.)
+
+    // Legacy FROM fields (deprecated but kept for compatibility during migration)
+    #[deprecated(note = "Use from_source instead")]
     pub from_table: Option<String>,
+    #[deprecated(note = "Use from_source instead")]
     pub from_subquery: Option<Box<SelectStatement>>, // Subquery in FROM clause
-    pub from_function: Option<TableFunction>,        // Table function like RANGE() in FROM clause
-    pub from_alias: Option<String>,                  // Alias for subquery (AS name)
-    pub joins: Vec<JoinClause>,                      // JOIN clauses
+    #[deprecated(note = "Use from_source instead")]
+    pub from_function: Option<TableFunction>, // Table function like RANGE() in FROM clause
+    #[deprecated(note = "Use from_source instead")]
+    pub from_alias: Option<String>, // Alias for subquery (AS name)
+
+    pub joins: Vec<JoinClause>, // JOIN clauses
     pub where_clause: Option<WhereClause>,
     pub order_by: Option<Vec<OrderByItem>>, // Supports expressions: columns, aggregates, CASE, etc.
     pub group_by: Option<Vec<SqlExpression>>, // Changed from Vec<String> to support expressions
@@ -466,9 +476,14 @@ impl Default for SelectStatement {
             distinct: false,
             columns: Vec::new(),
             select_items: Vec::new(),
+            from_source: None,
+            #[allow(deprecated)]
             from_table: None,
+            #[allow(deprecated)]
             from_subquery: None,
+            #[allow(deprecated)]
             from_function: None,
+            #[allow(deprecated)]
             from_alias: None,
             joins: Vec::new(),
             where_clause: None,

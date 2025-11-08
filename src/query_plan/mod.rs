@@ -55,6 +55,7 @@ pub use transformer_adapters::{
 /// Configuration for selective transformer enabling/disabling
 #[derive(Clone, Debug)]
 pub struct TransformerConfig {
+    pub enable_pivot_expander: bool,
     pub enable_expression_lifter: bool,
     pub enable_where_expansion: bool,
     pub enable_group_by_expansion: bool,
@@ -77,6 +78,7 @@ impl TransformerConfig {
     /// Create a config with all transformers enabled
     pub fn all_enabled() -> Self {
         Self {
+            enable_pivot_expander: true,
             enable_expression_lifter: true,
             enable_where_expansion: true,
             enable_group_by_expansion: true,
@@ -122,9 +124,16 @@ pub fn create_pipeline_with_config(
     let mut builder = PipelineBuilder::with_config(config);
 
     // Add transformers in the correct order based on configuration
-    // Order matters! ExpressionLifter must run before CTEHoister
-    // WhereAliasExpander and GroupByAliasExpander run early to expand aliases
-    // HavingAliasTransformer runs after GROUP BY to ensure proper aggregate aliases
+    // Order matters!
+    // 1. PivotExpander must run FIRST to expand PIVOT into standard SQL
+    // 2. ExpressionLifter must run before CTEHoister
+    // 3. WhereAliasExpander and GroupByAliasExpander run early to expand aliases
+    // 4. HavingAliasTransformer runs after GROUP BY to ensure proper aggregate aliases
+
+    // PIVOT expansion must happen first, before any other transformations
+    if transformer_config.enable_pivot_expander {
+        builder = builder.with_transformer(Box::new(PivotExpander));
+    }
 
     if transformer_config.enable_expression_lifter {
         builder = builder.with_transformer(Box::new(ExpressionLifterTransformer::new()));
@@ -203,11 +212,14 @@ pub fn create_standard_pipeline(verbose: bool) -> PreprocessingPipeline {
     let mut builder = PipelineBuilder::with_config(config);
 
     // Add transformers in the correct order
-    // Order matters! ExpressionLifter must run before CTEHoister
-    // ILikeToLikeTransformer runs early to convert ILIKE before other processing
-    // WhereAliasExpander and GroupByAliasExpander run early to expand aliases
-    // HavingAliasTransformer and OrderByAliasTransformer run after GROUP BY
+    // Order matters!
+    // 1. PivotExpander MUST run FIRST to expand PIVOT into standard SQL
+    // 2. ExpressionLifter must run before CTEHoister
+    // 3. ILikeToLikeTransformer runs early to convert ILIKE before other processing
+    // 4. WhereAliasExpander and GroupByAliasExpander run early to expand aliases
+    // 5. HavingAliasTransformer and OrderByAliasTransformer run after GROUP BY
     builder = builder
+        .with_transformer(Box::new(PivotExpander))
         .with_transformer(Box::new(ExpressionLifterTransformer::new()))
         .with_transformer(Box::new(ILikeToLikeTransformer::new()))
         .with_transformer(Box::new(WhereAliasExpander::new()))

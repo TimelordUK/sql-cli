@@ -209,9 +209,14 @@ mod tests {
             distinct: false,
             columns: vec!["col1".to_string()],
             select_items: vec![],
+            from_source: None,
+            #[allow(deprecated)]
             from_table: Some("table1".to_string()),
+            #[allow(deprecated)]
             from_subquery: None,
+            #[allow(deprecated)]
             from_function: None,
+            #[allow(deprecated)]
             from_alias: None,
             joins: vec![],
             where_clause: None,
@@ -241,9 +246,14 @@ mod tests {
             distinct: false,
             columns: vec![],
             select_items: vec![],
+            from_source: None,
+            #[allow(deprecated)]
             from_table: Some("inner_table".to_string()),
+            #[allow(deprecated)]
             from_subquery: None,
+            #[allow(deprecated)]
             from_function: None,
+            #[allow(deprecated)]
             from_alias: None,
             joins: vec![],
             where_clause: None,
@@ -266,9 +276,14 @@ mod tests {
             distinct: false,
             columns: vec![],
             select_items: vec![],
+            from_source: None,
+            #[allow(deprecated)]
             from_table: None,
+            #[allow(deprecated)]
             from_subquery: Some(Box::new(subquery)),
+            #[allow(deprecated)]
             from_function: None,
+            #[allow(deprecated)]
             from_alias: Some("subq".to_string()),
             joins: vec![],
             where_clause: None,

@@ -1,5 +1,5 @@
 use crate::sql::parser::ast::{
-    CTEType, ColumnRef, Condition, SelectItem, SelectStatement, SqlExpression, CTE,
+    CTEType, ColumnRef, Condition, SelectItem, SelectStatement, SqlExpression, TableSource, CTE,
 };
 
 /// Specialized lifter for IN operator expressions with function calls
@@ -147,9 +147,14 @@ impl InOperatorLifter {
             distinct: false,
             columns: vec!["*".to_string()],
             select_items,
+            from_source: Some(TableSource::Table(base_table.to_string())),
+            #[allow(deprecated)]
             from_table: Some(base_table.to_string()),
+            #[allow(deprecated)]
             from_subquery: None,
+            #[allow(deprecated)]
             from_function: None,
+            #[allow(deprecated)]
             from_alias: None,
             joins: Vec::new(),
             where_clause: None,

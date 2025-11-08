@@ -932,51 +932,26 @@ impl Parser {
 
         // Check for PIVOT after FROM table source
         // PIVOT wraps the FROM table/subquery before JOINs are processed
-        let (from_table, from_subquery, from_function, from_alias) =
-            if matches!(self.current_token, Token::Pivot) {
-                // Build a TableSource from the current FROM clause
-                let source = if let Some(ref table_name) = from_table {
-                    TableSource::Table(table_name.clone())
-                } else if let Some(ref subquery) = from_subquery {
-                    TableSource::DerivedTable {
-                        query: subquery.clone(),
-                        alias: from_alias.clone().unwrap_or_default(),
-                    }
-                } else {
-                    return Err("PIVOT requires a table or subquery source".to_string());
-                };
-
-                // Parse the PIVOT clause
-                let pivoted_source = self.parse_pivot_clause(source)?;
-
-                // Extract alias from the pivoted source
-                let pivot_alias = if let TableSource::Pivot { ref alias, .. } = pivoted_source {
-                    alias.clone()
-                } else {
-                    None
-                };
-
-                // Return as a derived table so it can be processed by the query engine
-                // The actual PIVOT transformation will be done by the PivotExpander transformer
-                // For now, we store it as a placeholder - the transformer will handle it
-                // We need to signal this is a PIVOT by... actually, we have the PIVOT in TableSource
-                // But the FROM clause expects the old tuple format.
-                // We need to think about this differently.
-
-                // Actually, the better approach: keep the PIVOT in the TableSource
-                // and have the query engine recognize it. But the current SelectStatement
-                // doesn't have a field for TableSource - it has separate fields.
-
-                // For now, let's return an error and document that PIVOT is not yet integrated
-                // into the execution pipeline. The parser can parse it, but execution needs work.
-                return Err(
-                    "PIVOT parsing is implemented but execution is not yet supported. \
-                     See docs/PIVOT_IMPLEMENTATION_PLAN.md for next steps."
-                        .to_string(),
-                );
+        // This creates a PIVOT TableSource that will be processed by PivotExpander transformer
+        let pivot_source = if matches!(self.current_token, Token::Pivot) {
+            // Build a TableSource from the current FROM clause
+            let source = if let Some(ref table_name) = from_table {
+                TableSource::Table(table_name.clone())
+            } else if let Some(ref subquery) = from_subquery {
+                TableSource::DerivedTable {
+                    query: subquery.clone(),
+                    alias: from_alias.clone().unwrap_or_default(),
+                }
             } else {
-                (from_table, from_subquery, from_function, from_alias)
+                return Err("PIVOT requires a table or subquery source".to_string());
             };
+
+            // Parse the PIVOT clause - this wraps the source in a Pivot TableSource
+            let pivoted = self.parse_pivot_clause(source)?;
+            Some(pivoted)
+        } else {
+            None
+        };
 
         // Parse JOIN clauses
         let mut joins = Vec::new();
@@ -1110,13 +1085,37 @@ impl Parser {
             None
         };
 
+        // Build unified from_source from parsed components
+        // PIVOT takes precedence if it exists (it already wraps the base source)
+        let from_source = if let Some(pivot) = pivot_source {
+            Some(pivot)
+        } else if let Some(ref table_name) = from_table {
+            Some(TableSource::Table(table_name.clone()))
+        } else if let Some(ref subquery) = from_subquery {
+            Some(TableSource::DerivedTable {
+                query: subquery.clone(),
+                alias: from_alias.clone().unwrap_or_default(),
+            })
+        } else if let Some(ref _func) = from_function {
+            // Table functions don't use TableSource yet, keep as None for now
+            // TODO: Add TableFunction variant to TableSource
+            None
+        } else {
+            None
+        };
+
         Ok(SelectStatement {
             distinct,
             columns,
             select_items,
+            from_source,
+            #[allow(deprecated)]
             from_table,
+            #[allow(deprecated)]
             from_subquery,
+            #[allow(deprecated)]
             from_function,
+            #[allow(deprecated)]
             from_alias,
             joins,
             where_clause,

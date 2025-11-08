@@ -151,9 +151,14 @@ impl ExpressionLifter {
                             trailing_comment: None,
                         },
                     ],
+                    from_source: stmt.from_source.clone(),
+                    #[allow(deprecated)]
                     from_table: stmt.from_table.clone(),
+                    #[allow(deprecated)]
                     from_subquery: stmt.from_subquery.clone(),
+                    #[allow(deprecated)]
                     from_function: stmt.from_function.clone(),
+                    #[allow(deprecated)]
                     from_alias: stmt.from_alias.clone(),
                     joins: stmt.joins.clone(),
                     where_clause: None, // Move simpler parts of WHERE here if possible
@@ -304,9 +309,14 @@ impl ExpressionLifter {
             distinct: false,
             columns: vec!["*".to_string()],
             select_items: cte_select_items,
+            from_source: stmt.from_source.clone(),
+            #[allow(deprecated)]
             from_table: stmt.from_table.clone(),
+            #[allow(deprecated)]
             from_subquery: stmt.from_subquery.clone(),
+            #[allow(deprecated)]
             from_function: stmt.from_function.clone(),
+            #[allow(deprecated)]
             from_alias: stmt.from_alias.clone(),
             joins: stmt.joins.clone(),
             where_clause: stmt.where_clause.clone(),

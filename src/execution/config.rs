@@ -118,6 +118,7 @@ impl ExecutionConfig {
             case_insensitive,
             auto_hide_empty,
             transformer_config: TransformerConfig {
+                enable_pivot_expander: true, // Always enabled
                 enable_expression_lifter: !no_expression_lifter,
                 enable_where_expansion: !no_where_expansion,
                 enable_group_by_expansion: !no_group_by_expansion,
