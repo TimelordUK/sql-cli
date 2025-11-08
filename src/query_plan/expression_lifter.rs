@@ -354,8 +354,16 @@ impl ExpressionLifter {
         }
 
         stmt.select_items = new_select_items;
-        stmt.from_table = Some(cte_name.clone());
-        stmt.from_subquery = None;
+        // Set from_source to reference the CTE (preferred)
+        stmt.from_source = Some(crate::sql::parser::ast::TableSource::Table(
+            cte_name.clone(),
+        ));
+        // Also set deprecated field for backward compatibility
+        #[allow(deprecated)]
+        {
+            stmt.from_table = Some(cte_name.clone());
+            stmt.from_subquery = None;
+        }
         stmt.where_clause = None; // Already in the CTE
 
         CTE {

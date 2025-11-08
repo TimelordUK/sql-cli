@@ -154,9 +154,22 @@ impl StatementExecutor {
         stats.preprocessing_time_ms = preprocess_start.elapsed().as_secs_f64() * 1000.0;
         stats.preprocessing_applied = preprocessing_applied;
 
+        // Step 2.5: Re-check source table if preprocessing added CTEs
+        // If the transformed statement has CTEs (e.g., from ExpressionLifter),
+        // we need to use the source table that was passed in, not the extracted base table,
+        // because the CTE itself becomes the data source.
+        let final_source_table = if !transformed_stmt.ctes.is_empty() {
+            // Has CTEs - need to extract base table from the actual CTE definitions
+            // to get the underlying data source
+            Self::extract_base_table(&transformed_stmt, context)
+        } else {
+            source_table
+        };
+
         // Step 3: Execute the transformed statement directly via QueryEngine
         let exec_start = Instant::now();
-        let result_view = self.execute_ast(transformed_stmt.clone(), source_table, context)?;
+        let result_view =
+            self.execute_ast(transformed_stmt.clone(), final_source_table, context)?;
         stats.execution_time_ms = exec_start.elapsed().as_secs_f64() * 1000.0;
 
         // Step 4: If this was a SELECT INTO statement, store the result as a temp table
