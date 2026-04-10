@@ -528,11 +528,12 @@ pub struct CTE {
     pub cte_type: CTEType,
 }
 
-/// Type of CTE - standard SQL or WEB fetch
+/// Type of CTE - standard SQL, WEB fetch, or FILE (filesystem metadata)
 #[derive(Debug, Clone)]
 pub enum CTEType {
     Standard(SelectStatement),
     Web(WebCTESpec),
+    File(FileCTESpec),
 }
 
 /// Specification for WEB CTEs
@@ -575,6 +576,31 @@ pub enum DataFormat {
     CSV,
     JSON,
     Auto, // Auto-detect from Content-Type or extension
+}
+
+/// Specification for FILE CTEs — enumerate filesystem metadata as a virtual table.
+///
+/// Produces one row per matched filesystem entry with metadata columns (path, size,
+/// mtime, etc). Phase 1 is metadata-only: contents are not read.
+///
+/// See `docs/FILE_CTE_DESIGN.md` for design rationale and hazards.
+#[derive(Debug, Clone)]
+pub struct FileCTESpec {
+    /// Root path to walk. Relative paths resolved against CWD.
+    pub path: String,
+    /// If true, recursively walk subdirectories. Otherwise single-directory listing.
+    pub recursive: bool,
+    /// Optional glob pattern applied at walker level (e.g. "*.csv").
+    pub glob: Option<String>,
+    /// Maximum walk depth. None = unlimited (only meaningful if `recursive`).
+    pub max_depth: Option<usize>,
+    /// Hard cap on number of rows produced. None = use config default (500k).
+    /// Walker fails loud when exceeded — never silently truncates.
+    pub max_files: Option<usize>,
+    /// If true, follow symlinks. Default false (avoids cycles).
+    pub follow_links: bool,
+    /// If true, include dotfiles. Default false.
+    pub include_hidden: bool,
 }
 
 /// PIVOT aggregate specification

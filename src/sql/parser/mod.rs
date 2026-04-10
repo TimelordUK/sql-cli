@@ -6,6 +6,7 @@
 pub mod ast;
 pub mod ast_formatter;
 pub mod expressions;
+pub mod file_cte_parser;
 pub mod formatter;
 pub mod legacy;
 pub mod lexer;

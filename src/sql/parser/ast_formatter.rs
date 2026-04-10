@@ -504,6 +504,35 @@ impl<'a> AstFormatter<'a> {
 
                 web_str
             }
+            crate::sql::parser::ast::CTEType::File(file_spec) => {
+                let base_indent = "    ".repeat(indent_level + 1);
+                let mut s = format!(
+                    "{}{} {} '{}'",
+                    base_indent,
+                    self.keyword("FILE"),
+                    self.keyword("PATH"),
+                    file_spec.path
+                );
+                if file_spec.recursive {
+                    s.push_str(&format!(" {}", self.keyword("RECURSIVE")));
+                }
+                if let Some(ref g) = file_spec.glob {
+                    s.push_str(&format!(" {} '{}'", self.keyword("GLOB"), g));
+                }
+                if let Some(d) = file_spec.max_depth {
+                    s.push_str(&format!(" {} {}", self.keyword("MAX_DEPTH"), d));
+                }
+                if let Some(m) = file_spec.max_files {
+                    s.push_str(&format!(" {} {}", self.keyword("MAX_FILES"), m));
+                }
+                if file_spec.follow_links {
+                    s.push_str(&format!(" {}", self.keyword("FOLLOW_LINKS")));
+                }
+                if file_spec.include_hidden {
+                    s.push_str(&format!(" {}", self.keyword("INCLUDE_HIDDEN")));
+                }
+                s
+            }
         };
         write!(result, "{}", cte_sql).unwrap();
         writeln!(result).unwrap();

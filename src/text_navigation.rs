@@ -207,8 +207,9 @@ impl TextNavigator {
             Token::Union => "UNION",
             Token::Intersect => "INTERSECT",
             Token::Except => "EXCEPT",
-            // Special CTE keyword
+            // Special CTE keywords
             Token::Web => "WEB",
+            Token::File => "FILE",
             // Row expansion functions
             Token::Unnest => "UNNEST",
             Token::Identifier(s) => s,

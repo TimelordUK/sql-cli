@@ -238,6 +238,7 @@ fn analyze_cte(cte: &CTE) -> CteAnalysis {
     let cte_type_str = match &cte.cte_type {
         CTEType::Standard(_) => "Standard",
         CTEType::Web(_) => "WEB",
+        CTEType::File(_) => "FILE",
     };
 
     let mut has_star = false;
@@ -264,6 +265,9 @@ fn analyze_cte(cte: &CTE) -> CteAnalysis {
                 headers: web_spec.headers.clone(),
                 format: web_spec.format.as_ref().map(|f| format!("{:?}", f)),
             });
+        }
+        CTEType::File(_) => {
+            // FILE CTE: metadata listing. No web config, no star check needed.
         }
     }
 
@@ -402,6 +406,29 @@ pub fn extract_cte(ast: &SelectStatement, cte_name: &str) -> Option<String> {
 
                 parts.push(")".to_string());
             }
+            CTEType::File(file_spec) => {
+                parts.push(format!("{} {} AS (", prefix, cte.name));
+                parts.push(format!("  FILE PATH '{}'", file_spec.path));
+                if file_spec.recursive {
+                    parts.push("  RECURSIVE".to_string());
+                }
+                if let Some(ref g) = file_spec.glob {
+                    parts.push(format!("  GLOB '{}'", g));
+                }
+                if let Some(d) = file_spec.max_depth {
+                    parts.push(format!("  MAX_DEPTH {}", d));
+                }
+                if let Some(m) = file_spec.max_files {
+                    parts.push(format!("  MAX_FILES {}", m));
+                }
+                if file_spec.follow_links {
+                    parts.push("  FOLLOW_LINKS".to_string());
+                }
+                if file_spec.include_hidden {
+                    parts.push("  INCLUDE_HIDDEN".to_string());
+                }
+                parts.push(")".to_string());
+            }
         }
     }
 
@@ -457,6 +484,27 @@ fn format_cte_as_query(cte: &CTE) -> String {
             parts.push(")".to_string());
             parts.push(format!("SELECT * FROM {}", cte.name));
 
+            parts.join("\n")
+        }
+        CTEType::File(file_spec) => {
+            let mut parts = vec![
+                format!("WITH {} AS (", cte.name),
+                format!("  FILE PATH '{}'", file_spec.path),
+            ];
+            if file_spec.recursive {
+                parts.push("  RECURSIVE".to_string());
+            }
+            if let Some(ref g) = file_spec.glob {
+                parts.push(format!("  GLOB '{}'", g));
+            }
+            if let Some(d) = file_spec.max_depth {
+                parts.push(format!("  MAX_DEPTH {}", d));
+            }
+            if let Some(m) = file_spec.max_files {
+                parts.push(format!("  MAX_FILES {}", m));
+            }
+            parts.push(")".to_string());
+            parts.push(format!("SELECT * FROM {}", cte.name));
             parts.join("\n")
         }
     }
@@ -563,7 +611,7 @@ pub fn find_query_context(ast: &SelectStatement, line: usize, _column: usize) ->
                     start_offset: 0,
                     end_offset: 0,
                 }),
-                can_execute_independently: !matches!(cte.cte_type, CTEType::Web(_)),
+                can_execute_independently: matches!(cte.cte_type, CTEType::Standard(_)),
             };
         }
     }

@@ -741,6 +741,12 @@ impl QueryEngine {
                     // Convert DataTable to DataView
                     DataView::new(Arc::new(data_table))
                 }
+                CTEType::File(_file_spec) => {
+                    // TODO: Phase 1 walker not yet implemented — see docs/FILE_CTE_DESIGN.md
+                    return Err(anyhow!(
+                        "FILE CTE execution not yet implemented (parser-only milestone)"
+                    ));
+                }
             };
             // Store the result in the context for later use
             cte_context.insert(cte.name.clone(), Arc::new(cte_result));
@@ -807,6 +813,12 @@ impl QueryEngine {
 
                     // Convert DataTable to DataView
                     DataView::new(Arc::new(data_table))
+                }
+                CTEType::File(_file_spec) => {
+                    // TODO: Phase 1 walker not yet implemented — see docs/FILE_CTE_DESIGN.md
+                    return Err(anyhow!(
+                        "FILE CTE execution not yet implemented (parser-only milestone)"
+                    ));
                 }
             };
             local_context.insert(cte.name.clone(), Arc::new(cte_result));
@@ -971,6 +983,22 @@ impl QueryEngine {
                         // Convert DataTable to DataView
                         DataView::new(Arc::new(data_table))
                     }
+                    CTEType::File(file_spec) => {
+                        plan_builder.add_detail(format!("PATH: {}", file_spec.path));
+                        if file_spec.recursive {
+                            plan_builder.add_detail("RECURSIVE".to_string());
+                        }
+                        if let Some(ref g) = file_spec.glob {
+                            plan_builder.add_detail(format!("GLOB: {}", g));
+                        }
+                        if let Some(d) = file_spec.max_depth {
+                            plan_builder.add_detail(format!("MAX_DEPTH: {}", d));
+                        }
+                        // TODO: Phase 1 walker not yet implemented
+                        return Err(anyhow!(
+                            "FILE CTE execution not yet implemented (parser-only milestone)"
+                        ));
+                    }
                 };
 
                 // Record CTE statistics
@@ -1133,6 +1161,12 @@ impl QueryEngine {
                     // Web CTEs should have been processed earlier in execute_select
                     return Err(anyhow!(
                         "Web CTEs should be processed in execute_select method"
+                    ));
+                }
+                CTEType::File(_file_spec) => {
+                    // FILE CTEs (like WEB) should be processed earlier in execute_select
+                    return Err(anyhow!(
+                        "FILE CTEs should be processed in execute_select method"
                     ));
                 }
             };

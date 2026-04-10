@@ -2,11 +2,11 @@
 
 // Re-exports for backward compatibility - these serve as both imports and re-exports
 pub use super::parser::ast::{
-    CTEType, Comment, Condition, DataFormat, FrameBound, FrameUnit, HttpMethod, IntoTable,
-    JoinClause, JoinCondition, JoinOperator, JoinType, LogicalOp, OrderByColumn, OrderByItem,
-    PivotAggregate, SelectItem, SelectStatement, SetOperation, SingleJoinCondition, SortDirection,
-    SqlExpression, TableFunction, TableSource, WebCTESpec, WhenBranch, WhereClause, WindowFrame,
-    WindowSpec, CTE,
+    CTEType, Comment, Condition, DataFormat, FileCTESpec, FrameBound, FrameUnit, HttpMethod,
+    IntoTable, JoinClause, JoinCondition, JoinOperator, JoinType, LogicalOp, OrderByColumn,
+    OrderByItem, PivotAggregate, SelectItem, SelectStatement, SetOperation, SingleJoinCondition,
+    SortDirection, SqlExpression, TableFunction, TableSource, WebCTESpec, WhenBranch, WhereClause,
+    WindowFrame, WindowSpec, CTE,
 };
 pub use super::parser::legacy::{ParseContext, ParseState, Schema, SqlParser, SqlToken, TableInfo};
 pub use super::parser::lexer::{Lexer, LexerMode, Token};
@@ -42,6 +42,7 @@ use crate::sql::generators::GeneratorRegistry;
 use std::sync::Arc;
 
 // Import Web CTE parser
+use super::parser::file_cte_parser::FileCteParser;
 use super::parser::web_cte_parser::WebCteParser;
 
 /// Parser mode - controls whether comments are preserved in AST
@@ -375,7 +376,9 @@ impl Parser {
 
         // Parse CTEs
         loop {
-            // Check for WEB keyword for each CTE (can be different for each one)
+            // Check for WEB keyword before the CTE name (WEB uses an outer marker).
+            // FILE CTEs are detected *inside* the parens after AS, since the design
+            // doc uses `WITH name AS (FILE PATH '...')` rather than `WITH FILE name ...`.
             let is_web = if matches!(&self.current_token, Token::Web) {
                 self.trace_token("Found WEB keyword for CTE");
                 self.advance();
@@ -424,17 +427,27 @@ impl Parser {
                 self.consume(Token::RightParen)?;
                 CTEType::Web(web_spec)
             } else {
-                // For standard CTEs, push depth BEFORE consuming opening paren
-                // This ensures the paren is counted in the inner context
+                // Push depth BEFORE consuming the opening paren, matching the
+                // original standard-CTE flow. This keeps the `(`...`)` pair
+                // balanced inside the inner context.
                 self.push_paren_depth();
-                // Now consume opening parenthesis
                 self.consume(Token::LeftParen)?;
-                let query = self.parse_select_statement_inner()?;
+
+                let result = if matches!(&self.current_token, Token::File) {
+                    self.trace_token("Found FILE keyword inside CTE parens");
+                    self.advance();
+                    let file_spec = FileCteParser::parse(self)?;
+                    CTEType::File(file_spec)
+                } else {
+                    let query = self.parse_select_statement_inner()?;
+                    CTEType::Standard(query)
+                };
+
                 // Expect closing parenthesis while still in CTE context
                 self.consume(Token::RightParen)?;
                 // Now pop to restore outer depth after consuming both parens
                 self.pop_paren_depth();
-                CTEType::Standard(query)
+                result
             };
 
             ctes.push(CTE {

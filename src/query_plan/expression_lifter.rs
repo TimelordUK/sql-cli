@@ -390,6 +390,7 @@ impl ExpressionLifter {
                 expression: match &cte.cte_type {
                     CTEType::Standard(select) => WorkUnitExpression::Select(select.clone()),
                     CTEType::Web(_) => WorkUnitExpression::Custom("WEB CTE".to_string()),
+                    CTEType::File(_) => WorkUnitExpression::Custom("FILE CTE".to_string()),
                 },
                 dependencies: Vec::new(), // CTEs typically don't depend on each other initially
                 parallelizable: true,     // CTEs can often be computed in parallel

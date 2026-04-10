@@ -77,8 +77,9 @@ pub enum Token {
     Intersect, // INTERSECT
     Except,    // EXCEPT
 
-    // Special CTE keyword
-    Web, // WEB (for WEB CTEs)
+    // Special CTE keywords
+    Web,  // WEB (for WEB CTEs)
+    File, // FILE (for FILE CTEs — filesystem metadata)
 
     // Row expansion functions
     Unnest, // UNNEST (for expanding delimited strings into rows)
@@ -182,6 +183,7 @@ impl Token {
             "INTERSECT" => Some(Token::Intersect),
             "EXCEPT" => Some(Token::Except),
             "WEB" => Some(Token::Web),
+            "FILE" => Some(Token::File),
             "UNNEST" => Some(Token::Unnest),
             "JOIN" => Some(Token::Join),
             "INNER" => Some(Token::Inner),
@@ -892,8 +894,9 @@ impl Lexer {
                     "UNION" => Token::Union,
                     "INTERSECT" => Token::Intersect,
                     "EXCEPT" => Token::Except,
-                    // Special CTE keyword
+                    // Special CTE keywords
                     "WEB" => Token::Web,
+                    "FILE" => Token::File,
                     // Row expansion functions
                     "UNNEST" => Token::Unnest,
                     // JOIN keywords

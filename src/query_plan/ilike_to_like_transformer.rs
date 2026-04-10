@@ -294,6 +294,7 @@ impl ILikeToLikeTransformer {
                 let cte_type = match cte.cte_type {
                     CTEType::Standard(stmt) => CTEType::Standard(self.transform_statement(stmt)),
                     CTEType::Web(web_spec) => CTEType::Web(web_spec), // Don't transform WEB CTEs
+                    CTEType::File(file_spec) => CTEType::File(file_spec), // Don't transform FILE CTEs
                 };
                 CTE {
                     name: cte.name,
