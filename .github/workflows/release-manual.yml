@@ -316,10 +316,29 @@ jobs:
       with:
         name: ${{ matrix.artifact }}
         path: artifacts/*
-  
+
+  publish-crates:
+    name: Publish to crates.io
+    needs: [prepare-release, build]
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        ref: v${{ needs.prepare-release.outputs.new_version }}
+
+    - name: Set up Rust
+      uses: actions-rs/toolchain@v1
+      with:
+        toolchain: stable
+        override: true
+
+    - name: Publish to crates.io
+      run: cargo publish --token ${{ secrets.CARGO_REGISTRY_TOKEN }}
+
   release:
     name: Create GitHub Release
-    needs: [prepare-release, build]
+    needs: [prepare-release, build, publish-crates]
     runs-on: ubuntu-latest
     
     steps:
