@@ -31,7 +31,7 @@ impl HelpText {
             Line::from("  Alt+↓    - Next command (alternative)"),
             Line::from("  Ctrl+X   - Expand SELECT * to all columns"),
             Line::from("  Alt+X    - Expand SELECT * to visible columns only"),
-            Line::from("  F3       - (Multi-line mode removed)"),
+            Line::from("  F3       - Show pretty-printed query"),
             Line::from(""),
             Line::from("NAVIGATION").style(
                 Style::default()
@@ -67,8 +67,9 @@ impl HelpText {
                     .fg(Color::Yellow)
                     .add_modifier(Modifier::BOLD),
             ),
-            Line::from("  F11/Ctrl+PgUp - Previous buffer"),
-            Line::from("  F12/Ctrl+PgDn - Next buffer"),
+            Line::from("  F11           - Previous buffer"),
+            Line::from("  Ctrl+PgUp     - Previous buffer (alternative)"),
+            Line::from("  Ctrl+PgDn     - Next buffer"),
             Line::from("  Ctrl+6        - Quick switch (toggle last two)"),
             Line::from("  Alt+N         - New buffer"),
             Line::from("  Alt+W         - Close buffer"),
@@ -82,21 +83,12 @@ impl HelpText {
             ),
             Line::from("  F1/?     - Toggle this help"),
             Line::from("  F5       - Debug info"),
-            Line::from("  F6       - Pretty query view"),
-            Line::from("  F7       - Cache management"),
+            Line::from("  F6       - Toggle row numbers"),
+            Line::from("  F7       - Toggle compact mode"),
             Line::from("  F8       - Case-insensitive"),
+            Line::from("  F12      - Toggle key press indicator"),
             Line::from("  ↓        - Enter results mode"),
             Line::from("  Ctrl+C/q - Exit"),
-            Line::from(""),
-            Line::from("CACHE COMMANDS").style(
-                Style::default()
-                    .fg(Color::Yellow)
-                    .add_modifier(Modifier::BOLD),
-            ),
-            Line::from("  :cache save [id] - Save with ID"),
-            Line::from("  :cache load ID   - Load by ID"),
-            Line::from("  :cache list      - Show cached"),
-            Line::from("  :cache clear     - Disable cache"),
             Line::from(""),
             Line::from("🌟 FEATURES").style(
                 Style::default()
@@ -111,7 +103,6 @@ impl HelpText {
             Line::from("  • Auto-execute CSV/JSON"),
             Line::from("  • Multi-source indicators"),
             Line::from("  • LINQ-style null checking"),
-            Line::from("  • Named cache IDs"),
             Line::from("  • Row numbers (N key)"),
             Line::from("  • Jump to row (: key)"),
         ]
@@ -154,8 +145,8 @@ impl HelpText {
             Line::from("  N        - 🔢 Toggle row nums"),
             Line::from("  :        - 📍 Jump to row"),
             Line::from("  Space    - 🔒 Toggle viewport lock"),
-            Line::from("  x/X      - 🔒 Toggle cursor lock (alternative)"),
-            Line::from("  Ctrl+Space - 🔒 Toggle cursor lock"),
+            Line::from("  Ctrl+Space - 🔒 Toggle viewport lock (alternative)"),
+            Line::from("  x/X      - 🔒 Toggle cursor lock"),
             Line::from("  p        - 📌 Pin/unpin column"),
             Line::from("  P        - Clear all pins"),
             Line::from("  -        - 👁️ Hide current column"),
@@ -227,12 +218,11 @@ impl HelpText {
             Line::from("  • cw/cs/cf = jump to SQL clauses"),
             Line::from("  • Space locks viewport"),
             Line::from("  • Columns auto-adjust width"),
-            Line::from("  • Named: :cache save q1"),
             Line::from("  • f + 'ubs = exact 'ubs' match"),
             Line::from("  • \\ + name = find column by name"),
             Line::from("  • F5 + Ctrl+T = Auto-generate tests!"),
             Line::from(""),
-            Line::from("📦 Cache 📁 File 🌐 API 🗄️ SQL 🧪 Test"),
+            Line::from("📁 File 🌐 API 🗄️ SQL 🧪 Test"),
         ]
     }
 }
