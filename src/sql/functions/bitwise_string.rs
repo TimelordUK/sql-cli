@@ -177,7 +177,11 @@ impl SqlFunction for BitFlip {
     }
 }
 
-/// BIT_COUNT - Count number of 1s in binary string
+/// BIT_COUNT - Count number of 1 bits (popcount).
+///
+/// Accepts either a binary string (e.g. `'11011010'`) or an integer.
+/// For integers the underlying 64-bit representation is counted via
+/// `u64::count_ones`, so negative values count their two's-complement bits.
 pub struct BitCount;
 
 impl SqlFunction for BitCount {
@@ -186,10 +190,11 @@ impl SqlFunction for BitCount {
             name: "BIT_COUNT",
             category: FunctionCategory::Bitwise,
             arg_count: ArgCount::Fixed(1),
-            description: "Counts the number of 1 bits in a binary string",
+            description: "Counts the number of 1 bits in a binary string or integer (popcount)",
             returns: "Integer count of 1 bits",
             examples: vec![
-                "SELECT BIT_COUNT('11011010')",
+                "SELECT BIT_COUNT('11011010')  -- Returns 5",
+                "SELECT BIT_COUNT(218)         -- Returns 5 (same value, as integer)",
                 "SELECT BIT_COUNT(TO_BINARY(218))",
             ],
         }
@@ -198,8 +203,14 @@ impl SqlFunction for BitCount {
     fn evaluate(&self, args: &[DataValue]) -> Result<DataValue> {
         self.validate_args(args)?;
 
-        let input = args[0].to_string();
-        let count = input.chars().filter(|&c| c == '1').count() as i64;
+        let count = match &args[0] {
+            DataValue::Null => return Ok(DataValue::Null),
+            DataValue::Integer(n) => (*n as u64).count_ones() as i64,
+            DataValue::String(s) => s.chars().filter(|&c| c == '1').count() as i64,
+            // Fall back to the legacy string behaviour for anything else
+            // (e.g. booleans/floats stringify and are counted by '1' chars).
+            other => other.to_string().chars().filter(|&c| c == '1').count() as i64,
+        };
         Ok(DataValue::Integer(count))
     }
 }
