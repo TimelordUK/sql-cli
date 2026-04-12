@@ -4,7 +4,7 @@
 
 -- List the top 10 largest Rust source files
 WITH f AS (FILE PATH 'src' RECURSIVE GLOB '*.rs')
-SELECT name, size, depth, parent
+SELECT name, size,  FORMAT_BYTES(size) as size_h, depth, parent
 FROM f
 WHERE is_dir = false
 ORDER BY size DESC
@@ -13,7 +13,7 @@ GO
 
 -- Count files and total bytes per top-level source directory
 WITH f AS (FILE PATH 'src' RECURSIVE)
-SELECT parent, COUNT(*) as files, FORMAT_BYTES(SUM(size)) as total_bytes
+SELECT parent, COUNT(*) as files, sum(size) as total_bytes, FORMAT_BYTES(SUM(size)) as total_bytes_h
 FROM f
 WHERE is_dir = false
 GROUP BY parent
@@ -41,7 +41,7 @@ GO
 
 -- Non-recursive listing of project root — directories vs files
 WITH f AS (FILE PATH '.')
-SELECT name, is_dir, size
+SELECT * 
 FROM f
 WHERE depth = 1
 ORDER BY is_dir DESC, name;
