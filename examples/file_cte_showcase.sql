@@ -13,7 +13,7 @@ GO
 
 -- Count files and total bytes per top-level source directory
 WITH f AS (FILE PATH 'src' RECURSIVE)
-SELECT parent, COUNT(*) as files, SUM(size) as total_bytes
+SELECT parent, COUNT(*) as files, FORMAT_BYTES(SUM(size)) as total_bytes
 FROM f
 WHERE is_dir = false
 GROUP BY parent
