@@ -534,3 +534,75 @@ mod tests {
         assert_eq!(result, DataValue::String("3k GBP".to_string()));
     }
 }
+
+// ============================================================================
+// FORMAT_BYTES — human-readable byte sizes (like `ls -lh` / `du -h`)
+// ============================================================================
+
+/// FORMAT_BYTES function - Format byte counts as human-readable sizes
+pub struct FormatBytesFunction;
+
+impl SqlFunction for FormatBytesFunction {
+    fn signature(&self) -> FunctionSignature {
+        FunctionSignature {
+            name: "FORMAT_BYTES",
+            category: FunctionCategory::String,
+            arg_count: ArgCount::Range(1, 2),
+            description:
+                "Format byte counts as human-readable sizes (KB, MB, GB, etc.) like ls -lh",
+            returns: "STRING",
+            examples: vec![
+                "SELECT FORMAT_BYTES(1024)",       // "1.0 KB"
+                "SELECT FORMAT_BYTES(1536000)",    // "1.5 MB"
+                "SELECT FORMAT_BYTES(2147483648)", // "2.0 GB"
+                "SELECT FORMAT_BYTES(819770)",     // "800.6 KB"
+                "SELECT FORMAT_BYTES(1536000, 0)", // "1 MB"
+                "SELECT FORMAT_BYTES(1536000, 2)", // "1.46 MB"
+            ],
+        }
+    }
+
+    fn evaluate(&self, args: &[DataValue]) -> Result<DataValue> {
+        self.validate_args(args)?;
+
+        let bytes = match &args[0] {
+            DataValue::Integer(n) => *n as f64,
+            DataValue::Float(f) => *f,
+            DataValue::Null => return Ok(DataValue::Null),
+            _ => return Err(anyhow!("FORMAT_BYTES requires a numeric value")),
+        };
+
+        let decimals = if args.len() >= 2 {
+            match &args[1] {
+                DataValue::Integer(n) => *n as usize,
+                DataValue::Float(f) => *f as usize,
+                _ => 1,
+            }
+        } else {
+            1
+        };
+
+        let abs_bytes = bytes.abs();
+        let sign = if bytes < 0.0 { "-" } else { "" };
+
+        let (value, unit) = if abs_bytes < 1024.0 {
+            (abs_bytes, "B")
+        } else if abs_bytes < 1024.0 * 1024.0 {
+            (abs_bytes / 1024.0, "KB")
+        } else if abs_bytes < 1024.0 * 1024.0 * 1024.0 {
+            (abs_bytes / (1024.0 * 1024.0), "MB")
+        } else if abs_bytes < 1024.0 * 1024.0 * 1024.0 * 1024.0 {
+            (abs_bytes / (1024.0 * 1024.0 * 1024.0), "GB")
+        } else if abs_bytes < 1024.0 * 1024.0 * 1024.0 * 1024.0 * 1024.0 {
+            (abs_bytes / (1024.0 * 1024.0 * 1024.0 * 1024.0), "TB")
+        } else {
+            (
+                abs_bytes / (1024.0 * 1024.0 * 1024.0 * 1024.0 * 1024.0),
+                "PB",
+            )
+        };
+
+        let formatted = format!("{sign}{value:.decimals$} {unit}");
+        Ok(DataValue::String(formatted))
+    }
+}

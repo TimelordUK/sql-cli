@@ -750,7 +750,7 @@ impl FunctionRegistry {
         use format::{
             CenterFunction, FormatDateFunction, FormatNumberFunction, LPadFunction, RPadFunction,
         };
-        use format_number::{FormatCurrencyFunction, RenderNumberFunction};
+        use format_number::{FormatBytesFunction, FormatCurrencyFunction, RenderNumberFunction};
 
         self.register(Box::new(FormatNumberFunction));
         self.register(Box::new(FormatDateFunction));
@@ -759,6 +759,7 @@ impl FunctionRegistry {
         self.register(Box::new(CenterFunction));
         self.register(Box::new(RenderNumberFunction));
         self.register(Box::new(FormatCurrencyFunction));
+        self.register(Box::new(FormatBytesFunction));
     }
 
     /// Register type checking functions
