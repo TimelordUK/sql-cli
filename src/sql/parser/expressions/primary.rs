@@ -306,6 +306,18 @@ where
             )))
         }
 
+        Token::Minus => {
+            // Unary minus: -expr is parsed as 0 - expr
+            debug!("Parsing unary minus expression");
+            ExpressionParser::advance(parser);
+            let operand = parse_primary(parser, ctx)?;
+            Ok(SqlExpression::BinaryOp {
+                left: Box::new(SqlExpression::NumberLiteral("0".to_string())),
+                op: "-".to_string(),
+                right: Box::new(operand),
+            })
+        }
+
         _ => {
             let err = format!(
                 "Unexpected token in primary expression: {:?}",

@@ -193,8 +193,20 @@ impl WindowContext {
         let partition_col_indices: Vec<usize> = partition_by
             .iter()
             .map(|col| {
+                // Try simple name first, then qualified name, then flexible lookup
                 source_table
                     .get_column_index(col)
+                    .or_else(|| source_table.find_column_by_qualified_name(col))
+                    .or_else(|| {
+                        // Handle "table.column" by splitting and trying flexible lookup
+                        if let Some(dot_pos) = col.find('.') {
+                            let table = &col[..dot_pos];
+                            let column = &col[dot_pos + 1..];
+                            source_table.find_column_flexible(column, Some(table))
+                        } else {
+                            None
+                        }
+                    })
                     .ok_or_else(|| anyhow!("Invalid partition column: {}", col))
             })
             .collect::<Result<Vec<_>>>()?;

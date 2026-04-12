@@ -75,6 +75,20 @@ impl SumState {
                 }
                 Ok(())
             }
+            DataValue::Boolean(b) => {
+                // Coerce boolean to integer: true=1, false=0
+                // Enables patterns like AVG(x > 5), SUM(col = 'value')
+                let n = if *b { 1i64 } else { 0i64 };
+                self.has_values = true;
+                if let Some(ref mut sum) = self.int_sum {
+                    *sum = sum.saturating_add(n);
+                } else if let Some(ref mut fsum) = self.float_sum {
+                    *fsum += n as f64;
+                } else {
+                    self.int_sum = Some(n);
+                }
+                Ok(())
+            }
             _ => Err(anyhow!("Cannot sum non-numeric value")),
         }
     }

@@ -1372,8 +1372,28 @@ impl Parser {
                         // Stop parsing identifiers if we hit a reserved keyword
                         break;
                     }
-                    identifiers.push(id.clone());
+                    let mut name = id.clone();
                     self.advance();
+
+                    // Handle qualified names (table.column)
+                    if matches!(self.current_token, Token::Dot) {
+                        self.advance(); // consume dot
+                        match &self.current_token {
+                            Token::Identifier(col) => {
+                                name = format!("{}.{}", name, col);
+                                self.advance();
+                            }
+                            Token::QuotedIdentifier(col) => {
+                                name = format!("{}.{}", name, col);
+                                self.advance();
+                            }
+                            _ => {
+                                return Err("Expected identifier after '.'".to_string());
+                            }
+                        }
+                    }
+
+                    identifiers.push(name);
                 }
                 Token::QuotedIdentifier(id) => {
                     // Handle quoted identifiers like "Customer Id"
@@ -1703,13 +1723,14 @@ impl Parser {
                 has_distinct = true;
             }
 
-            // Parse the expression (either after DISTINCT or directly)
-            args.push(self.parse_additive()?);
+            // Parse full expressions as arguments — this allows comparisons and
+            // boolean logic inside function calls, e.g. AVG(x > 5), SUM(a = 'b')
+            args.push(self.parse_logical_or()?);
 
             // Parse any remaining arguments (DISTINCT only applies to first arg for aggregates)
             while matches!(self.current_token, Token::Comma) {
                 self.advance();
-                args.push(self.parse_additive()?);
+                args.push(self.parse_logical_or()?);
             }
         }
 
