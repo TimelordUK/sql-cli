@@ -50,6 +50,9 @@ pub mod virtual_table_generator;
 pub mod where_clause_converter;
 pub mod where_evaluator;
 
+// Filesystem
+pub mod file_walker;
+
 // Test modules
 #[cfg(test)]
 mod group_by_test;

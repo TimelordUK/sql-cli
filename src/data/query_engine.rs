@@ -741,11 +741,16 @@ impl QueryEngine {
                     // Convert DataTable to DataView
                     DataView::new(Arc::new(data_table))
                 }
-                CTEType::File(_file_spec) => {
-                    // TODO: Phase 1 walker not yet implemented — see docs/FILE_CTE_DESIGN.md
-                    return Err(anyhow!(
-                        "FILE CTE execution not yet implemented (parser-only milestone)"
-                    ));
+                CTEType::File(file_spec) => {
+                    let mut data_table =
+                        crate::data::file_walker::walk_filesystem(file_spec, &cte.name)?;
+
+                    for column in data_table.columns_mut() {
+                        column.qualified_name = Some(format!("{}.{}", cte.name, column.name));
+                        column.source_table = Some(cte.name.clone());
+                    }
+
+                    DataView::new(Arc::new(data_table))
                 }
             };
             // Store the result in the context for later use
@@ -814,11 +819,16 @@ impl QueryEngine {
                     // Convert DataTable to DataView
                     DataView::new(Arc::new(data_table))
                 }
-                CTEType::File(_file_spec) => {
-                    // TODO: Phase 1 walker not yet implemented — see docs/FILE_CTE_DESIGN.md
-                    return Err(anyhow!(
-                        "FILE CTE execution not yet implemented (parser-only milestone)"
-                    ));
+                CTEType::File(file_spec) => {
+                    let mut data_table =
+                        crate::data::file_walker::walk_filesystem(file_spec, &cte.name)?;
+
+                    for column in data_table.columns_mut() {
+                        column.qualified_name = Some(format!("{}.{}", cte.name, column.name));
+                        column.source_table = Some(cte.name.clone());
+                    }
+
+                    DataView::new(Arc::new(data_table))
                 }
             };
             local_context.insert(cte.name.clone(), Arc::new(cte_result));
@@ -994,10 +1004,16 @@ impl QueryEngine {
                         if let Some(d) = file_spec.max_depth {
                             plan_builder.add_detail(format!("MAX_DEPTH: {}", d));
                         }
-                        // TODO: Phase 1 walker not yet implemented
-                        return Err(anyhow!(
-                            "FILE CTE execution not yet implemented (parser-only milestone)"
-                        ));
+
+                        let mut data_table =
+                            crate::data::file_walker::walk_filesystem(file_spec, &cte.name)?;
+
+                        for column in data_table.columns_mut() {
+                            column.qualified_name = Some(format!("{}.{}", cte.name, column.name));
+                            column.source_table = Some(cte.name.clone());
+                        }
+
+                        DataView::new(Arc::new(data_table))
                     }
                 };
 
