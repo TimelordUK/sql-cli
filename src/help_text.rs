@@ -10,7 +10,7 @@ impl HelpText {
     #[must_use]
     pub fn left_column() -> Vec<Line<'static>> {
         vec![
-            Line::from("SQL CLI Help - Enhanced Features 🚀").style(
+            Line::from("SQL CLI Help - Enhanced Features").style(
                 Style::default()
                     .fg(Color::Cyan)
                     .add_modifier(Modifier::BOLD),
@@ -88,7 +88,7 @@ impl HelpText {
             Line::from("  ↓        - Enter results mode"),
             Line::from("  Ctrl+C/q - Exit"),
             Line::from(""),
-            Line::from("🌟 FEATURES").style(
+            Line::from("FEATURES").style(
                 Style::default()
                     .fg(Color::Magenta)
                     .add_modifier(Modifier::BOLD),
@@ -121,9 +121,9 @@ impl HelpText {
             Line::from("  k/↑      - Previous row"),
             Line::from("  h/←      - Previous column"),
             Line::from("  l/→      - Next column"),
-            Line::from("  5j       - ⚡ Move down 5 rows (vim counts)"),
-            Line::from("  3k       - ⚡ Move up 3 rows (vim counts)"),
-            Line::from("  10l      - ⚡ Move right 10 columns"),
+            Line::from("  5j       - Move down 5 rows (vim counts)"),
+            Line::from("  3k       - Move up 3 rows (vim counts)"),
+            Line::from("  10l      - Move right 10 columns"),
             Line::from("  g        - First row"),
             Line::from("  G        - Last row"),
             Line::from("  H        - Top of viewport"),
@@ -139,22 +139,22 @@ impl HelpText {
                     .fg(Color::Yellow)
                     .add_modifier(Modifier::BOLD),
             ),
-            Line::from("  C        - 🎯 Toggle compact (binary on/off)"),
-            Line::from("  Alt+S    - 📐 Cycle column packing"),
-            Line::from("             (Balanced → Data Focus → Header Focus)"),
-            Line::from("  N        - 🔢 Toggle row nums"),
-            Line::from("  :        - 📍 Jump to row"),
-            Line::from("  Space    - 🔒 Toggle viewport lock"),
-            Line::from("  Ctrl+Space - 🔒 Toggle viewport lock (alternative)"),
-            Line::from("  x/X      - 🔒 Toggle cursor lock"),
-            Line::from("  p        - 📌 Pin/unpin column"),
+            Line::from("  C        - Toggle compact (binary on/off)"),
+            Line::from("  Alt+S    - Cycle column packing"),
+            Line::from("             (Balanced / Data Focus / Header Focus)"),
+            Line::from("  N        - Toggle row nums"),
+            Line::from("  :        - Jump to row"),
+            Line::from("  Space    - Toggle viewport lock"),
+            Line::from("  Ctrl+Space - Toggle viewport lock (alternative)"),
+            Line::from("  x/X      - Toggle cursor lock"),
+            Line::from("  p        - Pin/unpin column"),
             Line::from("  P        - Clear all pins"),
-            Line::from("  -        - 👁️ Hide current column"),
-            Line::from("  e/E      - 👁️ Hide empty columns"),
-            Line::from("  +/=      - 👁️ Unhide all columns"),
-            Line::from("  <        - ↔️ Move column left"),
-            Line::from("  >        - ↔️ Move column right"),
-            Line::from("  /        - 🔍 Vim search (type, Enter to confirm)"),
+            Line::from("  -        - Hide current column"),
+            Line::from("  e/E      - Hide empty columns"),
+            Line::from("  +/=      - Unhide all columns"),
+            Line::from("  <        - Move column left"),
+            Line::from("  >        - Move column right"),
+            Line::from("  /        - Vim search (type, Enter to confirm)"),
             Line::from("  n        - Next search match"),
             Line::from("  N        - Previous search match"),
             Line::from("  \\        - Search column names"),
@@ -164,7 +164,7 @@ impl HelpText {
             Line::from("             (matches highlighted)"),
             Line::from("  v        - Toggle cell/row mode"),
             Line::from("  s        - Sort by column"),
-            Line::from("  S        - 📊 Column statistics"),
+            Line::from("  S        - Column statistics"),
             Line::from("  y        - Yank (cell mode: yank cell)"),
             Line::from("    yy     - Yank current row (row mode)"),
             Line::from("    yc     - Yank current column"),
@@ -182,7 +182,7 @@ impl HelpText {
             Line::from("  i/F2/Esc - Back to command (i=vim insert)"),
             Line::from("  q        - Quit"),
             Line::from(""),
-            Line::from("EXPORT DATA 📤").style(
+            Line::from("EXPORT DATA").style(
                 Style::default()
                     .fg(Color::Green)
                     .add_modifier(Modifier::BOLD),
@@ -204,11 +204,11 @@ impl HelpText {
             Line::from("  g/G      - Go to top/bottom"),
             Line::from("  j/k      - Scroll up/down"),
             Line::from("  PgUp/Dn  - Page up/down"),
-            Line::from("  Ctrl+T   - Yank as test case ✨"),
-            Line::from("  Shift+Y  - Yank debug context ✨"),
+            Line::from("  Ctrl+T   - Yank as test case"),
+            Line::from("  Shift+Y  - Yank debug context"),
             Line::from("  Esc/q    - Exit debug mode"),
             Line::from(""),
-            Line::from("💡 TIPS").style(
+            Line::from("TIPS").style(
                 Style::default()
                     .fg(Color::Green)
                     .add_modifier(Modifier::BOLD),
@@ -226,7 +226,7 @@ impl HelpText {
             Line::from("  • \\ + name = find column by name"),
             Line::from("  • F5 + Ctrl+T = Auto-generate tests!"),
             Line::from(""),
-            Line::from("📁 File 🌐 API 🗄️ SQL 🧪 Test"),
+            Line::from(""),
         ]
     }
 }

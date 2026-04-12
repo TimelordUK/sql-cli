@@ -6325,8 +6325,8 @@ impl EnhancedTuiApp {
     }
 
     fn render_help(&mut self, f: &mut Frame, area: Rect) {
-        // Use simple two-column layout - shows everything at once
-        self.render_help_two_column(f, area);
+        // Delegate to the help widget which handles tabs, scrolling, and sections
+        self.help_widget.render(f, area);
     }
 
     fn render_help_two_column(&self, f: &mut Frame, area: Rect) {
