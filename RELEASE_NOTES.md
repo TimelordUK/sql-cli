@@ -1,26 +1,27 @@
-# SQL CLI v1.67.2
+# SQL CLI v1.68.0
 
 **Release Date:** April 12, 2026
 
 ## 📊 Release Overview
 - **Commits in this release:** 2
-- **Files updated:** 5
+- **Files updated:** 12
 
 ## ✨ Highlights
+
+### 🔍 Enhanced Debugging
+- **Better Diagnostics**: Improved error messages and state dumps
 
 ## 📝 Changes by Category
 
 ### 🚀 New Features
-- add POPCOUNT, LEADING_ZEROS, TRAILING_ZEROS and polymorphic BIT_COUNT
-
-### 🐛 Bug Fixes
-- Wire up HelpWidget for tabbed, scrollable help pages
+- Boolean expressions in aggregates, unary minus, qualified PARTITION BY
+- Implement FILE CTE filesystem walker
 
 <details>
 <summary>📋 View all commits</summary>
 
-- fix(tui): Wire up HelpWidget for tabbed, scrollable help pages (TimelordUK)
-- feat(functions): add POPCOUNT, LEADING_ZEROS, TRAILING_ZEROS and polymorphic BIT_COUNT (TimelordUK)
+- feat: Boolean expressions in aggregates, unary minus, qualified PARTITION BY (TimelordUK)
+- feat: Implement FILE CTE filesystem walker (TimelordUK)
 
 </details>
 
