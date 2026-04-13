@@ -1669,6 +1669,26 @@ impl QueryEngine {
                     plan,
                 )?;
 
+                // Hide any columns that were promoted from HAVING (synthetic aggregates)
+                // These have the __hidden_agg_ prefix and should not appear in output
+                use crate::query_plan::having_alias_transformer::HIDDEN_AGG_PREFIX;
+                let hidden_indices: Vec<usize> = view
+                    .source()
+                    .columns
+                    .iter()
+                    .enumerate()
+                    .filter_map(|(i, c)| {
+                        if c.name.starts_with(HIDDEN_AGG_PREFIX) {
+                            Some(i)
+                        } else {
+                            None
+                        }
+                    })
+                    .collect();
+                for &idx in hidden_indices.iter().rev() {
+                    view.hide_column(idx);
+                }
+
                 plan.set_rows_out(view.row_count());
                 plan.add_detail(format!("Output: {} groups", view.row_count()));
                 plan.add_detail(format!(

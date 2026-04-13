@@ -34,15 +34,24 @@ use anyhow::Result;
 use std::collections::HashMap;
 use tracing::debug;
 
+/// Prefix used for aggregates promoted from HAVING into SELECT.
+/// Columns with this prefix are hidden from the final output.
+pub const HIDDEN_AGG_PREFIX: &str = "__hidden_agg_";
+
 /// Transformer that adds aliases to aggregates and rewrites HAVING clauses
 pub struct HavingAliasTransformer {
     /// Counter for generating unique alias names
     alias_counter: usize,
+    /// Counter for HAVING-promoted (hidden) aggregates
+    hidden_counter: usize,
 }
 
 impl HavingAliasTransformer {
     pub fn new() -> Self {
-        Self { alias_counter: 0 }
+        Self {
+            alias_counter: 0,
+            hidden_counter: 0,
+        }
     }
 
     /// Check if an expression is an aggregate function
@@ -115,6 +124,71 @@ impl HavingAliasTransformer {
         aggregate_map
     }
 
+    /// Generate a unique hidden alias name for aggregates promoted from HAVING
+    fn generate_hidden_alias(&mut self) -> String {
+        self.hidden_counter += 1;
+        format!("{}{}", HIDDEN_AGG_PREFIX, self.hidden_counter)
+    }
+
+    /// Collect all aggregate function calls from a HAVING expression
+    fn collect_aggregates_in_having(expr: &SqlExpression, found: &mut Vec<SqlExpression>) {
+        match expr {
+            SqlExpression::FunctionCall { args, .. } if Self::is_aggregate_function(expr) => {
+                found.push(expr.clone());
+                // Don't recurse into aggregate args — nested aggregates aren't supported anyway
+                let _ = args;
+            }
+            SqlExpression::BinaryOp { left, right, .. } => {
+                Self::collect_aggregates_in_having(left, found);
+                Self::collect_aggregates_in_having(right, found);
+            }
+            SqlExpression::Not { expr } => {
+                Self::collect_aggregates_in_having(expr, found);
+            }
+            SqlExpression::FunctionCall { args, .. } => {
+                // Non-aggregate function — check its arguments for aggregates
+                for arg in args {
+                    Self::collect_aggregates_in_having(arg, found);
+                }
+            }
+            _ => {}
+        }
+    }
+
+    /// Promote aggregates in HAVING that aren't already in SELECT into hidden
+    /// SELECT items. Returns updated aggregate_map with new entries.
+    fn promote_having_aggregates(
+        &mut self,
+        having_expr: &SqlExpression,
+        select_items: &mut Vec<SelectItem>,
+        aggregate_map: &mut HashMap<String, String>,
+    ) {
+        let mut having_aggs = Vec::new();
+        Self::collect_aggregates_in_having(having_expr, &mut having_aggs);
+
+        for agg in having_aggs {
+            let normalized = Self::normalize_aggregate_expr(&agg);
+            if aggregate_map.contains_key(&normalized) {
+                continue; // Already in SELECT
+            }
+
+            let hidden_alias = self.generate_hidden_alias();
+            debug!(
+                "Promoting HAVING aggregate {} as hidden SELECT item '{}'",
+                normalized, hidden_alias
+            );
+
+            select_items.push(SelectItem::Expression {
+                expr: agg,
+                alias: hidden_alias.clone(),
+                leading_comments: Vec::new(),
+                trailing_comment: None,
+            });
+
+            aggregate_map.insert(normalized, hidden_alias);
+        }
+    }
+
     /// Rewrite a HAVING expression to use aliases instead of aggregates
     fn rewrite_having_expression(
         expr: &SqlExpression,
@@ -143,6 +217,24 @@ impl HavingAliasTransformer {
                 op: op.clone(),
                 right: Box::new(Self::rewrite_having_expression(right, aggregate_map)),
             },
+            SqlExpression::Not { expr } => SqlExpression::Not {
+                expr: Box::new(Self::rewrite_having_expression(expr, aggregate_map)),
+            },
+            SqlExpression::FunctionCall {
+                name,
+                args,
+                distinct,
+            } => {
+                // Non-aggregate function — recurse into args
+                SqlExpression::FunctionCall {
+                    name: name.clone(),
+                    args: args
+                        .iter()
+                        .map(|a| Self::rewrite_having_expression(a, aggregate_map))
+                        .collect(),
+                    distinct: *distinct,
+                }
+            }
             // For other expressions, return as-is
             _ => expr.clone(),
         }
@@ -171,7 +263,13 @@ impl ASTTransformer for HavingAliasTransformer {
         }
 
         // Step 1: Ensure all aggregates in SELECT have aliases and build mapping
-        let aggregate_map = self.ensure_aggregate_aliases(&mut stmt.select_items);
+        let mut aggregate_map = self.ensure_aggregate_aliases(&mut stmt.select_items);
+
+        // Step 1b: Promote any HAVING-only aggregates into SELECT with hidden aliases
+        // This allows HAVING to reference aggregates not already in SELECT
+        if let Some(ref having_expr) = stmt.having {
+            self.promote_having_aggregates(having_expr, &mut stmt.select_items, &mut aggregate_map);
+        }
 
         if aggregate_map.is_empty() {
             // No aggregates found, nothing to do
@@ -198,8 +296,9 @@ impl ASTTransformer for HavingAliasTransformer {
     }
 
     fn begin(&mut self) -> Result<()> {
-        // Reset counter for each query
+        // Reset counters for each query
         self.alias_counter = 0;
+        self.hidden_counter = 0;
         Ok(())
     }
 }
