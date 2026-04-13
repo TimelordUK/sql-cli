@@ -208,11 +208,12 @@ impl SqlFunction for DateDiffFunction {
         FunctionSignature {
             name: "DATEDIFF",
             category: FunctionCategory::Date,
-            arg_count: ArgCount::Fixed(3),
-            description: "Calculate the difference between two dates in the specified unit",
+            arg_count: ArgCount::Range(2, 3),
+            description: "Days between two dates (MySQL style, 2 args) or difference in a specified unit (3 args)",
             returns: "INTEGER",
             examples: vec![
-                "SELECT DATEDIFF('day', '2024-01-01', '2024-01-15')",
+                "SELECT DATEDIFF('2024-01-15', '2024-01-01')",         // 14 (MySQL style)
+                "SELECT DATEDIFF('day', '2024-01-01', '2024-01-15')",  // 14 (with unit)
                 "SELECT DATEDIFF('month', start_date, end_date) FROM projects",
                 "SELECT DATEDIFF('year', birth_date, TODAY()) as age",
             ],
@@ -222,6 +223,26 @@ impl SqlFunction for DateDiffFunction {
     fn evaluate(&self, args: &[DataValue]) -> Result<DataValue> {
         self.validate_args(args)?;
 
+        // MySQL-style 2-arg form: DATEDIFF(date1, date2) -> days between
+        // Returns date1 - date2, matching MySQL behaviour
+        if args.len() == 2 {
+            let date1 = match &args[0] {
+                DataValue::String(s) | DataValue::DateTime(s) => parse_datetime(s)?,
+                DataValue::InternedString(s) => parse_datetime(s.as_str())?,
+                DataValue::Null => return Ok(DataValue::Null),
+                _ => return Err(anyhow!("DATEDIFF requires date/datetime values")),
+            };
+            let date2 = match &args[1] {
+                DataValue::String(s) | DataValue::DateTime(s) => parse_datetime(s)?,
+                DataValue::InternedString(s) => parse_datetime(s.as_str())?,
+                DataValue::Null => return Ok(DataValue::Null),
+                _ => return Err(anyhow!("DATEDIFF requires date/datetime values")),
+            };
+            let duration = date1.signed_duration_since(date2);
+            return Ok(DataValue::Integer(duration.num_days()));
+        }
+
+        // 3-arg form: DATEDIFF(unit, date1, date2)
         // First argument: unit
         let unit = match &args[0] {
             DataValue::String(s) => s.to_lowercase(),
