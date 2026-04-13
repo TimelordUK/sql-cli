@@ -1,28 +1,22 @@
-# SQL CLI v1.69.0
+# SQL CLI v1.69.1
 
 **Release Date:** April 13, 2026
 
 ## 📊 Release Overview
-- **Commits in this release:** 4
-- **Files updated:** 5
+- **Commits in this release:** 1
+- **Files updated:** 1
 
 ## ✨ Highlights
 
 ## 📝 Changes by Category
 
 ### 🚀 New Features
-- add FORMAT_BYTES for human-readable byte sizes
-
-### 🐛 Bug Fixes
-- Allow aggregates in HAVING that aren't in SELECT
+- DATEDIFF accepts 2-arg MySQL style
 
 <details>
 <summary>📋 View all commits</summary>
 
-- fix(having): Allow aggregates in HAVING that aren't in SELECT (TimelordUK)
-- format the file sizes (TimelordUK)
-- add example of using format_byes on total bytes for a folder (TimelordUK)
-- feat(functions): add FORMAT_BYTES for human-readable byte sizes (TimelordUK)
+- feat(functions): DATEDIFF accepts 2-arg MySQL style (TimelordUK)
 
 </details>
 
