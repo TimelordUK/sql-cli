@@ -46,6 +46,22 @@ FROM years
 ORDER BY year;
 GO
 
+WITH
+    date_range AS (
+        SELECT
+            value as days_offset,
+            TODAY() AS today,
+            DATEADD('day', value, TODAY()) AS days_plus_n
+            from range(0, 10)
+    )
+SELECT
+    days_offset,
+    today,
+    days_plus_n,
+    DATEDIFF(today, days_plus_n) AS days_diff
+FROM date_range
+GO
+
 -- Example 4: Creating a date dimension table
 WITH date_range AS (
     SELECT DATEADD('day', value, '2024-01-01') as date
@@ -53,8 +69,7 @@ WITH date_range AS (
 )
 SELECT
     FORMAT_DATE(date, '%Y-%m-%d') as date,
-    DAYOFWEEK(date) as day_of_week_num,
-    DAYNAME(date, 'short') as day_name,
+    DAYOFWEEK(date) as day_of_week_num, DAYNAME(date, 'short') as day_name,
     CASE
         WHEN DAYOFWEEK(date) = 0 THEN 'Weekend'
         WHEN DAYOFWEEK(date) = 6 THEN 'Weekend'
