@@ -1,27 +1,28 @@
-# SQL CLI v1.68.0
+# SQL CLI v1.69.0
 
-**Release Date:** April 12, 2026
+**Release Date:** April 13, 2026
 
 ## 📊 Release Overview
-- **Commits in this release:** 2
-- **Files updated:** 12
+- **Commits in this release:** 4
+- **Files updated:** 5
 
 ## ✨ Highlights
-
-### 🔍 Enhanced Debugging
-- **Better Diagnostics**: Improved error messages and state dumps
 
 ## 📝 Changes by Category
 
 ### 🚀 New Features
-- Boolean expressions in aggregates, unary minus, qualified PARTITION BY
-- Implement FILE CTE filesystem walker
+- add FORMAT_BYTES for human-readable byte sizes
+
+### 🐛 Bug Fixes
+- Allow aggregates in HAVING that aren't in SELECT
 
 <details>
 <summary>📋 View all commits</summary>
 
-- feat: Boolean expressions in aggregates, unary minus, qualified PARTITION BY (TimelordUK)
-- feat: Implement FILE CTE filesystem walker (TimelordUK)
+- fix(having): Allow aggregates in HAVING that aren't in SELECT (TimelordUK)
+- format the file sizes (TimelordUK)
+- add example of using format_byes on total bytes for a folder (TimelordUK)
+- feat(functions): add FORMAT_BYTES for human-readable byte sizes (TimelordUK)
 
 </details>
 
