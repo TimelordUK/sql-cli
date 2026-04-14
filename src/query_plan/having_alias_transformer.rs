@@ -29,7 +29,9 @@
 //! 4. Replace aggregate expressions with column references to the aliases
 
 use crate::query_plan::pipeline::ASTTransformer;
-use crate::sql::parser::ast::{ColumnRef, QuoteStyle, SelectItem, SelectStatement, SqlExpression};
+use crate::sql::parser::ast::{
+    CTEType, ColumnRef, QuoteStyle, SelectItem, SelectStatement, SqlExpression, TableSource,
+};
 use anyhow::Result;
 use std::collections::HashMap;
 use tracing::debug;
@@ -239,6 +241,78 @@ impl HavingAliasTransformer {
             _ => expr.clone(),
         }
     }
+
+    /// Transform a SelectStatement and recursively apply to nested statements
+    /// (CTEs, FROM subqueries, set operations). This ensures HAVING clauses in
+    /// any nested query — including subqueries in FROM — are properly rewritten.
+    #[allow(deprecated)]
+    fn transform_statement(&mut self, mut stmt: SelectStatement) -> Result<SelectStatement> {
+        // Step A: recurse into CTEs
+        for cte in stmt.ctes.iter_mut() {
+            if let CTEType::Standard(ref mut inner) = cte.cte_type {
+                let taken = std::mem::take(inner);
+                *inner = self.transform_statement(taken)?;
+            }
+        }
+
+        // Step B: recurse into FROM source (DerivedTable)
+        if let Some(TableSource::DerivedTable { query, .. }) = stmt.from_source.as_mut() {
+            let taken = std::mem::take(query.as_mut());
+            **query = self.transform_statement(taken)?;
+        }
+
+        // Step B2: recurse into legacy from_subquery
+        if let Some(subq) = stmt.from_subquery.as_mut() {
+            let taken = std::mem::take(subq.as_mut());
+            **subq = self.transform_statement(taken)?;
+        }
+
+        // Step C: recurse into set operation right-hand sides
+        for (_op, rhs) in stmt.set_operations.iter_mut() {
+            let taken = std::mem::take(rhs.as_mut());
+            **rhs = self.transform_statement(taken)?;
+        }
+
+        // Step D: apply HAVING transformation at this level
+        self.apply_having_rewrite(&mut stmt);
+
+        Ok(stmt)
+    }
+
+    /// Apply HAVING aggregate promotion and rewriting to a single statement
+    /// (no recursion — the caller is responsible for that).
+    fn apply_having_rewrite(&mut self, stmt: &mut SelectStatement) {
+        // Only process if there's a HAVING clause
+        if stmt.having.is_none() {
+            return;
+        }
+
+        // Step 1: Ensure all aggregates in SELECT have aliases and build mapping
+        let mut aggregate_map = self.ensure_aggregate_aliases(&mut stmt.select_items);
+
+        // Step 1b: Promote any HAVING-only aggregates into SELECT with hidden aliases
+        if let Some(ref having_expr) = stmt.having {
+            self.promote_having_aggregates(having_expr, &mut stmt.select_items, &mut aggregate_map);
+        }
+
+        if aggregate_map.is_empty() {
+            return;
+        }
+
+        // Step 2: Rewrite HAVING clause to use aliases
+        if let Some(having_expr) = stmt.having.take() {
+            let rewritten = Self::rewrite_having_expression(&having_expr, &aggregate_map);
+            if format!("{:?}", having_expr) != format!("{:?}", rewritten) {
+                debug!(
+                    "Rewrote HAVING clause with {} aggregate alias(es)",
+                    aggregate_map.len()
+                );
+                stmt.having = Some(rewritten);
+            } else {
+                stmt.having = Some(having_expr);
+            }
+        }
+    }
 }
 
 impl Default for HavingAliasTransformer {
@@ -256,43 +330,8 @@ impl ASTTransformer for HavingAliasTransformer {
         "Adds aliases to aggregate functions and rewrites HAVING clauses to use them"
     }
 
-    fn transform(&mut self, mut stmt: SelectStatement) -> Result<SelectStatement> {
-        // Only process if there's a HAVING clause
-        if stmt.having.is_none() {
-            return Ok(stmt);
-        }
-
-        // Step 1: Ensure all aggregates in SELECT have aliases and build mapping
-        let mut aggregate_map = self.ensure_aggregate_aliases(&mut stmt.select_items);
-
-        // Step 1b: Promote any HAVING-only aggregates into SELECT with hidden aliases
-        // This allows HAVING to reference aggregates not already in SELECT
-        if let Some(ref having_expr) = stmt.having {
-            self.promote_having_aggregates(having_expr, &mut stmt.select_items, &mut aggregate_map);
-        }
-
-        if aggregate_map.is_empty() {
-            // No aggregates found, nothing to do
-            return Ok(stmt);
-        }
-
-        // Step 2: Rewrite HAVING clause to use aliases
-        if let Some(having_expr) = stmt.having.take() {
-            let rewritten = Self::rewrite_having_expression(&having_expr, &aggregate_map);
-
-            // Only set if something changed
-            if format!("{:?}", having_expr) != format!("{:?}", rewritten) {
-                debug!(
-                    "Rewrote HAVING clause with {} aggregate alias(es)",
-                    aggregate_map.len()
-                );
-                stmt.having = Some(rewritten);
-            } else {
-                stmt.having = Some(having_expr);
-            }
-        }
-
-        Ok(stmt)
+    fn transform(&mut self, stmt: SelectStatement) -> Result<SelectStatement> {
+        self.transform_statement(stmt)
     }
 
     fn begin(&mut self) -> Result<()> {
