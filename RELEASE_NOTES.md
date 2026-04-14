@@ -1,31 +1,22 @@
-# SQL CLI v1.69.2
+# SQL CLI v1.69.3
 
 **Release Date:** April 14, 2026
 
 ## 📊 Release Overview
-- **Commits in this release:** 3
-- **Files updated:** 2
+- **Commits in this release:** 1
+- **Files updated:** 1
 
 ## ✨ Highlights
-
-### 🔍 Enhanced Debugging
-- **Better Diagnostics**: Improved error messages and state dumps
 
 ## 📝 Changes by Category
 
 ### 🐛 Bug Fixes
-- Case-insensitive CTE table resolution
-
-### 📚 Documentation
-- Move Unreleased DATEDIFF entry to v1.69.1
-- Backfill CHANGELOG for v1.67.1 through v1.69.0
+- Recurse into CTEs, FROM subqueries, set operations
 
 <details>
 <summary>📋 View all commits</summary>
 
-- fix(joins): Case-insensitive CTE table resolution (TimelordUK)
-- docs: Move Unreleased DATEDIFF entry to v1.69.1 (TimelordUK)
-- docs: Backfill CHANGELOG for v1.67.1 through v1.69.0 (TimelordUK)
+- fix(having): Recurse into CTEs, FROM subqueries, set operations (TimelordUK)
 
 </details>
 
