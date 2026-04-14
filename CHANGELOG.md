@@ -5,6 +5,137 @@ All notable changes to SQL CLI will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Improvements
+- **`DATEDIFF` MySQL 2-arg form**: Now accepts `DATEDIFF(date1, date2)` returning days, in addition to the existing `DATEDIFF(unit, date1, date2)` form. Matches MySQL/LeetCode SQL conventions.
+
+## [1.69.0] - 2026-04-13
+
+### ✨ Features
+
+#### **`FORMAT_BYTES` — human-readable byte sizes**
+New function for rendering byte counts like `ls -lh`:
+```sql
+SELECT FORMAT_BYTES(819770);                      -- "800.6 KB"
+SELECT FORMAT_BYTES(2147483648);                  -- "2.0 GB"
+SELECT FORMAT_BYTES(total_bytes, 2) FROM stats;   -- custom decimal places
+```
+Supports B/KB/MB/GB/TB/PB with configurable decimal places. Pairs naturally with the `FILE` CTE for directory-size analysis.
+
+### 🐛 Bug Fixes
+
+#### **HAVING supports aggregates not in SELECT**
+Previously, `HAVING` could only reference aggregates that were also projected in `SELECT`. Queries like:
+```sql
+SELECT region FROM sales GROUP BY region
+HAVING COUNT(DISTINCT customer_id) >= 5 AND MIN(amount) > 100;
+```
+failed with "Column not found" errors. The HAVING transformer now auto-promotes HAVING-only aggregates into SELECT with hidden synthetic aliases, then strips those columns from the final output — fully transparent to the user.
+
+This is a big unlock for real-world patterns where multiple aggregate conditions are expressed only in HAVING without also needing to be projected.
+
+## [1.68.0] - 2026-04-12
+
+### ✨ Features
+
+#### **FILE CTE — query the filesystem like a table**
+New CTE type that walks the filesystem and produces a 12-column `DataTable`:
+```sql
+WITH f AS (FILE PATH 'src' RECURSIVE GLOB '*.rs')
+SELECT name, FORMAT_BYTES(size) as sz, depth
+FROM f WHERE is_dir = false
+ORDER BY size DESC LIMIT 10;
+```
+- **Columns**: `path, parent, name, stem, ext, size, modified, created, accessed, is_dir, is_symlink, depth`
+- **Clauses**: `RECURSIVE`, `GLOB '<pattern>'`, `MAX_DEPTH n`, `MAX_FILES n`, `FOLLOW_LINKS`, `INCLUDE_HIDDEN`
+- Safety: permission errors are soft-skipped; `MAX_FILES` cap fails loud rather than silently truncating
+- Opens up powerful disk analysis queries combining filesystem metadata with SQL aggregation, JOINs, and window functions
+
+See `examples/file_cte_showcase.sql` for 8 worked examples.
+
+#### **Boolean expressions in aggregate arguments**
+The expression parser now accepts full expressions (comparisons, boolean logic, `IS NULL`) inside aggregate function arguments:
+```sql
+SELECT AVG(x > 5) as pct;                       -- proportion above threshold
+SELECT SUM(category = 'A') as count_a;           -- conditional count
+SELECT AVG(x > 3 AND x < 8) as pct_in_range;     -- compound boolean
+SELECT ROUND(AVG(col IS NOT NULL) * 100, 1);     -- null coverage %
+SELECT AVG(IS_PRIME(x)) as prime_rate;           -- composes with any bool-returning function
+```
+Boolean values are coerced to 1/0 in `SUM`/`AVG`. This is the natural MySQL/LeetCode pattern and composes with any boolean-returning function in the library.
+
+#### **Unary minus on expressions**
+```sql
+SELECT CASE WHEN op = 'Buy' THEN -price ELSE price END;  -- negate a column
+SELECT -ABS(x);                                          -- negate a function result
+SELECT -(a + b);                                         -- negate a parenthesised expr
+```
+Previously only negative numeric literals (`-5`) were supported.
+
+#### **`PARTITION BY` accepts qualified columns**
+```sql
+DENSE_RANK() OVER (PARTITION BY d.name ORDER BY salary DESC)
+```
+Window partition clauses now handle `table.column` references, matching standard SQL window semantics.
+
+## [1.67.2] - 2026-04-12
+
+### ✨ Features
+
+#### **Bit-manipulation functions**
+New family of polymorphic bit operations:
+- `POPCOUNT(n)` — count set bits
+- `LEADING_ZEROS(n)` — count leading zero bits
+- `TRAILING_ZEROS(n)` — count trailing zero bits
+- `BIT_COUNT(n)` — alias for POPCOUNT (MySQL compat)
+
+### 🐛 Bug Fixes
+
+#### **TUI help page now scrolls on small screens**
+The help widget had tabs, scrolling, and search already implemented but wasn't wired to the rendering path — the main TUI was rendering a static two-column layout with no scroll. Now delegates to the full `HelpWidget`:
+
+- **Tabbed sections**: press `1–6` for General / Commands / Navigation / Search / Advanced / Debug
+- **Vim-style navigation**: `j/k`, arrow keys, `PgUp/PgDn`, `g/G`, space, `b`
+- **Position indicator** in the status bar
+- **Search within help**: press `/` to search content
+
+Also stripped emojis from help text that were causing rendering artifacts (ratatui width miscalculation on multi-byte characters caused ghost character trails when scrolling).
+
+## [1.67.1] - 2026-04-11
+
+### ✨ Features
+
+#### **PIVOT execution end-to-end**
+The `PIVOT` query pattern is now executable, not just parsed:
+- Lexer tokens and AST structures for `PIVOT`/`UNPIVOT`
+- Full parser implementation with aggregate function specification
+- `PivotExpander` transformer in the query plan pipeline
+- Unified `from_source` field in `SelectStatement` for consistent source handling across `Table`, `DerivedTable`, and `Pivot`
+
+See `examples/pivot.sql` for worked patterns.
+
+#### **SQL standard implicit window frames**
+When `ORDER BY` is present inside a window spec but no explicit frame is given, the engine now applies `RANGE BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW` — matching PostgreSQL, MySQL, and SQL Server default behaviour. Previously this could lead to surprising results on cumulative window expressions.
+
+#### **FILE CTE parser scaffold**
+Parser-only milestone for the FILE CTE feature (execution landed in 1.68.0). Design document at `docs/FILE_CTE_DESIGN.md`.
+
+### 🐛 Bug Fixes
+
+- **QUALIFY regression**: `from_source` field now correctly threads through the expression lifter; QUALIFY-to-WHERE transformation no longer loses source binding.
+- **CTE source extraction**: improved handling when CTEs reference other CTEs or mix subqueries with plain table references.
+
+### ⚙️ Infrastructure
+
+- **crates.io publication**: Manual release workflow now publishes to crates.io as part of the tag process.
+- **uv venv cache**: CI workflow guards against stale `.venv` cached from previous runs.
+
+### 📚 Documentation
+
+- Documented previously-undocumented-but-working TUI key bindings in help pages.
+- Removed F7/F12 from help (bound in code but don't fire at runtime).
+
 ## [1.67.0] - 2025-11-05
 
 ### Performance Improvements
