@@ -73,3 +73,69 @@ FROM f
 GROUP BY depth
 ORDER BY depth;
 GO
+
+-- ============================================================
+-- Path-manipulation functions (POSIX-style) applied to the
+-- `path` column of the FILE CTE. These also work on any
+-- string column containing a path.
+--   BASENAME(p)   -> last component (file name with extension)
+--   DIRNAME(p)    -> parent directory
+--   EXTENSION(p)  -> extension without leading dot, or NULL
+--   STEM(p)       -> file name without extension
+--   PATH_DEPTH(p) -> number of components
+--   PATH_PART(p, n) -> nth component (1-based; -1 = last)
+-- ============================================================
+
+-- Show each function side-by-side on a handful of source files
+WITH f AS (FILE PATH 'src' RECURSIVE GLOB '*.rs')
+SELECT BASENAME(path)      as fname,
+       STEM(path)          as stem,
+       EXTENSION(path)     as ext,
+       PATH_PART(path, -2) as folder,
+       PATH_DEPTH(path)    as depth
+FROM f
+WHERE is_dir = false
+ORDER BY fname
+LIMIT 10;
+GO
+
+-- Group Rust sources by their immediate parent folder using PATH_PART
+WITH f AS (FILE PATH 'src' RECURSIVE GLOB '*.rs')
+SELECT PATH_PART(path, -2) as folder,
+       COUNT(*)            as files,
+       SUM(size)           as total_bytes
+FROM f
+WHERE is_dir = false
+GROUP BY folder
+ORDER BY files DESC
+LIMIT 15;
+GO
+
+-- STEM vs BASENAME — handy for multi-extension files like .tar.gz.
+-- Also demonstrates EXTENSION returning NULL for files without one.
+WITH samples AS (
+    SELECT '/var/log/syslog'           AS p UNION ALL
+    SELECT '/home/me/archive.tar.gz'         UNION ALL
+    SELECT 'README'                          UNION ALL
+    SELECT '.gitignore'                      UNION ALL
+    SELECT 'src/main.rs'
+)
+SELECT p,
+       BASENAME(p)  as base,
+       STEM(p)      as stem,
+       EXTENSION(p) as ext,
+       DIRNAME(p)   as dir
+FROM samples;
+GO
+
+-- Find every Rust file NOT at the top of src/ (depth > 2) and show
+-- which sub-module it lives in using PATH_PART negative indexing
+WITH f AS (FILE PATH 'src' RECURSIVE GLOB '*.rs')
+SELECT PATH_PART(path, -2) as module,
+       BASENAME(path)      as fname,
+       PATH_DEPTH(path)    as depth
+FROM f
+WHERE is_dir = false AND PATH_DEPTH(path) > 2
+ORDER BY module, fname
+LIMIT 20;
+GO

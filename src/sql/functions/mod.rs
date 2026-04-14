@@ -28,6 +28,7 @@ pub mod math;
 pub mod mathematics;
 pub mod number_words;
 pub mod particle_charges;
+pub mod path;
 pub mod physics;
 pub mod random;
 pub mod roman;
@@ -514,6 +515,10 @@ impl FunctionRegistry {
             InitCapFunction, MorseCodeFunction, PigLatinFunction, ProperFunction, ReverseFunction,
             Rot13Function, ScrambleFunction, SoundexFunction,
         };
+        use path::{
+            BasenameFunction, DirnameFunction, ExtensionFunction, PathDepthFunction,
+            PathPartFunction, StemFunction,
+        };
         use string_utils::{LPadFunction, RPadFunction, RepeatFunction};
         use text_processing::{CleanText, ExtractWords, StripPunctuation, Tokenize, WordCount};
 
@@ -523,6 +528,14 @@ impl FunctionRegistry {
         self.register(Box::new(RepeatFunction));
         self.register(Box::new(LPadFunction));
         self.register(Box::new(RPadFunction));
+
+        // Path / filename functions (POSIX-style)
+        self.register(Box::new(BasenameFunction));
+        self.register(Box::new(DirnameFunction));
+        self.register(Box::new(ExtensionFunction));
+        self.register(Box::new(StemFunction));
+        self.register(Box::new(PathDepthFunction));
+        self.register(Box::new(PathPartFunction));
 
         // Case conversion functions
         self.register(Box::new(ToSnakeCaseFunction));
