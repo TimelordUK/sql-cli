@@ -1,27 +1,22 @@
-# SQL CLI v1.69.4
+# SQL CLI v1.70.0
 
 **Release Date:** April 14, 2026
 
 ## 📊 Release Overview
-- **Commits in this release:** 2
-- **Files updated:** 2
+- **Commits in this release:** 1
+- **Files updated:** 3
 
 ## ✨ Highlights
 
-### 🏗️ Architecture Improvements
-- **State Management**: Continued migration to centralized AppStateContainer
-- **Code Quality**: Transaction-like state updates for better consistency
-
 ## 📝 Changes by Category
 
-### 🐛 Bug Fixes
-- sync shadow_state in exit_current_mode
+### 🚀 New Features
+- add POSIX-style path functions
 
 <details>
 <summary>📋 View all commits</summary>
 
-- fix(tui): sync shadow_state in exit_current_mode (TimelordUK)
-- add a new demo showing DATEDIFF (TimelordUK)
+- feat(functions): add POSIX-style path functions (TimelordUK)
 
 </details>
 
