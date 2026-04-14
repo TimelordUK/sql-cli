@@ -29,6 +29,24 @@ use crate::sql::recursive_parser::{
     TableFunction,
 };
 
+/// Look up a CTE by name with case-insensitive fallback.
+/// Exact match is tried first (fast path); if that fails, a case-insensitive
+/// scan finds tables like `Orders` when the query references `orders`.
+/// This matches MySQL/PostgreSQL behaviour for unquoted identifiers.
+fn resolve_cte<'a>(
+    context: &'a HashMap<String, Arc<DataView>>,
+    name: &str,
+) -> Option<&'a Arc<DataView>> {
+    if let Some(v) = context.get(name) {
+        return Some(v);
+    }
+    let lower = name.to_lowercase();
+    context
+        .iter()
+        .find(|(k, _)| k.to_lowercase() == lower)
+        .map(|(_, v)| v)
+}
+
 /// Execution context for tracking table aliases and scope during query execution
 #[derive(Debug, Clone)]
 pub struct ExecutionContext {
@@ -1199,8 +1217,8 @@ impl QueryEngine {
         let source_table = if let Some(ref from_source) = statement.from_source {
             match from_source {
                 TableSource::Table(table_name) => {
-                    // Check if this references a CTE
-                    if let Some(cte_view) = cte_context.get(table_name) {
+                    // Check if this references a CTE (case-insensitive fallback)
+                    if let Some(cte_view) = resolve_cte(cte_context, table_name) {
                         debug!("QueryEngine: Using CTE '{}' as source table", table_name);
                         // Materialize the CTE view as a table
                         let mut materialized = self.materialize_view((**cte_view).clone())?;
@@ -1316,8 +1334,8 @@ impl QueryEngine {
                 } else {
                     #[allow(deprecated)]
                     if let Some(ref table_name) = statement.from_table {
-                        // Check if this references a CTE
-                        if let Some(cte_view) = cte_context.get(table_name) {
+                        // Check if this references a CTE (case-insensitive fallback)
+                        if let Some(cte_view) = resolve_cte(cte_context, table_name) {
                             debug!(
                                 "QueryEngine: Using CTE '{}' as source table (deprecated field)",
                                 table_name
@@ -1396,8 +1414,8 @@ impl QueryEngine {
                 // Resolve the right table for the join
                 let right_table = match &join_clause.table {
                     TableSource::Table(name) => {
-                        // Check if it's a CTE reference
-                        if let Some(cte_view) = cte_context.get(name) {
+                        // Check if it's a CTE reference (case-insensitive fallback)
+                        if let Some(cte_view) = resolve_cte(cte_context, name) {
                             let mut materialized = self.materialize_view((**cte_view).clone())?;
 
                             // Apply alias to qualified column names if present
