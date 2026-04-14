@@ -7393,22 +7393,28 @@ impl ActionHandlerContext for EnhancedTuiApp {
     }
 
     fn exit_current_mode(&mut self) {
-        // Handle escape based on current mode
+        // Handle escape based on current mode.
+        // All transitions must go through set_mode_via_shadow_state so that
+        // shadow_state and the buffer mode stay in sync. Updating only
+        // state_container.set_mode(...) leaves shadow_state stale, which
+        // causes rendering (which reads shadow_state) to diverge from key
+        // dispatch (which reads state_container) — e.g. grey input box while
+        // j/k get appended to the query.
         let mode = self.shadow_state.borrow().get_mode();
         match mode {
             AppMode::Results => {
                 // VimSearchAdapter now handles Escape in Results mode when search is active
                 // If we get here, it means search wasn't active, so switch to Command mode
-                self.state_container.set_mode(AppMode::Command);
+                self.set_mode_via_shadow_state(AppMode::Command, "escape_from_results");
             }
             AppMode::Command => {
-                self.state_container.set_mode(AppMode::Results);
+                self.set_mode_via_shadow_state(AppMode::Results, "escape_from_command");
             }
             AppMode::Help => {
-                self.state_container.set_mode(AppMode::Results);
+                self.set_mode_via_shadow_state(AppMode::Results, "escape_from_help");
             }
             AppMode::JumpToRow => {
-                self.state_container.set_mode(AppMode::Results);
+                self.set_mode_via_shadow_state(AppMode::Results, "escape_from_jump_to_row");
                 <Self as InputBehavior>::clear_jump_to_row_input(self);
                 // Clear jump-to-row state (can mutate directly now)
                 self.state_container.jump_to_row_mut().is_active = false;
@@ -7417,7 +7423,7 @@ impl ActionHandlerContext for EnhancedTuiApp {
             }
             _ => {
                 // For any other mode, return to Results
-                self.state_container.set_mode(AppMode::Results);
+                self.set_mode_via_shadow_state(AppMode::Results, "escape_to_results");
             }
         }
     }
