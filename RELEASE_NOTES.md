@@ -1,22 +1,31 @@
-# SQL CLI v1.69.1
+# SQL CLI v1.69.2
 
-**Release Date:** April 13, 2026
+**Release Date:** April 14, 2026
 
 ## 📊 Release Overview
-- **Commits in this release:** 1
-- **Files updated:** 1
+- **Commits in this release:** 3
+- **Files updated:** 2
 
 ## ✨ Highlights
 
+### 🔍 Enhanced Debugging
+- **Better Diagnostics**: Improved error messages and state dumps
+
 ## 📝 Changes by Category
 
-### 🚀 New Features
-- DATEDIFF accepts 2-arg MySQL style
+### 🐛 Bug Fixes
+- Case-insensitive CTE table resolution
+
+### 📚 Documentation
+- Move Unreleased DATEDIFF entry to v1.69.1
+- Backfill CHANGELOG for v1.67.1 through v1.69.0
 
 <details>
 <summary>📋 View all commits</summary>
 
-- feat(functions): DATEDIFF accepts 2-arg MySQL style (TimelordUK)
+- fix(joins): Case-insensitive CTE table resolution (TimelordUK)
+- docs: Move Unreleased DATEDIFF entry to v1.69.1 (TimelordUK)
+- docs: Backfill CHANGELOG for v1.67.1 through v1.69.0 (TimelordUK)
 
 </details>
 
