@@ -5,7 +5,7 @@ All notable changes to SQL CLI will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [1.69.1] - 2026-04-14
 
 ### Improvements
 - **`DATEDIFF` MySQL 2-arg form**: Now accepts `DATEDIFF(date1, date2)` returning days, in addition to the existing `DATEDIFF(unit, date1, date2)` form. Matches MySQL/LeetCode SQL conventions.
