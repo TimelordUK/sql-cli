@@ -269,7 +269,10 @@ mod tests {
     fn stem_strips_last_extension() {
         let f = StemFunction;
         assert_eq!(f.evaluate(&[s("main.rs")]).unwrap(), s("main"));
-        assert_eq!(f.evaluate(&[s("archive.tar.gz")]).unwrap(), s("archive.tar"));
+        assert_eq!(
+            f.evaluate(&[s("archive.tar.gz")]).unwrap(),
+            s("archive.tar")
+        );
         assert_eq!(f.evaluate(&[s("README")]).unwrap(), s("README"));
     }
 
@@ -291,9 +294,18 @@ mod tests {
     fn path_part_handles_positive_and_negative() {
         let f = PathPartFunction;
         let p = s("/home/me/src/main.rs");
-        assert_eq!(f.evaluate(&[p.clone(), DataValue::Integer(-1)]).unwrap(), s("main.rs"));
-        assert_eq!(f.evaluate(&[p.clone(), DataValue::Integer(-2)]).unwrap(), s("src"));
-        assert_eq!(f.evaluate(&[p.clone(), DataValue::Integer(2)]).unwrap(), s("home"));
+        assert_eq!(
+            f.evaluate(&[p.clone(), DataValue::Integer(-1)]).unwrap(),
+            s("main.rs")
+        );
+        assert_eq!(
+            f.evaluate(&[p.clone(), DataValue::Integer(-2)]).unwrap(),
+            s("src")
+        );
+        assert_eq!(
+            f.evaluate(&[p.clone(), DataValue::Integer(2)]).unwrap(),
+            s("home")
+        );
         assert_eq!(
             f.evaluate(&[p.clone(), DataValue::Integer(99)]).unwrap(),
             DataValue::Null

@@ -511,13 +511,13 @@ impl FunctionRegistry {
             ToSnakeCaseFunction,
         };
         use number_words::{ToOrdinal, ToOrdinalWords, ToWords};
-        use string_fun::{
-            InitCapFunction, MorseCodeFunction, PigLatinFunction, ProperFunction, ReverseFunction,
-            Rot13Function, ScrambleFunction, SoundexFunction,
-        };
         use path::{
             BasenameFunction, DirnameFunction, ExtensionFunction, PathDepthFunction,
             PathPartFunction, StemFunction,
+        };
+        use string_fun::{
+            InitCapFunction, MorseCodeFunction, PigLatinFunction, ProperFunction, ReverseFunction,
+            Rot13Function, ScrambleFunction, SoundexFunction,
         };
         use string_utils::{LPadFunction, RPadFunction, RepeatFunction};
         use text_processing::{CleanText, ExtractWords, StripPunctuation, Tokenize, WordCount};
