@@ -1,22 +1,27 @@
-# SQL CLI v1.69.3
+# SQL CLI v1.69.4
 
 **Release Date:** April 14, 2026
 
 ## 📊 Release Overview
-- **Commits in this release:** 1
-- **Files updated:** 1
+- **Commits in this release:** 2
+- **Files updated:** 2
 
 ## ✨ Highlights
+
+### 🏗️ Architecture Improvements
+- **State Management**: Continued migration to centralized AppStateContainer
+- **Code Quality**: Transaction-like state updates for better consistency
 
 ## 📝 Changes by Category
 
 ### 🐛 Bug Fixes
-- Recurse into CTEs, FROM subqueries, set operations
+- sync shadow_state in exit_current_mode
 
 <details>
 <summary>📋 View all commits</summary>
 
-- fix(having): Recurse into CTEs, FROM subqueries, set operations (TimelordUK)
+- fix(tui): sync shadow_state in exit_current_mode (TimelordUK)
+- add a new demo showing DATEDIFF (TimelordUK)
 
 </details>
 
