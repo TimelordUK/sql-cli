@@ -1,22 +1,23 @@
-# SQL CLI v1.70.0
+# SQL CLI v1.71.0
 
-**Release Date:** April 14, 2026
+**Release Date:** April 15, 2026
 
 ## 📊 Release Overview
-- **Commits in this release:** 1
-- **Files updated:** 3
+- **Commits in this release:** 2
+- **Files updated:** 8
 
 ## ✨ Highlights
 
 ## 📝 Changes by Category
 
 ### 🚀 New Features
-- add POSIX-style path functions
+- Tuple IN subquery support — (a, b) IN (SELECT x, y FROM ...)
 
 <details>
 <summary>📋 View all commits</summary>
 
-- feat(functions): add POSIX-style path functions (TimelordUK)
+- feat: Tuple IN subquery support — (a, b) IN (SELECT x, y FROM ...) (TimelordUK)
+- style: apply cargo fmt to path functions (TimelordUK)
 
 </details>
 
