@@ -59,8 +59,8 @@ impl HelpText {
             Line::from("  Ctrl+Y   - Yank (paste from kill ring)"),
             Line::from("  Ctrl+V   - Paste from system clipboard"),
             Line::from("  Ctrl+Z   - Undo"),
-            Line::from("  Alt+[    - Jump to previous SQL token"),
-            Line::from("  Alt+]    - Jump to next SQL token"),
+            Line::from("  Alt+,    - Jump to previous SQL token (Alt+[ if terminal allows)"),
+            Line::from("  Alt+.    - Jump to next SQL token (or Alt+])"),
             Line::from(""),
             Line::from("BUFFER MANAGEMENT (works in Command & Results modes)").style(
                 Style::default()

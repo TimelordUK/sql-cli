@@ -2018,7 +2018,9 @@ impl EnhancedTuiApp {
             )) ||
             // Special Alt combinations that aren't word navigation
             (normalized_key.modifiers.contains(KeyModifiers::ALT) && matches!(c,
-                'x' | 'X'   // Expand asterisk visible only
+                'x' | 'X' |   // Expand asterisk visible only
+                '[' | ']' |   // Jump to prev/next SQL token
+                ',' | '.'     // Jump prev/next token (terminal-safe aliases)
             ))
         } else {
             false
@@ -7709,6 +7711,16 @@ impl ActionHandlerContext for EnhancedTuiApp {
     fn delete_word_forward(&mut self) {
         use crate::ui::traits::input_ops::InputBehavior;
         InputBehavior::delete_word_forward(self);
+    }
+
+    fn jump_to_prev_token(&mut self) {
+        use crate::ui::traits::input_ops::InputBehavior;
+        InputBehavior::jump_to_prev_token(self);
+    }
+
+    fn jump_to_next_token(&mut self) {
+        use crate::ui::traits::input_ops::InputBehavior;
+        InputBehavior::jump_to_next_token(self);
     }
 
     fn expand_asterisk(&mut self) {

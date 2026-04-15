@@ -55,6 +55,8 @@ pub enum Action {
     MoveCursorEnd,
     MoveCursorWordLeft,
     MoveCursorWordRight,
+    JumpToPrevToken,
+    JumpToNextToken,
 
     // Text deletion
     DeleteWordBackward,

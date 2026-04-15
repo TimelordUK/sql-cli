@@ -304,6 +304,11 @@ impl KeyMapper {
         mappings.insert((Right, Mod::CONTROL), Action::MoveCursorWordRight);
         mappings.insert((Char('b'), Mod::ALT), Action::MoveCursorWordLeft);
         mappings.insert((Char('f'), Mod::ALT), Action::MoveCursorWordRight);
+        mappings.insert((Char('['), Mod::ALT), Action::JumpToPrevToken);
+        mappings.insert((Char(']'), Mod::ALT), Action::JumpToNextToken);
+        // Terminal-safe aliases (Alt+[ is swallowed by CSI prefix in most terminals)
+        mappings.insert((Char(','), Mod::ALT), Action::JumpToPrevToken);
+        mappings.insert((Char('.'), Mod::ALT), Action::JumpToNextToken);
 
         // Text editing
         mappings.insert((Backspace, Mod::NONE), Action::Backspace);

@@ -120,6 +120,8 @@ pub trait ActionHandlerContext {
     fn kill_line_backward(&mut self);
     fn delete_word_backward(&mut self);
     fn delete_word_forward(&mut self);
+    fn jump_to_prev_token(&mut self);
+    fn jump_to_next_token(&mut self);
     fn expand_asterisk(&mut self);
     fn expand_asterisk_visible(&mut self);
 
@@ -772,6 +774,14 @@ impl ActionHandler for TextEditActionHandler {
                 tui.delete_word_forward();
                 Some(Ok(ActionResult::Handled))
             }
+            Action::JumpToPrevToken => {
+                tui.jump_to_prev_token();
+                Some(Ok(ActionResult::Handled))
+            }
+            Action::JumpToNextToken => {
+                tui.jump_to_next_token();
+                Some(Ok(ActionResult::Handled))
+            }
             Action::KillLine => {
                 tui.kill_line();
                 Some(Ok(ActionResult::Handled))
@@ -1112,6 +1122,12 @@ mod tests {
         }
         fn delete_word_forward(&mut self) {
             self.last_action = "delete_word_forward".to_string();
+        }
+        fn jump_to_prev_token(&mut self) {
+            self.last_action = "jump_to_prev_token".to_string();
+        }
+        fn jump_to_next_token(&mut self) {
+            self.last_action = "jump_to_next_token".to_string();
         }
         fn expand_asterisk(&mut self) {
             self.last_action = "expand_asterisk".to_string();
