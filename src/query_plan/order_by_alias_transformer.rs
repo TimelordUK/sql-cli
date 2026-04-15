@@ -38,7 +38,9 @@
 //! supports column names, not full expressions in the AST.
 
 use crate::query_plan::pipeline::ASTTransformer;
-use crate::sql::parser::ast::{ColumnRef, SelectItem, SelectStatement, SqlExpression};
+use crate::sql::parser::ast::{
+    CTEType, ColumnRef, SelectItem, SelectStatement, SqlExpression, TableSource,
+};
 use anyhow::Result;
 use std::collections::HashMap;
 use tracing::debug;
@@ -186,18 +188,60 @@ impl ASTTransformer for OrderByAliasTransformer {
         "Rewrites ORDER BY aggregate expressions to use SELECT aliases"
     }
 
-    fn transform(&mut self, mut stmt: SelectStatement) -> Result<SelectStatement> {
-        // Only process if there's an ORDER BY clause
+    fn transform(&mut self, stmt: SelectStatement) -> Result<SelectStatement> {
+        self.transform_statement(stmt)
+    }
+}
+
+impl OrderByAliasTransformer {
+    /// Transform a SelectStatement and recurse into nested SELECT statements
+    /// (CTEs, FROM subqueries, set operations). Mirrors the recursion pattern
+    /// used by HavingAliasTransformer and GroupByAliasExpander.
+    #[allow(deprecated)]
+    fn transform_statement(&mut self, mut stmt: SelectStatement) -> Result<SelectStatement> {
+        // Recurse into CTEs
+        for cte in stmt.ctes.iter_mut() {
+            if let CTEType::Standard(ref mut inner) = cte.cte_type {
+                let taken = std::mem::take(inner);
+                *inner = self.transform_statement(taken)?;
+            }
+        }
+
+        // Recurse into FROM DerivedTable subqueries
+        if let Some(TableSource::DerivedTable { query, .. }) = stmt.from_source.as_mut() {
+            let taken = std::mem::take(query.as_mut());
+            **query = self.transform_statement(taken)?;
+        }
+
+        // Recurse into legacy from_subquery
+        if let Some(subq) = stmt.from_subquery.as_mut() {
+            let taken = std::mem::take(subq.as_mut());
+            **subq = self.transform_statement(taken)?;
+        }
+
+        // Recurse into set operation right-hand sides
+        for (_op, rhs) in stmt.set_operations.iter_mut() {
+            let taken = std::mem::take(rhs.as_mut());
+            **rhs = self.transform_statement(taken)?;
+        }
+
+        // Apply ORDER BY alias rewrite at this level
+        self.apply_rewrite(&mut stmt);
+
+        Ok(stmt)
+    }
+
+    /// Apply ORDER BY alias rewriting to a single statement (no recursion).
+    fn apply_rewrite(&mut self, stmt: &mut SelectStatement) {
         if stmt.order_by.is_none() {
-            return Ok(stmt);
+            return;
         }
 
         // Step 1: Build mapping of aggregates to aliases
         let aggregate_map = self.build_aggregate_map(&mut stmt.select_items);
 
         if aggregate_map.is_empty() {
-            // No aggregates in SELECT, nothing to do
-            return Ok(stmt);
+            return;
         }
 
         // Step 2: Rewrite ORDER BY expressions
@@ -205,15 +249,11 @@ impl ASTTransformer for OrderByAliasTransformer {
             let mut modified = false;
 
             for order_col in order_by.iter_mut() {
-                // Convert expression to string representation for pattern matching
                 let expr_str = Self::expression_to_string(&order_col.expr);
 
-                // Check if this looks like an aggregate function call
                 if let Some(normalized) = Self::extract_aggregate_from_order_column(&expr_str) {
-                    // Try to find matching aggregate in map
                     if let Some(alias) = aggregate_map.get(&normalized) {
                         debug!("Rewriting ORDER BY '{}' to use alias '{}'", expr_str, alias);
-                        // Replace expression with simple column reference to the alias
                         order_col.expr = SqlExpression::Column(ColumnRef::unquoted(alias.clone()));
                         modified = true;
                     }
@@ -227,8 +267,6 @@ impl ASTTransformer for OrderByAliasTransformer {
                 );
             }
         }
-
-        Ok(stmt)
     }
 }
 
