@@ -33,7 +33,7 @@
 //! - Complex expressions are duplicated (no common subexpression elimination)
 
 use crate::query_plan::pipeline::ASTTransformer;
-use crate::sql::parser::ast::{SelectItem, SelectStatement, SqlExpression};
+use crate::sql::parser::ast::{CTEType, SelectItem, SelectStatement, SqlExpression, TableSource};
 use anyhow::Result;
 use std::collections::HashMap;
 use tracing::debug;
@@ -113,6 +113,65 @@ impl GroupByAliasExpander {
 
         any_expanded
     }
+
+    /// Transform a SelectStatement and recurse into nested SELECT statements
+    /// (CTEs, FROM subqueries, set operations). Needed because GROUP BY alias
+    /// expansion must happen in every scope where GROUP BY appears.
+    #[allow(deprecated)]
+    fn transform_statement(&mut self, mut stmt: SelectStatement) -> Result<SelectStatement> {
+        // Recurse into CTEs
+        for cte in stmt.ctes.iter_mut() {
+            if let CTEType::Standard(ref mut inner) = cte.cte_type {
+                let taken = std::mem::take(inner);
+                *inner = self.transform_statement(taken)?;
+            }
+        }
+
+        // Recurse into FROM DerivedTable subqueries
+        if let Some(TableSource::DerivedTable { query, .. }) = stmt.from_source.as_mut() {
+            let taken = std::mem::take(query.as_mut());
+            **query = self.transform_statement(taken)?;
+        }
+
+        // Recurse into legacy from_subquery
+        if let Some(subq) = stmt.from_subquery.as_mut() {
+            let taken = std::mem::take(subq.as_mut());
+            **subq = self.transform_statement(taken)?;
+        }
+
+        // Recurse into set operation right-hand sides
+        for (_op, rhs) in stmt.set_operations.iter_mut() {
+            let taken = std::mem::take(rhs.as_mut());
+            **rhs = self.transform_statement(taken)?;
+        }
+
+        // Apply GROUP BY alias expansion at this level
+        self.apply_expansion(&mut stmt);
+
+        Ok(stmt)
+    }
+
+    /// Apply GROUP BY alias expansion to a single statement (no recursion).
+    fn apply_expansion(&mut self, stmt: &mut SelectStatement) {
+        if stmt.group_by.is_none() {
+            return;
+        }
+
+        let aliases = Self::extract_aliases(&stmt.select_items);
+        if aliases.is_empty() {
+            return;
+        }
+
+        if let Some(ref mut group_by) = stmt.group_by {
+            let expanded = self.expand_group_by(group_by, &aliases);
+            if expanded {
+                debug!(
+                    "Expanded {} alias reference(s) in GROUP BY clause",
+                    self.expansions
+                );
+            }
+        }
+    }
 }
 
 impl Default for GroupByAliasExpander {
@@ -130,32 +189,8 @@ impl ASTTransformer for GroupByAliasExpander {
         "Expands SELECT aliases in GROUP BY clauses to their full expressions"
     }
 
-    fn transform(&mut self, mut stmt: SelectStatement) -> Result<SelectStatement> {
-        // Only process if there's a GROUP BY clause
-        if stmt.group_by.is_none() {
-            return Ok(stmt);
-        }
-
-        // Step 1: Extract all aliases from SELECT clause
-        let aliases = Self::extract_aliases(&stmt.select_items);
-
-        if aliases.is_empty() {
-            // No aliases to expand
-            return Ok(stmt);
-        }
-
-        // Step 2: Expand aliases in GROUP BY clause
-        if let Some(ref mut group_by) = stmt.group_by {
-            let expanded = self.expand_group_by(group_by, &aliases);
-            if expanded {
-                debug!(
-                    "Expanded {} alias reference(s) in GROUP BY clause",
-                    self.expansions
-                );
-            }
-        }
-
-        Ok(stmt)
+    fn transform(&mut self, stmt: SelectStatement) -> Result<SelectStatement> {
+        self.transform_statement(stmt)
     }
 
     fn begin(&mut self) -> Result<()> {
