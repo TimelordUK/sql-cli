@@ -659,6 +659,16 @@ impl Parser {
                         .map_or(false, |h| Self::contains_aggregate_function(h))
             }
 
+            // Tuple IN/NOT IN subquery - check each expr and subquery
+            SqlExpression::InSubqueryTuple { exprs, subquery }
+            | SqlExpression::NotInSubqueryTuple { exprs, subquery } => {
+                exprs.iter().any(Self::contains_aggregate_function)
+                    || subquery
+                        .having
+                        .as_ref()
+                        .map_or(false, |h| Self::contains_aggregate_function(h))
+            }
+
             // UNNEST - check column expression
             SqlExpression::Unnest { column, .. } => Self::contains_aggregate_function(column),
         }

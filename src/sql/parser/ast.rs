@@ -226,6 +226,19 @@ pub enum SqlExpression {
         expr: Box<SqlExpression>,
         subquery: Box<SelectStatement>,
     },
+    /// Tuple IN subquery — matches multiple columns at once
+    /// Used in expressions like: WHERE (a, b) IN (SELECT x, y FROM table WHERE ...)
+    /// The subquery must return the same number of columns as the LHS tuple.
+    InSubqueryTuple {
+        exprs: Vec<SqlExpression>,
+        subquery: Box<SelectStatement>,
+    },
+    /// Tuple NOT IN subquery
+    /// Used in expressions like: WHERE (a, b) NOT IN (SELECT x, y FROM table WHERE ...)
+    NotInSubqueryTuple {
+        exprs: Vec<SqlExpression>,
+        subquery: Box<SelectStatement>,
+    },
 }
 
 #[derive(Debug, Clone)]

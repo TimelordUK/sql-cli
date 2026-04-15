@@ -261,11 +261,64 @@ where
                     query: Box::new(subquery),
                 })
             } else {
-                // Regular parenthesized expression
-                debug!("Regular parenthesized expression");
-                let expr = parser.parse_logical_or()?;
-                ExpressionParser::consume(parser, Token::RightParen)?;
-                Ok(expr)
+                // Parenthesized expression, possibly a tuple for tuple IN:
+                // (a, b) IN (SELECT x, y FROM ...)
+                let first = parser.parse_logical_or()?;
+
+                if matches!(ExpressionParser::current_token(parser), Token::Comma) {
+                    // Collect the remaining tuple elements
+                    let mut exprs = vec![first];
+                    while matches!(ExpressionParser::current_token(parser), Token::Comma) {
+                        ExpressionParser::advance(parser); // consume ,
+                        exprs.push(parser.parse_logical_or()?);
+                    }
+                    ExpressionParser::consume(parser, Token::RightParen)?;
+
+                    // Expect IN or NOT IN immediately after
+                    match ExpressionParser::current_token(parser) {
+                        Token::In => {
+                            ExpressionParser::advance(parser); // consume IN
+                            ExpressionParser::consume(parser, Token::LeftParen)?;
+                            if !matches!(ExpressionParser::current_token(parser), Token::Select) {
+                                return Err("Tuple IN requires a subquery on the right".to_string());
+                            }
+                            let subquery = parser.parse_subquery()?;
+                            ExpressionParser::consume(parser, Token::RightParen)?;
+                            Ok(SqlExpression::InSubqueryTuple {
+                                exprs,
+                                subquery: Box::new(subquery),
+                            })
+                        }
+                        Token::Not => {
+                            ExpressionParser::advance(parser); // consume NOT
+                            if !matches!(ExpressionParser::current_token(parser), Token::In) {
+                                return Err("Expected IN after NOT for tuple".to_string());
+                            }
+                            ExpressionParser::advance(parser); // consume IN
+                            ExpressionParser::consume(parser, Token::LeftParen)?;
+                            if !matches!(ExpressionParser::current_token(parser), Token::Select) {
+                                return Err(
+                                    "Tuple NOT IN requires a subquery on the right".to_string()
+                                );
+                            }
+                            let subquery = parser.parse_subquery()?;
+                            ExpressionParser::consume(parser, Token::RightParen)?;
+                            Ok(SqlExpression::NotInSubqueryTuple {
+                                exprs,
+                                subquery: Box::new(subquery),
+                            })
+                        }
+                        _ => Err(
+                            "A tuple (expr, expr, ...) may only appear as the left side of IN / NOT IN"
+                                .to_string(),
+                        ),
+                    }
+                } else {
+                    // Regular parenthesized expression
+                    debug!("Regular parenthesized expression");
+                    ExpressionParser::consume(parser, Token::RightParen)?;
+                    Ok(first)
+                }
             }
         }
 

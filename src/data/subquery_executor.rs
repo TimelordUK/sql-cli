@@ -10,6 +10,81 @@ use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use tracing::{debug, info};
 
+/// Convert a DataValue back into a SqlExpression literal (used when materialising
+/// subquery results into the AST for the evaluator to handle).
+fn datavalue_to_literal(v: &DataValue) -> SqlExpression {
+    match v {
+        DataValue::Null => SqlExpression::Null,
+        DataValue::Integer(i) => SqlExpression::NumberLiteral(i.to_string()),
+        DataValue::Float(f) => SqlExpression::NumberLiteral(f.to_string()),
+        DataValue::String(s) => SqlExpression::StringLiteral(s.clone()),
+        DataValue::InternedString(s) => SqlExpression::StringLiteral(s.to_string()),
+        DataValue::Boolean(b) => SqlExpression::BooleanLiteral(*b),
+        DataValue::DateTime(dt) => SqlExpression::StringLiteral(dt.clone()),
+        DataValue::Vector(vec) => {
+            let components: Vec<String> = vec.iter().map(|f| f.to_string()).collect();
+            SqlExpression::StringLiteral(format!("[{}]", components.join(",")))
+        }
+    }
+}
+
+/// Build an expression equivalent to `(e1, e2, ...) IN (v_row1, v_row2, ...)`
+/// expanded as OR of AND equality checks. For an empty subquery result the
+/// expression evaluates to FALSE (true for NOT IN).
+///
+/// Example: `(a, b) IN (SELECT x, y ...)` with rows [(1,2), (3,4)] becomes
+///     (a = 1 AND b = 2) OR (a = 3 AND b = 4)
+pub(crate) fn build_tuple_in_expression(
+    exprs: &[SqlExpression],
+    rows: &[Vec<DataValue>],
+    negate: bool,
+) -> SqlExpression {
+    if rows.is_empty() {
+        // Empty subquery: IN is always false, NOT IN is always true
+        return SqlExpression::BooleanLiteral(negate);
+    }
+
+    // Build OR of row-matches. Each row-match is AND of column equalities.
+    let mut or_expr: Option<SqlExpression> = None;
+    for row in rows {
+        // Build AND of equalities for this row
+        let mut and_expr: Option<SqlExpression> = None;
+        for (i, value) in row.iter().enumerate() {
+            let eq = SqlExpression::BinaryOp {
+                left: Box::new(exprs[i].clone()),
+                op: "=".to_string(),
+                right: Box::new(datavalue_to_literal(value)),
+            };
+            and_expr = Some(match and_expr {
+                None => eq,
+                Some(prev) => SqlExpression::BinaryOp {
+                    left: Box::new(prev),
+                    op: "AND".to_string(),
+                    right: Box::new(eq),
+                },
+            });
+        }
+        let row_match = and_expr.expect("row had zero columns — should not happen");
+        or_expr = Some(match or_expr {
+            None => row_match,
+            Some(prev) => SqlExpression::BinaryOp {
+                left: Box::new(prev),
+                op: "OR".to_string(),
+                right: Box::new(row_match),
+            },
+        });
+    }
+
+    let matches = or_expr.expect("rows was non-empty");
+    if negate {
+        SqlExpression::Not {
+            expr: Box::new(matches),
+        }
+    } else {
+        matches
+    }
+}
+
 /// Result of executing a subquery
 #[derive(Debug, Clone)]
 pub enum SubqueryResult {
@@ -216,6 +291,26 @@ impl SubqueryExecutor {
                 })
             }
 
+            SqlExpression::InSubqueryTuple { exprs, subquery } => {
+                debug!("SubqueryExecutor: Executing tuple IN subquery");
+                let processed_exprs: Vec<SqlExpression> = exprs
+                    .iter()
+                    .map(|e| self.process_expression(e))
+                    .collect::<Result<Vec<_>>>()?;
+                let rows = self.execute_tuple_subquery(subquery, exprs.len())?;
+                Ok(build_tuple_in_expression(&processed_exprs, &rows, false))
+            }
+
+            SqlExpression::NotInSubqueryTuple { exprs, subquery } => {
+                debug!("SubqueryExecutor: Executing tuple NOT IN subquery");
+                let processed_exprs: Vec<SqlExpression> = exprs
+                    .iter()
+                    .map(|e| self.process_expression(e))
+                    .collect::<Result<Vec<_>>>()?;
+                let rows = self.execute_tuple_subquery(subquery, exprs.len())?;
+                Ok(build_tuple_in_expression(&processed_exprs, &rows, true))
+            }
+
             // Process nested expressions
             SqlExpression::BinaryOp { left, op, right } => Ok(SqlExpression::BinaryOp {
                 left: Box::new(self.process_expression(left)?),
@@ -370,6 +465,46 @@ impl SubqueryExecutor {
             .insert(cache_key, SubqueryResult::ValueSet(values.clone()));
 
         Ok(values.into_iter().collect())
+    }
+
+    /// Execute a multi-column subquery for tuple IN, returning rows of values.
+    /// Validates that the number of columns matches the LHS tuple size.
+    fn execute_tuple_subquery(
+        &mut self,
+        query: &SelectStatement,
+        expected_cols: usize,
+    ) -> Result<Vec<Vec<DataValue>>> {
+        info!(
+            "SubqueryExecutor: Executing tuple IN subquery (expecting {} columns)",
+            expected_cols
+        );
+
+        let result_view = self.query_engine.execute_statement_with_cte_context(
+            self.source_table.clone(),
+            query.clone(),
+            &self.cte_context,
+        )?;
+
+        if result_view.column_count() != expected_cols {
+            return Err(anyhow!(
+                "Tuple IN subquery returned {} columns, expected {}",
+                result_view.column_count(),
+                expected_cols
+            ));
+        }
+
+        let mut rows = Vec::with_capacity(result_view.row_count());
+        for row_idx in 0..result_view.row_count() {
+            if let Some(row) = result_view.get_row(row_idx) {
+                rows.push(row.values.clone());
+            }
+        }
+
+        debug!(
+            "SubqueryExecutor: tuple IN subquery returned {} rows",
+            rows.len()
+        );
+        Ok(rows)
     }
 
     /// Convert a DataValue to a SqlExpression

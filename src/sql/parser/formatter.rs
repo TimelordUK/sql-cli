@@ -323,6 +323,20 @@ pub fn format_expression_ast(expr: &SqlExpression) -> String {
                 format_expression_ast(expr)
             )
         }
+        SqlExpression::InSubqueryTuple { exprs, subquery: _ } => {
+            let formatted: Vec<String> = exprs.iter().map(format_expression_ast).collect();
+            format!(
+                "InSubqueryTuple {{ exprs: ({}), subquery: <SelectStatement> }}",
+                formatted.join(", ")
+            )
+        }
+        SqlExpression::NotInSubqueryTuple { exprs, subquery: _ } => {
+            let formatted: Vec<String> = exprs.iter().map(format_expression_ast).collect();
+            format!(
+                "NotInSubqueryTuple {{ exprs: ({}), subquery: <SelectStatement> }}",
+                formatted.join(", ")
+            )
+        }
         SqlExpression::Unnest { column, delimiter } => {
             format!(
                 "Unnest {{ column: {}, delimiter: \"{}\" }}",
@@ -833,6 +847,14 @@ pub fn format_expression(expr: &SqlExpression) -> String {
         }
         SqlExpression::NotInSubquery { expr, subquery: _ } => {
             format!("{} NOT IN (SELECT ...)", format_expression(expr))
+        }
+        SqlExpression::InSubqueryTuple { exprs, subquery: _ } => {
+            let formatted: Vec<String> = exprs.iter().map(format_expression).collect();
+            format!("({}) IN (SELECT ...)", formatted.join(", "))
+        }
+        SqlExpression::NotInSubqueryTuple { exprs, subquery: _ } => {
+            let formatted: Vec<String> = exprs.iter().map(format_expression).collect();
+            format!("({}) NOT IN (SELECT ...)", formatted.join(", "))
         }
         SqlExpression::Unnest { column, delimiter } => {
             format!("UNNEST({}, '{}')", format_expression(column), delimiter)
