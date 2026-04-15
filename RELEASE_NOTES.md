@@ -1,23 +1,26 @@
-# SQL CLI v1.71.0
+# SQL CLI v1.71.1
 
 **Release Date:** April 15, 2026
 
 ## 📊 Release Overview
-- **Commits in this release:** 2
-- **Files updated:** 8
+- **Commits in this release:** 3
+- **Files updated:** 7
 
 ## ✨ Highlights
 
 ## 📝 Changes by Category
 
-### 🚀 New Features
-- Tuple IN subquery support — (a, b) IN (SELECT x, y FROM ...)
+### 🐛 Bug Fixes
+- Wire Alt+[/] and Alt+,/. for SQL token jumping in edit mode
+- Recurse into CTEs, FROM subqueries, set operations
+- Recurse into CTEs, FROM subqueries, set operations
 
 <details>
 <summary>📋 View all commits</summary>
 
-- feat: Tuple IN subquery support — (a, b) IN (SELECT x, y FROM ...) (TimelordUK)
-- style: apply cargo fmt to path functions (TimelordUK)
+- fix(tui): Wire Alt+[/] and Alt+,/. for SQL token jumping in edit mode (TimelordUK)
+- fix(order_by): Recurse into CTEs, FROM subqueries, set operations (TimelordUK)
+- fix(group_by): Recurse into CTEs, FROM subqueries, set operations (TimelordUK)
 
 </details>
 
