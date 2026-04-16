@@ -319,37 +319,57 @@ impl OrderByAliasTransformer {
             }
         }
 
-        // Track column refs we've already promoted in this statement so two
-        // ORDER BY items referencing the same column share one hidden alias.
-        let mut promoted: HashMap<String, String> = HashMap::new();
+        // Dedup: column refs (by name) and computed expressions (by stringified
+        // form) share hidden aliases when they appear multiple times in ORDER BY.
+        let mut promoted_columns: HashMap<String, String> = HashMap::new();
+        let mut promoted_exprs: HashMap<String, String> = HashMap::new();
 
         for order_col in order_by.iter_mut() {
-            let column_ref = match &order_col.expr {
-                SqlExpression::Column(c) => c.clone(),
-                _ => continue, // Non-column ORDER BY expressions — out of scope here
-            };
-
-            let lookup_key = column_ref.name.to_lowercase();
-            if visible.contains(&lookup_key) {
-                continue;
+            // Skip if the ORDER BY item is already a Column ref to a visible
+            // SELECT output — no promotion needed.
+            if let SqlExpression::Column(c) = &order_col.expr {
+                if visible.contains(&c.name.to_lowercase()) {
+                    continue;
+                }
             }
 
-            let hidden_alias = if let Some(existing) = promoted.get(&lookup_key) {
-                existing.clone()
+            // Determine the dedup key and clone the expression we'll promote.
+            // For Column refs we use the column name (case-insensitive); for
+            // arbitrary expressions we use the debug-formatted string. Two
+            // semantically-identical exprs may not dedup but that's harmless —
+            // the worst case is one redundant computed column.
+            let expr_to_promote = order_col.expr.clone();
+            let (dedup_key, is_column) = match &expr_to_promote {
+                SqlExpression::Column(c) => (c.name.to_lowercase(), true),
+                other => (format!("{:?}", other), false),
+            };
+
+            let existing_alias = if is_column {
+                promoted_columns.get(&dedup_key).cloned()
+            } else {
+                promoted_exprs.get(&dedup_key).cloned()
+            };
+
+            let hidden_alias = if let Some(alias) = existing_alias {
+                alias
             } else {
                 self.hidden_counter += 1;
                 let alias = format!("{}{}", HIDDEN_ORDERBY_PREFIX, self.hidden_counter);
                 debug!(
-                    "Promoting ORDER BY column '{}' as hidden SELECT item '{}'",
-                    column_ref.name, alias
+                    "Promoting ORDER BY expression as hidden SELECT item '{}': {:?}",
+                    alias, expr_to_promote
                 );
                 stmt.select_items.push(SelectItem::Expression {
-                    expr: SqlExpression::Column(column_ref.clone()),
+                    expr: expr_to_promote,
                     alias: alias.clone(),
                     leading_comments: Vec::new(),
                     trailing_comment: None,
                 });
-                promoted.insert(lookup_key, alias.clone());
+                if is_column {
+                    promoted_columns.insert(dedup_key, alias.clone());
+                } else {
+                    promoted_exprs.insert(dedup_key, alias.clone());
+                }
                 alias
             };
 

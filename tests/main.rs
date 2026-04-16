@@ -136,6 +136,9 @@ mod test_numeric_sorting;
 #[path = "test_order_by_asc_desc.rs"]
 mod test_order_by_asc_desc;
 
+#[path = "test_order_by_expressions.rs"]
+mod test_order_by_expressions;
+
 #[path = "test_original_preservation.rs"]
 mod test_original_preservation;
 

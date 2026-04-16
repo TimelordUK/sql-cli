@@ -160,6 +160,10 @@ impl GroupByExpressions for QueryEngine {
         // First, scan SELECT items to find non-aggregate expressions and their aliases
         let mut aggregate_columns = Vec::new();
         let mut non_aggregate_exprs = Vec::new();
+        // Computed expressions that depend only on GROUP BY columns but aren't
+        // direct matches (e.g. `user_id + 10` when GROUP BY is `user_id`).
+        // These need a result column and per-group evaluation.
+        let mut derived_grouped_exprs: Vec<(SqlExpression, String)> = Vec::new();
         let mut group_by_aliases = Vec::new();
 
         // Map GROUP BY expressions to their aliases from SELECT items
@@ -205,24 +209,31 @@ impl GroupByExpressions for QueryEngine {
                             }
                         }
                         if !found {
-                            // Check if it's a simple column that's in GROUP BY
-                            if let SqlExpression::Column(col) = expr {
-                                // Check if this column is referenced in any GROUP BY expression
-                                let referenced = group_by_exprs
-                                    .iter()
-                                    .any(|ge| expression_references_column(ge, &col.name));
-                                if !referenced {
-                                    return Err(anyhow!(
-                                        "Expression '{}' must appear in GROUP BY clause or be used in an aggregate function",
-                                        alias
-                                    ));
-                                }
-                            } else {
+                            // Walk the expression and confirm every column ref
+                            // it touches is grouped (either appears in a GROUP
+                            // BY expression directly, or is referenced by one).
+                            // This permits computed expressions that depend
+                            // only on grouping keys, e.g.:
+                            //   SELECT user_id + 10 FROM t GROUP BY user_id
+                            // which standard SQL allows.
+                            let mut referenced_cols = Vec::new();
+                            collect_column_refs(expr, &mut referenced_cols);
+                            let all_grouped = !referenced_cols.is_empty()
+                                && referenced_cols.iter().all(|col_name| {
+                                    group_by_exprs
+                                        .iter()
+                                        .any(|ge| expression_references_column(ge, col_name))
+                                });
+                            if !all_grouped {
                                 return Err(anyhow!(
                                     "Expression '{}' must appear in GROUP BY clause or be used in an aggregate function",
                                     alias
                                 ));
                             }
+                            // Add a column for the derived expression and remember
+                            // it so Phase 2 evaluates it on each group's first row.
+                            result_table.add_column(DataColumn::new(alias));
+                            derived_grouped_exprs.push((expr.clone(), alias.clone()));
                         }
                     }
                 }
@@ -287,6 +298,26 @@ impl GroupByExpressions for QueryEngine {
 
                 row_values.push(value);
             }
+
+            // Evaluate derived expressions that depend only on GROUP BY columns.
+            // Same value for every row in the group, so evaluating on the first
+            // row of the group is correct.
+            for (expr, _alias) in &derived_grouped_exprs {
+                let group_rows = group_view.get_visible_rows();
+                let value = if !group_rows.is_empty() {
+                    let mut evaluator = ArithmeticEvaluator::with_date_notation(
+                        group_view.source(),
+                        date_notation.clone(),
+                    );
+                    evaluator
+                        .evaluate(expr, group_rows[0])
+                        .unwrap_or(DataValue::Null)
+                } else {
+                    DataValue::Null
+                };
+                row_values.push(value);
+            }
+
             aggregation_time += agg_start.elapsed();
 
             // Evaluate HAVING clause if present
@@ -372,6 +403,58 @@ fn expressions_match(expr1: &SqlExpression, expr2: &SqlExpression) -> bool {
     // Simple equality check for now
     // Could be enhanced to handle semantic equivalence
     format!("{:?}", expr1) == format!("{:?}", expr2)
+}
+
+/// Recursively collect every column name referenced inside an expression.
+/// Used to validate that computed SELECT items in a GROUP BY query depend
+/// only on grouped columns.
+fn collect_column_refs(expr: &SqlExpression, out: &mut Vec<String>) {
+    match expr {
+        SqlExpression::Column(col_ref) => out.push(col_ref.name.clone()),
+        SqlExpression::BinaryOp { left, right, .. } => {
+            collect_column_refs(left, out);
+            collect_column_refs(right, out);
+        }
+        SqlExpression::FunctionCall { args, .. } => {
+            for arg in args {
+                collect_column_refs(arg, out);
+            }
+        }
+        SqlExpression::Between { expr, lower, upper } => {
+            collect_column_refs(expr, out);
+            collect_column_refs(lower, out);
+            collect_column_refs(upper, out);
+        }
+        SqlExpression::Not { expr } => collect_column_refs(expr, out),
+        SqlExpression::CaseExpression {
+            when_branches,
+            else_branch,
+        } => {
+            for branch in when_branches {
+                collect_column_refs(&branch.condition, out);
+                collect_column_refs(&branch.result, out);
+            }
+            if let Some(else_expr) = else_branch {
+                collect_column_refs(else_expr, out);
+            }
+        }
+        SqlExpression::SimpleCaseExpression {
+            expr,
+            when_branches,
+            else_branch,
+        } => {
+            collect_column_refs(expr, out);
+            for branch in when_branches {
+                collect_column_refs(&branch.value, out);
+                collect_column_refs(&branch.result, out);
+            }
+            if let Some(else_expr) = else_branch {
+                collect_column_refs(else_expr, out);
+            }
+        }
+        // Literals, NULL, subqueries, etc. — no plain column refs to collect
+        _ => {}
+    }
 }
 
 /// Check if an expression references a column
