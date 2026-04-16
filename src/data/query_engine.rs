@@ -1795,6 +1795,30 @@ impl QueryEngine {
             }
         }
 
+        // Strip columns promoted by OrderByAliasTransformer for ORDER BY visibility.
+        // Unlike the HIDDEN_AGG_PREFIX strip (which runs right after GROUP BY)
+        // this MUST run after ORDER BY — the whole point of the promotion is
+        // that the column has to survive projection long enough to be sorted on.
+        {
+            use crate::query_plan::order_by_alias_transformer::HIDDEN_ORDERBY_PREFIX;
+            let hidden_indices: Vec<usize> = view
+                .source()
+                .columns
+                .iter()
+                .enumerate()
+                .filter_map(|(i, c)| {
+                    if c.name.starts_with(HIDDEN_ORDERBY_PREFIX) {
+                        Some(i)
+                    } else {
+                        None
+                    }
+                })
+                .collect();
+            for &idx in hidden_indices.iter().rev() {
+                view.hide_column(idx);
+            }
+        }
+
         // Apply LIMIT/OFFSET
         if let Some(limit) = statement.limit {
             let offset = statement.offset.unwrap_or(0);

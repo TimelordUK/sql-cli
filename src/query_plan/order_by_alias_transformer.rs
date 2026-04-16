@@ -42,18 +42,28 @@ use crate::sql::parser::ast::{
     CTEType, ColumnRef, SelectItem, SelectStatement, SqlExpression, TableSource,
 };
 use anyhow::Result;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use tracing::debug;
+
+/// Prefix used for ORDER BY columns promoted into SELECT so they survive
+/// projection. Columns with this prefix are stripped from the final output
+/// after ORDER BY runs.
+pub const HIDDEN_ORDERBY_PREFIX: &str = "__hidden_orderby_";
 
 /// Transformer that rewrites ORDER BY to use aggregate aliases
 pub struct OrderByAliasTransformer {
     /// Counter for generating unique alias names if needed
     alias_counter: usize,
+    /// Counter for ORDER BY columns promoted into SELECT
+    hidden_counter: usize,
 }
 
 impl OrderByAliasTransformer {
     pub fn new() -> Self {
-        Self { alias_counter: 0 }
+        Self {
+            alias_counter: 0,
+            hidden_counter: 0,
+        }
     }
 
     /// Check if an expression is an aggregate function
@@ -240,32 +250,110 @@ impl OrderByAliasTransformer {
         // Step 1: Build mapping of aggregates to aliases
         let aggregate_map = self.build_aggregate_map(&mut stmt.select_items);
 
-        if aggregate_map.is_empty() {
+        // Step 2: Rewrite ORDER BY aggregate expressions to use SELECT aliases
+        if !aggregate_map.is_empty() {
+            if let Some(order_by) = stmt.order_by.as_mut() {
+                let mut modified = false;
+
+                for order_col in order_by.iter_mut() {
+                    let expr_str = Self::expression_to_string(&order_col.expr);
+
+                    if let Some(normalized) = Self::extract_aggregate_from_order_column(&expr_str) {
+                        if let Some(alias) = aggregate_map.get(&normalized) {
+                            debug!("Rewriting ORDER BY '{}' to use alias '{}'", expr_str, alias);
+                            order_col.expr =
+                                SqlExpression::Column(ColumnRef::unquoted(alias.clone()));
+                            modified = true;
+                        }
+                    }
+                }
+
+                if modified {
+                    debug!(
+                        "Rewrote ORDER BY to use {} aggregate alias(es)",
+                        aggregate_map.len()
+                    );
+                }
+            }
+        }
+
+        // Step 3: Promote ORDER BY columns that aren't visible after projection.
+        // Without this, `SELECT name AS results ... ORDER BY name` (or any
+        // ORDER BY column not in SELECT) fails because projection narrows the
+        // result columns before ORDER BY can resolve them.
+        self.promote_hidden_order_by_columns(stmt);
+    }
+
+    /// Promote ORDER BY column references that aren't already in the SELECT
+    /// output. Each missing column is appended to SELECT as a hidden
+    /// expression; the ORDER BY ref is rewritten to use the hidden alias.
+    /// Hidden columns get stripped from output by query_engine after sort.
+    fn promote_hidden_order_by_columns(&mut self, stmt: &mut SelectStatement) {
+        let order_by = match stmt.order_by.as_mut() {
+            Some(o) if !o.is_empty() => o,
+            _ => return,
+        };
+
+        // SELECT * (or similar) keeps all source columns visible — no promotion needed.
+        if stmt
+            .select_items
+            .iter()
+            .any(|i| matches!(i, SelectItem::Star { .. } | SelectItem::StarExclude { .. }))
+        {
             return;
         }
 
-        // Step 2: Rewrite ORDER BY expressions
-        if let Some(order_by) = stmt.order_by.as_mut() {
-            let mut modified = false;
-
-            for order_col in order_by.iter_mut() {
-                let expr_str = Self::expression_to_string(&order_col.expr);
-
-                if let Some(normalized) = Self::extract_aggregate_from_order_column(&expr_str) {
-                    if let Some(alias) = aggregate_map.get(&normalized) {
-                        debug!("Rewriting ORDER BY '{}' to use alias '{}'", expr_str, alias);
-                        order_col.expr = SqlExpression::Column(ColumnRef::unquoted(alias.clone()));
-                        modified = true;
-                    }
+        // Names exposed by SELECT — output names ORDER BY can already resolve.
+        // For Column items the output name is the column's own name; for
+        // Expression items it's the alias.
+        let mut visible: HashSet<String> = HashSet::new();
+        for item in stmt.select_items.iter() {
+            match item {
+                SelectItem::Column { column, .. } => {
+                    visible.insert(column.name.to_lowercase());
                 }
+                SelectItem::Expression { alias, .. } if !alias.is_empty() => {
+                    visible.insert(alias.to_lowercase());
+                }
+                _ => {}
+            }
+        }
+
+        // Track column refs we've already promoted in this statement so two
+        // ORDER BY items referencing the same column share one hidden alias.
+        let mut promoted: HashMap<String, String> = HashMap::new();
+
+        for order_col in order_by.iter_mut() {
+            let column_ref = match &order_col.expr {
+                SqlExpression::Column(c) => c.clone(),
+                _ => continue, // Non-column ORDER BY expressions — out of scope here
+            };
+
+            let lookup_key = column_ref.name.to_lowercase();
+            if visible.contains(&lookup_key) {
+                continue;
             }
 
-            if modified {
+            let hidden_alias = if let Some(existing) = promoted.get(&lookup_key) {
+                existing.clone()
+            } else {
+                self.hidden_counter += 1;
+                let alias = format!("{}{}", HIDDEN_ORDERBY_PREFIX, self.hidden_counter);
                 debug!(
-                    "Rewrote ORDER BY to use {} aggregate alias(es)",
-                    aggregate_map.len()
+                    "Promoting ORDER BY column '{}' as hidden SELECT item '{}'",
+                    column_ref.name, alias
                 );
-            }
+                stmt.select_items.push(SelectItem::Expression {
+                    expr: SqlExpression::Column(column_ref.clone()),
+                    alias: alias.clone(),
+                    leading_comments: Vec::new(),
+                    trailing_comment: None,
+                });
+                promoted.insert(lookup_key, alias.clone());
+                alias
+            };
+
+            order_col.expr = SqlExpression::Column(ColumnRef::unquoted(hidden_alias));
         }
     }
 }
