@@ -1,23 +1,22 @@
-# SQL CLI v1.71.2
+# SQL CLI v1.71.3
 
 **Release Date:** April 16, 2026
 
 ## 📊 Release Overview
-- **Commits in this release:** 2
-- **Files updated:** 3
+- **Commits in this release:** 1
+- **Files updated:** 4
 
 ## ✨ Highlights
 
 ## 📝 Changes by Category
 
-### 🐛 Bug Fixes
-- Promote hidden columns so ORDER BY can reference post-projection
+### 🚀 New Features
+- Support arbitrary expressions in ORDER BY
 
 <details>
 <summary>📋 View all commits</summary>
 
-- fix(order_by): Promote hidden columns so ORDER BY can reference post-projection (TimelordUK)
-- add demo showing boe_spot_rates using web cte (TimelordUK)
+- feat(order_by): Support arbitrary expressions in ORDER BY (TimelordUK)
 
 </details>
 
