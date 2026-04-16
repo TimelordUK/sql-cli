@@ -1,26 +1,23 @@
-# SQL CLI v1.71.1
+# SQL CLI v1.71.2
 
-**Release Date:** April 15, 2026
+**Release Date:** April 16, 2026
 
 ## 📊 Release Overview
-- **Commits in this release:** 3
-- **Files updated:** 7
+- **Commits in this release:** 2
+- **Files updated:** 3
 
 ## ✨ Highlights
 
 ## 📝 Changes by Category
 
 ### 🐛 Bug Fixes
-- Wire Alt+[/] and Alt+,/. for SQL token jumping in edit mode
-- Recurse into CTEs, FROM subqueries, set operations
-- Recurse into CTEs, FROM subqueries, set operations
+- Promote hidden columns so ORDER BY can reference post-projection
 
 <details>
 <summary>📋 View all commits</summary>
 
-- fix(tui): Wire Alt+[/] and Alt+,/. for SQL token jumping in edit mode (TimelordUK)
-- fix(order_by): Recurse into CTEs, FROM subqueries, set operations (TimelordUK)
-- fix(group_by): Recurse into CTEs, FROM subqueries, set operations (TimelordUK)
+- fix(order_by): Promote hidden columns so ORDER BY can reference post-projection (TimelordUK)
+- add demo showing boe_spot_rates using web cte (TimelordUK)
 
 </details>
 
