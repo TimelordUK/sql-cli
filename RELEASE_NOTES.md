@@ -1,22 +1,22 @@
-# SQL CLI v1.71.3
+# SQL CLI v1.72.0
 
-**Release Date:** April 16, 2026
+**Release Date:** April 18, 2026
 
 ## 📊 Release Overview
 - **Commits in this release:** 1
-- **Files updated:** 4
+- **Files updated:** 2
 
 ## ✨ Highlights
 
 ## 📝 Changes by Category
 
 ### 🚀 New Features
-- Support arbitrary expressions in ORDER BY
+- add IFNULL, HOUR, MINUTE, SECOND, YEARWEEK
 
 <details>
 <summary>📋 View all commits</summary>
 
-- feat(order_by): Support arbitrary expressions in ORDER BY (TimelordUK)
+- feat(functions): add IFNULL, HOUR, MINUTE, SECOND, YEARWEEK (TimelordUK)
 
 </details>
 
