@@ -1,5 +1,5 @@
 use anyhow::{anyhow, Result};
-use chrono::{DateTime, Datelike, NaiveDate, NaiveDateTime, TimeZone, Utc};
+use chrono::{DateTime, Datelike, NaiveDate, NaiveDateTime, TimeZone, Timelike, Utc};
 
 use super::{ArgCount, FunctionCategory, FunctionSignature, SqlFunction};
 use crate::config::global::get_date_notation;
@@ -903,6 +903,197 @@ impl SqlFunction for DayFunction {
     }
 }
 
+/// HOUR function - extracts hour of day from datetime (0-23)
+pub struct HourFunction;
+
+impl SqlFunction for HourFunction {
+    fn signature(&self) -> FunctionSignature {
+        FunctionSignature {
+            name: "HOUR",
+            category: FunctionCategory::Date,
+            arg_count: ArgCount::Fixed(1),
+            description: "Returns the hour of day from a datetime (0-23)",
+            returns: "INTEGER",
+            examples: vec![
+                "SELECT HOUR('2024-03-15 14:30:00')", // Returns 14
+                "SELECT HOUR(NOW())",
+                "SELECT HOUR(order_timestamp) FROM orders",
+            ],
+        }
+    }
+
+    fn evaluate(&self, args: &[DataValue]) -> Result<DataValue> {
+        if args.len() != 1 {
+            return Err(anyhow!("HOUR expects exactly 1 argument"));
+        }
+
+        let date_str = match &args[0] {
+            DataValue::String(s) | DataValue::DateTime(s) => s.as_str(),
+            DataValue::InternedString(s) => s.as_str(),
+            DataValue::Null => return Ok(DataValue::Null),
+            _ => return Err(anyhow!("HOUR expects a date/datetime string")),
+        };
+
+        let dt = parse_datetime(date_str)?;
+        Ok(DataValue::Integer(dt.hour() as i64))
+    }
+}
+
+/// MINUTE function - extracts minute from datetime (0-59)
+pub struct MinuteFunction;
+
+impl SqlFunction for MinuteFunction {
+    fn signature(&self) -> FunctionSignature {
+        FunctionSignature {
+            name: "MINUTE",
+            category: FunctionCategory::Date,
+            arg_count: ArgCount::Fixed(1),
+            description: "Returns the minute from a datetime (0-59)",
+            returns: "INTEGER",
+            examples: vec![
+                "SELECT MINUTE('2024-03-15 14:30:00')", // Returns 30
+                "SELECT MINUTE(NOW())",
+            ],
+        }
+    }
+
+    fn evaluate(&self, args: &[DataValue]) -> Result<DataValue> {
+        if args.len() != 1 {
+            return Err(anyhow!("MINUTE expects exactly 1 argument"));
+        }
+
+        let date_str = match &args[0] {
+            DataValue::String(s) | DataValue::DateTime(s) => s.as_str(),
+            DataValue::InternedString(s) => s.as_str(),
+            DataValue::Null => return Ok(DataValue::Null),
+            _ => return Err(anyhow!("MINUTE expects a date/datetime string")),
+        };
+
+        let dt = parse_datetime(date_str)?;
+        Ok(DataValue::Integer(dt.minute() as i64))
+    }
+}
+
+/// SECOND function - extracts second from datetime (0-59)
+pub struct SecondFunction;
+
+impl SqlFunction for SecondFunction {
+    fn signature(&self) -> FunctionSignature {
+        FunctionSignature {
+            name: "SECOND",
+            category: FunctionCategory::Date,
+            arg_count: ArgCount::Fixed(1),
+            description: "Returns the second from a datetime (0-59)",
+            returns: "INTEGER",
+            examples: vec![
+                "SELECT SECOND('2024-03-15 14:30:45')", // Returns 45
+                "SELECT SECOND(NOW())",
+            ],
+        }
+    }
+
+    fn evaluate(&self, args: &[DataValue]) -> Result<DataValue> {
+        if args.len() != 1 {
+            return Err(anyhow!("SECOND expects exactly 1 argument"));
+        }
+
+        let date_str = match &args[0] {
+            DataValue::String(s) | DataValue::DateTime(s) => s.as_str(),
+            DataValue::InternedString(s) => s.as_str(),
+            DataValue::Null => return Ok(DataValue::Null),
+            _ => return Err(anyhow!("SECOND expects a date/datetime string")),
+        };
+
+        let dt = parse_datetime(date_str)?;
+        Ok(DataValue::Integer(dt.second() as i64))
+    }
+}
+
+/// YEARWEEK function - returns year and week as YYYYWW integer (MySQL-compatible)
+///
+/// Mode argument (default 0):
+///   0: Week starts Sunday, week 1 is the one containing January 1
+///   1 / 3: ISO week — week starts Monday, week 1 has 4+ days in new year
+///   2: Week starts Sunday, week 1 has 4+ days in new year
+///
+/// Modes 1/3 use chrono's ISO week (which may return prior year for early-January dates,
+/// matching MySQL's behaviour).
+pub struct YearWeekFunction;
+
+impl SqlFunction for YearWeekFunction {
+    fn signature(&self) -> FunctionSignature {
+        FunctionSignature {
+            name: "YEARWEEK",
+            category: FunctionCategory::Date,
+            arg_count: ArgCount::Range(1, 2),
+            description: "Returns year+week as YYYYWW integer. Optional mode arg: 0 (default, Sunday-start) or 1/3 (ISO, Monday-start)",
+            returns: "INTEGER",
+            examples: vec![
+                "SELECT YEARWEEK('2024-01-15')",    // 202403 (mode 0)
+                "SELECT YEARWEEK('2024-01-15', 1)", // 202403 (ISO)
+                "SELECT YEARWEEK(meeting_date, 1) FROM meetings",
+            ],
+        }
+    }
+
+    fn evaluate(&self, args: &[DataValue]) -> Result<DataValue> {
+        if args.is_empty() || args.len() > 2 {
+            return Err(anyhow!("YEARWEEK expects 1 or 2 arguments"));
+        }
+
+        let date_str = match &args[0] {
+            DataValue::String(s) | DataValue::DateTime(s) => s.as_str(),
+            DataValue::InternedString(s) => s.as_str(),
+            DataValue::Null => return Ok(DataValue::Null),
+            _ => return Err(anyhow!("YEARWEEK expects a date/datetime string")),
+        };
+
+        let mode = if args.len() == 2 {
+            match &args[1] {
+                DataValue::Integer(i) => *i,
+                DataValue::Float(f) => *f as i64,
+                DataValue::Null => 0,
+                _ => return Err(anyhow!("YEARWEEK mode must be an integer")),
+            }
+        } else {
+            0
+        };
+
+        let dt = parse_datetime(date_str)?;
+
+        let (year, week) = match mode {
+            // ISO week: Monday-start, week 1 has 4+ days in the new year.
+            // iso_week().year() correctly returns the ISO year (which may be year-1 for
+            // early-January dates that belong to the prior year's last ISO week).
+            1 | 3 => {
+                let iso = dt.iso_week();
+                (iso.year(), iso.week())
+            }
+            // Sunday-start, week 1 is the one containing January 1.
+            // Counted as: ((day_of_year - 1) + (weekday_of_jan1 as Sun-based)) / 7 + 1
+            0 | 2 => {
+                let year = dt.year();
+                let jan1 = NaiveDate::from_ymd_opt(year, 1, 1)
+                    .ok_or_else(|| anyhow!("Invalid year: {}", year))?;
+                // Sun=0, Mon=1, ..., Sat=6
+                let jan1_sun_offset = (jan1.weekday().num_days_from_monday() + 1) % 7;
+                let doy = dt.ordinal(); // 1-based day of year
+                let week = (doy - 1 + jan1_sun_offset) / 7 + 1;
+                (year, week)
+            }
+            _ => {
+                return Err(anyhow!(
+                    "YEARWEEK mode {} not supported. Use 0 (default) or 1/3 (ISO)",
+                    mode
+                ))
+            }
+        };
+
+        let yearweek = (year as i64) * 100 + (week as i64);
+        Ok(DataValue::Integer(yearweek))
+    }
+}
+
 /// MONTHNAME function - returns the month name
 pub struct MonthNameFunction;
 
@@ -1227,6 +1418,9 @@ pub fn register_date_time_functions(registry: &mut super::FunctionRegistry) {
     registry.register(Box::new(YearFunction));
     registry.register(Box::new(MonthFunction));
     registry.register(Box::new(DayFunction));
+    registry.register(Box::new(HourFunction));
+    registry.register(Box::new(MinuteFunction));
+    registry.register(Box::new(SecondFunction));
     registry.register(Box::new(DayOfWeekFunction));
     registry.register(Box::new(DayNameFunction));
     registry.register(Box::new(MonthNameFunction));
@@ -1234,10 +1428,124 @@ pub fn register_date_time_functions(registry: &mut super::FunctionRegistry) {
     // Date utility functions
     registry.register(Box::new(IsLeapYearFunction));
     registry.register(Box::new(WeekOfYearFunction));
+    registry.register(Box::new(YearWeekFunction));
     registry.register(Box::new(QuarterFunction));
 
     // Flexible parsing functions
     registry.register(Box::new(ParseDateTimeFunction));
     registry.register(Box::new(ParseDateTimeUtcFunction));
     registry.register(Box::new(DateTimeConstructor));
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn s(v: &str) -> DataValue {
+        DataValue::String(v.to_string())
+    }
+
+    #[test]
+    fn test_hour_extracts_hour() {
+        let func = HourFunction;
+        assert_eq!(
+            func.evaluate(&[s("2024-03-15 14:30:45")]).unwrap(),
+            DataValue::Integer(14)
+        );
+        assert_eq!(
+            func.evaluate(&[s("2024-03-15 00:00:00")]).unwrap(),
+            DataValue::Integer(0)
+        );
+        assert_eq!(
+            func.evaluate(&[s("2024-03-15 23:59:59")]).unwrap(),
+            DataValue::Integer(23)
+        );
+    }
+
+    #[test]
+    fn test_hour_null_passthrough() {
+        assert_eq!(
+            HourFunction.evaluate(&[DataValue::Null]).unwrap(),
+            DataValue::Null
+        );
+    }
+
+    #[test]
+    fn test_minute_extracts_minute() {
+        assert_eq!(
+            MinuteFunction
+                .evaluate(&[s("2024-03-15 14:30:45")])
+                .unwrap(),
+            DataValue::Integer(30)
+        );
+    }
+
+    #[test]
+    fn test_second_extracts_second() {
+        assert_eq!(
+            SecondFunction
+                .evaluate(&[s("2024-03-15 14:30:45")])
+                .unwrap(),
+            DataValue::Integer(45)
+        );
+    }
+
+    #[test]
+    fn test_yearweek_default_mode_sunday_start() {
+        // Mode 0: Sunday-start, week 1 contains Jan 1.
+        // 2024-01-01 is Monday, so Jan 1 is in week 1 (Sunday Dec 31 is part of previous year).
+        assert_eq!(
+            YearWeekFunction.evaluate(&[s("2024-01-01")]).unwrap(),
+            DataValue::Integer(202401)
+        );
+        // 2024-01-15 is in week 3 under mode 0.
+        assert_eq!(
+            YearWeekFunction.evaluate(&[s("2024-01-15")]).unwrap(),
+            DataValue::Integer(202403)
+        );
+    }
+
+    #[test]
+    fn test_yearweek_iso_mode() {
+        // Mode 1: ISO week, Monday-start, week 1 has 4+ days in new year.
+        // 2024-01-01 was Monday → ISO week 1 of 2024.
+        assert_eq!(
+            YearWeekFunction
+                .evaluate(&[s("2024-01-01"), DataValue::Integer(1)])
+                .unwrap(),
+            DataValue::Integer(202401)
+        );
+        // 2023-01-01 was Sunday → belongs to ISO week 52 of 2022.
+        assert_eq!(
+            YearWeekFunction
+                .evaluate(&[s("2023-01-01"), DataValue::Integer(1)])
+                .unwrap(),
+            DataValue::Integer(202252)
+        );
+        // 2021-01-01 was Friday → ISO week 53 of 2020.
+        assert_eq!(
+            YearWeekFunction
+                .evaluate(&[s("2021-01-01"), DataValue::Integer(1)])
+                .unwrap(),
+            DataValue::Integer(202053)
+        );
+    }
+
+    #[test]
+    fn test_yearweek_mode_3_equals_mode_1() {
+        let a = YearWeekFunction
+            .evaluate(&[s("2023-06-05"), DataValue::Integer(1)])
+            .unwrap();
+        let b = YearWeekFunction
+            .evaluate(&[s("2023-06-05"), DataValue::Integer(3)])
+            .unwrap();
+        assert_eq!(a, b);
+    }
+
+    #[test]
+    fn test_yearweek_rejects_unsupported_mode() {
+        assert!(YearWeekFunction
+            .evaluate(&[s("2024-01-15"), DataValue::Integer(5)])
+            .is_err());
+    }
 }

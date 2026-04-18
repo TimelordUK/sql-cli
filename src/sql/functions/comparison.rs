@@ -227,6 +227,35 @@ impl SqlFunction for CoalesceFunction {
     }
 }
 
+/// IFNULL function - MySQL alias for 2-argument COALESCE
+pub struct IfNullFunction;
+
+impl SqlFunction for IfNullFunction {
+    fn signature(&self) -> FunctionSignature {
+        FunctionSignature {
+            name: "IFNULL",
+            category: FunctionCategory::Mathematical,
+            arg_count: ArgCount::Fixed(2),
+            description: "Returns expr if not NULL, otherwise returns the default value",
+            returns: "ANY",
+            examples: vec![
+                "SELECT IFNULL(NULL, 'default')", // Returns 'default'
+                "SELECT IFNULL(discount, 0) FROM orders",
+                "SELECT IFNULL(phone, mobile) AS contact FROM users",
+            ],
+        }
+    }
+
+    fn evaluate(&self, args: &[DataValue]) -> Result<DataValue> {
+        self.validate_args(args)?;
+        if matches!(args[0], DataValue::Null) {
+            Ok(args[1].clone())
+        } else {
+            Ok(args[0].clone())
+        }
+    }
+}
+
 /// NULLIF function - returns NULL if two values are equal
 pub struct NullIfFunction;
 
@@ -474,6 +503,7 @@ pub fn register_comparison_functions(registry: &mut super::FunctionRegistry) {
     registry.register(Box::new(GreatestFunction));
     registry.register(Box::new(LeastFunction));
     registry.register(Box::new(CoalesceFunction));
+    registry.register(Box::new(IfNullFunction));
     registry.register(Box::new(NullIfFunction));
     registry.register(Box::new(IifFunction));
     registry.register(Box::new(GreatestLabelFunction));
@@ -620,5 +650,28 @@ mod tests {
 
         let result = func.evaluate(&args).unwrap();
         assert_eq!(result, DataValue::Integer(5));
+    }
+
+    #[test]
+    fn test_ifnull_null_returns_default() {
+        let func = IfNullFunction;
+        let args = vec![DataValue::Null, DataValue::Integer(42)];
+        assert_eq!(func.evaluate(&args).unwrap(), DataValue::Integer(42));
+    }
+
+    #[test]
+    fn test_ifnull_non_null_returns_value() {
+        let func = IfNullFunction;
+        let args = vec![DataValue::Integer(7), DataValue::Integer(42)];
+        assert_eq!(func.evaluate(&args).unwrap(), DataValue::Integer(7));
+    }
+
+    #[test]
+    fn test_ifnull_requires_two_args() {
+        let func = IfNullFunction;
+        assert!(func.evaluate(&[DataValue::Null]).is_err());
+        assert!(func
+            .evaluate(&[DataValue::Null, DataValue::Null, DataValue::Null])
+            .is_err());
     }
 }
