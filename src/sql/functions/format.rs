@@ -318,3 +318,32 @@ impl SqlFunction for FormatDateFunction {
         Ok(DataValue::String(formatted))
     }
 }
+
+/// DATE_FORMAT — MySQL-compatible alias for FORMAT_DATE.
+///
+/// Delegates to `FormatDateFunction`. Common specifiers (`%Y`, `%m`, `%d`, `%H`, `%M`, `%S`)
+/// are identical between MySQL and strftime. A handful of MySQL-only specifiers
+/// (`%i` for minutes, `%W` for full weekday name, `%M` for full month name) differ from
+/// strftime and are not translated here — use `%M`, `%A`, `%B` respectively.
+pub struct DateFormatFunction;
+
+impl SqlFunction for DateFormatFunction {
+    fn signature(&self) -> FunctionSignature {
+        FunctionSignature {
+            name: "DATE_FORMAT",
+            category: FunctionCategory::Date,
+            arg_count: ArgCount::Fixed(2),
+            description: "Format a date using a format string (MySQL-compatible alias for FORMAT_DATE; uses chrono strftime specifiers)",
+            returns: "STRING",
+            examples: vec![
+                "SELECT DATE_FORMAT(trans_date, '%Y-%m')", // "2018-12"
+                "SELECT DATE_FORMAT(NOW(), '%Y-%m-%d')",
+                "SELECT DATE_FORMAT(NOW(), '%B %d, %Y')", // "March 15, 2024"
+            ],
+        }
+    }
+
+    fn evaluate(&self, args: &[DataValue]) -> Result<DataValue> {
+        FormatDateFunction.evaluate(args)
+    }
+}

@@ -761,12 +761,14 @@ impl FunctionRegistry {
     /// Register formatting functions
     fn register_format_functions(&mut self) {
         use format::{
-            CenterFunction, FormatDateFunction, FormatNumberFunction, LPadFunction, RPadFunction,
+            CenterFunction, DateFormatFunction, FormatDateFunction, FormatNumberFunction,
+            LPadFunction, RPadFunction,
         };
         use format_number::{FormatBytesFunction, FormatCurrencyFunction, RenderNumberFunction};
 
         self.register(Box::new(FormatNumberFunction));
         self.register(Box::new(FormatDateFunction));
+        self.register(Box::new(DateFormatFunction));
         self.register(Box::new(LPadFunction));
         self.register(Box::new(RPadFunction));
         self.register(Box::new(CenterFunction));
