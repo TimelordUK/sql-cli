@@ -159,6 +159,14 @@ impl<'a> ArithmeticEvaluator<'a> {
                 let base_value = self.evaluate(base, row_index)?;
                 self.evaluate_method_on_value(&base_value, method, args, row_index)
             }
+            SqlExpression::Between { expr, lower, upper } => {
+                let val = self.evaluate(expr, row_index)?;
+                let lo = self.evaluate(lower, row_index)?;
+                let hi = self.evaluate(upper, row_index)?;
+                let ge = compare_with_op(&val, &lo, ">=", false);
+                let le = compare_with_op(&val, &hi, "<=", false);
+                Ok(DataValue::Boolean(ge && le))
+            }
             SqlExpression::CaseExpression {
                 when_branches,
                 else_branch,
@@ -1632,6 +1640,57 @@ mod tests {
         let expr = SqlExpression::Column(ColumnRef::unquoted("a".to_string()));
         let result = evaluator.evaluate(&expr, 0).unwrap();
         assert_eq!(result, DataValue::Integer(10));
+    }
+
+    #[test]
+    fn test_evaluate_between_column_in_range() {
+        let table = create_test_table();
+        let mut evaluator = ArithmeticEvaluator::new(&table);
+
+        // column 'a' is 10 — 5 <= 10 <= 20 is true
+        let expr = SqlExpression::Between {
+            expr: Box::new(SqlExpression::Column(ColumnRef::unquoted("a".to_string()))),
+            lower: Box::new(SqlExpression::NumberLiteral("5".to_string())),
+            upper: Box::new(SqlExpression::NumberLiteral("20".to_string())),
+        };
+        assert_eq!(
+            evaluator.evaluate(&expr, 0).unwrap(),
+            DataValue::Boolean(true)
+        );
+    }
+
+    #[test]
+    fn test_evaluate_between_column_out_of_range() {
+        let table = create_test_table();
+        let mut evaluator = ArithmeticEvaluator::new(&table);
+
+        // column 'a' is 10 — 11 <= 10 <= 20 is false
+        let expr = SqlExpression::Between {
+            expr: Box::new(SqlExpression::Column(ColumnRef::unquoted("a".to_string()))),
+            lower: Box::new(SqlExpression::NumberLiteral("11".to_string())),
+            upper: Box::new(SqlExpression::NumberLiteral("20".to_string())),
+        };
+        assert_eq!(
+            evaluator.evaluate(&expr, 0).unwrap(),
+            DataValue::Boolean(false)
+        );
+    }
+
+    #[test]
+    fn test_evaluate_between_endpoints_inclusive() {
+        let table = create_test_table();
+        let mut evaluator = ArithmeticEvaluator::new(&table);
+
+        // column 'a' is 10 — 10 <= 10 <= 10 is true (both endpoints inclusive)
+        let expr = SqlExpression::Between {
+            expr: Box::new(SqlExpression::Column(ColumnRef::unquoted("a".to_string()))),
+            lower: Box::new(SqlExpression::NumberLiteral("10".to_string())),
+            upper: Box::new(SqlExpression::NumberLiteral("10".to_string())),
+        };
+        assert_eq!(
+            evaluator.evaluate(&expr, 0).unwrap(),
+            DataValue::Boolean(true)
+        );
     }
 
     #[test]
