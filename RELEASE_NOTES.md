@@ -1,22 +1,32 @@
-# SQL CLI v1.72.0
+# SQL CLI v1.73.0
 
-**Release Date:** April 18, 2026
+**Release Date:** April 19, 2026
 
 ## 📊 Release Overview
-- **Commits in this release:** 1
-- **Files updated:** 2
+- **Commits in this release:** 4
+- **Files updated:** 7
 
 ## ✨ Highlights
 
 ## 📝 Changes by Category
 
 ### 🚀 New Features
-- add IFNULL, HOUR, MINUTE, SECOND, YEARWEEK
+- add READ_TEXT and GREP file readers
+- add DATE_FORMAT as MySQL-compatible alias for FORMAT_DATE
+
+### 🐛 Bug Fixes
+- support BETWEEN in arithmetic evaluator
+
+### 📚 Documentation
+- add text-processing showcase over Frankenstein excerpt
 
 <details>
 <summary>📋 View all commits</summary>
 
-- feat(functions): add IFNULL, HOUR, MINUTE, SECOND, YEARWEEK (TimelordUK)
+- docs(examples): add text-processing showcase over Frankenstein excerpt (TimelordUK)
+- feat(generators): add READ_TEXT and GREP file readers (TimelordUK)
+- fix(evaluator): support BETWEEN in arithmetic evaluator (TimelordUK)
+- feat(functions): add DATE_FORMAT as MySQL-compatible alias for FORMAT_DATE (TimelordUK)
 
 </details>
 
