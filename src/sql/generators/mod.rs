@@ -3,6 +3,7 @@ use anyhow::Result;
 use std::sync::Arc;
 
 pub mod ascii_art;
+pub mod file_readers;
 pub mod literal_generators;
 pub mod math_generators;
 pub mod prime_generators;
@@ -45,6 +46,7 @@ impl GeneratorRegistry {
 
     fn register_default_generators(&mut self) {
         use ascii_art::{AsciiArt, Banner, BigText};
+        use file_readers::{Grep, ReadText};
         use literal_generators::{Array, Values};
         use math_generators::{Collatz, Factorials, PascalTriangle, Squares, TriangularNumbers};
         use prime_generators::{Fibonacci, GeneratePrimes, PrimeFactors};
@@ -66,6 +68,10 @@ impl GeneratorRegistry {
         self.register(Box::new(Tokenize));
         self.register(Box::new(Chars));
         self.register(Box::new(Lines));
+
+        // File readers
+        self.register(Box::new(ReadText));
+        self.register(Box::new(Grep));
 
         // Prime and number theory generators
         self.register(Box::new(GeneratePrimes));
