@@ -420,7 +420,7 @@ mod tests {
         );
         assert_eq!(table.get_value(0, 2).unwrap(), &DataValue::Integer(1)); // line_num
         assert_eq!(table.get_value(0, 3).unwrap(), &DataValue::Integer(1)); // word_pos
-        // Third word (first on line 2)
+                                                                            // Third word (first on line 2)
         assert_eq!(table.get_value(2, 0).unwrap(), &DataValue::Integer(3));
         assert_eq!(
             table.get_value(2, 1).unwrap(),
