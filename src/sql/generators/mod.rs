@@ -46,7 +46,7 @@ impl GeneratorRegistry {
 
     fn register_default_generators(&mut self) {
         use ascii_art::{AsciiArt, Banner, BigText};
-        use file_readers::{Grep, ReadText};
+        use file_readers::{Grep, ReadText, ReadWords};
         use literal_generators::{Array, Values};
         use math_generators::{Collatz, Factorials, PascalTriangle, Squares, TriangularNumbers};
         use prime_generators::{Fibonacci, GeneratePrimes, PrimeFactors};
@@ -71,6 +71,7 @@ impl GeneratorRegistry {
 
         // File readers
         self.register(Box::new(ReadText));
+        self.register(Box::new(ReadWords));
         self.register(Box::new(Grep));
 
         // Prime and number theory generators
@@ -118,6 +119,7 @@ impl GeneratorRegistry {
         // Group generators by category
         let mut sequence_gens = Vec::new();
         let mut string_gens = Vec::new();
+        let mut file_gens = Vec::new();
         let mut math_gens = Vec::new();
         let mut random_gens = Vec::new();
         let mut utility_gens = Vec::new();
@@ -130,6 +132,8 @@ impl GeneratorRegistry {
                 sequence_gens.push(entry);
             } else if name == "SPLIT" || name == "TOKENIZE" || name == "CHARS" || name == "LINES" {
                 string_gens.push(entry);
+            } else if name == "READ_TEXT" || name == "READ_WORDS" || name == "GREP" {
+                file_gens.push(entry);
             } else if name == "ASCII_ART" || name == "BIG_TEXT" || name == "BANNER" {
                 ascii_gens.push(entry);
             } else if name.starts_with("RANDOM_") {
@@ -154,6 +158,15 @@ impl GeneratorRegistry {
             string_gens.sort();
             output.push_str("String Generators:\n");
             for entry in string_gens {
+                output.push_str(&format!("{}\n", entry));
+            }
+            output.push('\n');
+        }
+
+        if !file_gens.is_empty() {
+            file_gens.sort();
+            output.push_str("File Readers:\n");
+            for entry in file_gens {
                 output.push_str(&format!("{}\n", entry));
             }
             output.push('\n');
@@ -227,6 +240,9 @@ impl GeneratorRegistry {
                 "RANDOM_INT" => help.push_str("10, 1, 100, 42"),
                 "RANDOM_FLOAT" => help.push_str("10, 0, 1, 42"),
                 "GENERATE_UUID" => help.push_str("5"),
+                "READ_TEXT" => help.push_str("'data/file.txt'"),
+                "READ_WORDS" => help.push_str("'data/file.txt', 3, 'lower'"),
+                "GREP" => help.push_str("'data/file.txt', 'pattern'"),
                 "ASCII_ART" | "BIG_TEXT" => help.push_str("'SQL-CLI'"),
                 "BANNER" => help.push_str("'HELLO', '*'"),
                 _ => help.push_str("..."),

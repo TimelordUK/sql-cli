@@ -120,3 +120,57 @@ SELECT
     (SELECT COUNT(*) FROM READ_TEXT('data/frankenstein_excerpt.txt',
         '(?i)\b(death|dead|grave|corpse|lifeless)\b')) AS mortal_lines;
 GO
+
+
+-- ================================================================
+-- SECTION 7 — word-level analysis with READ_WORDS
+-- ================================================================
+-- READ_WORDS(path [, min_length [, case]]) explodes a text file into
+-- one row per word: (word_num, word, line_num, word_pos).
+-- This enables GROUP BY / ORDER BY frequency analysis that READ_TEXT
+-- alone cannot do.
+
+-- Basic shape: first 10 words in the excerpt.
+SELECT word_num, word, line_num, word_pos
+FROM READ_WORDS('data/frankenstein_excerpt.txt', 1, 'lower')
+LIMIT 10;
+GO
+
+-- Top 15 most frequent words (4+ characters, case-normalised).
+SELECT word, COUNT(*) AS freq
+FROM READ_WORDS('data/frankenstein_excerpt.txt', 4, 'lower')
+GROUP BY word
+ORDER BY freq DESC
+LIMIT 15;
+GO
+
+-- Vocabulary stats: total words, unique words, average word length.
+SELECT
+    COUNT(*)              AS total_words,
+    COUNT(DISTINCT word)  AS unique_words,
+    AVG(LENGTH(word))     AS avg_word_length
+FROM READ_WORDS('data/frankenstein_excerpt.txt', 1, 'lower');
+GO
+
+-- Count occurrences of a specific word.
+SELECT word, COUNT(*) AS mentions
+FROM READ_WORDS('data/frankenstein_excerpt.txt', 1, 'lower')
+WHERE word IN ('monster', 'creature', 'horror', 'beautiful', 'death')
+GROUP BY word
+ORDER BY mentions DESC;
+GO
+
+-- Longest words in the text.
+SELECT DISTINCT word, LENGTH(word) AS len
+FROM READ_WORDS('data/frankenstein_excerpt.txt', 1, 'lower')
+ORDER BY len DESC
+LIMIT 10;
+GO
+
+-- Which lines are the most word-dense?
+SELECT line_num, COUNT(*) AS words_on_line
+FROM READ_WORDS('data/frankenstein_excerpt.txt')
+GROUP BY line_num
+ORDER BY words_on_line DESC
+LIMIT 5;
+GO
