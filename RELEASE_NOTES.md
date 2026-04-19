@@ -1,32 +1,22 @@
-# SQL CLI v1.73.0
+# SQL CLI v1.73.1
 
 **Release Date:** April 19, 2026
 
 ## 📊 Release Overview
-- **Commits in this release:** 4
-- **Files updated:** 7
+- **Commits in this release:** 1
+- **Files updated:** 3
 
 ## ✨ Highlights
 
 ## 📝 Changes by Category
 
 ### 🚀 New Features
-- add READ_TEXT and GREP file readers
-- add DATE_FORMAT as MySQL-compatible alias for FORMAT_DATE
-
-### 🐛 Bug Fixes
-- support BETWEEN in arithmetic evaluator
-
-### 📚 Documentation
-- add text-processing showcase over Frankenstein excerpt
+- add READ_WORDS file reader for word-level frequency analysis
 
 <details>
 <summary>📋 View all commits</summary>
 
-- docs(examples): add text-processing showcase over Frankenstein excerpt (TimelordUK)
-- feat(generators): add READ_TEXT and GREP file readers (TimelordUK)
-- fix(evaluator): support BETWEEN in arithmetic evaluator (TimelordUK)
-- feat(functions): add DATE_FORMAT as MySQL-compatible alias for FORMAT_DATE (TimelordUK)
+- feat(generators): add READ_WORDS file reader for word-level frequency analysis (TimelordUK)
 
 </details>
 
