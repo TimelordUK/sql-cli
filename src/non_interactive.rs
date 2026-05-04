@@ -1148,10 +1148,10 @@ fn load_data_file(path: &str) -> Result<DataTable> {
     match extension.as_str() {
         "csv" => load_csv_to_datatable(path, &table_name)
             .with_context(|| format!("Failed to load CSV file: {}", path.display())),
-        "json" => load_json_to_datatable(path, &table_name)
+        "json" | "jsonl" | "ndjson" => load_json_to_datatable(path, &table_name)
             .with_context(|| format!("Failed to load JSON file: {}", path.display())),
         _ => Err(anyhow::anyhow!(
-            "Unsupported file type: {}. Use .csv or .json",
+            "Unsupported file type: {}. Use .csv, .json, .jsonl, or .ndjson",
             extension
         )),
     }

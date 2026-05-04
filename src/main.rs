@@ -682,7 +682,10 @@ fn handle_config_generation(args: &[String]) -> Option<io::Result<()>> {
 /// Launches the enhanced TUI with single or multiple data files
 fn launch_enhanced_tui(data_file: Option<String>, data_files: Vec<String>) -> io::Result<()> {
     if let Some(file_path) = &data_file {
-        let file_type = if file_path.ends_with(".json") {
+        let file_type = if file_path.ends_with(".json")
+            || file_path.ends_with(".jsonl")
+            || file_path.ends_with(".ndjson")
+        {
             "JSON"
         } else {
             "CSV"
@@ -1406,7 +1409,12 @@ fn handle_non_interactive_query(
     let data_file = args
         .iter()
         .filter(|arg| !arg.starts_with('-'))
-        .find(|arg| arg.ends_with(".csv") || arg.ends_with(".json"))
+        .find(|arg| {
+            arg.ends_with(".csv")
+                || arg.ends_with(".json")
+                || arg.ends_with(".jsonl")
+                || arg.ends_with(".ndjson")
+        })
         .cloned()
         .unwrap_or_default(); // Use empty string if no data file
 
@@ -1705,7 +1713,12 @@ fn main() -> io::Result<()> {
     let data_files: Vec<String> = args
         .iter()
         .filter(|arg| !arg.starts_with("--"))
-        .filter(|arg| arg.ends_with(".csv") || arg.ends_with(".json"))
+        .filter(|arg| {
+            arg.ends_with(".csv")
+                || arg.ends_with(".json")
+                || arg.ends_with(".jsonl")
+                || arg.ends_with(".ndjson")
+        })
         .cloned()
         .collect();
 

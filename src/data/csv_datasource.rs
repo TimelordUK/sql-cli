@@ -11,7 +11,6 @@ use serde_json::{json, Value};
 use std::cmp::Ordering;
 use std::collections::HashMap;
 use std::fs::File;
-use std::io::BufReader;
 use std::path::Path;
 use tracing::debug;
 
@@ -152,26 +151,25 @@ impl CsvDataSource {
     }
 
     pub fn load_from_json_file<P: AsRef<Path>>(path: P, table_name: &str) -> Result<Self> {
-        let file = File::open(&path)?;
-        let reader = BufReader::new(file);
+        use std::io::Read;
+        let mut file = File::open(&path)?;
+        let mut json_str = String::new();
+        file.read_to_string(&mut json_str)?;
 
-        // Parse JSON array
-        let json_data: Vec<Value> = serde_json::from_reader(reader)?;
+        // Accept either a JSON array of objects or JSONL (one object per line);
+        // parse_json_records auto-detects.
+        let json_data: Vec<Value> = crate::data::stream_loader::parse_json_records(&json_str)?;
 
         if json_data.is_empty() {
             return Err(anyhow::anyhow!("JSON file contains no data"));
         }
 
-        // Extract headers from the first record
-        let headers = if let Some(first_record) = json_data.first() {
-            if let Some(obj) = first_record.as_object() {
-                obj.keys().cloned().collect()
-            } else {
-                return Err(anyhow::anyhow!("JSON records must be objects"));
-            }
-        } else {
-            Vec::new()
-        };
+        // Headers are the union of object keys across the first 100 records so
+        // heterogeneous JSONL doesn't drop fields the first record happens to omit.
+        let headers = crate::data::stream_loader::collect_column_names(&json_data, 100);
+        if headers.is_empty() {
+            return Err(anyhow::anyhow!("JSON records must be objects"));
+        }
 
         // Validate all records have the same structure
         for (i, record) in json_data.iter().enumerate() {

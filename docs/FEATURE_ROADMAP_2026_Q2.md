@@ -15,14 +15,16 @@ follow the established `TableGenerator` pattern in
 `src/sql/generators/` — look at `file_readers.rs` (READ_TEXT, GREP, READ_WORDS)
 as the template.
 
-### READ_JSONL(path [, match_regex])  ⭐ suggested next slice
+### READ_JSONL(path [, match_regex])  ✅ landed (2026-05-04)
 
-- Newline-delimited JSON — the dominant format for app logs, streaming events,
-  LLM output, dataset dumps. Unlocks querying those with zero pre-processing.
-- One row per JSON object. Column schema inferred from the first N records
-  (or flattened into `(line_num, json_text)` columns + scalar extractors).
-- JSON parsing infrastructure already exists (see `src/data/json_datasource.rs`).
-- Probably 60-100 lines + tests + example.
+- Newline-delimited JSON. One row per JSON object; schema is the *union* of
+  keys across the first 100 records so heterogeneous logs (auth events with
+  user_id, http events with status, db events with query_ms) coexist as
+  columns. Optional regex pre-filters lines before JSON parsing.
+- The same auto-detect (array vs JSONL) was wired into the file-level JSON
+  loader, so `sql-cli logs.json` Just Works either way. `.jsonl` and `.ndjson`
+  extensions are recognised alongside `.json`.
+- See `examples/jsonl_logs.sql` and `data/app_logs.jsonl` for the demo.
 
 ### READ_FIELDS(path, delim_regex [, match_regex])
 

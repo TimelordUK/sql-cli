@@ -1,7 +1,9 @@
-use crate::data::datatable::{DataColumn, DataRow, DataTable, DataValue};
+use crate::data::datatable::{DataColumn, DataRow, DataTable, DataType, DataValue};
+use crate::data::stream_loader::collect_column_names;
 use crate::sql::generators::TableGenerator;
 use anyhow::{anyhow, Result};
 use regex::Regex;
+use serde_json::Value as JsonValue;
 use std::fs::File;
 use std::io::{BufRead, BufReader};
 use std::sync::Arc;
@@ -302,6 +304,137 @@ impl TableGenerator for ReadWords {
     }
 }
 
+/// READ_JSONL(path [, match_regex]) - Read newline-delimited JSON.
+///
+/// Each non-blank line is parsed as a self-contained JSON object. Schema is
+/// the union of object keys across the first 100 records, so heterogeneous
+/// log streams (later events introducing new fields) don't drop columns.
+/// Optional `match_regex` filters source lines *before* JSON parsing — the
+/// fast path for grepping large log files.
+pub struct ReadJsonl;
+
+impl TableGenerator for ReadJsonl {
+    fn name(&self) -> &str {
+        "READ_JSONL"
+    }
+
+    fn columns(&self) -> Vec<DataColumn> {
+        // Schema is dynamic; the actual columns are inferred at generate() time
+        // from the JSON keys in the file.
+        vec![DataColumn::new("(inferred from JSON keys)")]
+    }
+
+    fn generate(&self, args: Vec<DataValue>) -> Result<Arc<DataTable>> {
+        if args.is_empty() || args.len() > 2 {
+            return Err(anyhow!(
+                "READ_JSONL expects 1 or 2 arguments: (path [, match_regex])"
+            ));
+        }
+
+        let path = require_string(&args, 0, "READ_JSONL")?;
+        let match_regex = optional_string(&args, 1)
+            .map(|s| Regex::new(&s).map_err(|e| anyhow!("Invalid match_regex: {}", e)))
+            .transpose()?;
+
+        let lines = read_filtered_lines(&path, match_regex.as_ref())?;
+
+        let mut records: Vec<JsonValue> = Vec::with_capacity(lines.len());
+        for (line_num, line) in &lines {
+            let trimmed = line.trim();
+            if trimmed.is_empty() {
+                continue;
+            }
+            let value: JsonValue = serde_json::from_str(trimmed)
+                .map_err(|e| anyhow!("READ_JSONL parse error at line {}: {}", line_num, e))?;
+            records.push(value);
+        }
+
+        if records.is_empty() {
+            return Ok(Arc::new(DataTable::new("read_jsonl")));
+        }
+
+        let column_names = collect_column_names(&records, 100);
+        if column_names.is_empty() {
+            return Err(anyhow!(
+                "READ_JSONL: no JSON objects found (records must be objects, not arrays/scalars)"
+            ));
+        }
+
+        // Stringify, infer types from the first 100 rows, then convert to typed
+        // DataValues — same pipeline the file-level JSON loader uses.
+        let mut string_rows: Vec<Vec<String>> = Vec::with_capacity(records.len());
+        for record in &records {
+            let obj = match record.as_object() {
+                Some(o) => o,
+                None => continue,
+            };
+            let mut row = Vec::with_capacity(column_names.len());
+            for col_name in &column_names {
+                let value = obj
+                    .get(col_name)
+                    .map(json_value_to_string)
+                    .unwrap_or_default();
+                row.push(value);
+            }
+            string_rows.push(row);
+        }
+
+        let mut column_types: Vec<DataType> = vec![DataType::Null; column_names.len()];
+        let sample_size = string_rows.len().min(100);
+        for row in string_rows.iter().take(sample_size) {
+            for (col_idx, value) in row.iter().enumerate() {
+                if !value.is_empty() && value != "null" {
+                    let inferred = DataType::infer_from_string(value);
+                    column_types[col_idx] = column_types[col_idx].merge(&inferred);
+                }
+            }
+        }
+
+        let mut table = DataTable::new("read_jsonl");
+        for (name, dtype) in column_names.iter().zip(column_types.iter()) {
+            let mut col = DataColumn::new(name);
+            col.data_type = dtype.clone();
+            table.add_column(col);
+        }
+
+        for string_row in &string_rows {
+            let mut values = Vec::with_capacity(string_row.len());
+            for (col_idx, value) in string_row.iter().enumerate() {
+                let dv = if value.is_empty() || value == "null" {
+                    DataValue::Null
+                } else {
+                    DataValue::from_string(value, &column_types[col_idx])
+                };
+                values.push(dv);
+            }
+            table
+                .add_row(DataRow::new(values))
+                .map_err(|e| anyhow!(e))?;
+        }
+
+        Ok(Arc::new(table))
+    }
+
+    fn description(&self) -> &str {
+        "Read newline-delimited JSON (one object per line). Optional second arg is a regex that filters lines at read time."
+    }
+
+    fn arg_count(&self) -> usize {
+        2
+    }
+}
+
+fn json_value_to_string(value: &JsonValue) -> String {
+    match value {
+        JsonValue::Null => String::new(),
+        JsonValue::Bool(b) => b.to_string(),
+        JsonValue::Number(n) => n.to_string(),
+        JsonValue::String(s) => s.clone(),
+        JsonValue::Array(arr) => format!("{:?}", arr),
+        JsonValue::Object(obj) => format!("{:?}", obj),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -508,5 +641,148 @@ mod tests {
         // line_num preserves original positions
         assert_eq!(table.get_value(0, 2).unwrap(), &DataValue::Integer(1));
         assert_eq!(table.get_value(1, 2).unwrap(), &DataValue::Integer(4));
+    }
+
+    // ---- ReadJsonl tests ----
+
+    fn col_index(table: &DataTable, name: &str) -> usize {
+        table
+            .columns
+            .iter()
+            .position(|c| c.name == name)
+            .unwrap_or_else(|| panic!("column '{}' not found", name))
+    }
+
+    #[test]
+    fn test_read_jsonl_basic() {
+        let f = write_tmp(
+            r#"{"id":1,"name":"alice","score":10}
+{"id":2,"name":"bob","score":20}
+{"id":3,"name":"carol","score":30}
+"#,
+        );
+        let table = ReadJsonl
+            .generate(vec![DataValue::String(
+                f.path().to_string_lossy().to_string(),
+            )])
+            .unwrap();
+        assert_eq!(table.row_count(), 3);
+        assert_eq!(table.column_count(), 3);
+
+        let id_col = col_index(&table, "id");
+        let name_col = col_index(&table, "name");
+        assert_eq!(table.get_value(0, id_col).unwrap(), &DataValue::Integer(1));
+        assert_eq!(
+            table.get_value(2, name_col).unwrap(),
+            &DataValue::String("carol".to_string())
+        );
+    }
+
+    #[test]
+    fn test_read_jsonl_heterogeneous_schema_unioned() {
+        // Later records introduce fields the first one didn't have. Schema
+        // should union them; missing values become Null.
+        let f = write_tmp(
+            r#"{"id":1,"name":"alice"}
+{"id":2,"name":"bob","extra":"hello"}
+{"id":3,"name":"carol","other":42}
+"#,
+        );
+        let table = ReadJsonl
+            .generate(vec![DataValue::String(
+                f.path().to_string_lossy().to_string(),
+            )])
+            .unwrap();
+        assert_eq!(table.row_count(), 3);
+        assert_eq!(table.column_count(), 4);
+        let extra = col_index(&table, "extra");
+        let other = col_index(&table, "other");
+        // Row 0 has neither extra nor other -> Null
+        assert_eq!(table.get_value(0, extra).unwrap(), &DataValue::Null);
+        assert_eq!(table.get_value(0, other).unwrap(), &DataValue::Null);
+        // Row 1 has extra="hello"
+        assert_eq!(
+            table.get_value(1, extra).unwrap(),
+            &DataValue::String("hello".to_string())
+        );
+        // Row 2 has other=42
+        assert_eq!(table.get_value(2, other).unwrap(), &DataValue::Integer(42));
+    }
+
+    #[test]
+    fn test_read_jsonl_blank_lines_skipped() {
+        let f = write_tmp(
+            r#"{"id":1}
+
+{"id":2}
+
+"#,
+        );
+        let table = ReadJsonl
+            .generate(vec![DataValue::String(
+                f.path().to_string_lossy().to_string(),
+            )])
+            .unwrap();
+        assert_eq!(table.row_count(), 2);
+    }
+
+    #[test]
+    fn test_read_jsonl_match_regex_pre_filters() {
+        let f = write_tmp(
+            r#"{"level":"INFO","msg":"boot"}
+{"level":"ERROR","msg":"disk"}
+{"level":"INFO","msg":"shutdown"}
+{"level":"ERROR","msg":"oom"}
+"#,
+        );
+        let table = ReadJsonl
+            .generate(vec![
+                DataValue::String(f.path().to_string_lossy().to_string()),
+                DataValue::String("ERROR".to_string()),
+            ])
+            .unwrap();
+        assert_eq!(table.row_count(), 2);
+        let msg = col_index(&table, "msg");
+        assert_eq!(
+            table.get_value(0, msg).unwrap(),
+            &DataValue::String("disk".to_string())
+        );
+    }
+
+    #[test]
+    fn test_read_jsonl_invalid_line_errors_with_line_number() {
+        let f = write_tmp(
+            r#"{"id":1}
+not json at all
+{"id":3}
+"#,
+        );
+        let err = ReadJsonl
+            .generate(vec![DataValue::String(
+                f.path().to_string_lossy().to_string(),
+            )])
+            .unwrap_err();
+        let msg = err.to_string();
+        assert!(
+            msg.contains("line 2"),
+            "error should cite line number: {}",
+            msg
+        );
+    }
+
+    #[test]
+    fn test_read_jsonl_requires_path() {
+        assert!(ReadJsonl.generate(vec![]).is_err());
+    }
+
+    #[test]
+    fn test_read_jsonl_empty_file_returns_empty_table() {
+        let f = write_tmp("");
+        let table = ReadJsonl
+            .generate(vec![DataValue::String(
+                f.path().to_string_lossy().to_string(),
+            )])
+            .unwrap();
+        assert_eq!(table.row_count(), 0);
     }
 }

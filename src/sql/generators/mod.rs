@@ -46,7 +46,7 @@ impl GeneratorRegistry {
 
     fn register_default_generators(&mut self) {
         use ascii_art::{AsciiArt, Banner, BigText};
-        use file_readers::{Grep, ReadText, ReadWords};
+        use file_readers::{Grep, ReadJsonl, ReadText, ReadWords};
         use literal_generators::{Array, Values};
         use math_generators::{Collatz, Factorials, PascalTriangle, Squares, TriangularNumbers};
         use prime_generators::{Fibonacci, GeneratePrimes, PrimeFactors};
@@ -72,6 +72,7 @@ impl GeneratorRegistry {
         // File readers
         self.register(Box::new(ReadText));
         self.register(Box::new(ReadWords));
+        self.register(Box::new(ReadJsonl));
         self.register(Box::new(Grep));
 
         // Prime and number theory generators
@@ -132,7 +133,11 @@ impl GeneratorRegistry {
                 sequence_gens.push(entry);
             } else if name == "SPLIT" || name == "TOKENIZE" || name == "CHARS" || name == "LINES" {
                 string_gens.push(entry);
-            } else if name == "READ_TEXT" || name == "READ_WORDS" || name == "GREP" {
+            } else if name == "READ_TEXT"
+                || name == "READ_WORDS"
+                || name == "READ_JSONL"
+                || name == "GREP"
+            {
                 file_gens.push(entry);
             } else if name == "ASCII_ART" || name == "BIG_TEXT" || name == "BANNER" {
                 ascii_gens.push(entry);
@@ -242,6 +247,7 @@ impl GeneratorRegistry {
                 "GENERATE_UUID" => help.push_str("5"),
                 "READ_TEXT" => help.push_str("'data/file.txt'"),
                 "READ_WORDS" => help.push_str("'data/file.txt', 3, 'lower'"),
+                "READ_JSONL" => help.push_str("'data/events.jsonl'"),
                 "GREP" => help.push_str("'data/file.txt', 'pattern'"),
                 "ASCII_ART" | "BIG_TEXT" => help.push_str("'SQL-CLI'"),
                 "BANNER" => help.push_str("'HELLO', '*'"),

@@ -39,9 +39,9 @@ impl DataLoaderService {
 
         match extension.to_lowercase().as_str() {
             "csv" => self.load_csv(file_path, &table_name, &raw_table_name),
-            "json" => self.load_json(file_path, &table_name, &raw_table_name),
+            "json" | "jsonl" | "ndjson" => self.load_json(file_path, &table_name, &raw_table_name),
             _ => Err(anyhow::anyhow!(
-                "Unsupported file type: {}. Use .csv or .json files.",
+                "Unsupported file type: {}. Use .csv, .json, .jsonl, or .ndjson files.",
                 extension
             )),
         }
@@ -129,7 +129,7 @@ impl DataLoaderService {
 
         match extension.to_lowercase().as_str() {
             "csv" => csv_client.load_csv(file_path, &table_name)?,
-            "json" => csv_client.load_json(file_path, &table_name)?,
+            "json" | "jsonl" | "ndjson" => csv_client.load_json(file_path, &table_name)?,
             _ => return Err(anyhow::anyhow!("Unsupported file type: {}", extension)),
         }
 

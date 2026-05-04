@@ -483,7 +483,12 @@ pub fn handle_distinct_column_flag(args: &[String]) -> Option<io::Result<()>> {
     let data_file = args
         .iter()
         .filter(|arg| !arg.starts_with('-'))
-        .find(|arg| arg.ends_with(".csv") || arg.ends_with(".json"))
+        .find(|arg| {
+            arg.ends_with(".csv")
+                || arg.ends_with(".json")
+                || arg.ends_with(".jsonl")
+                || arg.ends_with(".ndjson")
+        })
         .cloned()
         .unwrap_or_default();
 
@@ -712,7 +717,12 @@ pub fn handle_schema_flags(args: &[String]) -> Option<io::Result<()>> {
     // Find the file argument
     let file_arg = args
         .iter()
-        .find(|arg| arg.ends_with(".csv") || arg.ends_with(".json"))
+        .find(|arg| {
+            arg.ends_with(".csv")
+                || arg.ends_with(".json")
+                || arg.ends_with(".jsonl")
+                || arg.ends_with(".ndjson")
+        })
         .or_else(|| args.last().filter(|arg| !arg.starts_with('-')));
 
     let file_path = match file_arg {
@@ -749,7 +759,10 @@ fn load_table_for_schema(file_path: &str) -> io::Result<sql_cli::data::datatable
         .and_then(|s| s.to_str())
         .unwrap_or("data");
 
-    if file_path.ends_with(".json") {
+    if file_path.ends_with(".json")
+        || file_path.ends_with(".jsonl")
+        || file_path.ends_with(".ndjson")
+    {
         sql_cli::data::datatable_loaders::load_json_to_datatable(file_path, table_name)
             .map_err(|e| io::Error::new(io::ErrorKind::Other, e))
     } else {

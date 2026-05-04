@@ -265,7 +265,54 @@ pub fn load_csv_from_reader<R: Read>(
     loader.load_csv_from_reader(reader, table_name, source_type, source_path)
 }
 
-/// Load JSON data from any Read source into a DataTable
+/// Parse JSON content as either a JSON array of objects or JSONL
+/// (newline-delimited JSON, one object per line). The format is detected by
+/// peeking at the first non-whitespace byte: `[` starts an array, anything
+/// else is parsed line-by-line.
+///
+/// Empty and whitespace-only lines are skipped in JSONL mode. Parse errors
+/// in JSONL mode include the source line number.
+pub fn parse_json_records(content: &str) -> Result<Vec<JsonValue>> {
+    let trimmed = content.trim_start();
+    if trimmed.starts_with('[') {
+        return serde_json::from_str(content).with_context(|| "Failed to parse JSON array");
+    }
+
+    let mut out = Vec::new();
+    for (idx, raw_line) in content.lines().enumerate() {
+        let line = raw_line.trim();
+        if line.is_empty() {
+            continue;
+        }
+        let value: JsonValue = serde_json::from_str(line)
+            .with_context(|| format!("Failed to parse JSONL at line {}", idx + 1))?;
+        out.push(value);
+    }
+    Ok(out)
+}
+
+/// Compute the ordered union of object keys across the first `sample_size`
+/// records. Order of first occurrence is preserved so the column layout is
+/// stable. Non-object records are skipped.
+pub fn collect_column_names(records: &[JsonValue], sample_size: usize) -> Vec<String> {
+    let mut seen: HashSet<String> = HashSet::new();
+    let mut names: Vec<String> = Vec::new();
+    for record in records.iter().take(sample_size) {
+        if let Some(obj) = record.as_object() {
+            for key in obj.keys() {
+                if seen.insert(key.clone()) {
+                    names.push(key.clone());
+                }
+            }
+        }
+    }
+    names
+}
+
+/// Load JSON data from any Read source into a DataTable.
+///
+/// Accepts either a JSON array of objects (`[{...}, {...}]`) or JSONL
+/// (one JSON object per line). Format is auto-detected.
 pub fn load_json_from_reader<R: Read>(
     mut reader: R,
     table_name: &str,
@@ -275,17 +322,21 @@ pub fn load_json_from_reader<R: Read>(
     let mut json_str = String::new();
     reader.read_to_string(&mut json_str)?;
 
-    let json_data: Vec<JsonValue> =
-        serde_json::from_str(&json_str).with_context(|| "Failed to parse JSON data")?;
+    let json_data: Vec<JsonValue> = parse_json_records(&json_str)?;
 
     if json_data.is_empty() {
         return Ok(DataTable::new(table_name));
     }
 
-    // Extract column names from first object
-    let first_obj = json_data[0]
-        .as_object()
-        .context("JSON data must be an array of objects")?;
+    // Schema is the union of keys across the first 100 records so heterogeneous
+    // JSONL streams (where later records may carry fields the first one did
+    // not) don't silently drop columns.
+    let column_names = collect_column_names(&json_data, 100);
+    if column_names.is_empty() {
+        return Err(anyhow::anyhow!(
+            "JSON data must contain objects (got non-object records)"
+        ));
+    }
 
     let mut table = DataTable::new(table_name);
 
@@ -297,8 +348,6 @@ pub fn load_json_from_reader<R: Read>(
         .metadata
         .insert("source_path".to_string(), source_path.to_string());
 
-    // Create columns
-    let column_names: Vec<String> = first_obj.keys().cloned().collect();
     for name in &column_names {
         table.add_column(DataColumn::new(name));
     }
@@ -443,5 +492,54 @@ mod tests {
         // Check that null is handled
         let value = table.get_value(2, 1).unwrap();
         assert!(matches!(value, DataValue::Null));
+    }
+
+    #[test]
+    fn test_jsonl_from_reader() {
+        let jsonl_data = "{\"id\":1,\"name\":\"Alice\"}\n{\"id\":2,\"name\":\"Bob\"}\n";
+        let reader = Cursor::new(jsonl_data);
+
+        let table = load_json_from_reader(reader, "test", "stream", "memory")
+            .expect("Failed to load JSONL");
+
+        assert_eq!(table.column_count(), 2);
+        assert_eq!(table.row_count(), 2);
+    }
+
+    #[test]
+    fn test_jsonl_heterogeneous_schema_unioned() {
+        // Second record adds an "extra" field; loader should pick it up via the
+        // union, and row 0 should have Null for it.
+        let jsonl_data = "{\"id\":1}\n{\"id\":2,\"extra\":\"hi\"}\n";
+        let reader = Cursor::new(jsonl_data);
+        let table = load_json_from_reader(reader, "test", "stream", "memory").expect("load");
+        assert_eq!(table.column_count(), 2);
+        assert_eq!(table.row_count(), 2);
+    }
+
+    #[test]
+    fn test_jsonl_skips_blank_lines() {
+        let jsonl_data = "{\"id\":1}\n\n\n{\"id\":2}\n";
+        let reader = Cursor::new(jsonl_data);
+        let table = load_json_from_reader(reader, "test", "stream", "memory").expect("load");
+        assert_eq!(table.row_count(), 2);
+    }
+
+    #[test]
+    fn test_parse_json_records_array_form() {
+        let recs = parse_json_records(r#"[{"a":1},{"a":2}]"#).unwrap();
+        assert_eq!(recs.len(), 2);
+    }
+
+    #[test]
+    fn test_parse_json_records_jsonl_form() {
+        let recs = parse_json_records("{\"a\":1}\n{\"a\":2}\n").unwrap();
+        assert_eq!(recs.len(), 2);
+    }
+
+    #[test]
+    fn test_parse_json_records_jsonl_error_cites_line() {
+        let err = parse_json_records("{\"a\":1}\nnot json\n").unwrap_err();
+        assert!(err.to_string().contains("line 2"));
     }
 }

@@ -140,10 +140,10 @@ fn load_data_file(file_path: &str) -> Result<DataView> {
 
     let data_table = match extension.as_str() {
         "csv" => load_csv_to_datatable(file_path, "chart_data")?,
-        "json" => load_json_to_datatable(file_path, "chart_data")?,
+        "json" | "jsonl" | "ndjson" => load_json_to_datatable(file_path, "chart_data")?,
         _ => {
             return Err(anyhow::anyhow!(
-                "Unsupported file format '{}'. Supported formats: csv, json",
+                "Unsupported file format '{}'. Supported formats: csv, json, jsonl, ndjson",
                 extension
             ));
         }

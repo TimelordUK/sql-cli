@@ -168,7 +168,10 @@ pub fn load_csv_to_datatable<P: AsRef<Path>>(path: P, table_name: &str) -> Resul
     Ok(table)
 }
 
-/// Load a JSON file into a `DataTable`
+/// Load a JSON file into a `DataTable`.
+///
+/// Accepts either a JSON array of objects (`[{...}, {...}]`) or JSONL
+/// (one JSON object per line). Format is auto-detected.
 pub fn load_json_to_datatable<P: AsRef<Path>>(path: P, table_name: &str) -> Result<DataTable> {
     // Read file as string first to preserve key order
     let mut file = File::open(&path)
@@ -176,20 +179,20 @@ pub fn load_json_to_datatable<P: AsRef<Path>>(path: P, table_name: &str) -> Resu
     let mut json_str = String::new();
     file.read_to_string(&mut json_str)?;
 
-    // Parse JSON while preserving order using serde_json's preserve_order feature
-    // For now, we'll use a workaround to get keys in original order
-    let json_data: Vec<JsonValue> =
-        serde_json::from_str(&json_str).with_context(|| "Failed to parse JSON file")?;
+    let json_data: Vec<JsonValue> = crate::data::stream_loader::parse_json_records(&json_str)?;
 
     if json_data.is_empty() {
         return Ok(DataTable::new(table_name));
     }
 
-    // Extract column names from first object, preserving order
-    // Parse the first object manually to get keys in order
-    let first_obj = json_data[0]
-        .as_object()
-        .context("JSON data must be an array of objects")?;
+    // Schema is the union of keys across the first 100 records so heterogeneous
+    // JSONL streams don't silently drop columns missing on the first object.
+    let column_names = crate::data::stream_loader::collect_column_names(&json_data, 100);
+    if column_names.is_empty() {
+        return Err(anyhow::anyhow!(
+            "JSON data must contain objects (got non-object records)"
+        ));
+    }
 
     let mut table = DataTable::new(table_name);
 
@@ -202,9 +205,6 @@ pub fn load_json_to_datatable<P: AsRef<Path>>(path: P, table_name: &str) -> Resu
         path.as_ref().display().to_string(),
     );
 
-    // Get all column names from the first object
-    // This preserves all columns from the JSON data
-    let column_names: Vec<String> = first_obj.keys().cloned().collect();
     for name in &column_names {
         table.add_column(DataColumn::new(name));
     }
