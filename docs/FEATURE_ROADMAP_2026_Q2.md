@@ -147,6 +147,78 @@ gaps are small and contained.
 
 ---
 
+## Tier 3b — Quirks surfaced while writing showcase SQL
+
+Found while building `examples/us_states.sql` (2026-05-04). Each is small,
+contained, and has a clean workaround — so they don't block the showcase, but
+they're worth documenting before they're forgotten. Reproducers all use
+`data/us_states.csv`.
+
+### `__hidden_orderby_1` error when ORDER BY references the inner alias of a GROUP BY CTE
+
+```sql
+WITH lengths AS (SELECT name, LENGTH(name) AS n FROM us_states)
+SELECT n AS name_length, COUNT(*) AS states
+FROM lengths GROUP BY n
+ORDER BY n;       -- → "Column '__hidden_orderby_1' not found"
+```
+
+- Workaround: `ORDER BY name_length` (the projected alias).
+- Hidden-orderby promotion (the same machinery that fixed LC 1341) doesn't
+  account for GROUP BY rewriting `n` out of the post-aggregation projection.
+- ~probably a 10-line fix in whatever resolves the hidden-orderby column
+  against the group-by output schema.
+
+### Scalar subqueries inside CASE not supported in arithmetic eval
+
+```sql
+SELECT CASE WHEN latitude = (SELECT MAX(latitude) FROM us_states)
+            THEN 'Northernmost' END FROM us_states;
+-- → "Unsupported expression type for arithmetic evaluation: ScalarSubquery {...}"
+```
+
+- Scalar subqueries work in WHERE; the gap is only in `arithmetic_evaluator.rs`
+  CASE branch evaluation.
+- Workaround in showcase: four separate `ORDER BY ... LIMIT 1` queries for the
+  four compass extremes, instead of one CASE-labelled extremes query.
+
+### Cross-CTE column equality silently filters to 0 rows
+
+```sql
+WITH conus AS (...),
+     agg AS (SELECT MAX(latitude) AS lat_max FROM conus)
+SELECT c.name FROM conus c CROSS JOIN agg a
+WHERE c.latitude = a.lat_max;       -- → 0 rows
+```
+
+- The CROSS JOIN expands rows correctly (verified with `SELECT * LIMIT 3`),
+  but post-join equality between a base column and an aggregate-CTE column
+  yields no matches. Same shape in `JOIN ... ON OR ...` returns just the
+  first matching row.
+- Suspicion: type or precision mismatch when comparing the float column
+  against the aggregated value. Worth a test case before fixing.
+- Workaround: use a scalar subquery in WHERE — `WHERE latitude = (SELECT MAX(latitude) FROM conus)`
+  works.
+
+### UNION ALL legs ignore inner ORDER BY/LIMIT and lose per-leg literals
+
+```sql
+SELECT 'A' AS dir, name FROM us_states ORDER BY latitude DESC LIMIT 1
+UNION ALL
+SELECT 'B' AS dir, name FROM us_states ORDER BY latitude ASC LIMIT 1;
+-- → all rows from both sides, all labelled 'A'
+```
+
+- Each leg's `ORDER BY ... LIMIT 1` is dropped, AND the literal alias from
+  the first leg propagates to all rows.
+- Wrapping each leg in `SELECT * FROM (... LIMIT 1) sub` doesn't help.
+- Probable cause: the UNION ALL planner pulls SELECT lists from the first
+  leg only and doesn't preserve per-leg limit/order. Two distinct bugs in
+  one place.
+- Workaround in showcase: four separate `GO` batches.
+
+---
+
 ## Suggested working cadence
 
 - **One reader per session** when there's time for a full slice.
