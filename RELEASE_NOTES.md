@@ -1,22 +1,32 @@
-# SQL CLI v1.73.1
+# SQL CLI v1.74.0
 
-**Release Date:** April 19, 2026
+**Release Date:** May 04, 2026
 
 ## 📊 Release Overview
-- **Commits in this release:** 1
-- **Files updated:** 3
+- **Commits in this release:** 4
+- **Files updated:** 19
 
 ## ✨ Highlights
+
+### 🔍 Enhanced Debugging
+- **Better Diagnostics**: Improved error messages and state dumps
 
 ## 📝 Changes by Category
 
 ### 🚀 New Features
-- add READ_WORDS file reader for word-level frequency analysis
+- add JSONL support — loader auto-detect + READ_JSONL generator
+
+### 📚 Documentation
+- add US states showcase + record engine quirks
+- add Q2 2026 feature roadmap
 
 <details>
 <summary>📋 View all commits</summary>
 
-- feat(generators): add READ_WORDS file reader for word-level frequency analysis (TimelordUK)
+- feat(jsonl): add JSONL support — loader auto-detect + READ_JSONL generator (TimelordUK)
+- docs(examples): add US states showcase + record engine quirks (TimelordUK)
+- docs: add Q2 2026 feature roadmap (TimelordUK)
+- reformat (TimelordUK)
 
 </details>
 
