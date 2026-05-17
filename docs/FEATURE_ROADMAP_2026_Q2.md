@@ -72,6 +72,26 @@ With READ_CSV the reader family now covers the four core formats — CSV, JSON
 array files, JSONL, plain text — and all of them accept `-` for stdin. This
 is the "complete loop" the user flagged on 2026-05-17.
 
+#### Next session: arbitrary delimiter argument
+
+Target API:
+```sql
+READ_CSV(path [, delimiter])    -- ',' default; '|' for PSV, ';' for European CSV, CHAR(9) for TSV
+```
+
+- `csv::ReaderBuilder::new().delimiter(b)` already accepts any single byte, so
+  the actual plumbing is small (~20-30 lines): thread a `delimiter` arg through
+  `READ_CSV` and add a `delimiter`-aware overload on `AdvancedCsvLoader` /
+  `StreamCsvLoader::load_csv_from_reader`.
+- Arg validation: must be exactly one character; reject empty / multi-char with
+  a clear error. Accept the arg as either a string literal or `CHAR(n)` for
+  control characters like tab.
+- Generalises trivially to TSV / PSV / semicolon-CSV / anything-CSV without
+  needing per-format reader functions — the "arbitrary token" framing from
+  the interview-question style.
+- Follow-up if a use case shows up: optional `has_header` (Bool, default true)
+  for headerless CSVs where we'd synthesise `col_1`, `col_2`, etc.
+
 ### Glob support in existing readers
 
 - `READ_TEXT('logs/*.log')` yields an extra `source_file` column.
