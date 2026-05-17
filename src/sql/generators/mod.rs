@@ -46,7 +46,7 @@ impl GeneratorRegistry {
 
     fn register_default_generators(&mut self) {
         use ascii_art::{AsciiArt, Banner, BigText};
-        use file_readers::{Grep, ReadJsonl, ReadStdin, ReadText, ReadWords};
+        use file_readers::{Grep, ReadCsv, ReadJsonl, ReadStdin, ReadText, ReadWords};
         use literal_generators::{Array, Values};
         use math_generators::{Collatz, Factorials, PascalTriangle, Squares, TriangularNumbers};
         use prime_generators::{Fibonacci, GeneratePrimes, PrimeFactors};
@@ -73,6 +73,7 @@ impl GeneratorRegistry {
         self.register(Box::new(ReadText));
         self.register(Box::new(ReadWords));
         self.register(Box::new(ReadJsonl));
+        self.register(Box::new(ReadCsv));
         self.register(Box::new(ReadStdin));
         self.register(Box::new(Grep));
 
@@ -137,6 +138,7 @@ impl GeneratorRegistry {
             } else if name == "READ_TEXT"
                 || name == "READ_WORDS"
                 || name == "READ_JSONL"
+                || name == "READ_CSV"
                 || name == "READ_STDIN"
                 || name == "GREP"
             {
@@ -250,6 +252,7 @@ impl GeneratorRegistry {
                 "READ_TEXT" => help.push_str("'data/file.txt'"),
                 "READ_WORDS" => help.push_str("'data/file.txt', 3, 'lower'"),
                 "READ_JSONL" => help.push_str("'data/events.jsonl'"),
+                "READ_CSV" => help.push_str("'data/trades.csv'"),
                 "READ_STDIN" => help.push_str("'^ERROR'"),
                 "GREP" => help.push_str("'data/file.txt', 'pattern'"),
                 "ASCII_ART" | "BIG_TEXT" => help.push_str("'SQL-CLI'"),

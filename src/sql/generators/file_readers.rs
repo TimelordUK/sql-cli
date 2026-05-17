@@ -1,3 +1,4 @@
+use crate::data::advanced_csv_loader::AdvancedCsvLoader;
 use crate::data::datatable::{DataColumn, DataRow, DataTable, DataType, DataValue};
 use crate::data::stream_loader::collect_column_names;
 use crate::sql::generators::TableGenerator;
@@ -5,7 +6,7 @@ use anyhow::{anyhow, Result};
 use regex::Regex;
 use serde_json::Value as JsonValue;
 use std::fs::File;
-use std::io::{BufRead, BufReader, IsTerminal};
+use std::io::{BufRead, BufReader, Cursor, IsTerminal};
 use std::sync::{Arc, OnceLock};
 
 /// Hard cap on rows any file reader will return. Users who need more can raise
@@ -441,6 +442,67 @@ impl TableGenerator for ReadJsonl {
 
     fn arg_count(&self) -> usize {
         2
+    }
+}
+
+/// READ_CSV(path) - Read a CSV file and emit one row per record.
+///
+/// Columns are inferred from the header row. Pass `-` as the path to read CSV
+/// from stdin (shares the same cached-once buffer with READ_STDIN / READ_JSONL).
+/// Type inference, string interning, and other optimisations are inherited
+/// from the main CSV loader so behaviour matches `sql-cli file.csv -q ...`.
+pub struct ReadCsv;
+
+impl TableGenerator for ReadCsv {
+    fn name(&self) -> &str {
+        "READ_CSV"
+    }
+
+    fn columns(&self) -> Vec<DataColumn> {
+        // Schema is inferred from the CSV header at generate() time.
+        vec![DataColumn::new("(inferred from CSV header)")]
+    }
+
+    fn generate(&self, args: Vec<DataValue>) -> Result<Arc<DataTable>> {
+        if args.len() != 1 {
+            return Err(anyhow!("READ_CSV expects 1 argument: (path)"));
+        }
+
+        let path = require_string(&args, 0, "READ_CSV")?;
+        let mut loader = AdvancedCsvLoader::new();
+
+        let table = if path == "-" {
+            // Reconstruct a CSV byte stream from the cached stdin lines so other
+            // stdin readers in the same query keep seeing the same buffer.
+            let lines = cached_stdin_lines()?;
+            let mut buffer = String::with_capacity(lines.iter().map(|(_, l)| l.len() + 1).sum());
+            for (i, (_, line)) in lines.iter().enumerate() {
+                if i > 0 {
+                    buffer.push('\n');
+                }
+                buffer.push_str(line);
+            }
+            let cursor = Cursor::new(buffer.into_bytes());
+            loader
+                .load_csv_from_reader(cursor, "read_csv", "<stdin>")
+                .map_err(|e| anyhow!("READ_CSV parse error reading stdin: {}", e))?
+        } else {
+            let file = File::open(&path)
+                .map_err(|e| anyhow!("READ_CSV failed to open '{}': {}", path, e))?;
+            loader
+                .load_csv_from_reader(file, "read_csv", &path)
+                .map_err(|e| anyhow!("READ_CSV parse error reading '{}': {}", path, e))?
+        };
+
+        Ok(Arc::new(table))
+    }
+
+    fn description(&self) -> &str {
+        "Read a CSV file (header row required). Pass '-' as path to read CSV from stdin."
+    }
+
+    fn arg_count(&self) -> usize {
+        1
     }
 }
 

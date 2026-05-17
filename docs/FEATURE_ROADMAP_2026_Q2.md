@@ -58,18 +58,19 @@ as the template.
   ```
 - Universal Unix `-` convention; no surprise for shell users.
 
-### READ_CSV — not yet  ⏳
+### READ_CSV(path)  ✅ landed (2026-05-17)
 
-- CSV is currently only the *main loader path* (`sql-cli foo.csv -q ...`), not
-  a generator function. To get `cat foo.csv | sql-cli -q "SELECT ..."` working
-  we need either:
-  1. A `READ_CSV(path [, has_header [, delim]])` generator, with `-` support
-     for stdin. Reuses existing CSV parser machinery. ~80-120 lines.
-  2. Auto-load stdin as CSV when no positional file is given and stdin isn't a
-     TTY. Magical but matches awk/sort. Either treat all stdin as CSV, or add
-     a `--stdin-csv` flag.
-- Recommend (1): clean composition story, matches the rest of the reader
-  family. Probably "next reader" if we keep iterating.
+- `READ_CSV('data/trades.csv')` and `cat foo.csv | sql-cli -q "SELECT ... FROM
+  READ_CSV('-')"` both work.
+- Reuses `AdvancedCsvLoader::load_csv_from_reader` so type inference, string
+  interning, and column-categorisation heuristics are inherited from the main
+  CSV loader — behaviour matches `sql-cli file.csv -q "..."`.
+- v1 is minimal (no `has_header`/`delimiter` args). Add those later if a real
+  use case asks for them.
+
+With READ_CSV the reader family now covers the four core formats — CSV, JSON
+array files, JSONL, plain text — and all of them accept `-` for stdin. This
+is the "complete loop" the user flagged on 2026-05-17.
 
 ### Glob support in existing readers
 
