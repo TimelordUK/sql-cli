@@ -1,0 +1,16 @@
+$ErrorActionPreference = 'Stop'
+
+$toolsDir   = "$(Split-Path -parent $MyInvocation.MyCommand.Definition)"
+$version    = '__VERSION__'
+$url64      = "https://github.com/TimelordUK/sql-cli/releases/download/v$version/sql-cli-windows-x64.exe"
+$checksum64 = '__CHECKSUM__'
+
+$packageArgs = @{
+  packageName    = 'sql-cli'
+  fileFullPath   = Join-Path $toolsDir 'sql-cli.exe'
+  url64bit       = $url64
+  checksum64     = $checksum64
+  checksumType64 = 'sha256'
+}
+
+Get-ChocolateyWebFile @packageArgs

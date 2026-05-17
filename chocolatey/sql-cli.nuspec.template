@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="utf-8"?>
+<package xmlns="http://schemas.microsoft.com/packaging/2015/06/nuspec.xsd">
+  <metadata>
+    <id>sql-cli</id>
+    <version>__VERSION__</version>
+    <title>SQL CLI</title>
+    <authors>TimelordUK</authors>
+    <owners>TimelordUK</owners>
+    <projectUrl>https://github.com/TimelordUK/sql-cli</projectUrl>
+    <projectSourceUrl>https://github.com/TimelordUK/sql-cli</projectSourceUrl>
+    <docsUrl>https://github.com/TimelordUK/sql-cli/blob/main/README.md</docsUrl>
+    <bugTrackerUrl>https://github.com/TimelordUK/sql-cli/issues</bugTrackerUrl>
+    <licenseUrl>https://github.com/TimelordUK/sql-cli/blob/main/LICENSE</licenseUrl>
+    <iconUrl>https://raw.githubusercontent.com/TimelordUK/sql-cli/v__VERSION__/assets/icon.png</iconUrl>
+    <requireLicenseAcceptance>false</requireLicenseAcceptance>
+    <summary>Vim-like terminal SQL editor and engine for CSV / JSON / JSONL data.</summary>
+    <description>
+sql-cli is a fast, in-process SQL engine with a ratatui-based TUI for exploring CSV, JSON, and JSONL files.
+
+Highlights:
+* Standalone engine — no database required; query files directly.
+* Rich SQL: SELECT, WHERE, GROUP BY, ORDER BY, HAVING, JOINs, CTEs, window functions, CASE, IN, EXISTS, subqueries.
+* 100+ built-in functions: string, math, date, type conversion, regex, and a CONVERT() function for unit conversions (temperature, distance, weight, volume, speed, pressure, time, energy).
+* Vim-style TUI: modal navigation, search, fuzzy filter, column pinning, sort indicators, F5 debug view.
+* Non-interactive mode (`-q "..."`) for scripting and pipelines; output as CSV, JSON, or formatted table.
+* JSONL streaming, qualified names, table-generator functions, and a script runner with GO separators.
+
+Install:
+    choco install sql-cli
+
+After install, `sql-cli --help` is on your PATH. Try:
+    sql-cli some.csv -q "SELECT * FROM some WHERE id &gt; 5" -o csv
+    sql-cli --list-functions
+    </description>
+    <releaseNotes>https://github.com/TimelordUK/sql-cli/releases/tag/v__VERSION__</releaseNotes>
+    <copyright>Copyright (c) TimelordUK</copyright>
+    <tags>sql cli csv json jsonl tui rust query data terminal vim ratatui foss cross-platform admin</tags>
+  </metadata>
+  <files>
+    <file src="tools\**" target="tools" />
+  </files>
+</package>

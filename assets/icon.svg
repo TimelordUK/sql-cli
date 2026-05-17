@@ -1,0 +1,92 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256">
+  <defs>
+    <clipPath id="frame">
+      <rect x="8" y="8" width="240" height="240" rx="28" ry="28"/>
+    </clipPath>
+  </defs>
+
+  <g clip-path="url(#frame)">
+    <!-- terminal background -->
+    <rect x="8" y="8" width="240" height="240" fill="#1a1f2b"/>
+
+    <!-- title bar -->
+    <rect x="8" y="8" width="240" height="40" fill="#252b38"/>
+
+    <!-- traffic lights -->
+    <circle cx="30" cy="28" r="6" fill="#ff5f56"/>
+    <circle cx="50" cy="28" r="6" fill="#ffbd2e"/>
+    <circle cx="70" cy="28" r="6" fill="#27c93f"/>
+
+    <!-- SQL query line -->
+    <text x="18" y="68" font-family="DejaVu Sans Mono, Menlo, Consolas, monospace" font-size="13" font-weight="700" fill="#56b6c2">SELECT</text>
+    <text x="74" y="68" font-family="DejaVu Sans Mono, Menlo, Consolas, monospace" font-size="13" fill="#abb2bf">*</text>
+    <text x="86" y="68" font-family="DejaVu Sans Mono, Menlo, Consolas, monospace" font-size="13" font-weight="700" fill="#56b6c2">FROM</text>
+    <text x="124" y="68" font-family="DejaVu Sans Mono, Menlo, Consolas, monospace" font-size="13" fill="#98c379">trades</text>
+
+    <!-- separator under SQL line -->
+    <rect x="8" y="76" width="240" height="2" fill="#0f1219"/>
+
+    <!-- column header band -->
+    <rect x="8" y="78" width="240" height="22" fill="#2a3140"/>
+
+    <!-- column headers -->
+    <text x="22" y="94" font-family="DejaVu Sans Mono, Menlo, Consolas, monospace" font-size="11" font-weight="700" fill="#56b6c2">id</text>
+    <text x="56" y="94" font-family="DejaVu Sans Mono, Menlo, Consolas, monospace" font-size="11" font-weight="700" fill="#56b6c2">symbol</text>
+    <text x="128" y="94" font-family="DejaVu Sans Mono, Menlo, Consolas, monospace" font-size="11" font-weight="700" fill="#56b6c2">qty</text>
+    <text x="180" y="94" font-family="DejaVu Sans Mono, Menlo, Consolas, monospace" font-size="11" font-weight="700" fill="#56b6c2">price</text>
+
+    <!-- separator under headers -->
+    <rect x="8" y="100" width="240" height="1" fill="#0f1219"/>
+
+    <!-- vertical column separators -->
+    <rect x="48"  y="78" width="1" height="140" fill="#0f1219"/>
+    <rect x="120" y="78" width="1" height="140" fill="#0f1219"/>
+    <rect x="172" y="78" width="1" height="140" fill="#0f1219"/>
+
+    <!-- row 1: id=1 AAPL 100 175.32 -->
+    <text x="28"  y="116" font-family="DejaVu Sans Mono, Menlo, Consolas, monospace" font-size="11" fill="#7a8290">1</text>
+    <text x="56"  y="116" font-family="DejaVu Sans Mono, Menlo, Consolas, monospace" font-size="11" fill="#abb2bf">AAPL</text>
+    <text x="140" y="116" font-family="DejaVu Sans Mono, Menlo, Consolas, monospace" font-size="11" fill="#98c379">100</text>
+    <text x="184" y="116" font-family="DejaVu Sans Mono, Menlo, Consolas, monospace" font-size="11" fill="#98c379">175.32</text>
+
+    <!-- row 2: id=2 MSFT 200 412.15 -->
+    <text x="28"  y="134" font-family="DejaVu Sans Mono, Menlo, Consolas, monospace" font-size="11" fill="#7a8290">2</text>
+    <text x="56"  y="134" font-family="DejaVu Sans Mono, Menlo, Consolas, monospace" font-size="11" fill="#abb2bf">MSFT</text>
+    <text x="140" y="134" font-family="DejaVu Sans Mono, Menlo, Consolas, monospace" font-size="11" fill="#98c379">200</text>
+    <text x="184" y="134" font-family="DejaVu Sans Mono, Menlo, Consolas, monospace" font-size="11" fill="#98c379">412.15</text>
+
+    <!-- row 3 (HIGHLIGHTED CELL on qty col): id=3 GOOGL [50] 156.78 -->
+    <rect x="121" y="138" width="51" height="18" fill="#e5c07b"/>
+    <text x="28"  y="152" font-family="DejaVu Sans Mono, Menlo, Consolas, monospace" font-size="11" fill="#7a8290">3</text>
+    <text x="56"  y="152" font-family="DejaVu Sans Mono, Menlo, Consolas, monospace" font-size="11" fill="#abb2bf">GOOGL</text>
+    <text x="142" y="152" font-family="DejaVu Sans Mono, Menlo, Consolas, monospace" font-size="11" font-weight="700" fill="#1a1f2b">50</text>
+    <text x="184" y="152" font-family="DejaVu Sans Mono, Menlo, Consolas, monospace" font-size="11" fill="#98c379">156.78</text>
+
+    <!-- row 4: id=4 NVDA 150 892.50 -->
+    <text x="28"  y="170" font-family="DejaVu Sans Mono, Menlo, Consolas, monospace" font-size="11" fill="#7a8290">4</text>
+    <text x="56"  y="170" font-family="DejaVu Sans Mono, Menlo, Consolas, monospace" font-size="11" fill="#abb2bf">NVDA</text>
+    <text x="140" y="170" font-family="DejaVu Sans Mono, Menlo, Consolas, monospace" font-size="11" fill="#98c379">150</text>
+    <text x="184" y="170" font-family="DejaVu Sans Mono, Menlo, Consolas, monospace" font-size="11" fill="#98c379">892.50</text>
+
+    <!-- row 5: id=5 TSLA 75 248.91 -->
+    <text x="28"  y="188" font-family="DejaVu Sans Mono, Menlo, Consolas, monospace" font-size="11" fill="#7a8290">5</text>
+    <text x="56"  y="188" font-family="DejaVu Sans Mono, Menlo, Consolas, monospace" font-size="11" fill="#abb2bf">TSLA</text>
+    <text x="146" y="188" font-family="DejaVu Sans Mono, Menlo, Consolas, monospace" font-size="11" fill="#98c379">75</text>
+    <text x="184" y="188" font-family="DejaVu Sans Mono, Menlo, Consolas, monospace" font-size="11" fill="#98c379">248.91</text>
+
+    <!-- row 6: id=6 AMZN 300 184.22 -->
+    <text x="28"  y="206" font-family="DejaVu Sans Mono, Menlo, Consolas, monospace" font-size="11" fill="#7a8290">6</text>
+    <text x="56"  y="206" font-family="DejaVu Sans Mono, Menlo, Consolas, monospace" font-size="11" fill="#abb2bf">AMZN</text>
+    <text x="140" y="206" font-family="DejaVu Sans Mono, Menlo, Consolas, monospace" font-size="11" fill="#98c379">300</text>
+    <text x="184" y="206" font-family="DejaVu Sans Mono, Menlo, Consolas, monospace" font-size="11" fill="#98c379">184.22</text>
+
+    <!-- status bar -->
+    <rect x="8" y="220" width="240" height="28" fill="#3a4150"/>
+    <text x="22" y="240" font-family="DejaVu Sans Mono, Menlo, Consolas, monospace" font-size="13" font-weight="700" fill="#56b6c2">sql</text>
+    <text x="44" y="240" font-family="DejaVu Sans Mono, Menlo, Consolas, monospace" font-size="13" fill="#abb2bf">-cli</text>
+    <text x="98" y="240" font-family="DejaVu Sans Mono, Menlo, Consolas, monospace" font-size="11" fill="#7a8290">R3,C3</text>
+    <text x="168" y="240" font-family="DejaVu Sans Mono, Menlo, Consolas, monospace" font-size="11" fill="#e5c07b">qty</text>
+    <text x="190" y="240" font-family="DejaVu Sans Mono, Menlo, Consolas, monospace" font-size="11" font-weight="700" fill="#e5c07b">&#8593;</text>
+  </g>
+</svg>

@@ -1,0 +1,21 @@
+VERIFICATION
+
+sql-cli is an open-source Rust application published by TimelordUK.
+
+Source:        https://github.com/TimelordUK/sql-cli
+Release page:  https://github.com/TimelordUK/sql-cli/releases
+License:       MIT (see LICENSE.txt in this package, or the LICENSE file in
+               the source repository)
+
+This Chocolatey package downloads the Windows x64 binary from the matching
+GitHub release tag. The binary is built by the project's GitHub Actions
+release workflow (.github/workflows/release-manual.yml) from a tagged
+commit; the workflow output is what is published to the GitHub release.
+
+To verify the file integrity, compare the SHA256 in `chocolateyInstall.ps1`
+against the SHA256 of the downloaded binary:
+
+    Get-FileHash sql-cli.exe -Algorithm SHA256
+
+The same checksum can be re-computed from the public asset URL embedded in
+chocolateyInstall.ps1.

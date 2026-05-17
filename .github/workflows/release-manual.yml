@@ -362,3 +362,86 @@ jobs:
         prerelease: false
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  publish-chocolatey:
+    name: Publish to Chocolatey
+    needs: [prepare-release, release]
+    runs-on: windows-latest
+    if: ${{ !cancelled() && needs.release.result == 'success' }}
+
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        ref: v${{ needs.prepare-release.outputs.new_version }}
+
+    - name: Download Windows binary from GitHub release
+      id: download
+      shell: pwsh
+      run: |
+        $version = '${{ needs.prepare-release.outputs.new_version }}'
+        $url = "https://github.com/TimelordUK/sql-cli/releases/download/v$version/sql-cli-windows-x64.exe"
+        $target = Join-Path $env:RUNNER_TEMP 'sql-cli-windows-x64.exe'
+        Write-Host "Fetching $url"
+        # Retry a few times — the asset may take a few seconds to appear after release create.
+        $ok = $false
+        for ($i = 0; $i -lt 10; $i++) {
+          try {
+            Invoke-WebRequest -Uri $url -OutFile $target -UseBasicParsing
+            $ok = $true
+            break
+          } catch {
+            Write-Host "Attempt $($i+1) failed: $($_.Exception.Message). Retrying in 6s..."
+            Start-Sleep -Seconds 6
+          }
+        }
+        if (-not $ok) { throw "Could not download $url after retries" }
+        $hash = (Get-FileHash $target -Algorithm SHA256).Hash
+        Write-Host "SHA256: $hash"
+        "checksum=$hash" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+
+    - name: Substitute version and checksum into templates
+      shell: pwsh
+      run: |
+        $version  = '${{ needs.prepare-release.outputs.new_version }}'
+        $checksum = '${{ steps.download.outputs.checksum }}'
+
+        (Get-Content chocolatey/sql-cli.nuspec.template -Raw) `
+          -replace '__VERSION__', $version `
+          | Set-Content chocolatey/sql-cli.nuspec -NoNewline
+
+        (Get-Content chocolatey/tools/chocolateyInstall.ps1.template -Raw) `
+          -replace '__VERSION__', $version `
+          -replace '__CHECKSUM__', $checksum `
+          | Set-Content chocolatey/tools/chocolateyInstall.ps1 -NoNewline
+
+        Remove-Item chocolatey/sql-cli.nuspec.template
+        Remove-Item chocolatey/tools/chocolateyInstall.ps1.template
+
+        Write-Host '--- nuspec ---'
+        Get-Content chocolatey/sql-cli.nuspec
+        Write-Host '--- chocolateyInstall.ps1 ---'
+        Get-Content chocolatey/tools/chocolateyInstall.ps1
+
+    - name: choco pack
+      shell: pwsh
+      working-directory: chocolatey
+      run: choco pack sql-cli.nuspec
+
+    - name: choco push
+      shell: pwsh
+      working-directory: chocolatey
+      env:
+        CHOCOLATEY_API_KEY: ${{ secrets.CHOCOLATEY_API_KEY }}
+      run: |
+        $nupkg = Get-ChildItem -Filter "sql-cli.*.nupkg" | Select-Object -First 1
+        if (-not $nupkg) { throw "No .nupkg produced by choco pack" }
+        Write-Host "Pushing $($nupkg.Name)"
+        choco push $nupkg.FullName --source https://push.chocolatey.org/ --api-key "$env:CHOCOLATEY_API_KEY"
+
+    - name: Upload .nupkg artifact
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: sql-cli-chocolatey-nupkg
+        path: chocolatey/*.nupkg
+        if-no-files-found: warn
