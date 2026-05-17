@@ -35,11 +35,16 @@ as the template.
   already agreed).
 - Real log files (access.log, syslog, colon-separated configs) need this.
 
-### READ_STDIN([match_regex])
+### READ_STDIN([match_regex])  ✅ landed (2026-05-17)
 
-- Enables `cat file | sql-cli -q "SELECT ... FROM READ_STDIN()"`.
-- Probably 30 lines. Huge usability win for shell pipelines.
-- Yields same `(line_num, line)` as READ_TEXT.
+- `cat file | sql-cli -q "SELECT ... FROM READ_STDIN()"` works.
+- Yields `(line_num, line)` like READ_TEXT; optional regex pre-filter.
+- Cached once per process via `OnceLock` so multiple `READ_STDIN()` calls in
+  the same query (CTE self-joins, etc.) see the same rows — stdin is
+  consumable, this preserves composability.
+- TTY-check on `is_terminal()` short-circuits with a helpful error instead of
+  blocking forever on keyboard input.
+- See `examples/stdin_pipeline.sql` for usage.
 
 ### Glob support in existing readers
 

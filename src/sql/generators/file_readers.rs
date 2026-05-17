@@ -5,8 +5,8 @@ use anyhow::{anyhow, Result};
 use regex::Regex;
 use serde_json::Value as JsonValue;
 use std::fs::File;
-use std::io::{BufRead, BufReader};
-use std::sync::Arc;
+use std::io::{BufRead, BufReader, IsTerminal};
+use std::sync::{Arc, OnceLock};
 
 /// Hard cap on rows any file reader will return. Users who need more can raise
 /// it via a session setting (future work); for now this protects against
@@ -435,6 +435,104 @@ fn json_value_to_string(value: &JsonValue) -> String {
     }
 }
 
+/// READ_STDIN([match_regex]) - Read lines piped on standard input.
+///
+/// Emits `(line_num, line)` rows. Optional regex pre-filters lines before
+/// materialisation. Erroring on TTY input prevents the engine from blocking
+/// forever waiting on a keyboard when the user forgets the pipe.
+///
+/// Stdin is consumable, so it is read **once per process** and cached. This
+/// keeps the function composable: multiple `READ_STDIN()` references in the
+/// same query (CTEs, self-joins) see the same rows. The regex filter is
+/// applied per call against the cached buffer.
+pub struct ReadStdin;
+
+static STDIN_CACHE: OnceLock<Result<Vec<(i64, String)>, String>> = OnceLock::new();
+
+fn cached_stdin_lines() -> Result<&'static Vec<(i64, String)>> {
+    let cached = STDIN_CACHE.get_or_init(|| {
+        let stdin = std::io::stdin();
+        if stdin.is_terminal() {
+            return Err("READ_STDIN() requires data piped on stdin; got an interactive terminal. Try: cat file | sql-cli -q '...'".to_string());
+        }
+        let handle = stdin.lock();
+        let reader = BufReader::new(handle);
+        let mut out = Vec::new();
+        let mut truncated = false;
+        for (idx, line_result) in reader.lines().enumerate() {
+            let line = match line_result {
+                Ok(l) => l,
+                Err(e) => return Err(format!("Error reading stdin: {}", e)),
+            };
+            if out.len() >= MAX_LINES_PER_FILE {
+                truncated = true;
+                break;
+            }
+            out.push(((idx + 1) as i64, line));
+        }
+        if truncated {
+            eprintln!(
+                "WARNING: truncated to {} rows (max_lines_per_file cap) when reading stdin",
+                MAX_LINES_PER_FILE
+            );
+        }
+        Ok(out)
+    });
+    cached.as_ref().map_err(|e| anyhow!(e.clone()))
+}
+
+impl TableGenerator for ReadStdin {
+    fn name(&self) -> &str {
+        "READ_STDIN"
+    }
+
+    fn columns(&self) -> Vec<DataColumn> {
+        vec![DataColumn::new("line_num"), DataColumn::new("line")]
+    }
+
+    fn generate(&self, args: Vec<DataValue>) -> Result<Arc<DataTable>> {
+        if args.len() > 1 {
+            return Err(anyhow!(
+                "READ_STDIN expects 0 or 1 arguments: ([match_regex])"
+            ));
+        }
+
+        let match_regex = optional_string(&args, 0)
+            .map(|s| Regex::new(&s).map_err(|e| anyhow!("Invalid match_regex: {}", e)))
+            .transpose()?;
+
+        let lines = cached_stdin_lines()?;
+
+        let mut table = DataTable::new("read_stdin");
+        table.add_column(DataColumn::new("line_num"));
+        table.add_column(DataColumn::new("line"));
+
+        for (line_num, line) in lines {
+            if let Some(ref re) = match_regex {
+                if !re.is_match(line) {
+                    continue;
+                }
+            }
+            table
+                .add_row(DataRow::new(vec![
+                    DataValue::Integer(*line_num),
+                    DataValue::String(line.clone()),
+                ]))
+                .map_err(|e| anyhow!(e))?;
+        }
+
+        Ok(Arc::new(table))
+    }
+
+    fn description(&self) -> &str {
+        "Read lines piped on stdin (cached once per process). Optional regex filters lines at read time. Yields (line_num, line)."
+    }
+
+    fn arg_count(&self) -> usize {
+        1
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -784,5 +882,37 @@ not json at all
             )])
             .unwrap();
         assert_eq!(table.row_count(), 0);
+    }
+
+    // ReadStdin: argument-validation only (stdin is process-global and we cannot
+    // safely inject test data without refactoring to inject a Reader). The
+    // happy-path is covered by manual smoke tests in commit messages and the
+    // examples/ folder.
+
+    #[test]
+    fn test_read_stdin_rejects_too_many_args() {
+        let err = ReadStdin
+            .generate(vec![
+                DataValue::String("foo".to_string()),
+                DataValue::String("bar".to_string()),
+            ])
+            .unwrap_err();
+        assert!(
+            err.to_string().contains("0 or 1 arguments"),
+            "should mention arg count: {}",
+            err
+        );
+    }
+
+    #[test]
+    fn test_read_stdin_rejects_invalid_regex() {
+        let err = ReadStdin
+            .generate(vec![DataValue::String("[invalid(regex".to_string())])
+            .unwrap_err();
+        assert!(
+            err.to_string().contains("Invalid match_regex"),
+            "should mention regex: {}",
+            err
+        );
     }
 }
