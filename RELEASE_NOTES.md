@@ -1,32 +1,30 @@
-# SQL CLI v1.74.0
+# SQL CLI v1.75.0
 
-**Release Date:** May 04, 2026
+**Release Date:** May 17, 2026
 
 ## 📊 Release Overview
 - **Commits in this release:** 4
-- **Files updated:** 19
+- **Files updated:** 13
 
 ## ✨ Highlights
 
-### 🔍 Enhanced Debugging
-- **Better Diagnostics**: Improved error messages and state dumps
+### 🎨 Visual Improvements
 
 ## 📝 Changes by Category
 
 ### 🚀 New Features
-- add JSONL support — loader auto-detect + READ_JSONL generator
-
-### 📚 Documentation
-- add US states showcase + record engine quirks
-- add Q2 2026 feature roadmap
+- add READ_CSV — file or stdin via '-'
+- '-' reads stdin in READ_TEXT/READ_JSONL/GREP/READ_WORDS
+- add READ_STDIN for shell pipelines
+- publish to Chocolatey on tag
 
 <details>
 <summary>📋 View all commits</summary>
 
-- feat(jsonl): add JSONL support — loader auto-detect + READ_JSONL generator (TimelordUK)
-- docs(examples): add US states showcase + record engine quirks (TimelordUK)
-- docs: add Q2 2026 feature roadmap (TimelordUK)
-- reformat (TimelordUK)
+- feat(generators): add READ_CSV — file or stdin via '-' (TimelordUK)
+- feat(generators): '-' reads stdin in READ_TEXT/READ_JSONL/GREP/READ_WORDS (TimelordUK)
+- feat(generators): add READ_STDIN for shell pipelines (TimelordUK)
+- feat(release): publish to Chocolatey on tag (TimelordUK)
 
 </details>
 
