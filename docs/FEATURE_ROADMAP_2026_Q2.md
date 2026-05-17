@@ -46,6 +46,31 @@ as the template.
   blocking forever on keyboard input.
 - See `examples/stdin_pipeline.sql` for usage.
 
+### Stdin sentinel `-` for all line-based readers  ✅ landed (2026-05-17)
+
+- `READ_TEXT('-')`, `READ_JSONL('-')`, `GREP('-', pat)`, `READ_WORDS('-')` all
+  read stdin (cached, same buffer shared with `READ_STDIN()`).
+- Critically this unlocks **field-level JSONL pipelines** without needing a
+  scalar `JSON_VALUE` function:
+  ```
+  cat events.jsonl | sql-cli -q "SELECT level, COUNT(*) FROM READ_JSONL('-')
+                                  GROUP BY level"
+  ```
+- Universal Unix `-` convention; no surprise for shell users.
+
+### READ_CSV — not yet  ⏳
+
+- CSV is currently only the *main loader path* (`sql-cli foo.csv -q ...`), not
+  a generator function. To get `cat foo.csv | sql-cli -q "SELECT ..."` working
+  we need either:
+  1. A `READ_CSV(path [, has_header [, delim]])` generator, with `-` support
+     for stdin. Reuses existing CSV parser machinery. ~80-120 lines.
+  2. Auto-load stdin as CSV when no positional file is given and stdin isn't a
+     TTY. Magical but matches awk/sort. Either treat all stdin as CSV, or add
+     a `--stdin-csv` flag.
+- Recommend (1): clean composition story, matches the rest of the reader
+  family. Probably "next reader" if we keep iterating.
+
 ### Glob support in existing readers
 
 - `READ_TEXT('logs/*.log')` yields an extra `source_file` column.

@@ -76,6 +76,26 @@ fn read_filtered_lines(path: &str, match_regex: Option<&Regex>) -> Result<Vec<(i
     Ok(out)
 }
 
+/// Read lines from a file path, or from stdin if `path == "-"` (Unix convention).
+///
+/// Stdin reads are cached for the process — same buffer is reused across multiple
+/// reader invocations in the same query. The optional regex filter is applied to
+/// both sources uniformly.
+fn read_lines_from_path_or_stdin(
+    path: &str,
+    match_regex: Option<&Regex>,
+) -> Result<Vec<(i64, String)>> {
+    if path == "-" {
+        let cached = cached_stdin_lines()?;
+        return Ok(cached
+            .iter()
+            .filter(|(_, line)| match_regex.map_or(true, |re| re.is_match(line)))
+            .cloned()
+            .collect());
+    }
+    read_filtered_lines(path, match_regex)
+}
+
 /// READ_TEXT(path [, match_regex]) - Read a text file line by line.
 ///
 /// Emits `(line_num, line)` rows. Optional `match_regex` filters source lines
@@ -103,7 +123,7 @@ impl TableGenerator for ReadText {
             .map(|s| Regex::new(&s).map_err(|e| anyhow!("Invalid match_regex: {}", e)))
             .transpose()?;
 
-        let lines = read_filtered_lines(&path, match_regex.as_ref())?;
+        let lines = read_lines_from_path_or_stdin(&path, match_regex.as_ref())?;
 
         let mut table = DataTable::new("read_text");
         table.add_column(DataColumn::new("line_num"));
@@ -122,7 +142,7 @@ impl TableGenerator for ReadText {
     }
 
     fn description(&self) -> &str {
-        "Read a text file line-by-line. Optional second arg is a regex that filters lines at read time."
+        "Read a text file line-by-line. Pass '-' as path to read from stdin. Optional second arg is a regex that filters lines at read time."
     }
 
     fn arg_count(&self) -> usize {
@@ -164,15 +184,15 @@ impl TableGenerator for Grep {
             Some(v) => return Err(anyhow!("GREP invert flag must be boolean, got {:?}", v)),
         };
 
-        // When not inverted we can push the filter down into the file reader for
+        // When not inverted we can push the filter down into the line reader for
         // the fast path. When inverted we still iterate every line.
         let lines = if invert {
-            let all = read_filtered_lines(&path, None)?;
+            let all = read_lines_from_path_or_stdin(&path, None)?;
             all.into_iter()
                 .filter(|(_, line)| !pattern.is_match(line))
                 .collect::<Vec<_>>()
         } else {
-            read_filtered_lines(&path, Some(&pattern))?
+            read_lines_from_path_or_stdin(&path, Some(&pattern))?
         };
 
         let mut table = DataTable::new("grep");
@@ -192,7 +212,7 @@ impl TableGenerator for Grep {
     }
 
     fn description(&self) -> &str {
-        "Read only lines matching a regex (third arg inverts the match, like grep -v)"
+        "Read only lines matching a regex (third arg inverts the match, like grep -v). Pass '-' as path to read from stdin."
     }
 
     fn arg_count(&self) -> usize {
@@ -254,7 +274,7 @@ impl TableGenerator for ReadWords {
 
         let case_option = optional_string(&args, 2);
 
-        let lines = read_filtered_lines(&path, None)?;
+        let lines = read_lines_from_path_or_stdin(&path, None)?;
 
         let mut table = DataTable::new("read_words");
         table.add_column(DataColumn::new("word_num"));
@@ -336,7 +356,7 @@ impl TableGenerator for ReadJsonl {
             .map(|s| Regex::new(&s).map_err(|e| anyhow!("Invalid match_regex: {}", e)))
             .transpose()?;
 
-        let lines = read_filtered_lines(&path, match_regex.as_ref())?;
+        let lines = read_lines_from_path_or_stdin(&path, match_regex.as_ref())?;
 
         let mut records: Vec<JsonValue> = Vec::with_capacity(lines.len());
         for (line_num, line) in &lines {
@@ -416,7 +436,7 @@ impl TableGenerator for ReadJsonl {
     }
 
     fn description(&self) -> &str {
-        "Read newline-delimited JSON (one object per line). Optional second arg is a regex that filters lines at read time."
+        "Read newline-delimited JSON (one object per line). Pass '-' as path to read JSONL from stdin. Optional second arg is a regex that filters lines at read time."
     }
 
     fn arg_count(&self) -> usize {
