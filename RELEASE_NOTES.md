@@ -1,30 +1,42 @@
-# SQL CLI v1.75.0
+# SQL CLI v1.76.0
 
-**Release Date:** May 17, 2026
+**Release Date:** May 23, 2026
 
 ## 📊 Release Overview
-- **Commits in this release:** 4
-- **Files updated:** 13
+- **Commits in this release:** 7
+- **Files updated:** 17
 
 ## ✨ Highlights
 
-### 🎨 Visual Improvements
+### 🔍 Enhanced Debugging
+- **Better Diagnostics**: Improved error messages and state dumps
+
+### 💾 Data Protection
+- **History Recovery**: Automatic recovery from corrupted files
+- **Atomic Writes**: Safer file operations to prevent data loss
 
 ## 📝 Changes by Category
 
 ### 🚀 New Features
-- add READ_CSV — file or stdin via '-'
-- '-' reads stdin in READ_TEXT/READ_JSONL/GREP/READ_WORDS
-- add READ_STDIN for shell pipelines
-- publish to Chocolatey on tag
+- add DELIMITER clause for non-comma CSV sources
+- --delimiter flag + extension auto-detect for sql-cli file.psv
+- extension auto-detect and explicit delimiter override
+- add CsvReadOptions infrastructure for per-call delimiter
+
+### 📚 Documentation
+- add iris_tsv.sql showcasing TSV delimiter surfaces
+- capture READ_CSV delimiter arg as next-session item
 
 <details>
 <summary>📋 View all commits</summary>
 
-- feat(generators): add READ_CSV — file or stdin via '-' (TimelordUK)
-- feat(generators): '-' reads stdin in READ_TEXT/READ_JSONL/GREP/READ_WORDS (TimelordUK)
-- feat(generators): add READ_STDIN for shell pipelines (TimelordUK)
-- feat(release): publish to Chocolatey on tag (TimelordUK)
+- docs(examples): add iris_tsv.sql showcasing TSV delimiter surfaces (TimelordUK)
+- feat(web-cte): add DELIMITER clause for non-comma CSV sources (TimelordUK)
+- feat(cli): --delimiter flag + extension auto-detect for sql-cli file.psv (TimelordUK)
+- feat(read_csv): extension auto-detect and explicit delimiter override (TimelordUK)
+- test(history): fix flaky integration test via #[serial] (TimelordUK)
+- feat(csv): add CsvReadOptions infrastructure for per-call delimiter (TimelordUK)
+- docs(roadmap): capture READ_CSV delimiter arg as next-session item (TimelordUK)
 
 </details>
 
