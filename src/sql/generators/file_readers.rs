@@ -1,6 +1,8 @@
 use crate::data::advanced_csv_loader::AdvancedCsvLoader;
 use crate::data::datatable::{DataColumn, DataRow, DataTable, DataType, DataValue};
-use crate::data::stream_loader::collect_column_names;
+use crate::data::stream_loader::{
+    collect_column_names, detect_delimiter_from_path, CsvReadOptions,
+};
 use crate::sql::generators::TableGenerator;
 use anyhow::{anyhow, Result};
 use regex::Regex;
@@ -36,6 +38,28 @@ fn optional_string(args: &[DataValue], idx: usize) -> Option<String> {
         Some(DataValue::InternedString(s)) => Some(s.as_str().to_string()),
         _ => None,
     }
+}
+
+/// Parse a user-supplied delimiter argument into a single byte. Accepts a
+/// single ASCII character or the two-character escape `\t` (backslash-t)
+/// since typing a literal tab in SQL is awkward.
+fn parse_delimiter_arg(s: &str, fn_name: &str) -> Result<u8> {
+    // Common escapes
+    match s {
+        "\\t" | "\t" => return Ok(b'\t'),
+        "\\n" => return Ok(b'\n'),
+        "\\r" => return Ok(b'\r'),
+        _ => {}
+    }
+    let bytes = s.as_bytes();
+    if bytes.len() == 1 && bytes[0].is_ascii() {
+        return Ok(bytes[0]);
+    }
+    Err(anyhow!(
+        "{} delimiter must be a single ASCII character (or '\\t'); got {:?}",
+        fn_name,
+        s
+    ))
 }
 
 /// Open a file and stream its lines, applying an optional include-regex filter
@@ -445,10 +469,16 @@ impl TableGenerator for ReadJsonl {
     }
 }
 
-/// READ_CSV(path) - Read a CSV file and emit one row per record.
+/// READ_CSV(path [, delimiter]) - Read a delimited text file and emit one row per record.
 ///
 /// Columns are inferred from the header row. Pass `-` as the path to read CSV
 /// from stdin (shares the same cached-once buffer with READ_STDIN / READ_JSONL).
+///
+/// Delimiter resolution:
+///   1. Explicit 2nd arg wins (single ASCII char or `\t` escape).
+///   2. Otherwise, `.tsv` → tab, `.psv` → pipe, everything else → comma.
+///   3. Stdin (`-`) with no explicit delimiter defaults to comma.
+///
 /// Type inference, string interning, and other optimisations are inherited
 /// from the main CSV loader so behaviour matches `sql-cli file.csv -q ...`.
 pub struct ReadCsv;
@@ -464,11 +494,29 @@ impl TableGenerator for ReadCsv {
     }
 
     fn generate(&self, args: Vec<DataValue>) -> Result<Arc<DataTable>> {
-        if args.len() != 1 {
-            return Err(anyhow!("READ_CSV expects 1 argument: (path)"));
+        if args.is_empty() || args.len() > 2 {
+            return Err(anyhow!(
+                "READ_CSV expects 1 or 2 arguments: (path [, delimiter])"
+            ));
         }
 
         let path = require_string(&args, 0, "READ_CSV")?;
+
+        // Resolve delimiter: explicit 2nd arg > extension auto-detect > comma.
+        // Stdin (`-`) skips the extension layer since there's no extension to read.
+        let delimiter = if let Some(s) = optional_string(&args, 1) {
+            parse_delimiter_arg(&s, "READ_CSV")?
+        } else if path == "-" {
+            b','
+        } else {
+            detect_delimiter_from_path(&path)
+        };
+
+        let opts = CsvReadOptions {
+            delimiter,
+            has_headers: true,
+        };
+
         let mut loader = AdvancedCsvLoader::new();
 
         let table = if path == "-" {
@@ -484,13 +532,13 @@ impl TableGenerator for ReadCsv {
             }
             let cursor = Cursor::new(buffer.into_bytes());
             loader
-                .load_csv_from_reader(cursor, "read_csv", "<stdin>")
+                .load_csv_from_reader_with_opts(cursor, "read_csv", "<stdin>", &opts)
                 .map_err(|e| anyhow!("READ_CSV parse error reading stdin: {}", e))?
         } else {
             let file = File::open(&path)
                 .map_err(|e| anyhow!("READ_CSV failed to open '{}': {}", path, e))?;
             loader
-                .load_csv_from_reader(file, "read_csv", &path)
+                .load_csv_from_reader_with_opts(file, "read_csv", &path, &opts)
                 .map_err(|e| anyhow!("READ_CSV parse error reading '{}': {}", path, e))?
         };
 
@@ -498,11 +546,12 @@ impl TableGenerator for ReadCsv {
     }
 
     fn description(&self) -> &str {
-        "Read a CSV file (header row required). Pass '-' as path to read CSV from stdin."
+        "Read a delimited text file (header row required). Pass '-' as path to read from stdin. \
+         Second arg overrides the delimiter; otherwise '.tsv' → tab, '.psv' → pipe, else comma."
     }
 
     fn arg_count(&self) -> usize {
-        1
+        2
     }
 }
 
@@ -996,5 +1045,142 @@ not json at all
             "should mention regex: {}",
             err
         );
+    }
+
+    // ---- ReadCsv tests ----
+
+    /// Helper to write a temp CSV-like file with a given extension and content.
+    fn write_tmp_with_ext(ext: &str, contents: &str) -> tempfile::NamedTempFile {
+        let f = tempfile::Builder::new()
+            .suffix(&format!(".{}", ext))
+            .tempfile()
+            .unwrap();
+        std::fs::write(f.path(), contents).unwrap();
+        f
+    }
+
+    #[test]
+    fn test_read_csv_default_comma() {
+        let f = write_tmp_with_ext("csv", "id,name\n1,alice\n2,bob\n");
+        let table = ReadCsv
+            .generate(vec![DataValue::String(
+                f.path().to_string_lossy().to_string(),
+            )])
+            .unwrap();
+        assert_eq!(table.column_count(), 2);
+        assert_eq!(table.row_count(), 2);
+        assert_eq!(table.columns[0].name, "id");
+        assert_eq!(table.columns[1].name, "name");
+    }
+
+    #[test]
+    fn test_read_csv_psv_extension_auto_detects_pipe() {
+        let f = write_tmp_with_ext("psv", "id|name|score\n1|alice|10\n2|bob|20\n");
+        let table = ReadCsv
+            .generate(vec![DataValue::String(
+                f.path().to_string_lossy().to_string(),
+            )])
+            .unwrap();
+        assert_eq!(table.column_count(), 3);
+        assert_eq!(table.row_count(), 2);
+        assert_eq!(table.columns[0].name, "id");
+        assert_eq!(table.columns[2].name, "score");
+        assert_eq!(
+            table.metadata.get("delimiter").map(String::as_str),
+            Some("|")
+        );
+    }
+
+    #[test]
+    fn test_read_csv_tsv_extension_auto_detects_tab() {
+        let f = write_tmp_with_ext("tsv", "id\tname\n1\talice\n2\tbob\n");
+        let table = ReadCsv
+            .generate(vec![DataValue::String(
+                f.path().to_string_lossy().to_string(),
+            )])
+            .unwrap();
+        assert_eq!(table.column_count(), 2);
+        assert_eq!(table.row_count(), 2);
+        assert_eq!(
+            table.metadata.get("delimiter").map(String::as_str),
+            Some("\\t")
+        );
+    }
+
+    #[test]
+    fn test_read_csv_explicit_delimiter_overrides_extension() {
+        // .psv extension would auto-detect pipe, but explicit comma wins.
+        // Content is comma-delimited, so if extension auto-detect ran, it
+        // would parse as a single column.
+        let f = write_tmp_with_ext("psv", "id,name\n1,alice\n");
+        let table = ReadCsv
+            .generate(vec![
+                DataValue::String(f.path().to_string_lossy().to_string()),
+                DataValue::String(",".to_string()),
+            ])
+            .unwrap();
+        assert_eq!(table.column_count(), 2);
+    }
+
+    #[test]
+    fn test_read_csv_explicit_pipe_on_unrecognised_extension() {
+        let f = write_tmp_with_ext("dat", "a|b\n1|2\n");
+        let table = ReadCsv
+            .generate(vec![
+                DataValue::String(f.path().to_string_lossy().to_string()),
+                DataValue::String("|".to_string()),
+            ])
+            .unwrap();
+        assert_eq!(table.column_count(), 2);
+    }
+
+    #[test]
+    fn test_read_csv_backslash_t_parses_as_tab() {
+        let f = write_tmp_with_ext("dat", "a\tb\n1\t2\n");
+        let table = ReadCsv
+            .generate(vec![
+                DataValue::String(f.path().to_string_lossy().to_string()),
+                DataValue::String("\\t".to_string()),
+            ])
+            .unwrap();
+        assert_eq!(table.column_count(), 2);
+        assert_eq!(
+            table.metadata.get("delimiter").map(String::as_str),
+            Some("\\t")
+        );
+    }
+
+    #[test]
+    fn test_read_csv_rejects_multi_char_delimiter() {
+        let f = write_tmp_with_ext("dat", "a,b\n1,2\n");
+        let err = ReadCsv
+            .generate(vec![
+                DataValue::String(f.path().to_string_lossy().to_string()),
+                DataValue::String("||".to_string()),
+            ])
+            .unwrap_err();
+        let msg = err.to_string();
+        assert!(
+            msg.contains("single ASCII character"),
+            "should reject multi-char delimiter: {}",
+            msg
+        );
+    }
+
+    #[test]
+    fn test_read_csv_rejects_too_many_args() {
+        let err = ReadCsv
+            .generate(vec![
+                DataValue::String("a".to_string()),
+                DataValue::String("b".to_string()),
+                DataValue::String("c".to_string()),
+            ])
+            .unwrap_err();
+        assert!(err.to_string().contains("1 or 2 arguments"));
+    }
+
+    #[test]
+    fn test_read_csv_requires_path() {
+        assert!(ReadCsv.generate(vec![]).is_err());
     }
 }
