@@ -1,8 +1,14 @@
+use serial_test::serial;
 use sql_cli::history::CommandHistory;
 use std::fs;
 use tempfile::TempDir;
 
+// `#[serial]` because this test mutates the process-global `HOME` env var.
+// Without it, parallel integration tests that resolve `AppPaths::data_dir()`
+// race against each other and intermittently fail with "No such file or
+// directory" when one test's tempdir is dropped while another is mid-write.
 #[test]
+#[serial]
 fn test_history_protection_integration() {
     println!("Testing History Protection Integration...\n");
 
