@@ -47,6 +47,42 @@ pub fn detect_delimiter_from_path(path: &str) -> u8 {
     }
 }
 
+/// Parse a user-supplied delimiter string into a single byte.
+///
+/// Accepts:
+///   - a single ASCII character (e.g. `","`, `"|"`, `";"`)
+///   - the two-character escapes `"\t"`, `"\n"`, `"\r"` (typing literal tabs
+///     in SQL strings or shell args is awkward, so this is the canonical form)
+///
+/// Rejects multi-character strings, non-ASCII, and empty strings with a clear
+/// error. Caller is expected to wrap the error with context if needed.
+pub fn parse_delimiter_arg(s: &str) -> anyhow::Result<u8> {
+    match s {
+        "\\t" | "\t" => return Ok(b'\t'),
+        "\\n" => return Ok(b'\n'),
+        "\\r" => return Ok(b'\r'),
+        _ => {}
+    }
+    let bytes = s.as_bytes();
+    if bytes.len() == 1 && bytes[0].is_ascii() {
+        return Ok(bytes[0]);
+    }
+    Err(anyhow::anyhow!(
+        "delimiter must be a single ASCII character (or '\\t', '\\n', '\\r'); got {:?}",
+        s
+    ))
+}
+
+/// Resolve which delimiter to use for a given path.
+///
+/// Precedence (highest first):
+///   1. `explicit` override (typically from a CLI flag or 2nd arg)
+///   2. extension auto-detect (`.tsv` → tab, `.psv` → pipe)
+///   3. comma
+pub fn resolve_delimiter(path: &str, explicit: Option<u8>) -> u8 {
+    explicit.unwrap_or_else(|| detect_delimiter_from_path(path))
+}
+
 /// Human-readable form of a delimiter byte for diagnostic metadata.
 fn delimiter_label(d: u8) -> String {
     match d {
@@ -711,6 +747,48 @@ mod tests {
             table.metadata.get("delimiter").map(String::as_str),
             Some("\\t")
         );
+    }
+
+    #[test]
+    fn test_parse_delimiter_arg_accepts_single_char() {
+        assert_eq!(parse_delimiter_arg(",").unwrap(), b',');
+        assert_eq!(parse_delimiter_arg("|").unwrap(), b'|');
+        assert_eq!(parse_delimiter_arg(";").unwrap(), b';');
+    }
+
+    #[test]
+    fn test_parse_delimiter_arg_accepts_backslash_escapes() {
+        assert_eq!(parse_delimiter_arg("\\t").unwrap(), b'\t');
+        assert_eq!(parse_delimiter_arg("\t").unwrap(), b'\t');
+        assert_eq!(parse_delimiter_arg("\\n").unwrap(), b'\n');
+        assert_eq!(parse_delimiter_arg("\\r").unwrap(), b'\r');
+    }
+
+    #[test]
+    fn test_parse_delimiter_arg_rejects_multi_char() {
+        let err = parse_delimiter_arg("||").unwrap_err();
+        assert!(err.to_string().contains("single ASCII character"));
+    }
+
+    #[test]
+    fn test_parse_delimiter_arg_rejects_non_ascii() {
+        let err = parse_delimiter_arg("ö").unwrap_err();
+        assert!(err.to_string().contains("single ASCII character"));
+    }
+
+    #[test]
+    fn test_resolve_delimiter_explicit_wins() {
+        assert_eq!(resolve_delimiter("data.psv", Some(b',')), b',');
+        assert_eq!(resolve_delimiter("data.tsv", Some(b';')), b';');
+        assert_eq!(resolve_delimiter("data.csv", Some(b'|')), b'|');
+    }
+
+    #[test]
+    fn test_resolve_delimiter_falls_back_to_extension() {
+        assert_eq!(resolve_delimiter("data.psv", None), b'|');
+        assert_eq!(resolve_delimiter("data.tsv", None), b'\t');
+        assert_eq!(resolve_delimiter("data.csv", None), b',');
+        assert_eq!(resolve_delimiter("data.dat", None), b',');
     }
 
     #[test]

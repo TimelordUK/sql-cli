@@ -484,10 +484,13 @@ pub fn handle_distinct_column_flag(args: &[String]) -> Option<io::Result<()>> {
         .iter()
         .filter(|arg| !arg.starts_with('-'))
         .find(|arg| {
-            arg.ends_with(".csv")
-                || arg.ends_with(".json")
-                || arg.ends_with(".jsonl")
-                || arg.ends_with(".ndjson")
+            let lower = arg.to_ascii_lowercase();
+            lower.ends_with(".csv")
+                || lower.ends_with(".tsv")
+                || lower.ends_with(".psv")
+                || lower.ends_with(".json")
+                || lower.ends_with(".jsonl")
+                || lower.ends_with(".ndjson")
         })
         .cloned()
         .unwrap_or_default();
@@ -523,6 +526,7 @@ pub fn handle_distinct_column_flag(args: &[String]) -> Option<io::Result<()>> {
         no_expression_lifter: false,
         no_cte_hoister: false,
         no_in_lifter: false,
+        delimiter_override: None,
     };
 
     // Execute using the non-interactive interface

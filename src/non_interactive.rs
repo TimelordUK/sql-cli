@@ -10,7 +10,7 @@ use tracing::{debug, info};
 use crate::config::config::Config;
 use crate::data::data_view::DataView;
 use crate::data::datatable::{DataTable, DataValue};
-use crate::data::datatable_loaders::{load_csv_to_datatable, load_json_to_datatable};
+use crate::data::datatable_loaders::load_json_to_datatable;
 // Phase 1: TempTableRegistry no longer used directly - it's in ExecutionContext
 // use crate::data::temp_table_registry::TempTableRegistry;
 use crate::services::query_execution_service::QueryExecutionService;
@@ -219,6 +219,7 @@ pub struct NonInteractiveConfig {
     pub no_expression_lifter: bool,   // Disable expression lifting transformer
     pub no_cte_hoister: bool,         // Disable CTE hoisting transformer
     pub no_in_lifter: bool,           // Disable IN operator lifting transformer
+    pub delimiter_override: Option<u8>, // Explicit --delimiter flag; overrides extension auto-detect
 }
 
 /// Convert NonInteractiveConfig flags to TransformerConfig
@@ -291,7 +292,7 @@ pub fn execute_non_interactive(config: NonInteractiveConfig) -> Result<()> {
         (crate::data::datatable::DataTable::dual(), true)
     } else {
         info!("Loading data from: {}", data_file_to_use);
-        let table = load_data_file(&data_file_to_use)?;
+        let table = load_data_file(&data_file_to_use, config.delimiter_override)?;
         info!(
             "Loaded {} rows with {} columns",
             table.row_count(),
@@ -763,7 +764,7 @@ pub fn execute_script(config: NonInteractiveConfig) -> Result<()> {
         }
 
         info!("Loading data from: {}", data_file);
-        let table = load_data_file(&data_file)?;
+        let table = load_data_file(&data_file, config.delimiter_override)?;
         info!(
             "Loaded {} rows with {} columns",
             table.row_count(),
@@ -1124,8 +1125,14 @@ pub fn execute_script(config: NonInteractiveConfig) -> Result<()> {
     Ok(())
 }
 
-/// Load a data file (CSV or JSON) into a `DataTable`
-fn load_data_file(path: &str) -> Result<DataTable> {
+/// Load a data file (CSV or JSON) into a `DataTable`.
+///
+/// `delimiter_override` (typically from `--delimiter`) wins over extension
+/// auto-detect. `None` falls back to `.tsv` → tab / `.psv` → pipe / else comma.
+fn load_data_file(path: &str, delimiter_override: Option<u8>) -> Result<DataTable> {
+    use crate::data::datatable_loaders::load_csv_to_datatable_with_opts;
+    use crate::data::stream_loader::{resolve_delimiter, CsvReadOptions};
+
     let path = Path::new(path);
 
     if !path.exists() {
@@ -1145,13 +1152,27 @@ fn load_data_file(path: &str) -> Result<DataTable> {
         .unwrap_or("data")
         .to_string();
 
+    // .csv/.tsv/.psv share the CSV loader. So does any other extension when
+    // an explicit --delimiter override is supplied — the user has told us
+    // it's a delimited file, so we trust them.
+    let is_csv_family =
+        matches!(extension.as_str(), "csv" | "tsv" | "psv") || delimiter_override.is_some();
+    if is_csv_family {
+        let path_str = path.display().to_string();
+        let opts = CsvReadOptions {
+            delimiter: resolve_delimiter(&path_str, delimiter_override),
+            has_headers: true,
+        };
+        return load_csv_to_datatable_with_opts(path, &table_name, &opts)
+            .with_context(|| format!("Failed to load CSV-family file: {}", path.display()));
+    }
+
     match extension.as_str() {
-        "csv" => load_csv_to_datatable(path, &table_name)
-            .with_context(|| format!("Failed to load CSV file: {}", path.display())),
         "json" | "jsonl" | "ndjson" => load_json_to_datatable(path, &table_name)
             .with_context(|| format!("Failed to load JSON file: {}", path.display())),
         _ => Err(anyhow::anyhow!(
-            "Unsupported file type: {}. Use .csv, .json, .jsonl, or .ndjson",
+            "Unsupported file type: {}. Use .csv, .tsv, .psv, .json, .jsonl, or .ndjson \
+             (or pass --delimiter to force CSV parsing on an unknown extension)",
             extension
         )),
     }

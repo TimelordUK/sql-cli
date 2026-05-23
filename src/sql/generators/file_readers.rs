@@ -1,7 +1,8 @@
 use crate::data::advanced_csv_loader::AdvancedCsvLoader;
 use crate::data::datatable::{DataColumn, DataRow, DataTable, DataType, DataValue};
 use crate::data::stream_loader::{
-    collect_column_names, detect_delimiter_from_path, CsvReadOptions,
+    collect_column_names, detect_delimiter_from_path, parse_delimiter_arg as parse_delim_byte,
+    CsvReadOptions,
 };
 use crate::sql::generators::TableGenerator;
 use anyhow::{anyhow, Result};
@@ -40,26 +41,10 @@ fn optional_string(args: &[DataValue], idx: usize) -> Option<String> {
     }
 }
 
-/// Parse a user-supplied delimiter argument into a single byte. Accepts a
-/// single ASCII character or the two-character escape `\t` (backslash-t)
-/// since typing a literal tab in SQL is awkward.
+/// Parse a delimiter arg for READ_CSV, wrapping the shared parser's error
+/// with the function name for clearer messages.
 fn parse_delimiter_arg(s: &str, fn_name: &str) -> Result<u8> {
-    // Common escapes
-    match s {
-        "\\t" | "\t" => return Ok(b'\t'),
-        "\\n" => return Ok(b'\n'),
-        "\\r" => return Ok(b'\r'),
-        _ => {}
-    }
-    let bytes = s.as_bytes();
-    if bytes.len() == 1 && bytes[0].is_ascii() {
-        return Ok(bytes[0]);
-    }
-    Err(anyhow!(
-        "{} delimiter must be a single ASCII character (or '\\t'); got {:?}",
-        fn_name,
-        s
-    ))
+    parse_delim_byte(s).map_err(|e| anyhow!("{}: {}", fn_name, e))
 }
 
 /// Open a file and stream its lines, applying an optional include-regex filter

@@ -458,6 +458,7 @@ struct NonInteractiveArgs {
     dry_run_arg: bool,
     styled_arg: bool,
     style_file_arg: Option<String>,
+    delimiter_arg: Option<u8>,
 }
 
 /// Parse command-line arguments into a structured context object
@@ -596,6 +597,20 @@ fn parse_non_interactive_args(args: &[String]) -> NonInteractiveArgs {
             .position(|arg| arg == "--style-file")
             .and_then(|pos| args.get(pos + 1))
             .map(std::string::ToString::to_string),
+
+        // `--delimiter '|'` / `--delimiter '\t'`: explicit override that beats
+        // extension auto-detect across every file in the invocation. Invalid
+        // values exit with an error rather than silently falling back.
+        delimiter_arg: args
+            .iter()
+            .position(|arg| arg == "--delimiter" || arg == "-d")
+            .and_then(|pos| args.get(pos + 1))
+            .map(|s| {
+                sql_cli::data::stream_loader::parse_delimiter_arg(s).unwrap_or_else(|e| {
+                    eprintln!("Error parsing --delimiter: {e}");
+                    std::process::exit(2);
+                })
+            }),
     }
 }
 
@@ -880,15 +895,21 @@ fn handle_execute_statement(
     println!();
 
     // Use the unified execution infrastructure with transformers
-    use sql_cli::data::datatable_loaders::load_csv_to_datatable;
+    use sql_cli::data::datatable_loaders::load_csv_to_datatable_with_opts;
+    use sql_cli::data::stream_loader::{resolve_delimiter, CsvReadOptions};
     use sql_cli::execution::{ExecutionConfig, ExecutionContext, StatementExecutor};
     use std::sync::Arc;
 
     // Load the data source if provided, otherwise use DUAL table
     let data_table = if !data_file.is_empty() {
-        load_csv_to_datatable(
+        let opts = CsvReadOptions {
+            delimiter: resolve_delimiter(data_file, parsed_args.delimiter_arg),
+            has_headers: true,
+        };
+        load_csv_to_datatable_with_opts(
             std::path::Path::new(data_file),
             &format!("data_{}", target_statement),
+            &opts,
         )
         .map_err(|e| io::Error::other(format!("Failed to load data file: {}", e)))?
     } else {
@@ -1102,13 +1123,18 @@ fn handle_get_columns_at(script: &str, data_file: &str, target_line: usize) -> i
         .map_err(|e| io::Error::other(format!("Failed to compute execution plan: {}", e)))?;
 
     // Load the data source if provided
-    use sql_cli::data::datatable_loaders::load_csv_to_datatable;
+    use sql_cli::data::datatable_loaders::load_csv_to_datatable_with_opts;
     use sql_cli::data::query_engine::QueryEngine;
+    use sql_cli::data::stream_loader::{resolve_delimiter, CsvReadOptions};
     use sql_cli::data::temp_table_registry::TempTableRegistry;
     use std::sync::Arc;
 
     let data_table = if !data_file.is_empty() {
-        load_csv_to_datatable(std::path::Path::new(data_file), "data")
+        let opts = CsvReadOptions {
+            delimiter: resolve_delimiter(data_file, None),
+            has_headers: true,
+        };
+        load_csv_to_datatable_with_opts(std::path::Path::new(data_file), "data", &opts)
             .map_err(|e| io::Error::other(format!("Failed to load data file: {}", e)))?
     } else {
         use sql_cli::data::datatable::DataTable;
@@ -1405,17 +1431,36 @@ fn handle_non_interactive_query(
         .lines()
         .any(|line| line.trim().eq_ignore_ascii_case("go"));
 
-    // Find the data file if provided
+    // Find the data file if provided. .tsv / .psv are routed through the CSV
+    // loader which auto-detects the delimiter from the extension. When
+    // --delimiter is given, also accept any positional arg that exists on
+    // disk (the explicit delimiter signals "this is a delimited file" so
+    // we don't need to recognise the extension).
     let data_file = args
         .iter()
         .filter(|arg| !arg.starts_with('-'))
         .find(|arg| {
-            arg.ends_with(".csv")
-                || arg.ends_with(".json")
-                || arg.ends_with(".jsonl")
-                || arg.ends_with(".ndjson")
+            let lower = arg.to_ascii_lowercase();
+            lower.ends_with(".csv")
+                || lower.ends_with(".tsv")
+                || lower.ends_with(".psv")
+                || lower.ends_with(".json")
+                || lower.ends_with(".jsonl")
+                || lower.ends_with(".ndjson")
         })
         .cloned()
+        .or_else(|| {
+            if parsed_args.delimiter_arg.is_some() {
+                // Skip args[0] (the binary path) when probing for existence.
+                args.iter()
+                    .skip(1)
+                    .filter(|arg| !arg.starts_with('-'))
+                    .find(|arg| std::path::Path::new(arg.as_str()).is_file())
+                    .cloned()
+            } else {
+                None
+            }
+        })
         .unwrap_or_default(); // Use empty string if no data file
 
     // Handle --execute-statement flag (dependency-aware execution)
@@ -1584,6 +1629,7 @@ fn handle_non_interactive_query(
         no_expression_lifter: parsed_args.no_expression_lifter_arg,
         no_cte_hoister: parsed_args.no_cte_hoister_arg,
         no_in_lifter: parsed_args.no_in_lifter_arg,
+        delimiter_override: parsed_args.delimiter_arg,
     };
 
     // Use script executor if GO separator is detected, otherwise normal execution
@@ -1709,15 +1755,20 @@ fn main() -> io::Result<()> {
         .map(std::string::ToString::to_string);
 
     // If no --csv flag, check if last argument is a file
-    // Collect all data files (CSV/JSON) from arguments
+    // Collect all data files (CSV-family / JSON) from arguments.
+    // .tsv / .psv get the same treatment as .csv — the loader auto-detects
+    // the delimiter from the extension.
     let data_files: Vec<String> = args
         .iter()
         .filter(|arg| !arg.starts_with("--"))
         .filter(|arg| {
-            arg.ends_with(".csv")
-                || arg.ends_with(".json")
-                || arg.ends_with(".jsonl")
-                || arg.ends_with(".ndjson")
+            let lower = arg.to_ascii_lowercase();
+            lower.ends_with(".csv")
+                || lower.ends_with(".tsv")
+                || lower.ends_with(".psv")
+                || lower.ends_with(".json")
+                || lower.ends_with(".jsonl")
+                || lower.ends_with(".ndjson")
         })
         .cloned()
         .collect();

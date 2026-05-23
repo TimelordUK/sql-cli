@@ -1,4 +1,4 @@
-use crate::data::stream_loader::CsvReadOptions;
+use crate::data::stream_loader::{detect_delimiter_from_path, CsvReadOptions};
 use crate::datatable::{DataColumn, DataRow, DataTable, DataType, DataValue};
 use anyhow::{Context, Result};
 use csv::ReaderBuilder;
@@ -67,10 +67,16 @@ fn is_null_field(raw_line: &str, field_index: usize, delimiter: char) -> bool {
     false // Field not found -> not NULL (shouldn't happen)
 }
 
-/// Load a CSV file into a `DataTable` using default comma-delimited options.
-/// For non-comma delimiters, use [`load_csv_to_datatable_with_opts`].
+/// Load a CSV file into a `DataTable`. Delimiter is auto-detected from the
+/// file extension (`.tsv` → tab, `.psv` → pipe, else comma). To override the
+/// auto-detect, use [`load_csv_to_datatable_with_opts`].
 pub fn load_csv_to_datatable<P: AsRef<Path>>(path: P, table_name: &str) -> Result<DataTable> {
-    load_csv_to_datatable_with_opts(path, table_name, &CsvReadOptions::default())
+    let path_ref = path.as_ref();
+    let opts = CsvReadOptions {
+        delimiter: detect_delimiter_from_path(&path_ref.display().to_string()),
+        has_headers: true,
+    };
+    load_csv_to_datatable_with_opts(path, table_name, &opts)
 }
 
 /// Load a CSV file into a `DataTable` honouring caller-supplied options

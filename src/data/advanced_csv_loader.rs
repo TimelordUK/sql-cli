@@ -289,14 +289,21 @@ impl AdvancedCsvLoader {
         stream_loader.load_csv_from_reader_with_opts(reader, table_name, "file", source_path, opts)
     }
 
-    /// Load CSV with advanced optimizations (default comma delimiter).
+    /// Load CSV with advanced optimizations. Delimiter is auto-detected from
+    /// the file extension (`.tsv` → tab, `.psv` → pipe, else comma). To override,
+    /// use [`load_csv_optimized_with_opts`].
     pub fn load_csv_optimized<P: AsRef<Path>>(
         &mut self,
         path: P,
         table_name: &str,
     ) -> Result<DataTable> {
-        use crate::data::stream_loader::CsvReadOptions;
-        self.load_csv_optimized_with_opts(path, table_name, &CsvReadOptions::default())
+        use crate::data::stream_loader::{detect_delimiter_from_path, CsvReadOptions};
+        let path_str = path.as_ref().display().to_string();
+        let opts = CsvReadOptions {
+            delimiter: detect_delimiter_from_path(&path_str),
+            has_headers: true,
+        };
+        self.load_csv_optimized_with_opts(path, table_name, &opts)
     }
 
     /// Load CSV honouring caller-supplied options (delimiter, headers).

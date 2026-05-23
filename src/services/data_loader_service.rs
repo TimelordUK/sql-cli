@@ -38,10 +38,11 @@ impl DataLoaderService {
         let table_name = enhanced_tui_helpers::sanitize_table_name(&raw_table_name);
 
         match extension.to_lowercase().as_str() {
-            "csv" => self.load_csv(file_path, &table_name, &raw_table_name),
+            // .tsv/.psv share the CSV loader; delimiter is auto-detected from the path.
+            "csv" | "tsv" | "psv" => self.load_csv(file_path, &table_name, &raw_table_name),
             "json" | "jsonl" | "ndjson" => self.load_json(file_path, &table_name, &raw_table_name),
             _ => Err(anyhow::anyhow!(
-                "Unsupported file type: {}. Use .csv, .json, .jsonl, or .ndjson files.",
+                "Unsupported file type: {}. Use .csv, .tsv, .psv, .json, .jsonl, or .ndjson files.",
                 extension
             )),
         }
