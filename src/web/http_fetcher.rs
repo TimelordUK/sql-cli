@@ -9,7 +9,9 @@ use std::time::Duration;
 use tracing::{debug, info};
 
 use crate::data::datatable::DataTable;
-use crate::data::stream_loader::{load_csv_from_reader, load_json_from_reader};
+use crate::data::stream_loader::{
+    load_csv_from_reader_with_opts, load_json_from_reader, CsvReadOptions,
+};
 use crate::sql::parser::ast::{DataFormat, HttpMethod, WebCTESpec};
 
 #[cfg(feature = "redis-cache")]
@@ -214,18 +216,35 @@ impl WebDataFetcher {
                 };
 
                 let extracted_bytes = serde_json::to_vec(&array_value)?;
+                // JSON path: delimiter is irrelevant (output is JSON), but the
+                // arg is still required by the function signature.
                 self.parse_data(
                     extracted_bytes,
                     DataFormat::JSON,
                     table_name,
                     "web",
                     &spec.url,
+                    spec.delimiter,
                 )?
             } else {
-                self.parse_data(bytes.to_vec(), format, table_name, "web", &spec.url)?
+                self.parse_data(
+                    bytes.to_vec(),
+                    format,
+                    table_name,
+                    "web",
+                    &spec.url,
+                    spec.delimiter,
+                )?
             }
         } else {
-            self.parse_data(bytes.to_vec(), format, table_name, "web", &spec.url)?
+            self.parse_data(
+                bytes.to_vec(),
+                format,
+                table_name,
+                "web",
+                &spec.url,
+                spec.delimiter,
+            )?
         };
 
         // Cache the result if caching is enabled
@@ -298,10 +317,20 @@ impl WebDataFetcher {
 
         info!("Using format: {:?} for {}", format, file_path);
 
+        // Build CSV options once; DELIMITER clause wins, else comma. URL paths
+        // are unreliable for extension auto-detect (query strings, redirects),
+        // so we don't probe them here.
+        let csv_opts = CsvReadOptions {
+            delimiter: spec.delimiter.unwrap_or(b','),
+            has_headers: true,
+        };
+
         // Parse based on format
         match format {
-            DataFormat::CSV => load_csv_from_reader(file, table_name, "file", file_path)
-                .with_context(|| format!("Failed to parse CSV from {}", file_path)),
+            DataFormat::CSV => {
+                load_csv_from_reader_with_opts(file, table_name, "file", file_path, &csv_opts)
+                    .with_context(|| format!("Failed to parse CSV from {}", file_path))
+            }
             DataFormat::JSON => load_json_from_reader(file, table_name, "file", file_path)
                 .with_context(|| format!("Failed to parse JSON from {}", file_path)),
             DataFormat::Auto => {
@@ -313,14 +342,15 @@ impl WebDataFetcher {
                 } else {
                     // Default to CSV for auto-detect with files
                     let file = File::open(path)?;
-                    load_csv_from_reader(file, table_name, "file", file_path)
+                    load_csv_from_reader_with_opts(file, table_name, "file", file_path, &csv_opts)
                         .with_context(|| format!("Failed to parse CSV from {}", file_path))
                 }
             }
         }
     }
 
-    /// Parse data bytes based on format
+    /// Parse data bytes based on format. `delimiter` is honoured for CSV (and
+    /// Auto when it falls back to CSV); `None` means comma.
     fn parse_data(
         &self,
         bytes: Vec<u8>,
@@ -328,12 +358,23 @@ impl WebDataFetcher {
         table_name: &str,
         source_type: &str,
         source_path: &str,
+        delimiter: Option<u8>,
     ) -> Result<DataTable> {
+        let csv_opts = CsvReadOptions {
+            delimiter: delimiter.unwrap_or(b','),
+            has_headers: true,
+        };
         match format {
             DataFormat::CSV => {
                 let reader = Cursor::new(bytes);
-                load_csv_from_reader(reader, table_name, source_type, source_path)
-                    .with_context(|| format!("Failed to parse CSV from {}", source_path))
+                load_csv_from_reader_with_opts(
+                    reader,
+                    table_name,
+                    source_type,
+                    source_path,
+                    &csv_opts,
+                )
+                .with_context(|| format!("Failed to parse CSV from {}", source_path))
             }
             DataFormat::JSON => {
                 let reader = Cursor::new(bytes);
@@ -343,7 +384,13 @@ impl WebDataFetcher {
             DataFormat::Auto => {
                 // Try CSV first, then JSON
                 let reader_csv = Cursor::new(bytes.clone());
-                match load_csv_from_reader(reader_csv, table_name, source_type, source_path) {
+                match load_csv_from_reader_with_opts(
+                    reader_csv,
+                    table_name,
+                    source_type,
+                    source_path,
+                    &csv_opts,
+                ) {
                     Ok(table) => Ok(table),
                     Err(_) => {
                         debug!("CSV parsing failed, trying JSON");

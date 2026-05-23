@@ -562,6 +562,7 @@ pub struct WebCTESpec {
     pub form_files: Vec<(String, String)>, // Multipart form files: (field_name, file_path)
     pub form_fields: Vec<(String, String)>, // Multipart form fields: (field_name, value)
     pub template_vars: Vec<TemplateVar>, // Template variables for injection from temp tables
+    pub delimiter: Option<u8>,     // Explicit DELIMITER clause; only applies when format is CSV
 }
 
 /// Template variable for injecting temp table data into WEB CTEs

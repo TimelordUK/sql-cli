@@ -45,6 +45,7 @@ impl<'a> WebCteParser<'a> {
         let mut json_path = None;
         let mut form_files = Vec::new();
         let mut form_fields = Vec::new();
+        let mut delimiter: Option<u8> = None;
 
         // Parse optional clauses until we hit the closing parenthesis
         while !matches!(parser.current_token, Token::RightParen)
@@ -86,6 +87,10 @@ impl<'a> WebCteParser<'a> {
                         let (field_name, value) = Self::parse_form_field(parser)?;
                         form_fields.push((field_name, value));
                     }
+                    "DELIMITER" => {
+                        parser.advance();
+                        delimiter = Some(Self::parse_delimiter(parser)?);
+                    }
                     _ => {
                         return Err(format!(
                             "Unexpected keyword '{}' in WEB CTE specification",
@@ -109,7 +114,22 @@ impl<'a> WebCteParser<'a> {
             form_files,
             form_fields,
             template_vars: Vec::new(), // Will be populated by template expander
+            delimiter,
         })
+    }
+
+    /// Parse a DELIMITER clause value: a single ASCII char or backslash escape
+    /// (`\t`, `\n`, `\r`). Reuses the shared parser from stream_loader so the
+    /// rules match `--delimiter` and `READ_CSV(_, 'x')` exactly.
+    fn parse_delimiter(parser: &mut crate::sql::recursive_parser::Parser) -> Result<u8, String> {
+        let raw = match &parser.current_token {
+            Token::StringLiteral(s) => s.clone(),
+            _ => return Err("Expected string literal after DELIMITER".to_string()),
+        };
+        let byte = crate::data::stream_loader::parse_delimiter_arg(&raw)
+            .map_err(|e| format!("Invalid DELIMITER: {}", e))?;
+        parser.advance();
+        Ok(byte)
     }
 
     fn parse_data_format(

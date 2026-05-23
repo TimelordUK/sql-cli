@@ -3124,4 +3124,60 @@ mod tests {
         let stmt = result.unwrap();
         assert!(stmt.from_source.is_some());
     }
+
+    /// Pull the WebCTESpec out of a parsed top-level statement that uses a
+    /// single WEB CTE. Test helper.
+    fn extract_web_spec(
+        stmt: &crate::sql::parser::ast::SelectStatement,
+    ) -> &crate::sql::parser::ast::WebCTESpec {
+        use crate::sql::parser::ast::CTEType;
+        assert!(!stmt.ctes.is_empty(), "statement should have CTEs");
+        match &stmt.ctes[0].cte_type {
+            CTEType::Web(spec) => spec,
+            other => panic!("expected Web CTE, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_web_cte_delimiter_pipe() {
+        let sql = "WITH WEB foo AS (URL 'file:///tmp/missing.dat' FORMAT CSV DELIMITER '|') \
+                   SELECT * FROM foo";
+        let mut parser = Parser::new(sql);
+        let stmt = parser.parse().expect("parse failed");
+        let spec = extract_web_spec(&stmt);
+        assert_eq!(spec.delimiter, Some(b'|'));
+    }
+
+    #[test]
+    fn test_web_cte_delimiter_tab_via_escape() {
+        let sql = "WITH WEB foo AS (URL 'file:///tmp/missing.dat' FORMAT CSV DELIMITER '\\t') \
+                   SELECT * FROM foo";
+        let mut parser = Parser::new(sql);
+        let stmt = parser.parse().expect("parse failed");
+        let spec = extract_web_spec(&stmt);
+        assert_eq!(spec.delimiter, Some(b'\t'));
+    }
+
+    #[test]
+    fn test_web_cte_no_delimiter_defaults_to_none() {
+        let sql = "WITH WEB foo AS (URL 'file:///tmp/missing.dat' FORMAT CSV) SELECT * FROM foo";
+        let mut parser = Parser::new(sql);
+        let stmt = parser.parse().expect("parse failed");
+        let spec = extract_web_spec(&stmt);
+        assert!(spec.delimiter.is_none());
+    }
+
+    #[test]
+    fn test_web_cte_delimiter_rejects_multi_char() {
+        let sql = "WITH WEB foo AS (URL 'file:///tmp/missing.dat' FORMAT CSV DELIMITER '||') \
+                   SELECT * FROM foo";
+        let mut parser = Parser::new(sql);
+        let err = parser.parse().unwrap_err();
+        let msg = err.to_string();
+        assert!(
+            msg.contains("DELIMITER") || msg.contains("single ASCII"),
+            "should reject multi-char delimiter: {}",
+            msg
+        );
+    }
 }

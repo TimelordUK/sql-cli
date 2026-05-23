@@ -25,6 +25,9 @@
 
 -- cat data/AAPL_data.csv | sql-cli -q "SELECT YEAR(date) AS yr, MAX(close) AS peak, MIN(close) AS trough FROM READ_CSV('-') GROUP BY yr ORDER BY yr"
 
+-- head -3 data/AAPL_data.csv; echo "---"; cat data/AAPL_data.csv | ./target/release/sql-cli -q "SELECT * FROM READ_CSV('-') LIMIT 3"
+
+-- cat data/AAPL_data.csv | ./target/release/sql-cli -q "SELECT YEAR(date) AS yr, MAX(close) AS peak, MIN(close) AS trough FROM READ_CSV('-') GROUP BY yr ORDER BY yr,peak,trough"
 
 SELECT 'READ_STDIN' AS generator,
        'Pipe lines on stdin; yields (line_num, line)' AS description;
