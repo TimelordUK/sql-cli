@@ -1,3 +1,4 @@
+use crate::data::stream_loader::CsvReadOptions;
 use crate::datatable::{DataColumn, DataRow, DataTable, DataType, DataValue};
 use anyhow::{Context, Result};
 use csv::ReaderBuilder;
@@ -7,9 +8,10 @@ use std::fs::File;
 use std::io::{BufRead, BufReader, Read};
 use std::path::Path;
 
-/// Helper to detect if a field in the raw CSV line is a null (unquoted empty)
-fn is_null_field(raw_line: &str, field_index: usize) -> bool {
-    let mut comma_count = 0;
+/// Helper to detect if a field in the raw CSV line is a null (unquoted empty).
+/// `delimiter` is the field separator character used in the source.
+fn is_null_field(raw_line: &str, field_index: usize, delimiter: char) -> bool {
+    let mut delim_count = 0;
     let mut in_quotes = false;
     let mut field_start = 0;
     let mut prev_char = ' ';
@@ -19,8 +21,8 @@ fn is_null_field(raw_line: &str, field_index: usize) -> bool {
             in_quotes = !in_quotes;
         }
 
-        if ch == ',' && !in_quotes {
-            if comma_count == field_index {
+        if ch == delimiter && !in_quotes {
+            if delim_count == field_index {
                 let field_end = i;
                 let field_content = &raw_line[field_start..field_end].trim();
                 // If empty, check if it was quoted (quoted empty = empty string, unquoted empty = NULL)
@@ -36,14 +38,14 @@ fn is_null_field(raw_line: &str, field_index: usize) -> bool {
                 }
                 return false; // Non-empty field -> not NULL
             }
-            comma_count += 1;
+            delim_count += 1;
             field_start = i + 1;
         }
         prev_char = ch;
     }
 
     // Check last field
-    if comma_count == field_index {
+    if delim_count == field_index {
         let field_content = raw_line[field_start..]
             .trim()
             .trim_end_matches('\n')
@@ -65,12 +67,26 @@ fn is_null_field(raw_line: &str, field_index: usize) -> bool {
     false // Field not found -> not NULL (shouldn't happen)
 }
 
-/// Load a CSV file into a `DataTable`
+/// Load a CSV file into a `DataTable` using default comma-delimited options.
+/// For non-comma delimiters, use [`load_csv_to_datatable_with_opts`].
 pub fn load_csv_to_datatable<P: AsRef<Path>>(path: P, table_name: &str) -> Result<DataTable> {
+    load_csv_to_datatable_with_opts(path, table_name, &CsvReadOptions::default())
+}
+
+/// Load a CSV file into a `DataTable` honouring caller-supplied options
+/// (delimiter, headers).
+pub fn load_csv_to_datatable_with_opts<P: AsRef<Path>>(
+    path: P,
+    table_name: &str,
+    opts: &CsvReadOptions,
+) -> Result<DataTable> {
     let file = File::open(&path)
         .with_context(|| format!("Failed to open CSV file: {:?}", path.as_ref()))?;
 
-    let mut reader = ReaderBuilder::new().has_headers(true).from_reader(file);
+    let mut reader = ReaderBuilder::new()
+        .has_headers(opts.has_headers)
+        .delimiter(opts.delimiter)
+        .from_reader(file);
 
     // Get headers and create columns
     let headers = reader.headers()?.clone();
@@ -83,6 +99,15 @@ pub fn load_csv_to_datatable<P: AsRef<Path>>(path: P, table_name: &str) -> Resul
     table.metadata.insert(
         "source_path".to_string(),
         path.as_ref().display().to_string(),
+    );
+    table.metadata.insert(
+        "delimiter".to_string(),
+        match opts.delimiter {
+            b'\t' => "\\t".to_string(),
+            b'\n' => "\\n".to_string(),
+            b'\r' => "\\r".to_string(),
+            b => (b as char).to_string(),
+        },
     );
 
     // Create columns from headers (types will be inferred later)
@@ -147,7 +172,7 @@ pub fn load_csv_to_datatable<P: AsRef<Path>>(path: P, table_name: &str) -> Resul
         for (col_idx, value) in string_row.iter().enumerate() {
             let data_value = if value.is_empty() {
                 // Distinguish between NULL (,,) and empty string ("")
-                if is_null_field(raw_line, col_idx) {
+                if is_null_field(raw_line, col_idx, opts.delimiter as char) {
                     DataValue::Null
                 } else {
                     DataValue::String(String::new())
@@ -413,6 +438,51 @@ mod tests {
         let score = table.get_value_by_name(2, "score").unwrap();
         assert!(score.is_null());
 
+        Ok(())
+    }
+
+    #[test]
+    fn test_load_csv_with_pipe_delimiter_via_opts() -> Result<()> {
+        let mut temp_file = NamedTempFile::new()?;
+        writeln!(temp_file, "id|name|price")?;
+        writeln!(temp_file, "1|Widget|9.99")?;
+        writeln!(temp_file, "2|Gadget|19.99")?;
+        temp_file.flush()?;
+
+        let opts = CsvReadOptions {
+            delimiter: b'|',
+            has_headers: true,
+        };
+        let table = load_csv_to_datatable_with_opts(temp_file.path(), "psv_products", &opts)?;
+
+        assert_eq!(table.column_count(), 3);
+        assert_eq!(table.row_count(), 2);
+        assert_eq!(table.columns[0].name, "id");
+        assert_eq!(table.columns[1].name, "name");
+        assert_eq!(table.columns[0].data_type, DataType::Integer);
+        assert_eq!(
+            table.get_value_by_name(0, "name").unwrap().to_string(),
+            "Widget"
+        );
+        assert_eq!(
+            table.metadata.get("delimiter").map(String::as_str),
+            Some("|")
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn test_default_load_csv_records_comma_delimiter() -> Result<()> {
+        let mut temp_file = NamedTempFile::new()?;
+        writeln!(temp_file, "a,b")?;
+        writeln!(temp_file, "1,2")?;
+        temp_file.flush()?;
+
+        let table = load_csv_to_datatable(temp_file.path(), "t")?;
+        assert_eq!(
+            table.metadata.get("delimiter").map(String::as_str),
+            Some(",")
+        );
         Ok(())
     }
 }

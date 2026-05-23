@@ -11,6 +11,52 @@ use tracing::{debug, info};
 use crate::data::advanced_csv_loader::StringInterner;
 use crate::data::datatable::{DataColumn, DataRow, DataTable, DataType, DataValue};
 
+/// Options controlling how a CSV stream is parsed.
+///
+/// Default is RFC-4180 style: comma delimiter, header row required. Surfaces
+/// (CLI flag, `READ_CSV(path, '|')`, WEB CTE `DELIMITER`) populate this struct
+/// at the edge; internal layers just pass it through.
+#[derive(Debug, Clone)]
+pub struct CsvReadOptions {
+    pub delimiter: u8,
+    pub has_headers: bool,
+}
+
+impl Default for CsvReadOptions {
+    fn default() -> Self {
+        Self {
+            delimiter: b',',
+            has_headers: true,
+        }
+    }
+}
+
+/// Pick a default delimiter from a path's extension.
+///
+/// `.tsv` → tab, `.psv` → pipe; everything else (including stdin `-`) → comma.
+/// Case-insensitive. This is only the *auto-detect* layer — explicit overrides
+/// from the CLI flag, `READ_CSV` 2nd arg, or WEB CTE `DELIMITER` win over this.
+pub fn detect_delimiter_from_path(path: &str) -> u8 {
+    let lower = path.to_ascii_lowercase();
+    if lower.ends_with(".tsv") {
+        b'\t'
+    } else if lower.ends_with(".psv") {
+        b'|'
+    } else {
+        b','
+    }
+}
+
+/// Human-readable form of a delimiter byte for diagnostic metadata.
+fn delimiter_label(d: u8) -> String {
+    match d {
+        b'\t' => "\\t".to_string(),
+        b'\n' => "\\n".to_string(),
+        b'\r' => "\\r".to_string(),
+        b => (b as char).to_string(),
+    }
+}
+
 /// Column analysis results for determining interning strategy
 #[derive(Debug)]
 struct ColumnAnalysis {
@@ -95,17 +141,39 @@ impl StreamCsvLoader {
         analyses
     }
 
-    /// Load CSV data with string interning from any Read source
+    /// Load CSV data with string interning from any Read source, using default
+    /// comma-delimited options. Thin wrapper over [`load_csv_from_reader_with_opts`]
+    /// kept so existing callers don't need to touch options.
     pub fn load_csv_from_reader<R: Read>(
+        &mut self,
+        reader: R,
+        table_name: &str,
+        source_type: &str,
+        source_path: &str,
+    ) -> Result<DataTable> {
+        self.load_csv_from_reader_with_opts(
+            reader,
+            table_name,
+            source_type,
+            source_path,
+            &CsvReadOptions::default(),
+        )
+    }
+
+    /// Load CSV data with string interning, honouring caller-supplied options
+    /// (delimiter, headers).
+    pub fn load_csv_from_reader_with_opts<R: Read>(
         &mut self,
         mut reader: R,
         table_name: &str,
         source_type: &str,
         source_path: &str,
+        opts: &CsvReadOptions,
     ) -> Result<DataTable> {
         info!(
-            "Stream CSV load: Loading {} with optimizations",
-            source_path
+            "Stream CSV load: Loading {} with optimizations (delimiter={})",
+            source_path,
+            delimiter_label(opts.delimiter)
         );
 
         // Read all data into memory
@@ -114,7 +182,8 @@ impl StreamCsvLoader {
 
         // First pass: Parse CSV with headers
         let mut csv_reader = ReaderBuilder::new()
-            .has_headers(true)
+            .has_headers(opts.has_headers)
+            .delimiter(opts.delimiter)
             .from_reader(&buffer[..]);
 
         let headers = csv_reader.headers()?.clone();
@@ -127,6 +196,9 @@ impl StreamCsvLoader {
         table
             .metadata
             .insert("source_path".to_string(), source_path.to_string());
+        table
+            .metadata
+            .insert("delimiter".to_string(), delimiter_label(opts.delimiter));
 
         // Create columns from headers
         for header in &headers {
@@ -202,7 +274,7 @@ impl StreamCsvLoader {
             for (col_idx, value) in string_row.iter().enumerate() {
                 let data_value = if value.is_empty() {
                     // Check if this is NULL (,,) vs empty string ("")
-                    if is_null_field(raw_line, col_idx) {
+                    if is_null_field(raw_line, col_idx, opts.delimiter as char) {
                         DataValue::Null
                     } else if categorical_columns.contains(&col_idx) {
                         // Use interned string for empty categorical values
@@ -254,7 +326,8 @@ impl StreamCsvLoader {
     }
 }
 
-/// Simple wrapper for loading CSV without advanced features
+/// Simple wrapper for loading CSV without advanced features. Defaults to
+/// comma delimiter; for other delimiters use [`load_csv_from_reader_with_opts`].
 pub fn load_csv_from_reader<R: Read>(
     reader: R,
     table_name: &str,
@@ -263,6 +336,19 @@ pub fn load_csv_from_reader<R: Read>(
 ) -> Result<DataTable> {
     let mut loader = StreamCsvLoader::new();
     loader.load_csv_from_reader(reader, table_name, source_type, source_path)
+}
+
+/// As [`load_csv_from_reader`], but honouring caller-supplied [`CsvReadOptions`]
+/// (delimiter, headers).
+pub fn load_csv_from_reader_with_opts<R: Read>(
+    reader: R,
+    table_name: &str,
+    source_type: &str,
+    source_path: &str,
+    opts: &CsvReadOptions,
+) -> Result<DataTable> {
+    let mut loader = StreamCsvLoader::new();
+    loader.load_csv_from_reader_with_opts(reader, table_name, source_type, source_path, opts)
 }
 
 /// Parse JSON content as either a JSON array of objects or JSONL
@@ -420,9 +506,10 @@ fn json_value_to_string(value: &JsonValue) -> String {
     }
 }
 
-/// Helper to detect NULL fields in raw CSV lines
-fn is_null_field(raw_line: &str, field_index: usize) -> bool {
-    let mut comma_count = 0;
+/// Helper to detect NULL fields in raw CSV lines. `delimiter` is the field
+/// separator character used in the source (`,` for plain CSV, `\t` for TSV, etc.).
+fn is_null_field(raw_line: &str, field_index: usize, delimiter: char) -> bool {
+    let mut delim_count = 0;
     let mut in_quotes = false;
     let mut field_start = 0;
     let mut prev_char = ' ';
@@ -430,22 +517,23 @@ fn is_null_field(raw_line: &str, field_index: usize) -> bool {
     for (i, ch) in raw_line.char_indices() {
         if ch == '"' && prev_char != '\\' {
             in_quotes = !in_quotes;
-        } else if ch == ',' && !in_quotes {
-            if comma_count == field_index {
+        } else if ch == delimiter && !in_quotes {
+            if delim_count == field_index {
                 // Found the field - check if it's empty
                 return i == field_start
-                    || (i == field_start + 1 && raw_line.chars().nth(field_start) == Some(','));
+                    || (i == field_start + 1
+                        && raw_line.chars().nth(field_start) == Some(delimiter));
             }
-            comma_count += 1;
+            delim_count += 1;
             field_start = i + 1;
         }
         prev_char = ch;
     }
 
     // Check last field
-    if comma_count == field_index {
+    if delim_count == field_index {
         let remaining = raw_line[field_start..].trim_end();
-        return remaining.is_empty() || remaining == ",";
+        return remaining.is_empty() || remaining.chars().next() == Some(delimiter);
     }
 
     false
@@ -541,5 +629,101 @@ mod tests {
     fn test_parse_json_records_jsonl_error_cites_line() {
         let err = parse_json_records("{\"a\":1}\nnot json\n").unwrap_err();
         assert!(err.to_string().contains("line 2"));
+    }
+
+    // ---- CsvReadOptions / delimiter detection ----
+
+    #[test]
+    fn test_csv_options_default_is_comma() {
+        let opts = CsvReadOptions::default();
+        assert_eq!(opts.delimiter, b',');
+        assert!(opts.has_headers);
+    }
+
+    #[test]
+    fn test_detect_delimiter_from_path() {
+        assert_eq!(detect_delimiter_from_path("data.tsv"), b'\t');
+        assert_eq!(detect_delimiter_from_path("data.TSV"), b'\t');
+        assert_eq!(detect_delimiter_from_path("/tmp/foo.psv"), b'|');
+        assert_eq!(detect_delimiter_from_path("data.PSV"), b'|');
+        assert_eq!(detect_delimiter_from_path("data.csv"), b',');
+        assert_eq!(detect_delimiter_from_path("noext"), b',');
+        assert_eq!(detect_delimiter_from_path("-"), b',');
+    }
+
+    #[test]
+    fn test_load_csv_with_pipe_delimiter() {
+        let data = "id|name|score\n1|alice|10\n2|bob|20\n";
+        let reader = Cursor::new(data);
+        let opts = CsvReadOptions {
+            delimiter: b'|',
+            has_headers: true,
+        };
+        let table = load_csv_from_reader_with_opts(reader, "psv", "test", "memory", &opts)
+            .expect("load failed");
+        assert_eq!(table.column_count(), 3);
+        assert_eq!(table.row_count(), 2);
+        assert_eq!(table.get_value(0, 0).unwrap(), &DataValue::Integer(1));
+        assert_eq!(
+            table.get_value(1, 1).unwrap(),
+            &DataValue::String("bob".to_string())
+        );
+    }
+
+    #[test]
+    fn test_load_csv_with_tab_delimiter() {
+        let data = "id\tname\tscore\n1\talice\t10\n2\tbob\t20\n";
+        let reader = Cursor::new(data);
+        let opts = CsvReadOptions {
+            delimiter: b'\t',
+            has_headers: true,
+        };
+        let table = load_csv_from_reader_with_opts(reader, "tsv", "test", "memory", &opts)
+            .expect("load failed");
+        assert_eq!(table.column_count(), 3);
+        assert_eq!(table.row_count(), 2);
+        assert_eq!(table.get_value(0, 0).unwrap(), &DataValue::Integer(1));
+    }
+
+    #[test]
+    fn test_metadata_records_delimiter() {
+        // Comma -> stored as ","
+        let table = load_csv_from_reader(Cursor::new("a,b\n1,2\n"), "t", "test", "memory").unwrap();
+        assert_eq!(
+            table.metadata.get("delimiter").map(String::as_str),
+            Some(",")
+        );
+
+        // Tab -> stored as "\t"
+        let opts = CsvReadOptions {
+            delimiter: b'\t',
+            has_headers: true,
+        };
+        let table = load_csv_from_reader_with_opts(
+            Cursor::new("a\tb\n1\t2\n"),
+            "t",
+            "test",
+            "memory",
+            &opts,
+        )
+        .unwrap();
+        assert_eq!(
+            table.metadata.get("delimiter").map(String::as_str),
+            Some("\\t")
+        );
+    }
+
+    #[test]
+    fn test_null_detection_works_with_pipe_delimiter() {
+        // Middle column is unquoted-empty -> NULL, not empty string.
+        let data = "id|name|score\n1||10\n";
+        let opts = CsvReadOptions {
+            delimiter: b'|',
+            has_headers: true,
+        };
+        let table =
+            load_csv_from_reader_with_opts(Cursor::new(data), "psv", "test", "memory", &opts)
+                .expect("load failed");
+        assert!(matches!(table.get_value(0, 1).unwrap(), DataValue::Null));
     }
 }

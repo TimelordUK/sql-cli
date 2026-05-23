@@ -259,25 +259,52 @@ impl AdvancedCsvLoader {
         cardinality < 100 && avg_length < 50
     }
 
-    /// Load CSV from a reader with advanced optimizations
+    /// Load CSV from a reader with advanced optimizations (default comma delimiter).
     pub fn load_csv_from_reader<R: Read>(
         &mut self,
         reader: R,
         table_name: &str,
         source_path: &str,
     ) -> Result<DataTable> {
-        use crate::data::stream_loader::StreamCsvLoader;
-
-        // Use the stream-based loader with string interning
-        let mut stream_loader = StreamCsvLoader::new();
-        stream_loader.load_csv_from_reader(reader, table_name, "file", source_path)
+        use crate::data::stream_loader::CsvReadOptions;
+        self.load_csv_from_reader_with_opts(
+            reader,
+            table_name,
+            source_path,
+            &CsvReadOptions::default(),
+        )
     }
 
-    /// Load CSV with advanced optimizations
+    /// Load CSV from a reader honouring caller-supplied options (delimiter, headers).
+    pub fn load_csv_from_reader_with_opts<R: Read>(
+        &mut self,
+        reader: R,
+        table_name: &str,
+        source_path: &str,
+        opts: &crate::data::stream_loader::CsvReadOptions,
+    ) -> Result<DataTable> {
+        use crate::data::stream_loader::StreamCsvLoader;
+
+        let mut stream_loader = StreamCsvLoader::new();
+        stream_loader.load_csv_from_reader_with_opts(reader, table_name, "file", source_path, opts)
+    }
+
+    /// Load CSV with advanced optimizations (default comma delimiter).
     pub fn load_csv_optimized<P: AsRef<Path>>(
         &mut self,
         path: P,
         table_name: &str,
+    ) -> Result<DataTable> {
+        use crate::data::stream_loader::CsvReadOptions;
+        self.load_csv_optimized_with_opts(path, table_name, &CsvReadOptions::default())
+    }
+
+    /// Load CSV honouring caller-supplied options (delimiter, headers).
+    pub fn load_csv_optimized_with_opts<P: AsRef<Path>>(
+        &mut self,
+        path: P,
+        table_name: &str,
+        opts: &crate::data::stream_loader::CsvReadOptions,
     ) -> Result<DataTable> {
         let path = path.as_ref();
         info!(
@@ -285,9 +312,8 @@ impl AdvancedCsvLoader {
             path.display()
         );
 
-        // Use stream-based approach for consistency
         let file = File::open(path)?;
-        self.load_csv_from_reader(file, table_name, &path.display().to_string())
+        self.load_csv_from_reader_with_opts(file, table_name, &path.display().to_string(), opts)
     }
 
     /// Original file-based implementation (kept for backward compatibility)
