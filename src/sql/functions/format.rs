@@ -319,12 +319,53 @@ impl SqlFunction for FormatDateFunction {
     }
 }
 
-/// DATE_FORMAT — MySQL-compatible alias for FORMAT_DATE.
+/// Translate a MySQL `DATE_FORMAT` format string into chrono's strftime dialect.
 ///
-/// Delegates to `FormatDateFunction`. Common specifiers (`%Y`, `%m`, `%d`, `%H`, `%M`, `%S`)
-/// are identical between MySQL and strftime. A handful of MySQL-only specifiers
-/// (`%i` for minutes, `%W` for full weekday name, `%M` for full month name) differ from
-/// strftime and are not translated here — use `%M`, `%A`, `%B` respectively.
+/// Most specifiers are identical between the two (`%Y`, `%m`, `%d`, `%H`, `%h`,
+/// `%p`, `%a`, `%b`, `%y`, `%j`, `%T`, `%r`, …) and pass through untouched. Only
+/// the handful that diverge are remapped. This is done in a *single pass* — a
+/// sequential string-replace would be wrong because MySQL `%i`→strftime `%M`
+/// and MySQL `%M`→strftime `%B` collide on the intermediate `%M`.
+///
+/// | MySQL | meaning             | strftime |
+/// |-------|---------------------|----------|
+/// | `%i`  | minutes (00–59)     | `%M`     |
+/// | `%M`  | full month name     | `%B`     |
+/// | `%W`  | full weekday name   | `%A`     |
+/// | `%s`  | seconds (00–59)     | `%S`     |
+/// | `%f`  | microseconds        | `%6f`    |
+fn translate_mysql_date_format(fmt: &str) -> String {
+    let mut out = String::with_capacity(fmt.len());
+    let mut chars = fmt.chars().peekable();
+    while let Some(c) = chars.next() {
+        if c != '%' {
+            out.push(c);
+            continue;
+        }
+        match chars.next() {
+            Some('i') => out.push_str("%M"),  // minutes
+            Some('M') => out.push_str("%B"),  // full month name
+            Some('W') => out.push_str("%A"),  // full weekday name
+            Some('s') => out.push_str("%S"),  // seconds (avoid strftime epoch %s)
+            Some('f') => out.push_str("%6f"), // microseconds
+            // Identical or unrecognised: emit verbatim so chrono handles it
+            // (covers %Y %m %d %H %h %p %a %b %y %j %T %r %% and friends).
+            Some(other) => {
+                out.push('%');
+                out.push(other);
+            }
+            None => out.push('%'),
+        }
+    }
+    out
+}
+
+/// DATE_FORMAT — MySQL-compatible date formatting.
+///
+/// Translates MySQL-only specifiers (`%i`, `%M`, `%W`, `%s`, `%f`) to their
+/// chrono strftime equivalents, then delegates to `FormatDateFunction`. All
+/// shared specifiers pass through unchanged, so `%Y-%m-%d %H:%i:%s` and
+/// `%W, %M %d` both behave as a MySQL user expects.
 pub struct DateFormatFunction;
 
 impl SqlFunction for DateFormatFunction {
@@ -333,17 +374,71 @@ impl SqlFunction for DateFormatFunction {
             name: "DATE_FORMAT",
             category: FunctionCategory::Date,
             arg_count: ArgCount::Fixed(2),
-            description: "Format a date using a format string (MySQL-compatible alias for FORMAT_DATE; uses chrono strftime specifiers)",
+            description: "Format a date using a MySQL-style format string (translates MySQL specifiers like %i, %M, %W to chrono equivalents)",
             returns: "STRING",
             examples: vec![
-                "SELECT DATE_FORMAT(trans_date, '%Y-%m')", // "2018-12"
-                "SELECT DATE_FORMAT(NOW(), '%Y-%m-%d')",
-                "SELECT DATE_FORMAT(NOW(), '%B %d, %Y')", // "March 15, 2024"
+                "SELECT DATE_FORMAT(trans_date, '%Y-%m')",       // "2018-12"
+                "SELECT DATE_FORMAT(NOW(), '%H:%i:%s')",         // "14:05:09"
+                "SELECT DATE_FORMAT(NOW(), '%W, %M %d, %Y')",    // "Sunday, March 15, 2024"
             ],
         }
     }
 
     fn evaluate(&self, args: &[DataValue]) -> Result<DataValue> {
+        // Translate the MySQL format string (2nd arg) before delegating.
+        if args.len() == 2 {
+            if let DataValue::String(fmt) = &args[1] {
+                let translated = translate_mysql_date_format(fmt);
+                let new_args = [args[0].clone(), DataValue::String(translated)];
+                return FormatDateFunction.evaluate(&new_args);
+            }
+        }
         FormatDateFunction.evaluate(args)
+    }
+}
+
+#[cfg(test)]
+mod date_format_tests {
+    use super::*;
+
+    #[test]
+    fn translates_mysql_only_specifiers() {
+        // %i -> minutes, %M -> month name, %W -> weekday name, %s -> seconds
+        assert_eq!(translate_mysql_date_format("%H:%i:%s"), "%H:%M:%S");
+        assert_eq!(translate_mysql_date_format("%W, %M %d"), "%A, %B %d");
+        assert_eq!(translate_mysql_date_format("%f"), "%6f");
+    }
+
+    #[test]
+    fn passes_through_shared_and_literals() {
+        // Identical specifiers and literals are untouched.
+        assert_eq!(translate_mysql_date_format("%Y-%m-%d"), "%Y-%m-%d");
+        assert_eq!(translate_mysql_date_format("%r"), "%r");
+        assert_eq!(translate_mysql_date_format("%a %b 100%%"), "%a %b 100%%");
+        assert_eq!(
+            translate_mysql_date_format("no specifiers"),
+            "no specifiers"
+        );
+    }
+
+    #[test]
+    fn single_pass_avoids_i_to_m_collision() {
+        // The classic trap: %i must become %M (minutes) and a real %M must
+        // become %B (month name) — never double-translated.
+        assert_eq!(translate_mysql_date_format("%i-%M"), "%M-%B");
+    }
+
+    #[test]
+    fn date_format_end_to_end() {
+        // 2026-05-31 14:05:09 is a Sunday.
+        let args = [
+            DataValue::String("2026-05-31 14:05:09".to_string()),
+            DataValue::String("%W, %M %d, %Y %H:%i:%s".to_string()),
+        ];
+        let out = DateFormatFunction.evaluate(&args).unwrap();
+        assert_eq!(
+            out,
+            DataValue::String("Sunday, May 31, 2026 14:05:09".to_string())
+        );
     }
 }

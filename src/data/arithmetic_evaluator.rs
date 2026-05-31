@@ -167,6 +167,31 @@ impl<'a> ArithmeticEvaluator<'a> {
                 let le = compare_with_op(&val, &hi, "<=", false);
                 Ok(DataValue::Boolean(ge && le))
             }
+            // IN / NOT IN as a value-producing expression — needed when they
+            // appear inside CASE branches or other arithmetic contexts. The
+            // WHERE path has its own evaluator; this mirrors its equality
+            // semantics via compare_with_op. After subquery rewriting, an
+            // `x IN (SELECT ...)` arrives here as an InList of literals.
+            SqlExpression::InList { expr, values } => {
+                let val = self.evaluate(expr, row_index)?;
+                for v in values {
+                    let item = self.evaluate(v, row_index)?;
+                    if compare_with_op(&val, &item, "=", false) {
+                        return Ok(DataValue::Boolean(true));
+                    }
+                }
+                Ok(DataValue::Boolean(false))
+            }
+            SqlExpression::NotInList { expr, values } => {
+                let val = self.evaluate(expr, row_index)?;
+                for v in values {
+                    let item = self.evaluate(v, row_index)?;
+                    if compare_with_op(&val, &item, "=", false) {
+                        return Ok(DataValue::Boolean(false));
+                    }
+                }
+                Ok(DataValue::Boolean(true))
+            }
             SqlExpression::CaseExpression {
                 when_branches,
                 else_branch,

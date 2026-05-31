@@ -1,0 +1,24 @@
+[
+  [
+    {
+      "minute": "05",
+      "month_name": "May",
+      "second": "09",
+      "weekday_name": "Sunday"
+    }
+  ],
+  [
+    {
+      "iso_date": "2026-05-31",
+      "long_date": "Sunday, May 31, 2026",
+      "time_12h": "02:05:09 PM",
+      "time_24h": "14:05:09"
+    }
+  ],
+  [
+    {
+      "abbreviated": "Sun May 31",
+      "literal_percent": "100% done"
+    }
+  ]
+]

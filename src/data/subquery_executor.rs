@@ -4,7 +4,10 @@
 use crate::data::data_view::DataView;
 use crate::data::datatable::{DataTable, DataValue};
 use crate::data::query_engine::QueryEngine;
-use crate::sql::parser::ast::{Condition, SelectItem, SelectStatement, SqlExpression, WhereClause};
+use crate::sql::parser::ast::{
+    Condition, SelectItem, SelectStatement, SimpleWhenBranch, SqlExpression, WhenBranch,
+    WhereClause,
+};
 use anyhow::{anyhow, Result};
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
@@ -342,7 +345,6 @@ impl SubqueryExecutor {
                     .collect::<Result<Vec<_>>>()?,
             }),
 
-            // CaseWhen doesn't exist in current AST, skip for now
             SqlExpression::FunctionCall {
                 name,
                 args,
@@ -354,6 +356,54 @@ impl SubqueryExecutor {
                     .map(|a| self.process_expression(a))
                     .collect::<Result<Vec<_>>>()?,
                 distinct: *distinct,
+            }),
+
+            // Searched CASE: subqueries can appear in any WHEN condition, any
+            // result, or the ELSE branch (e.g. THEN (SELECT MAX(x) FROM ...)).
+            // Recurse into all of them so they are pre-executed like in WHERE.
+            SqlExpression::CaseExpression {
+                when_branches,
+                else_branch,
+            } => Ok(SqlExpression::CaseExpression {
+                when_branches: when_branches
+                    .iter()
+                    .map(|b| {
+                        Ok(WhenBranch {
+                            condition: Box::new(self.process_expression(&b.condition)?),
+                            result: Box::new(self.process_expression(&b.result)?),
+                        })
+                    })
+                    .collect::<Result<Vec<_>>>()?,
+                else_branch: match else_branch {
+                    Some(e) => Some(Box::new(self.process_expression(e)?)),
+                    None => None,
+                },
+            }),
+
+            // Simple CASE: CASE expr WHEN value THEN result ...
+            SqlExpression::SimpleCaseExpression {
+                expr,
+                when_branches,
+                else_branch,
+            } => Ok(SqlExpression::SimpleCaseExpression {
+                expr: Box::new(self.process_expression(expr)?),
+                when_branches: when_branches
+                    .iter()
+                    .map(|b| {
+                        Ok(SimpleWhenBranch {
+                            value: Box::new(self.process_expression(&b.value)?),
+                            result: Box::new(self.process_expression(&b.result)?),
+                        })
+                    })
+                    .collect::<Result<Vec<_>>>()?,
+                else_branch: match else_branch {
+                    Some(e) => Some(Box::new(self.process_expression(e)?)),
+                    None => None,
+                },
+            }),
+
+            SqlExpression::Not { expr } => Ok(SqlExpression::Not {
+                expr: Box::new(self.process_expression(expr)?),
             }),
 
             // Pass through expressions that don't contain subqueries

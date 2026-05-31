@@ -1,0 +1,79 @@
+[
+  [
+    {
+      "latitude": 63.59,
+      "latitude_band": "northern extreme",
+      "name": "Alaska"
+    },
+    {
+      "latitude": 47.75,
+      "latitude_band": "above average",
+      "name": "Washington"
+    },
+    {
+      "latitude": 45.25,
+      "latitude_band": "above average",
+      "name": "Maine"
+    },
+    {
+      "latitude": 39.55,
+      "latitude_band": "above average",
+      "name": "Colorado"
+    },
+    {
+      "latitude": 31.97,
+      "latitude_band": "below average",
+      "name": "Texas"
+    },
+    {
+      "latitude": 27.66,
+      "latitude_band": "below average",
+      "name": "Florida"
+    },
+    {
+      "latitude": 19.9,
+      "latitude_band": "below average",
+      "name": "Hawaii"
+    }
+  ],
+  [
+    {
+      "name": "Alaska",
+      "region": "far north"
+    },
+    {
+      "name": "Hawaii",
+      "region": "rest"
+    },
+    {
+      "name": "Maine",
+      "region": "far north"
+    },
+    {
+      "name": "Texas",
+      "region": "rest"
+    },
+    {
+      "name": "Washington",
+      "region": "far north"
+    }
+  ],
+  [
+    {
+      "climate_hint": "temperate",
+      "name": "Alaska"
+    },
+    {
+      "climate_hint": "tropical / far south",
+      "name": "Florida"
+    },
+    {
+      "climate_hint": "tropical / far south",
+      "name": "Hawaii"
+    },
+    {
+      "climate_hint": "temperate",
+      "name": "Maine"
+    }
+  ]
+]

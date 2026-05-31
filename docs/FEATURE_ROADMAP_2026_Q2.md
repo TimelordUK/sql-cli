@@ -72,25 +72,33 @@ With READ_CSV the reader family now covers the four core formats — CSV, JSON
 array files, JSONL, plain text — and all of them accept `-` for stdin. This
 is the "complete loop" the user flagged on 2026-05-17.
 
-#### Next session: arbitrary delimiter argument
+#### Arbitrary delimiter argument  ✅ landed (2026-05-23)
 
-Target API:
 ```sql
-READ_CSV(path [, delimiter])    -- ',' default; '|' for PSV, ';' for European CSV, CHAR(9) for TSV
+READ_CSV(path [, delimiter])    -- ',' default; '|' for PSV, '\t' for TSV
 ```
 
-- `csv::ReaderBuilder::new().delimiter(b)` already accepts any single byte, so
-  the actual plumbing is small (~20-30 lines): thread a `delimiter` arg through
-  `READ_CSV` and add a `delimiter`-aware overload on `AdvancedCsvLoader` /
-  `StreamCsvLoader::load_csv_from_reader`.
-- Arg validation: must be exactly one character; reject empty / multi-char with
-  a clear error. Accept the arg as either a string literal or `CHAR(n)` for
-  control characters like tab.
-- Generalises trivially to TSV / PSV / semicolon-CSV / anything-CSV without
-  needing per-format reader functions — the "arbitrary token" framing from
-  the interview-question style.
-- Follow-up if a use case shows up: optional `has_header` (Bool, default true)
-  for headerless CSVs where we'd synthesise `col_1`, `col_2`, etc.
+Delivered across four commits, all on the shared `CsvReadOptions` plumbing
+(`da3e739` infra → `c32986a` READ_CSV arg → `a488fac` CLI flag → `1515112`
+WEB CTE clause):
+
+- **READ_CSV 2nd arg** resolves the delimiter as: explicit arg wins → else
+  extension auto-detect (`.tsv` → tab, `.psv` → pipe) → else comma (and comma
+  for stdin `-`). `parse_delimiter_arg` accepts `\t`/`\n`/`\r` escapes since
+  literal tabs in SQL strings are awkward; multi-char / non-ASCII error clearly.
+- **Extension auto-detect for every caller** — the convenience loaders call
+  `detect_delimiter_from_path` internally, so `sql-cli sales.psv` Just Works.
+- **CLI `--delimiter` flag** for explicit override at the file level.
+- **WEB CTE `DELIMITER` clause** for non-comma HTTP sources.
+- Resolved delimiter is recorded in `table.metadata["delimiter"]` for F5
+  visibility; `is_null_field` is parameterised on the delimiter so NULL
+  detection works for non-comma sources.
+- Demo: `examples/iris_tsv.sql` over `data/iris.tsv`.
+
+This closes the four-format reader loop with full delimiter flexibility. The
+only deferred follow-up is optional `has_header` (Bool, default true) for
+headerless CSVs where we'd synthesise `col_1`, `col_2`, etc. — left until a
+real use case asks for it.
 
 ### Glob support in existing readers
 
@@ -155,12 +163,19 @@ READ_CSV(path [, delimiter])    -- ',' default; '|' for PSV, ';' for European CS
 Per `project_leetcode_gap_next.md`, end-to-end coverage sits at 87%. Remaining
 gaps are small and contained.
 
-### MySQL DATE_FORMAT specifier translation
+### MySQL DATE_FORMAT specifier translation  ✅ landed (2026-05-31)
 
-- We shipped `DATE_FORMAT` as a chrono-strftime alias, which covers the
-  common case (`%Y`, `%m`, `%d`). Full MySQL compat needs `%i` (minute),
-  `%W` (full weekday name), `%M` (full month name), `%r` (12-hour time).
-- ~40 lines: translate MySQL specifiers to strftime before delegating.
+- `DateFormatFunction` now runs a single-pass `translate_mysql_date_format`
+  before delegating to `FormatDateFunction`. MySQL-only specifiers are remapped:
+  `%i`→`%M` (minute), `%M`→`%B` (full month name), `%W`→`%A` (full weekday),
+  `%s`→`%S` (seconds, dodging strftime's epoch `%s`), `%f`→`%6f` (microseconds).
+  Shared specifiers (`%Y %m %d %H %h %p %a %b %r %T %%` …) pass through verbatim.
+- Single-pass is deliberate: a sequential string-replace would double-translate
+  because `%i`→`%M` and `%M`→`%B` collide on the intermediate `%M`.
+- `DATE_FORMAT('...', '%W, %M %d, %Y %H:%i:%s')` → `Sunday, May 31, 2026 14:05:09`.
+- 4 unit tests in `format.rs::date_format_tests`. Demo + formal regression
+  guard: `examples/date_format_mysql.sql` →
+  `examples/expectations/date_format_mysql.json`.
 
 ### BETWEEN-in-CASE → now landed (2026-04-19)
 
@@ -180,11 +195,23 @@ gaps are small and contained.
   HAVING+function-calls, HAVING+scalar-subqueries work? File gaps as they
   surface.
 
-### 608 InSubquery in CASE — probe first
+### 608 InSubquery in CASE  ✅ landed (2026-05-31)
 
-- Older memory flagged this, but an even-earlier gap doc showed 608 passing.
-- Run the query before assuming it's broken. If broken, same recursion
-  template used for HAVING/GROUP BY/ORDER BY transformers.
+- Was broken (verified): `CASE WHEN x IN (SELECT ...) THEN ...` errored with
+  `Unsupported expression type for arithmetic evaluation`. Two-part root cause,
+  both fixed:
+  1. `SubqueryExecutor::process_expression` didn't recurse into `CaseExpression`
+     / `SimpleCaseExpression` / `Not`, so the subquery was never pre-executed
+     and rewritten to an `InList`. Added those arms (line ~345 used to say
+     `// CaseWhen doesn't exist in current AST, skip for now`).
+  2. Once rewritten to `InList`/`NotInList`, the *arithmetic* evaluator had no
+     dispatch for those nodes (only the WHERE evaluator did). Added `InList`/
+     `NotInList` arms to `arithmetic_evaluator.rs` returning Boolean via the
+     shared `compare_with_op`.
+- Same fix also closes Tier 3b's "scalar subquery inside CASE" (below).
+- Demo + formal regression guard: `examples/subquery_in_case.sql` (scalar,
+  IN, and NOT IN subqueries inside CASE), captured to
+  `examples/expectations/subquery_in_case.json`.
 
 ### Functional dependency relaxation (LC 3521, 3601) — needs scoping
 
@@ -222,18 +249,19 @@ ORDER BY n;       -- → "Column '__hidden_orderby_1' not found"
 - ~probably a 10-line fix in whatever resolves the hidden-orderby column
   against the group-by output schema.
 
-### Scalar subqueries inside CASE not supported in arithmetic eval
+### Scalar subqueries inside CASE not supported in arithmetic eval  ✅ landed (2026-05-31)
 
 ```sql
 SELECT CASE WHEN latitude = (SELECT MAX(latitude) FROM us_states)
-            THEN 'Northernmost' END FROM us_states;
--- → "Unsupported expression type for arithmetic evaluation: ScalarSubquery {...}"
+            THEN 'Northernmost' END FROM us_states;   -- now works
 ```
 
-- Scalar subqueries work in WHERE; the gap is only in `arithmetic_evaluator.rs`
-  CASE branch evaluation.
-- Workaround in showcase: four separate `ORDER BY ... LIMIT 1` queries for the
-  four compass extremes, instead of one CASE-labelled extremes query.
+- Fixed alongside Tier 3's "608 InSubquery in CASE" (same `SubqueryExecutor`
+  recursion gap — see above). `SubqueryExecutor::process_expression` now
+  descends into CASE branches, so the scalar subquery is pre-executed and
+  materialised to a literal before arithmetic evaluation.
+- The four-compass-extremes showcase query can now be a single CASE-labelled
+  query instead of four `ORDER BY ... LIMIT 1` batches.
 
 ### Cross-CTE column equality silently filters to 0 rows
 
