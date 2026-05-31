@@ -1,42 +1,23 @@
-# SQL CLI v1.76.0
+# SQL CLI v1.77.0
 
-**Release Date:** May 23, 2026
+**Release Date:** May 31, 2026
 
 ## 📊 Release Overview
-- **Commits in this release:** 7
-- **Files updated:** 17
+- **Commits in this release:** 2
+- **Files updated:** 10
 
 ## ✨ Highlights
-
-### 🔍 Enhanced Debugging
-- **Better Diagnostics**: Improved error messages and state dumps
-
-### 💾 Data Protection
-- **History Recovery**: Automatic recovery from corrupted files
-- **Atomic Writes**: Safer file operations to prevent data loss
 
 ## 📝 Changes by Category
 
 ### 🚀 New Features
-- add DELIMITER clause for non-comma CSV sources
-- --delimiter flag + extension auto-detect for sql-cli file.psv
-- extension auto-detect and explicit delimiter override
-- add CsvReadOptions infrastructure for per-call delimiter
-
-### 📚 Documentation
-- add iris_tsv.sql showcasing TSV delimiter surfaces
-- capture READ_CSV delimiter arg as next-session item
+- subqueries inside CASE + MySQL DATE_FORMAT specifiers
 
 <details>
 <summary>📋 View all commits</summary>
 
-- docs(examples): add iris_tsv.sql showcasing TSV delimiter surfaces (TimelordUK)
-- feat(web-cte): add DELIMITER clause for non-comma CSV sources (TimelordUK)
-- feat(cli): --delimiter flag + extension auto-detect for sql-cli file.psv (TimelordUK)
-- feat(read_csv): extension auto-detect and explicit delimiter override (TimelordUK)
-- test(history): fix flaky integration test via #[serial] (TimelordUK)
-- feat(csv): add CsvReadOptions infrastructure for per-call delimiter (TimelordUK)
-- docs(roadmap): capture READ_CSV delimiter arg as next-session item (TimelordUK)
+- feat(engine): subqueries inside CASE + MySQL DATE_FORMAT specifiers (TimelordUK)
+- add new data files for tsv example and math-equations (TimelordUK)
 
 </details>
 
