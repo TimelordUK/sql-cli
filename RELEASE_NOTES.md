@@ -1,23 +1,22 @@
-# SQL CLI v1.77.0
+# SQL CLI v1.77.1
 
-**Release Date:** May 31, 2026
+**Release Date:** June 06, 2026
 
 ## 📊 Release Overview
-- **Commits in this release:** 2
-- **Files updated:** 10
+- **Commits in this release:** 1
+- **Files updated:** 1
 
 ## ✨ Highlights
 
 ## 📝 Changes by Category
 
-### 🚀 New Features
-- subqueries inside CASE + MySQL DATE_FORMAT specifiers
+### 🐛 Bug Fixes
+- use byte offsets in is_null_field to avoid UTF-8 panic
 
 <details>
 <summary>📋 View all commits</summary>
 
-- feat(engine): subqueries inside CASE + MySQL DATE_FORMAT specifiers (TimelordUK)
-- add new data files for tsv example and math-equations (TimelordUK)
+- fix(csv): use byte offsets in is_null_field to avoid UTF-8 panic (TimelordUK)
 
 </details>
 
