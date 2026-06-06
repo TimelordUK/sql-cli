@@ -16,7 +16,7 @@ fn is_null_field(raw_line: &str, field_index: usize, delimiter: char) -> bool {
     let mut field_start = 0;
     let mut prev_char = ' ';
 
-    for (i, ch) in raw_line.chars().enumerate() {
+    for (i, ch) in raw_line.char_indices() {
         if ch == '"' && prev_char != '\\' {
             in_quotes = !in_quotes;
         }
@@ -39,7 +39,7 @@ fn is_null_field(raw_line: &str, field_index: usize, delimiter: char) -> bool {
                 return false; // Non-empty field -> not NULL
             }
             delim_count += 1;
-            field_start = i + 1;
+            field_start = i + ch.len_utf8();
         }
         prev_char = ch;
     }
