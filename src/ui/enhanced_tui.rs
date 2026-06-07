@@ -1879,7 +1879,10 @@ impl EnhancedTuiApp {
                 Ok(false)
             }
             ChordResult::SingleKey(single_key) => {
-                // Not a chord, process normally
+                // Not a chord (or a chord that lapsed and was reset on this key).
+                // Clear any lingering chord hint so the indicator reflects reality.
+                self.key_sequence_renderer.clear_chord_mode();
+                // Process normally
                 self.handle_results_input(single_key)
             }
         }
@@ -1963,6 +1966,16 @@ impl EnhancedTuiApp {
                 // Ignore other events (mouse, resize, etc.) to reduce CPU
             }
         } else {
+            // No key event. If a pending chord has lapsed, cancel it and refresh
+            // so the "Yank mode" hint visibly disappears (chord reset indicator).
+            if self.key_chord_handler.clear_if_timed_out() {
+                self.key_sequence_renderer.clear_chord_mode();
+                self.state_container
+                    .set_status_message("Chord cancelled (timeout)".to_string());
+                terminal.draw(|f| self.ui(f))?;
+                return Ok(false);
+            }
+
             // No event available, but still redraw if we have pending debounced actions or table needs render
             if self.search_modes_widget.is_active()
                 || self.table_widget_manager.borrow().needs_render()

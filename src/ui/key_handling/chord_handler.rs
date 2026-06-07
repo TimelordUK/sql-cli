@@ -263,7 +263,7 @@ impl KeyChordHandler {
             let description = if self.current_chord.len() == 1
                 && self.current_chord[0].code == KeyCode::Char('y')
             {
-                "Yank mode: y=row, c=column, a=all, ESC=cancel".to_string()
+                "Yank mode: y/r=row, c=column, a=all, v=cell, q=query, ESC=cancel".to_string()
             } else {
                 format!("Waiting for: {}", possible.join(", "))
             };
@@ -331,6 +331,22 @@ impl KeyChordHandler {
     #[must_use]
     pub fn is_chord_mode_active(&self) -> bool {
         self.chord_mode_active
+    }
+
+    /// Cancel a pending chord if it has exceeded the timeout.
+    ///
+    /// The normal timeout check only runs when the next key arrives, so a chord
+    /// left dangling (e.g. `y` with no follow-up key) never resets on its own.
+    /// Calling this from the idle loop lets the UI clear the chord hint once the
+    /// window lapses. Returns true if a pending chord was cleared.
+    pub fn clear_if_timed_out(&mut self) -> bool {
+        if let Some(start) = self.chord_start {
+            if start.elapsed() > self.chord_timeout {
+                self.cancel_chord();
+                return true;
+            }
+        }
+        false
     }
 
     /// Get chord mode description
