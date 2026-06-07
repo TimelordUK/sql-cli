@@ -1,23 +1,26 @@
-# SQL CLI v1.77.2
+# SQL CLI v1.77.3
 
 **Release Date:** June 07, 2026
 
 ## 📊 Release Overview
 - **Commits in this release:** 2
-- **Files updated:** 4
+- **Files updated:** 2
 
 ## ✨ Highlights
+
+### 🎨 Visual Improvements
+- **Key Press Indicator**: Visual feedback for key presses with fade effects (F12 to toggle)
 
 ## 📝 Changes by Category
 
 ### 🐛 Bug Fixes
-- numeric sort for late floats + alias in WHERE method calls
+- reset chord indicator on timeout + complete yank-mode hint
 
 <details>
 <summary>📋 View all commits</summary>
 
-- Merge pull request #19 from TimelordUK/fix/numeric-sort-and-alias-where (TimelordUK)
-- fix: numeric sort for late floats + alias in WHERE method calls (TimelordUK)
+- Merge pull request #20 from TimelordUK/fix/chord-timeout-reset-and-yank-hint (TimelordUK)
+- fix(tui): reset chord indicator on timeout + complete yank-mode hint (TimelordUK)
 
 </details>
 
