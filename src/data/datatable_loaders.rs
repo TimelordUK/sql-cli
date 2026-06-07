@@ -421,6 +421,36 @@ mod tests {
     }
 
     #[test]
+    fn test_fractional_value_beyond_sample_window_promotes_to_float() -> Result<()> {
+        // Regression: type inference only samples the first 100 rows. A column
+        // that is all integers in the sample but has a fractional value further
+        // down used to demote that value to a String, which then sorted after
+        // every numeric value (String > Integer). It must be a Float instead.
+        let mut temp_file = NamedTempFile::new()?;
+        writeln!(temp_file, "id,area")?;
+        for i in 0..120 {
+            writeln!(temp_file, "{i},{}", i * 10)?; // all integers in the sample
+        }
+        writeln!(temp_file, "999,34.2")?; // fractional value past row 100
+        temp_file.flush()?;
+
+        let table = load_csv_to_datatable(temp_file.path(), "areas")?;
+
+        // The column re-merges to Float once the fractional value is seen.
+        let area_idx = table.get_column_index("area").unwrap();
+        assert_eq!(table.columns[area_idx].data_type, DataType::Float);
+
+        // The fractional value is stored as a number, not a String.
+        let last = table.get_value(120, area_idx).unwrap();
+        assert!(
+            matches!(last, DataValue::Float(f) if (*f - 34.2).abs() < 1e-9),
+            "expected Float(34.2), got {last:?}"
+        );
+
+        Ok(())
+    }
+
+    #[test]
     fn test_load_json() -> Result<()> {
         // Create a temporary JSON file
         let mut temp_file = NamedTempFile::new()?;

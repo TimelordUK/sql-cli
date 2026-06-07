@@ -288,6 +288,70 @@ impl WhereAliasExpander {
                 )
             }
 
+            // Expand in method calls, e.g. `alias.Contains('x')`.
+            // The receiver is a bare column-name string, so an alias can only be
+            // substituted if it resolves to a simple (un-prefixed) column.
+            SqlExpression::MethodCall {
+                object,
+                method,
+                args,
+            } => {
+                let mut expanded = false;
+                let new_args: Vec<SqlExpression> = args
+                    .iter()
+                    .map(|arg| {
+                        let (new_arg, arg_expanded) = Self::expand_expression(arg, aliases);
+                        expanded = expanded || arg_expanded;
+                        new_arg
+                    })
+                    .collect();
+
+                let mut new_object = object.clone();
+                if let Some(SqlExpression::Column(col_ref)) = aliases.get(object) {
+                    if col_ref.table_prefix.is_none() {
+                        debug!(
+                            "Expanding alias '{}' in WHERE method call to column '{}'",
+                            object, col_ref.name
+                        );
+                        new_object = col_ref.name.clone();
+                        expanded = true;
+                    }
+                }
+
+                (
+                    SqlExpression::MethodCall {
+                        object: new_object,
+                        method: method.clone(),
+                        args: new_args,
+                    },
+                    expanded,
+                )
+            }
+
+            // Expand in chained method calls, e.g. `(alias).Trim().Contains('x')`.
+            // The base is itself an expression, so recurse into it normally.
+            SqlExpression::ChainedMethodCall { base, method, args } => {
+                let (new_base, base_expanded) = Self::expand_expression(base, aliases);
+                let mut expanded = base_expanded;
+                let new_args: Vec<SqlExpression> = args
+                    .iter()
+                    .map(|arg| {
+                        let (new_arg, arg_expanded) = Self::expand_expression(arg, aliases);
+                        expanded = expanded || arg_expanded;
+                        new_arg
+                    })
+                    .collect();
+
+                (
+                    SqlExpression::ChainedMethodCall {
+                        base: Box::new(new_base),
+                        method: method.clone(),
+                        args: new_args,
+                    },
+                    expanded,
+                )
+            }
+
             // For all other expressions, return as-is
             _ => (expr.clone(), false),
         }
@@ -504,6 +568,61 @@ mod tests {
         }
 
         assert_eq!(transformer.expansions, 1);
+    }
+
+    #[test]
+    fn test_expand_alias_in_method_call_receiver() {
+        // `SELECT "name.common" as name ... WHERE name.Contains('x')`
+        // The alias `name` resolves to the column `name.common`, so the method
+        // call's receiver should be rewritten to that column name.
+        let aliases = HashMap::from([(
+            "name".to_string(),
+            SqlExpression::Column(ColumnRef {
+                name: "name.common".to_string(),
+                quote_style: QuoteStyle::DoubleQuotes,
+                table_prefix: None,
+            }),
+        )]);
+
+        let expr = SqlExpression::MethodCall {
+            object: "name".to_string(),
+            method: "Contains".to_string(),
+            args: vec![SqlExpression::StringLiteral("united".to_string())],
+        };
+
+        let (expanded, changed) = WhereAliasExpander::expand_expression(&expr, &aliases);
+
+        assert!(changed);
+        match expanded {
+            SqlExpression::MethodCall { object, method, .. } => {
+                assert_eq!(object, "name.common");
+                assert_eq!(method, "Contains");
+            }
+            other => panic!("Expected MethodCall, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_does_not_expand_method_call_for_nonalias() {
+        // A method call whose receiver is a real column (not an alias) is untouched.
+        let aliases = HashMap::from([(
+            "name".to_string(),
+            SqlExpression::Column(ColumnRef::unquoted("name.common".to_string())),
+        )]);
+
+        let expr = SqlExpression::MethodCall {
+            object: "capital".to_string(),
+            method: "Contains".to_string(),
+            args: vec![SqlExpression::StringLiteral("x".to_string())],
+        };
+
+        let (expanded, changed) = WhereAliasExpander::expand_expression(&expr, &aliases);
+
+        assert!(!changed);
+        assert!(matches!(
+            expanded,
+            SqlExpression::MethodCall { object, .. } if object == "capital"
+        ));
     }
 
     #[test]
