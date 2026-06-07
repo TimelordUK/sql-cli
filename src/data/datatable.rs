@@ -310,9 +310,18 @@ impl DataValue {
 
         match data_type {
             DataType::String => DataValue::String(s.to_string()),
-            DataType::Integer => s
-                .parse::<i64>()
-                .map_or_else(|_| DataValue::String(s.to_string()), DataValue::Integer),
+            DataType::Integer => s.parse::<i64>().map_or_else(
+                // The column was inferred as Integer (type inference only samples
+                // the first N rows, so a fractional value further down can be
+                // missed). Promote to Float rather than demoting to String, which
+                // would corrupt numeric sorting (String sorts after all numbers).
+                // The final infer_column_types() pass re-merges the column to Float.
+                |_| {
+                    s.parse::<f64>()
+                        .map_or_else(|_| DataValue::String(s.to_string()), DataValue::Float)
+                },
+                DataValue::Integer,
+            ),
             DataType::Float => s
                 .parse::<f64>()
                 .map_or_else(|_| DataValue::String(s.to_string()), DataValue::Float),
