@@ -1,22 +1,23 @@
-# SQL CLI v1.77.1
+# SQL CLI v1.77.2
 
-**Release Date:** June 06, 2026
+**Release Date:** June 07, 2026
 
 ## 📊 Release Overview
-- **Commits in this release:** 1
-- **Files updated:** 1
+- **Commits in this release:** 2
+- **Files updated:** 4
 
 ## ✨ Highlights
 
 ## 📝 Changes by Category
 
 ### 🐛 Bug Fixes
-- use byte offsets in is_null_field to avoid UTF-8 panic
+- numeric sort for late floats + alias in WHERE method calls
 
 <details>
 <summary>📋 View all commits</summary>
 
-- fix(csv): use byte offsets in is_null_field to avoid UTF-8 panic (TimelordUK)
+- Merge pull request #19 from TimelordUK/fix/numeric-sort-and-alias-where (TimelordUK)
+- fix: numeric sort for late floats + alias in WHERE method calls (TimelordUK)
 
 </details>
 
