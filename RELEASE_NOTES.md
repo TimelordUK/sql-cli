@@ -1,26 +1,29 @@
-# SQL CLI v1.77.3
+# SQL CLI v1.78.0
 
-**Release Date:** June 07, 2026
+**Release Date:** June 09, 2026
 
 ## 📊 Release Overview
 - **Commits in this release:** 2
-- **Files updated:** 2
+- **Files updated:** 3
 
 ## ✨ Highlights
 
-### 🎨 Visual Improvements
-- **Key Press Indicator**: Visual feedback for key presses with fade effects (F12 to toggle)
+### 🔍 Enhanced Debugging
+- **Better Diagnostics**: Improved error messages and state dumps
 
 ## 📝 Changes by Category
 
 ### 🐛 Bug Fixes
-- reset chord indicator on timeout + complete yank-mode hint
+- make WEB CTE POST usable against strict APIs (Elasticsearch)
+
+### 📚 Documentation
+- use $JSON$ block bodies for ES queries 2-4
 
 <details>
 <summary>📋 View all commits</summary>
 
-- Merge pull request #20 from TimelordUK/fix/chord-timeout-reset-and-yank-hint (TimelordUK)
-- fix(tui): reset chord indicator on timeout + complete yank-mode hint (TimelordUK)
+- docs(examples): use $JSON$ block bodies for ES queries 2-4 (TimelordUK)
+- fix(web): make WEB CTE POST usable against strict APIs (Elasticsearch) (TimelordUK)
 
 </details>
 
