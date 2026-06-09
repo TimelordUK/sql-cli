@@ -24,6 +24,16 @@
 --   2. CACHE 300 — re-uses the 1k-doc pull for 5 min, so all four analytic
 --      queries below share one ES round-trip.
 --
+-- BODY syntax — two forms are accepted:
+--   Single-quoted ('...') — works but has NO escape processing in the lexer.
+--     Any apostrophe inside the body closes the string. Embedded double
+--     quotes are fine. Query 1 below uses this form for reference.
+--   $JSON$...$JSON$       — verbatim block, no escape processing either, but
+--     happily contains both ' and ". Multi-line indentation is preserved as
+--     written. Reads like a Kibana Dev Tools snippet. Queries 2-4 use this.
+-- Both forms still expand ${ENV_VARS} (resolved by the HTTP fetcher, not the
+-- lexer), so secrets/tokens can be injected the same way in either.
+--
 -- Quoting tip: `@timestamp` and other identifiers starting with `@` (or
 -- containing `.`, `-`) must be wrapped in double quotes -> `"@timestamp"`.
 --
@@ -43,6 +53,10 @@
 -- window function (SUM ... OVER ()) over the pre-aggregated values. The SQL
 -- engine doesn't support SUM(COUNT(*)) OVER () directly -- pre-aggregating
 -- in a CTE is the documented workaround.
+--
+-- BODY form: single-quoted '...' (kept as a reference). The lexer just reads
+-- chars until the next `'`, so the body cannot contain an apostrophe. Compare
+-- with Queries 2-4 which use the $JSON$...$JSON$ block form.
 WITH WEB raw_events AS (
     URL 'http://localhost:9200/app-events-*/_search'
     METHOD POST
@@ -86,7 +100,8 @@ WITH WEB raw_events AS (
     URL 'http://localhost:9200/app-events-*/_search'
     METHOD POST
     CACHE 300
-    BODY '{
+    BODY $JSON$
+    {
         "size": 1000,
         "sort": [{"@timestamp": {"order": "desc"}}],
         "query": {
@@ -97,7 +112,8 @@ WITH WEB raw_events AS (
                 ]
             }
         }
-    }'
+    }
+    $JSON$
     FORMAT JSON
     JSON_PATH 'hits.hits[]._source'
 )
@@ -130,7 +146,8 @@ WITH WEB raw_events AS (
     URL 'http://localhost:9200/app-events-*/_search'
     METHOD POST
     CACHE 300
-    BODY '{
+    BODY $JSON$
+    {
         "size": 1000,
         "sort": [{"@timestamp": {"order": "desc"}}],
         "query": {
@@ -141,7 +158,8 @@ WITH WEB raw_events AS (
                 ]
             }
         }
-    }'
+    }
+    $JSON$
     FORMAT JSON
     JSON_PATH 'hits.hits[]._source'
 )
@@ -169,7 +187,8 @@ WITH WEB raw_events AS (
     URL 'http://localhost:9200/app-events-*/_search'
     METHOD POST
     CACHE 300
-    BODY '{
+    BODY $JSON$
+    {
         "size": 1000,
         "sort": [{"@timestamp": {"order": "desc"}}],
         "query": {
@@ -180,7 +199,8 @@ WITH WEB raw_events AS (
                 ]
             }
         }
-    }'
+    }
+    $JSON$
     FORMAT JSON
     JSON_PATH 'hits.hits[]._source'
 ),
