@@ -156,8 +156,14 @@ impl WebDataFetcher {
             eprintln!("=============================\n");
 
             request = request.body(resolved_body);
-            // Set Content-Type to JSON if not already set and body looks like JSON
-            if spec.body.as_ref().unwrap().trim().starts_with('{') {
+            // Set Content-Type to JSON only when the user didn't set one themselves
+            // and the body looks like JSON. ES 8.x and other strict servers reject
+            // requests with two Content-Type headers.
+            let has_content_type = spec
+                .headers
+                .iter()
+                .any(|(k, _)| k.eq_ignore_ascii_case("content-type"));
+            if !has_content_type && spec.body.as_ref().unwrap().trim().starts_with('{') {
                 request = request.header("Content-Type", "application/json");
             }
         }
@@ -169,10 +175,17 @@ impl WebDataFetcher {
 
         // Check status
         if !response.status().is_success() {
+            let status = response.status();
+            // Drain the body so callers see the server's diagnostic (ES, GraphQL,
+            // etc. put the real "why" here). Truncate so a giant HTML page can't
+            // flood the terminal.
+            let body = response.text().unwrap_or_default();
+            let snippet: String = body.chars().take(2000).collect();
             return Err(anyhow::anyhow!(
-                "HTTP request failed with status {}: {}",
-                response.status(),
-                spec.url
+                "HTTP request failed with status {}: {}\nResponse body: {}",
+                status,
+                spec.url,
+                snippet
             ));
         }
 
@@ -211,8 +224,8 @@ impl WebDataFetcher {
 
                 // Convert extracted value to bytes and parse as table
                 let array_value = match extracted {
-                    serde_json::Value::Array(_) => extracted.clone(),
-                    _ => serde_json::Value::Array(vec![extracted.clone()]),
+                    serde_json::Value::Array(_) => extracted,
+                    other => serde_json::Value::Array(vec![other]),
                 };
 
                 let extracted_bytes = serde_json::to_vec(&array_value)?;
@@ -455,27 +468,67 @@ impl WebDataFetcher {
         load_json_from_reader(reader, "extracted", "web", json_path)
     }
 
-    /// Navigate to a specific path in JSON structure
-    fn navigate_json_path<'a>(
+    /// Navigate to a specific path in JSON structure.
+    ///
+    /// Supports two forms per dotted segment:
+    ///   - `name`     — descend into an object key
+    ///   - `name[]`   — descend into `name` (must be an array), then map the
+    ///                  remainder of the path across every element
+    ///
+    /// Example for an ES response:
+    ///   `JSON_PATH 'hits.hits[]._source'`
+    /// returns an array of `_source` objects, one per hit — i.e. the
+    /// `_source` fields become the top-level row shape consumed by the loader.
+    fn navigate_json_path(
         &self,
-        value: &'a serde_json::Value,
+        value: &serde_json::Value,
         path: &str,
-    ) -> Result<&'a serde_json::Value> {
-        let mut current = value;
+    ) -> Result<serde_json::Value> {
+        let parts: Vec<&str> = path.split('.').filter(|p| !p.is_empty()).collect();
+        Self::walk_json_path(value, &parts)
+    }
 
-        // Split path by dots (simple path navigation for now)
-        // Future enhancement: support array indexing like "Result[0]"
-        for part in path.split('.') {
-            if part.is_empty() {
-                continue;
+    fn walk_json_path(value: &serde_json::Value, parts: &[&str]) -> Result<serde_json::Value> {
+        let Some((head, tail)) = parts.split_first() else {
+            return Ok(value.clone());
+        };
+
+        // Array projection: `name[]` (or bare `[]`) maps the rest of the path
+        // across each element of an array.
+        if let Some(name) = head.strip_suffix("[]") {
+            let array_val = if name.is_empty() {
+                value
+            } else {
+                value
+                    .get(name)
+                    .ok_or_else(|| anyhow::anyhow!("Path '{}' not found in JSON", name))?
+            };
+            let arr = array_val.as_array().ok_or_else(|| {
+                let kind = match array_val {
+                    serde_json::Value::Null => "null",
+                    serde_json::Value::Bool(_) => "bool",
+                    serde_json::Value::Number(_) => "number",
+                    serde_json::Value::String(_) => "string",
+                    serde_json::Value::Array(_) => "array",
+                    serde_json::Value::Object(_) => "object",
+                };
+                anyhow::anyhow!(
+                    "Expected array at '{}' for [] projection, got {}",
+                    if name.is_empty() { "<root>" } else { name },
+                    kind
+                )
+            })?;
+            let mut projected = Vec::with_capacity(arr.len());
+            for el in arr {
+                projected.push(Self::walk_json_path(el, tail)?);
             }
-
-            current = current
-                .get(part)
-                .ok_or_else(|| anyhow::anyhow!("Path '{}' not found in JSON", part))?;
+            return Ok(serde_json::Value::Array(projected));
         }
 
-        Ok(current)
+        let next = value
+            .get(head)
+            .ok_or_else(|| anyhow::anyhow!("Path '{}' not found in JSON", head))?;
+        Self::walk_json_path(next, tail)
     }
 
     /// Resolve environment variables in values (${VAR_NAME} or $VAR_NAME syntax)

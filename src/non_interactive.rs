@@ -894,10 +894,17 @@ pub fn execute_script(config: NonInteractiveConfig) -> Result<()> {
                             expanded
                         }
                         Err(e) => {
+                            let msg =
+                                format!("Query {} template expansion error: {}", statement_num, e);
+                            if matches!(config.output_format, OutputFormat::Table) {
+                                output.push(msg.clone());
+                            } else {
+                                eprintln!("{}", msg);
+                            }
                             script_result.add_failure(
                                 statement_num,
                                 statement.to_string(),
-                                format!("Template expansion error: {}", e),
+                                msg,
                                 stmt_start.elapsed().as_secs_f64() * 1000.0,
                             );
                             continue; // Skip this statement
@@ -906,10 +913,16 @@ pub fn execute_script(config: NonInteractiveConfig) -> Result<()> {
                 }
             }
             Err(e) => {
+                let msg = format!("Query {} template parse error: {}", statement_num, e);
+                if matches!(config.output_format, OutputFormat::Table) {
+                    output.push(msg.clone());
+                } else {
+                    eprintln!("{}", msg);
+                }
                 script_result.add_failure(
                     statement_num,
                     statement.to_string(),
-                    format!("Template parse error: {}", e),
+                    msg,
                     stmt_start.elapsed().as_secs_f64() * 1000.0,
                 );
                 continue; // Skip this statement
@@ -925,10 +938,16 @@ pub fn execute_script(config: NonInteractiveConfig) -> Result<()> {
             Ok(stmt) => stmt,
             Err(e) => {
                 // If parsing fails, record error and stop (scripts stop on first error)
+                let msg = format!("Query {} parse error: {}", statement_num, e);
+                if matches!(config.output_format, OutputFormat::Table) {
+                    output.push(msg.clone());
+                } else {
+                    eprintln!("{}", msg);
+                }
                 script_result.add_failure(
                     statement_num,
                     statement.to_string(),
-                    format!("Parse error: {}", e),
+                    msg,
                     stmt_start.elapsed().as_secs_f64() * 1000.0,
                 );
                 break;
@@ -939,10 +958,19 @@ pub fn execute_script(config: NonInteractiveConfig) -> Result<()> {
         // The executor will handle resolution, but we check here for early validation
         if let Some(from_table) = &parsed_stmt.from_table {
             if from_table.starts_with('#') && !context.has_temp_table(from_table) {
+                let msg = format!(
+                    "Query {} failed: Temporary table {} not found",
+                    statement_num, from_table
+                );
+                if matches!(config.output_format, OutputFormat::Table) {
+                    output.push(msg.clone());
+                } else {
+                    eprintln!("{}", msg);
+                }
                 script_result.add_failure(
                     statement_num,
                     statement.to_string(),
-                    format!("Temporary table {} not found", from_table),
+                    msg,
                     stmt_start.elapsed().as_secs_f64() * 1000.0,
                 );
                 break;
@@ -1071,10 +1099,15 @@ pub fn execute_script(config: NonInteractiveConfig) -> Result<()> {
             }
             Err(e) => {
                 let exec_time = stmt_start.elapsed().as_secs_f64() * 1000.0;
-                let error_msg = format!("Query {} failed: {}", statement_num, e);
+                let error_msg = format!("Query {} failed: {:#}", statement_num, e);
 
+                // Table mode embeds the error in the output stream (alongside the
+                // result tables). CSV/JSON/TSV go to stderr instead so the parseable
+                // output on stdout stays clean.
                 if matches!(config.output_format, OutputFormat::Table) {
                     output.push(error_msg.clone());
+                } else {
+                    eprintln!("{}", error_msg);
                 }
 
                 script_result.add_failure(
