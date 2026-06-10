@@ -2,7 +2,7 @@ use crate::data::advanced_csv_loader::AdvancedCsvLoader;
 use crate::data::datatable::{DataColumn, DataRow, DataTable, DataType, DataValue};
 use crate::data::stream_loader::{
     collect_column_names, detect_delimiter_from_path, parse_delimiter_arg as parse_delim_byte,
-    CsvReadOptions,
+    parse_json_records, CsvReadOptions,
 };
 use crate::sql::generators::TableGenerator;
 use anyhow::{anyhow, Result};
@@ -379,69 +379,7 @@ impl TableGenerator for ReadJsonl {
             records.push(value);
         }
 
-        if records.is_empty() {
-            return Ok(Arc::new(DataTable::new("read_jsonl")));
-        }
-
-        let column_names = collect_column_names(&records, 100);
-        if column_names.is_empty() {
-            return Err(anyhow!(
-                "READ_JSONL: no JSON objects found (records must be objects, not arrays/scalars)"
-            ));
-        }
-
-        // Stringify, infer types from the first 100 rows, then convert to typed
-        // DataValues — same pipeline the file-level JSON loader uses.
-        let mut string_rows: Vec<Vec<String>> = Vec::with_capacity(records.len());
-        for record in &records {
-            let obj = match record.as_object() {
-                Some(o) => o,
-                None => continue,
-            };
-            let mut row = Vec::with_capacity(column_names.len());
-            for col_name in &column_names {
-                let value = obj
-                    .get(col_name)
-                    .map(json_value_to_string)
-                    .unwrap_or_default();
-                row.push(value);
-            }
-            string_rows.push(row);
-        }
-
-        let mut column_types: Vec<DataType> = vec![DataType::Null; column_names.len()];
-        let sample_size = string_rows.len().min(100);
-        for row in string_rows.iter().take(sample_size) {
-            for (col_idx, value) in row.iter().enumerate() {
-                if !value.is_empty() && value != "null" {
-                    let inferred = DataType::infer_from_string(value);
-                    column_types[col_idx] = column_types[col_idx].merge(&inferred);
-                }
-            }
-        }
-
-        let mut table = DataTable::new("read_jsonl");
-        for (name, dtype) in column_names.iter().zip(column_types.iter()) {
-            let mut col = DataColumn::new(name);
-            col.data_type = dtype.clone();
-            table.add_column(col);
-        }
-
-        for string_row in &string_rows {
-            let mut values = Vec::with_capacity(string_row.len());
-            for (col_idx, value) in string_row.iter().enumerate() {
-                let dv = if value.is_empty() || value == "null" {
-                    DataValue::Null
-                } else {
-                    DataValue::from_string(value, &column_types[col_idx])
-                };
-                values.push(dv);
-            }
-            table
-                .add_row(DataRow::new(values))
-                .map_err(|e| anyhow!(e))?;
-        }
-
+        let table = json_records_to_table(records, "read_jsonl", "READ_JSONL")?;
         Ok(Arc::new(table))
     }
 
@@ -548,6 +486,145 @@ fn json_value_to_string(value: &JsonValue) -> String {
         JsonValue::String(s) => s.clone(),
         JsonValue::Array(arr) => format!("{:?}", arr),
         JsonValue::Object(obj) => format!("{:?}", obj),
+    }
+}
+
+/// Build a typed `DataTable` from a list of parsed JSON records (objects).
+///
+/// Columns are the ordered union of object keys across the first 100 records,
+/// so heterogeneous streams don't drop late-appearing fields. Types are
+/// inferred from the first 100 rows. Shared by READ_JSONL (one object per line)
+/// and READ_JSON (whole document / array). `func` names the calling function in
+/// error messages.
+fn json_records_to_table(
+    records: Vec<JsonValue>,
+    table_name: &str,
+    func: &str,
+) -> Result<DataTable> {
+    if records.is_empty() {
+        return Ok(DataTable::new(table_name));
+    }
+
+    let column_names = collect_column_names(&records, 100);
+    if column_names.is_empty() {
+        return Err(anyhow!(
+            "{}: no JSON objects found (records must be objects, not arrays/scalars)",
+            func
+        ));
+    }
+
+    // Stringify, infer types from the first 100 rows, then convert to typed
+    // DataValues — same pipeline the file-level JSON loader uses.
+    let mut string_rows: Vec<Vec<String>> = Vec::with_capacity(records.len());
+    for record in &records {
+        let obj = match record.as_object() {
+            Some(o) => o,
+            None => continue,
+        };
+        let mut row = Vec::with_capacity(column_names.len());
+        for col_name in &column_names {
+            let value = obj
+                .get(col_name)
+                .map(json_value_to_string)
+                .unwrap_or_default();
+            row.push(value);
+        }
+        string_rows.push(row);
+    }
+
+    let mut column_types: Vec<DataType> = vec![DataType::Null; column_names.len()];
+    let sample_size = string_rows.len().min(100);
+    for row in string_rows.iter().take(sample_size) {
+        for (col_idx, value) in row.iter().enumerate() {
+            if !value.is_empty() && value != "null" {
+                let inferred = DataType::infer_from_string(value);
+                column_types[col_idx] = column_types[col_idx].merge(&inferred);
+            }
+        }
+    }
+
+    let mut table = DataTable::new(table_name);
+    for (name, dtype) in column_names.iter().zip(column_types.iter()) {
+        let mut col = DataColumn::new(name);
+        col.data_type = dtype.clone();
+        table.add_column(col);
+    }
+
+    for string_row in &string_rows {
+        let mut values = Vec::with_capacity(string_row.len());
+        for (col_idx, value) in string_row.iter().enumerate() {
+            let dv = if value.is_empty() || value == "null" {
+                DataValue::Null
+            } else {
+                DataValue::from_string(value, &column_types[col_idx])
+            };
+            values.push(dv);
+        }
+        table
+            .add_row(DataRow::new(values))
+            .map_err(|e| anyhow!(e))?;
+    }
+
+    Ok(table)
+}
+
+/// READ_JSON(path) - Read a whole JSON document and emit one row per object.
+///
+/// Accepts either a JSON array of objects (`[{...}, {...}]`, possibly
+/// pretty-printed across many lines) or newline-delimited JSON (JSONL); the
+/// format is auto-detected. This is the multi-line counterpart to READ_JSONL,
+/// which requires exactly one object per line. Pass `-` as the path to read
+/// from stdin (shares the same cached-once buffer as the other stdin readers).
+pub struct ReadJson;
+
+impl TableGenerator for ReadJson {
+    fn name(&self) -> &str {
+        "READ_JSON"
+    }
+
+    fn columns(&self) -> Vec<DataColumn> {
+        // Schema is dynamic; the actual columns are inferred at generate() time
+        // from the JSON keys in the document.
+        vec![DataColumn::new("(inferred from JSON keys)")]
+    }
+
+    fn generate(&self, args: Vec<DataValue>) -> Result<Arc<DataTable>> {
+        if args.len() != 1 {
+            return Err(anyhow!("READ_JSON expects 1 argument: (path)"));
+        }
+
+        let path = require_string(&args, 0, "READ_JSON")?;
+
+        let content = if path == "-" {
+            // Reconstruct the document from the cached stdin lines so other
+            // stdin readers in the same query keep seeing the same buffer.
+            let lines = cached_stdin_lines()?;
+            let mut buffer = String::with_capacity(lines.iter().map(|(_, l)| l.len() + 1).sum());
+            for (i, (_, line)) in lines.iter().enumerate() {
+                if i > 0 {
+                    buffer.push('\n');
+                }
+                buffer.push_str(line);
+            }
+            buffer
+        } else {
+            std::fs::read_to_string(&path)
+                .map_err(|e| anyhow!("READ_JSON failed to read '{}': {}", path, e))?
+        };
+
+        let records =
+            parse_json_records(&content).map_err(|e| anyhow!("READ_JSON parse error: {}", e))?;
+
+        let table = json_records_to_table(records, "read_json", "READ_JSON")?;
+        Ok(Arc::new(table))
+    }
+
+    fn description(&self) -> &str {
+        "Read a whole JSON document — a JSON array of objects (possibly pretty-printed) or newline-delimited JSON — and emit one row per object. Pass '-' as path to read from stdin. Unlike READ_JSONL, the input may span multiple lines per record."
+    }
+
+    fn arg_count(&self) -> usize {
+        1
     }
 }
 
@@ -1167,5 +1244,106 @@ not json at all
     #[test]
     fn test_read_csv_requires_path() {
         assert!(ReadCsv.generate(vec![]).is_err());
+    }
+
+    // ---- ReadJson tests ----
+
+    #[test]
+    fn test_read_json_array_of_objects() {
+        // The case READ_JSONL can't handle: a pretty-printed multi-line array.
+        let f = write_tmp(
+            r#"[
+  {"id": 1, "name": "alice"},
+  {"id": 2, "name": "bob"}
+]
+"#,
+        );
+        let table = ReadJson
+            .generate(vec![DataValue::String(
+                f.path().to_string_lossy().to_string(),
+            )])
+            .unwrap();
+        assert_eq!(table.row_count(), 2);
+        assert_eq!(table.column_count(), 2);
+        let id_col = col_index(&table, "id");
+        let name_col = col_index(&table, "name");
+        assert_eq!(table.get_value(0, id_col).unwrap(), &DataValue::Integer(1));
+        assert_eq!(
+            table.get_value(1, name_col).unwrap(),
+            &DataValue::String("bob".to_string())
+        );
+    }
+
+    #[test]
+    fn test_read_json_also_accepts_jsonl() {
+        // Auto-detect: same loader handles one-object-per-line input too.
+        let f = write_tmp("{\"id\":1}\n{\"id\":2}\n");
+        let table = ReadJson
+            .generate(vec![DataValue::String(
+                f.path().to_string_lossy().to_string(),
+            )])
+            .unwrap();
+        assert_eq!(table.row_count(), 2);
+        let id_col = col_index(&table, "id");
+        assert_eq!(table.get_value(1, id_col).unwrap(), &DataValue::Integer(2));
+    }
+
+    #[test]
+    fn test_read_json_heterogeneous_schema_unioned() {
+        let f = write_tmp(
+            r#"[
+  {"id": 1, "name": "alice"},
+  {"id": 2, "name": "bob", "extra": "hello"}
+]"#,
+        );
+        let table = ReadJson
+            .generate(vec![DataValue::String(
+                f.path().to_string_lossy().to_string(),
+            )])
+            .unwrap();
+        assert_eq!(table.column_count(), 3);
+        let extra = col_index(&table, "extra");
+        assert_eq!(table.get_value(0, extra).unwrap(), &DataValue::Null);
+        assert_eq!(
+            table.get_value(1, extra).unwrap(),
+            &DataValue::String("hello".to_string())
+        );
+    }
+
+    #[test]
+    fn test_read_json_empty_array_returns_empty_table() {
+        let f = write_tmp("[]");
+        let table = ReadJson
+            .generate(vec![DataValue::String(
+                f.path().to_string_lossy().to_string(),
+            )])
+            .unwrap();
+        assert_eq!(table.row_count(), 0);
+    }
+
+    #[test]
+    fn test_read_json_rejects_too_many_args() {
+        let err = ReadJson
+            .generate(vec![
+                DataValue::String("a".to_string()),
+                DataValue::String("b".to_string()),
+            ])
+            .unwrap_err();
+        assert!(err.to_string().contains("1 argument"));
+    }
+
+    #[test]
+    fn test_read_json_requires_path() {
+        assert!(ReadJson.generate(vec![]).is_err());
+    }
+
+    #[test]
+    fn test_read_json_bad_path_errors() {
+        let err = ReadJson
+            .generate(vec![DataValue::String(
+                "/no/such/file/here.json".to_string(),
+            )])
+            .unwrap_err();
+        assert!(err.to_string().contains("READ_JSON failed to read"));
     }
 }
