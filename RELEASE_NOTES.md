@@ -1,27 +1,23 @@
-# SQL CLI v1.79.0
+# SQL CLI v1.79.1
 
 **Release Date:** June 10, 2026
 
 ## 📊 Release Overview
-- **Commits in this release:** 4
-- **Files updated:** 4
+- **Commits in this release:** 2
+- **Files updated:** 3
 
 ## ✨ Highlights
 
 ## 📝 Changes by Category
 
-### 🐛 Bug Fixes
-- make join-key coercion type-aware (opt out by casting to string)
-- coerce equi-join keys so string keys match numeric keys
-- fall back to unqualified lookup for aliased SELECT columns
+### 🚀 New Features
+- add READ_JSON table function and error on unknown table funcs
 
 <details>
 <summary>📋 View all commits</summary>
 
-- Merge pull request #21 from TimelordUK/fix/temp-table-qualified-and-join-coercion (TimelordUK)
-- fix(join): make join-key coercion type-aware (opt out by casting to string) (TimelordUK)
-- fix(join): coerce equi-join keys so string keys match numeric keys (TimelordUK)
-- fix(query): fall back to unqualified lookup for aliased SELECT columns (TimelordUK)
+- Merge pull request #22 from TimelordUK/feat/read-json-table-function (TimelordUK)
+- feat(readers): add READ_JSON table function and error on unknown table funcs (TimelordUK)
 
 </details>
 
