@@ -2906,9 +2906,21 @@ impl QueryEngine {
                 } => {
                     // Check if this has a table prefix
                     let index = if let Some(table_prefix) = &col_ref.table_prefix {
-                        // For qualified references, ONLY try qualified lookup - no fallback
+                        // Qualified reference (e.g. `f.region`). Prefer a qualified
+                        // match (JOIN/CTE columns carry qualified names), then fall
+                        // back to an unqualified lookup by column name. The fallback
+                        // makes aliased single-table queries (`SELECT f.region FROM
+                        // #tmp f`) behave like WHERE/expression clauses do — base and
+                        // temp-table columns carry no qualified_name, so a qualified-
+                        // only lookup would otherwise fail. See
+                        // `ExecutionContext::resolve_column_index` for the same logic.
                         let qualified_name = format!("{}.{}", table_prefix, col_ref.name);
                         table.find_column_by_qualified_name(&qualified_name)
+                            .or_else(|| {
+                                table_columns
+                                    .iter()
+                                    .position(|c| c.eq_ignore_ascii_case(&col_ref.name))
+                            })
                             .ok_or_else(|| {
                                 // Check if any columns have qualified names for better error message
                                 let has_qualified = table.columns.iter()
