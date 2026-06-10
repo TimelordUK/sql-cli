@@ -7,6 +7,7 @@ use tracing::{debug, info};
 
 use crate::data::arithmetic_evaluator::ArithmeticEvaluator;
 use crate::data::datatable::{DataColumn, DataRow, DataTable, DataValue};
+use crate::data::value_comparisons::compare_with_op;
 use crate::sql::parser::ast::{JoinClause, JoinOperator, JoinType};
 use crate::sql::recursive_parser::SqlExpression;
 
@@ -19,36 +20,99 @@ use crate::sql::recursive_parser::SqlExpression;
 /// though `WHERE a = b` would coerce and match them
 /// (see `value_comparisons::compare_values`).
 ///
-/// To keep JOIN equality consistent with WHERE equality, fold values into a
-/// canonical form before hashing/comparing:
-///   - numeric-looking strings (and interned strings) become numbers,
-///   - interned strings collapse to plain strings,
-///   - whole floats collapse to integers (so `220.0` matches `220`).
-/// Non-numeric text keeps its value; `Null` and other types are unchanged.
+/// Two normalizations are applied:
+///   - `InternedString` always collapses to a plain `String` — the same
+///     logical type, just a different in-memory representation, so they must
+///     always compare equal to a matching `String`.
+///   - whole floats always collapse to integers (so `220.0` matches `220`,
+///     even between two numeric columns).
+///   - When `coerce_numeric` is set, numeric-looking strings also become
+///     numbers (so `"220"` matches `220`).
+///
+/// `coerce_numeric` is decided per join site by [`join_key_coercion`]: it is
+/// enabled only when the two columns hold different *kinds* of value (a string
+/// column vs a numeric column). When both sides are strings — notably after
+/// `TO_STRING(...)` on both — no string→number coercion happens, so `"007"` and
+/// `"7"` stay distinct. The hash path must decide this per column (it never
+/// sees the opposite key), unlike WHERE's pairwise comparison; the nested-loop
+/// path defers to WHERE's comparator directly.
 ///
 /// Note: like WHERE, parsing is not whitespace-trimmed (`" 220"` stays a
-/// string), but unlike WHERE's pairwise comparison this also folds two numeric
-/// strings to the same key (e.g. `"007"` and `"7"` both become `7`).
-fn canonical_join_key(value: &DataValue) -> DataValue {
+/// string).
+fn canonical_join_key(value: &DataValue, coerce_numeric: bool) -> DataValue {
     match value {
-        DataValue::String(s) => coerce_join_text(s),
-        DataValue::InternedString(s) => coerce_join_text(s.as_str()),
+        DataValue::String(s) => normalize_join_text(s, coerce_numeric),
+        DataValue::InternedString(s) => normalize_join_text(s.as_str(), coerce_numeric),
         DataValue::Float(f) => fold_whole_float(*f),
         other => other.clone(),
     }
 }
 
-/// Coerce a textual join key to a number when it parses as one.
-fn coerce_join_text(s: &str) -> DataValue {
-    if let Ok(i) = s.parse::<i64>() {
-        return DataValue::Integer(i);
-    }
-    if let Ok(f) = s.parse::<f64>() {
-        if f.is_finite() {
-            return fold_whole_float(f);
+/// Canonicalize a textual join key: always returned as a plain `String` unless
+/// numeric coercion is enabled and the text parses as a number.
+fn normalize_join_text(s: &str, coerce_numeric: bool) -> DataValue {
+    if coerce_numeric {
+        if let Ok(i) = s.parse::<i64>() {
+            return DataValue::Integer(i);
+        }
+        if let Ok(f) = s.parse::<f64>() {
+            if f.is_finite() {
+                return fold_whole_float(f);
+            }
         }
     }
     DataValue::String(s.to_string())
+}
+
+/// The broad "kind" of a join-key value. String↔number coercion is applied
+/// only when the two columns hold different kinds.
+#[derive(PartialEq, Eq)]
+enum KeyKind {
+    Stringy,
+    Numeric,
+    Other,
+}
+
+fn value_kind(value: &DataValue) -> KeyKind {
+    match value {
+        DataValue::String(_) | DataValue::InternedString(_) => KeyKind::Stringy,
+        DataValue::Integer(_) | DataValue::Float(_) => KeyKind::Numeric,
+        _ => KeyKind::Other,
+    }
+}
+
+/// The kind of a column, sampled from its first non-null value.
+///
+/// We sample actual values rather than the column's declared `data_type`
+/// because a materialized temp table does not reliably carry accurate column
+/// types (a column holding integers can still be typed as `String`/`Mixed`).
+fn column_key_kind(table: &DataTable, col_idx: usize) -> Option<KeyKind> {
+    table
+        .rows
+        .iter()
+        .filter_map(|r| r.values.get(col_idx))
+        .find(|v| !matches!(v, DataValue::Null))
+        .map(value_kind)
+}
+
+/// Whether an equi-join between two columns should coerce string keys to
+/// numbers. Enabled only when the columns hold different value kinds (e.g. a
+/// string column vs a numeric column); two string columns join on exact text.
+/// If a column's kind can't be determined (empty/all-null) we default to
+/// coercing — the permissive behaviour that fixes the cross-type case.
+fn join_key_coercion(
+    left_table: &DataTable,
+    left_col_idx: usize,
+    right_table: &DataTable,
+    right_col_idx: usize,
+) -> bool {
+    match (
+        column_key_kind(left_table, left_col_idx),
+        column_key_kind(right_table, right_col_idx),
+    ) {
+        (Some(l), Some(r)) => l != r,
+        _ => true,
+    }
 }
 
 /// Collapse a float with no fractional part to an integer so that `220.0`
@@ -340,6 +404,11 @@ impl HashJoinExecutor {
     ) -> Result<DataTable> {
         let start = std::time::Instant::now();
 
+        // Numeric coercion is enabled only when the two join columns have
+        // different declared types (e.g. string vs integer). Decided per column
+        // because the hash index canonicalizes each key without seeing its mate.
+        let coerce = join_key_coercion(&left_table, left_col_idx, &right_table, right_col_idx);
+
         // Determine which table to use for building the hash index (prefer smaller)
         let (build_table, probe_table, build_col_idx, probe_col_idx, build_is_left) =
             if left_table.row_count() <= right_table.row_count() {
@@ -369,7 +438,7 @@ impl HashJoinExecutor {
         // Build hash index on the smaller table
         let mut hash_index: HashMap<DataValue, Vec<usize>> = HashMap::new();
         for (row_idx, row) in build_table.rows.iter().enumerate() {
-            let key = canonical_join_key(&row.values[build_col_idx]);
+            let key = canonical_join_key(&row.values[build_col_idx], coerce);
             hash_index.entry(key).or_default().push(row_idx);
         }
 
@@ -448,7 +517,7 @@ impl HashJoinExecutor {
         // Probe phase: iterate through the larger table
         let mut match_count = 0;
         for probe_row in &probe_table.rows {
-            let probe_key = canonical_join_key(&probe_row.values[probe_col_idx]);
+            let probe_key = canonical_join_key(&probe_row.values[probe_col_idx], coerce);
 
             if let Some(matching_indices) = hash_index.get(&probe_key) {
                 for &build_idx in matching_indices {
@@ -505,6 +574,9 @@ impl HashJoinExecutor {
     ) -> Result<DataTable> {
         let start = std::time::Instant::now();
 
+        // Coerce string keys only when the join columns differ in type.
+        let coerce = join_key_coercion(&left_table, left_col_idx, &right_table, right_col_idx);
+
         debug!(
             "Building hash index on right table ({} rows)",
             right_table.row_count()
@@ -513,7 +585,7 @@ impl HashJoinExecutor {
         // Build hash index on right table
         let mut hash_index: HashMap<DataValue, Vec<usize>> = HashMap::new();
         for (row_idx, row) in right_table.rows.iter().enumerate() {
-            let key = canonical_join_key(&row.values[right_col_idx]);
+            let key = canonical_join_key(&row.values[right_col_idx], coerce);
             hash_index.entry(key).or_default().push(row_idx);
         }
 
@@ -588,7 +660,7 @@ impl HashJoinExecutor {
         let mut null_count = 0;
 
         for left_row in &left_table.rows {
-            let left_key = canonical_join_key(&left_row.values[left_col_idx]);
+            let left_key = canonical_join_key(&left_row.values[left_col_idx], coerce);
 
             if let Some(matching_indices) = hash_index.get(&left_key) {
                 // Found matches - emit joined rows
@@ -731,18 +803,23 @@ impl HashJoinExecutor {
         }
     }
 
-    /// Compare two values based on the join operator
+    /// Compare two values based on the join operator.
+    ///
+    /// The nested-loop path has both values in hand, so it defers to the same
+    /// pairwise comparator WHERE uses (`value_comparisons::compare_with_op`).
+    /// That keeps JOIN equality identical to WHERE equality — including its
+    /// type-aware coercion (`String` vs `Integer` coerces; `String` vs `String`
+    /// compares as text) — so the nested-loop and hash paths agree.
     fn compare_values(&self, left: &DataValue, right: &DataValue, op: &JoinOperator) -> bool {
-        match op {
-            // Equality folds keys to a canonical form so the nested-loop path
-            // coerces types the same way the hash path (and WHERE) does.
-            JoinOperator::Equal => canonical_join_key(left) == canonical_join_key(right),
-            JoinOperator::NotEqual => canonical_join_key(left) != canonical_join_key(right),
-            JoinOperator::LessThan => left < right,
-            JoinOperator::GreaterThan => left > right,
-            JoinOperator::LessThanOrEqual => left <= right,
-            JoinOperator::GreaterThanOrEqual => left >= right,
-        }
+        let op_str = match op {
+            JoinOperator::Equal => "=",
+            JoinOperator::NotEqual => "!=",
+            JoinOperator::LessThan => "<",
+            JoinOperator::GreaterThan => ">",
+            JoinOperator::LessThanOrEqual => "<=",
+            JoinOperator::GreaterThanOrEqual => ">=",
+        };
+        compare_with_op(left, right, op_str, self.case_insensitive)
     }
 
     /// Nested loop join for INNER JOIN with inequality conditions
@@ -1251,57 +1328,88 @@ mod tests {
     use std::sync::Arc;
 
     #[test]
-    fn numeric_string_folds_to_integer() {
-        // A string pulled from JSON/SUBSTR must match an integer join key.
+    fn numeric_string_folds_to_integer_when_coercing() {
+        // A string pulled from JSON/SUBSTR must match an integer join key when
+        // the columns differ in type (coerce = true).
         assert_eq!(
-            canonical_join_key(&DataValue::String("220".to_string())),
+            canonical_join_key(&DataValue::String("220".to_string()), true),
             DataValue::Integer(220)
         );
         assert_eq!(
-            canonical_join_key(&DataValue::Integer(220)),
+            canonical_join_key(&DataValue::Integer(220), true),
             DataValue::Integer(220)
         );
-        // ...and therefore the two canonical keys are equal.
         assert_eq!(
-            canonical_join_key(&DataValue::String("220".to_string())),
-            canonical_join_key(&DataValue::Integer(220))
+            canonical_join_key(&DataValue::String("220".to_string()), true),
+            canonical_join_key(&DataValue::Integer(220), true)
         );
     }
 
     #[test]
-    fn interned_and_plain_strings_collapse() {
+    fn numeric_strings_stay_distinct_when_not_coercing() {
+        // Same-typed columns (e.g. String vs String) do not numerically coerce,
+        // so "007" and "7" remain distinct keys. This is the TO_STRING opt-out.
         assert_eq!(
-            canonical_join_key(&DataValue::InternedString(Arc::new("North".to_string()))),
-            canonical_join_key(&DataValue::String("North".to_string()))
+            canonical_join_key(&DataValue::String("007".to_string()), false),
+            DataValue::String("007".to_string())
+        );
+        assert_ne!(
+            canonical_join_key(&DataValue::String("007".to_string()), false),
+            canonical_join_key(&DataValue::String("7".to_string()), false)
+        );
+        // A string is never folded into an integer when not coercing.
+        assert_ne!(
+            canonical_join_key(&DataValue::String("7".to_string()), false),
+            canonical_join_key(&DataValue::Integer(7), false)
         );
     }
 
     #[test]
-    fn whole_float_folds_to_integer() {
+    fn interned_and_plain_strings_collapse_regardless_of_coercion() {
+        for coerce in [true, false] {
+            assert_eq!(
+                canonical_join_key(
+                    &DataValue::InternedString(Arc::new("North".to_string())),
+                    coerce
+                ),
+                canonical_join_key(&DataValue::String("North".to_string()), coerce),
+                "interned/plain strings must collapse (coerce = {coerce})"
+            );
+        }
+    }
+
+    #[test]
+    fn whole_float_folds_to_integer_when_coercing() {
         assert_eq!(
-            canonical_join_key(&DataValue::Float(220.0)),
+            canonical_join_key(&DataValue::Float(220.0), true),
             DataValue::Integer(220)
         );
         assert_eq!(
-            canonical_join_key(&DataValue::String("220.0".to_string())),
+            canonical_join_key(&DataValue::String("220.0".to_string()), true),
             DataValue::Integer(220)
         );
         // Fractional floats stay floats.
         assert_eq!(
-            canonical_join_key(&DataValue::Float(220.5)),
+            canonical_join_key(&DataValue::Float(220.5), true),
             DataValue::Float(220.5)
+        );
+        // Whole floats fold to integers regardless of string coercion, so a
+        // numeric (int) column joins a numeric (float) column.
+        assert_eq!(
+            canonical_join_key(&DataValue::Float(220.0), false),
+            DataValue::Integer(220)
         );
     }
 
     #[test]
     fn non_numeric_text_is_preserved() {
         assert_eq!(
-            canonical_join_key(&DataValue::String("North".to_string())),
+            canonical_join_key(&DataValue::String("North".to_string()), true),
             DataValue::String("North".to_string())
         );
         // Leading whitespace is not trimmed, matching WHERE parse semantics.
         assert_eq!(
-            canonical_join_key(&DataValue::String(" 220".to_string())),
+            canonical_join_key(&DataValue::String(" 220".to_string()), true),
             DataValue::String(" 220".to_string())
         );
     }
@@ -1309,17 +1417,44 @@ mod tests {
     #[test]
     fn non_finite_strings_stay_strings() {
         assert_eq!(
-            canonical_join_key(&DataValue::String("inf".to_string())),
+            canonical_join_key(&DataValue::String("inf".to_string()), true),
             DataValue::String("inf".to_string())
         );
         assert_eq!(
-            canonical_join_key(&DataValue::String("NaN".to_string())),
+            canonical_join_key(&DataValue::String("NaN".to_string()), true),
             DataValue::String("NaN".to_string())
         );
     }
 
     #[test]
     fn null_is_unchanged() {
-        assert_eq!(canonical_join_key(&DataValue::Null), DataValue::Null);
+        assert_eq!(canonical_join_key(&DataValue::Null, true), DataValue::Null);
+    }
+
+    #[test]
+    fn coercion_enabled_only_for_differing_value_kinds() {
+        // Column kind is sampled from actual values, not declared types.
+        let stringy = single_col_table(DataValue::String("7".to_string()));
+        let numeric = single_col_table(DataValue::Integer(7));
+        let stringy2 = single_col_table(DataValue::String("8".to_string()));
+        let empty = DataTable::new("empty"); // no columns/rows
+
+        // Stringy vs numeric -> coerce.
+        assert!(join_key_coercion(&stringy, 0, &numeric, 0));
+        // Stringy vs stringy -> no coercion.
+        assert!(!join_key_coercion(&stringy, 0, &stringy2, 0));
+        // Numeric vs numeric -> no coercion (float-folding still applies).
+        assert!(!join_key_coercion(&numeric, 0, &numeric, 0));
+        // Undeterminable kind -> permissive (coerce).
+        assert!(join_key_coercion(&stringy, 0, &empty, 0));
+    }
+
+    fn single_col_table(value: DataValue) -> DataTable {
+        let mut t = DataTable::new("t");
+        t.add_column(DataColumn::new("k"));
+        let _ = t.add_row(DataRow {
+            values: vec![value],
+        });
+        t
     }
 }

@@ -129,3 +129,59 @@ fn join_coerces_string_key_to_integer_key() {
         .count();
     assert_eq!(matched, 3, "string keys should coerce-match integer keys");
 }
+
+#[test]
+fn join_does_not_coerce_when_both_keys_are_strings() {
+    // When both join columns are strings, numeric coercion is OFF: exact string
+    // equality applies, so "07" does not match "7". Casting both sides to
+    // strings is the deliberate opt-out of numeric matching.
+    let mut context = ExecutionContext::new(Arc::new(sales_table()));
+    let executor = StatementExecutor::new();
+
+    let mut agents = DataTable::new("#agents");
+    agents.add_column(DataColumn::new("agent_id").with_type(DataType::String));
+    agents.add_column(DataColumn::new("agent_name").with_type(DataType::String));
+    for (id, name) in [("7", "Ann"), ("8", "Bob")] {
+        let _ = agents.add_row(DataRow {
+            values: vec![
+                DataValue::String(id.to_string()),
+                DataValue::String(name.to_string()),
+            ],
+        });
+    }
+    context
+        .store_temp_table("#agents".to_string(), Arc::new(agents))
+        .expect("store #agents");
+
+    let mut builds = DataTable::new("#builds");
+    builds.add_column(DataColumn::new("build_id").with_type(DataType::Integer));
+    builds.add_column(DataColumn::new("f_agent_id").with_type(DataType::String));
+    for (bid, aref) in [(10, "07"), (11, "8")] {
+        let _ = builds.add_row(DataRow {
+            values: vec![DataValue::Integer(bid), DataValue::String(aref.to_string())],
+        });
+    }
+    context
+        .store_temp_table("#builds".to_string(), Arc::new(builds))
+        .expect("store #builds");
+
+    let mut p = Parser::new(
+        "SELECT build_id, agent_name \
+         FROM #builds b \
+         LEFT JOIN #agents a ON b.f_agent_id = a.agent_id",
+    );
+    let stmt = p.parse().expect("parse");
+    let result = executor.execute(stmt, &mut context).expect("join exec");
+
+    assert_eq!(result.dataview.row_count(), 2);
+    let src = result.dataview.source();
+    let name_idx = src
+        .get_column_index("agent_name")
+        .expect("agent_name column present");
+    let matched = (0..result.dataview.row_count())
+        .filter_map(|r| src.get_value(r, name_idx))
+        .filter(|v| !matches!(v, DataValue::Null))
+        .count();
+    // Only "8" == "8" matches; "07" != "7" because strings are not coerced.
+    assert_eq!(matched, 1, "string vs string must use exact text equality");
+}
