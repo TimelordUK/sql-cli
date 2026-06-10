@@ -46,7 +46,7 @@ impl GeneratorRegistry {
 
     fn register_default_generators(&mut self) {
         use ascii_art::{AsciiArt, Banner, BigText};
-        use file_readers::{Grep, ReadCsv, ReadJsonl, ReadStdin, ReadText, ReadWords};
+        use file_readers::{Grep, ReadCsv, ReadJson, ReadJsonl, ReadStdin, ReadText, ReadWords};
         use literal_generators::{Array, Values};
         use math_generators::{Collatz, Factorials, PascalTriangle, Squares, TriangularNumbers};
         use prime_generators::{Fibonacci, GeneratePrimes, PrimeFactors};
@@ -73,6 +73,7 @@ impl GeneratorRegistry {
         self.register(Box::new(ReadText));
         self.register(Box::new(ReadWords));
         self.register(Box::new(ReadJsonl));
+        self.register(Box::new(ReadJson));
         self.register(Box::new(ReadCsv));
         self.register(Box::new(ReadStdin));
         self.register(Box::new(Grep));
@@ -138,6 +139,7 @@ impl GeneratorRegistry {
             } else if name == "READ_TEXT"
                 || name == "READ_WORDS"
                 || name == "READ_JSONL"
+                || name == "READ_JSON"
                 || name == "READ_CSV"
                 || name == "READ_STDIN"
                 || name == "GREP"

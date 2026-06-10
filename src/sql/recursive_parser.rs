@@ -808,7 +808,15 @@ impl Parser {
                                     name
                                 ));
                             }
-                            false
+                            // `name(` in a FROM clause is unambiguously a table
+                            // function call (table/CTE names are never followed
+                            // by parens). If we don't recognise it, erroring here
+                            // beats silently treating `name` as a missing table
+                            // and degrading to the DUAL placeholder row.
+                            return Err(format!(
+                                "Unknown table function '{}'. Run --list-functions to see available table functions (e.g. READ_CSV, READ_JSON, READ_JSONL, RANGE).",
+                                name
+                            ));
                         }
                     }
                 } else {
