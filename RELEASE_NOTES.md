@@ -1,29 +1,27 @@
-# SQL CLI v1.78.0
+# SQL CLI v1.79.0
 
-**Release Date:** June 09, 2026
+**Release Date:** June 10, 2026
 
 ## 📊 Release Overview
-- **Commits in this release:** 2
-- **Files updated:** 3
+- **Commits in this release:** 4
+- **Files updated:** 4
 
 ## ✨ Highlights
-
-### 🔍 Enhanced Debugging
-- **Better Diagnostics**: Improved error messages and state dumps
 
 ## 📝 Changes by Category
 
 ### 🐛 Bug Fixes
-- make WEB CTE POST usable against strict APIs (Elasticsearch)
-
-### 📚 Documentation
-- use $JSON$ block bodies for ES queries 2-4
+- make join-key coercion type-aware (opt out by casting to string)
+- coerce equi-join keys so string keys match numeric keys
+- fall back to unqualified lookup for aliased SELECT columns
 
 <details>
 <summary>📋 View all commits</summary>
 
-- docs(examples): use $JSON$ block bodies for ES queries 2-4 (TimelordUK)
-- fix(web): make WEB CTE POST usable against strict APIs (Elasticsearch) (TimelordUK)
+- Merge pull request #21 from TimelordUK/fix/temp-table-qualified-and-join-coercion (TimelordUK)
+- fix(join): make join-key coercion type-aware (opt out by casting to string) (TimelordUK)
+- fix(join): coerce equi-join keys so string keys match numeric keys (TimelordUK)
+- fix(query): fall back to unqualified lookup for aliased SELECT columns (TimelordUK)
 
 </details>
 
