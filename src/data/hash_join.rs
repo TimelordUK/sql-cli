@@ -10,6 +10,57 @@ use crate::data::datatable::{DataColumn, DataRow, DataTable, DataValue};
 use crate::sql::parser::ast::{JoinClause, JoinOperator, JoinType};
 use crate::sql::recursive_parser::SqlExpression;
 
+/// Normalize a value into a canonical form for join-key matching.
+///
+/// Equi-joins index keys in a `HashMap<DataValue, _>`, which keys on the exact
+/// `DataValue` variant. That means `String("220")` and `Integer(220)` never
+/// collide, so a join between a string column (e.g. a value pulled out of JSON
+/// via `SUBSTR`) and an integer column silently produces no matches — even
+/// though `WHERE a = b` would coerce and match them
+/// (see `value_comparisons::compare_values`).
+///
+/// To keep JOIN equality consistent with WHERE equality, fold values into a
+/// canonical form before hashing/comparing:
+///   - numeric-looking strings (and interned strings) become numbers,
+///   - interned strings collapse to plain strings,
+///   - whole floats collapse to integers (so `220.0` matches `220`).
+/// Non-numeric text keeps its value; `Null` and other types are unchanged.
+///
+/// Note: like WHERE, parsing is not whitespace-trimmed (`" 220"` stays a
+/// string), but unlike WHERE's pairwise comparison this also folds two numeric
+/// strings to the same key (e.g. `"007"` and `"7"` both become `7`).
+fn canonical_join_key(value: &DataValue) -> DataValue {
+    match value {
+        DataValue::String(s) => coerce_join_text(s),
+        DataValue::InternedString(s) => coerce_join_text(s.as_str()),
+        DataValue::Float(f) => fold_whole_float(*f),
+        other => other.clone(),
+    }
+}
+
+/// Coerce a textual join key to a number when it parses as one.
+fn coerce_join_text(s: &str) -> DataValue {
+    if let Ok(i) = s.parse::<i64>() {
+        return DataValue::Integer(i);
+    }
+    if let Ok(f) = s.parse::<f64>() {
+        if f.is_finite() {
+            return fold_whole_float(f);
+        }
+    }
+    DataValue::String(s.to_string())
+}
+
+/// Collapse a float with no fractional part to an integer so that `220.0`
+/// hashes/compares equal to `220`.
+fn fold_whole_float(f: f64) -> DataValue {
+    if f.is_finite() && f.fract() == 0.0 && f >= i64::MIN as f64 && f <= i64::MAX as f64 {
+        DataValue::Integer(f as i64)
+    } else {
+        DataValue::Float(f)
+    }
+}
+
 /// Hash join executor for efficient JOIN operations
 pub struct HashJoinExecutor {
     case_insensitive: bool,
@@ -318,7 +369,7 @@ impl HashJoinExecutor {
         // Build hash index on the smaller table
         let mut hash_index: HashMap<DataValue, Vec<usize>> = HashMap::new();
         for (row_idx, row) in build_table.rows.iter().enumerate() {
-            let key = row.values[build_col_idx].clone();
+            let key = canonical_join_key(&row.values[build_col_idx]);
             hash_index.entry(key).or_default().push(row_idx);
         }
 
@@ -397,9 +448,9 @@ impl HashJoinExecutor {
         // Probe phase: iterate through the larger table
         let mut match_count = 0;
         for probe_row in &probe_table.rows {
-            let probe_key = &probe_row.values[probe_col_idx];
+            let probe_key = canonical_join_key(&probe_row.values[probe_col_idx]);
 
-            if let Some(matching_indices) = hash_index.get(probe_key) {
+            if let Some(matching_indices) = hash_index.get(&probe_key) {
                 for &build_idx in matching_indices {
                     let build_row = &build_table.rows[build_idx];
 
@@ -462,7 +513,7 @@ impl HashJoinExecutor {
         // Build hash index on right table
         let mut hash_index: HashMap<DataValue, Vec<usize>> = HashMap::new();
         for (row_idx, row) in right_table.rows.iter().enumerate() {
-            let key = row.values[right_col_idx].clone();
+            let key = canonical_join_key(&row.values[right_col_idx]);
             hash_index.entry(key).or_default().push(row_idx);
         }
 
@@ -537,9 +588,9 @@ impl HashJoinExecutor {
         let mut null_count = 0;
 
         for left_row in &left_table.rows {
-            let left_key = &left_row.values[left_col_idx];
+            let left_key = canonical_join_key(&left_row.values[left_col_idx]);
 
-            if let Some(matching_indices) = hash_index.get(left_key) {
+            if let Some(matching_indices) = hash_index.get(&left_key) {
                 // Found matches - emit joined rows
                 for &right_idx in matching_indices {
                     let right_row = &right_table.rows[right_idx];
@@ -683,8 +734,10 @@ impl HashJoinExecutor {
     /// Compare two values based on the join operator
     fn compare_values(&self, left: &DataValue, right: &DataValue, op: &JoinOperator) -> bool {
         match op {
-            JoinOperator::Equal => left == right,
-            JoinOperator::NotEqual => left != right,
+            // Equality folds keys to a canonical form so the nested-loop path
+            // coerces types the same way the hash path (and WHERE) does.
+            JoinOperator::Equal => canonical_join_key(left) == canonical_join_key(right),
+            JoinOperator::NotEqual => canonical_join_key(left) != canonical_join_key(right),
             JoinOperator::LessThan => left < right,
             JoinOperator::GreaterThan => left > right,
             JoinOperator::LessThanOrEqual => left <= right,
@@ -1189,5 +1242,84 @@ impl HashJoinExecutor {
         );
 
         Ok(result)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::Arc;
+
+    #[test]
+    fn numeric_string_folds_to_integer() {
+        // A string pulled from JSON/SUBSTR must match an integer join key.
+        assert_eq!(
+            canonical_join_key(&DataValue::String("220".to_string())),
+            DataValue::Integer(220)
+        );
+        assert_eq!(
+            canonical_join_key(&DataValue::Integer(220)),
+            DataValue::Integer(220)
+        );
+        // ...and therefore the two canonical keys are equal.
+        assert_eq!(
+            canonical_join_key(&DataValue::String("220".to_string())),
+            canonical_join_key(&DataValue::Integer(220))
+        );
+    }
+
+    #[test]
+    fn interned_and_plain_strings_collapse() {
+        assert_eq!(
+            canonical_join_key(&DataValue::InternedString(Arc::new("North".to_string()))),
+            canonical_join_key(&DataValue::String("North".to_string()))
+        );
+    }
+
+    #[test]
+    fn whole_float_folds_to_integer() {
+        assert_eq!(
+            canonical_join_key(&DataValue::Float(220.0)),
+            DataValue::Integer(220)
+        );
+        assert_eq!(
+            canonical_join_key(&DataValue::String("220.0".to_string())),
+            DataValue::Integer(220)
+        );
+        // Fractional floats stay floats.
+        assert_eq!(
+            canonical_join_key(&DataValue::Float(220.5)),
+            DataValue::Float(220.5)
+        );
+    }
+
+    #[test]
+    fn non_numeric_text_is_preserved() {
+        assert_eq!(
+            canonical_join_key(&DataValue::String("North".to_string())),
+            DataValue::String("North".to_string())
+        );
+        // Leading whitespace is not trimmed, matching WHERE parse semantics.
+        assert_eq!(
+            canonical_join_key(&DataValue::String(" 220".to_string())),
+            DataValue::String(" 220".to_string())
+        );
+    }
+
+    #[test]
+    fn non_finite_strings_stay_strings() {
+        assert_eq!(
+            canonical_join_key(&DataValue::String("inf".to_string())),
+            DataValue::String("inf".to_string())
+        );
+        assert_eq!(
+            canonical_join_key(&DataValue::String("NaN".to_string())),
+            DataValue::String("NaN".to_string())
+        );
+    }
+
+    #[test]
+    fn null_is_unchanged() {
+        assert_eq!(canonical_join_key(&DataValue::Null), DataValue::Null);
     }
 }
