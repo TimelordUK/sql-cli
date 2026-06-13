@@ -10,7 +10,7 @@ use tracing::{debug, info};
 
 use crate::data::datatable::DataTable;
 use crate::data::stream_loader::{
-    load_csv_from_reader_with_opts, load_json_from_reader, CsvReadOptions,
+    load_csv_from_reader_with_opts, load_json_from_reader, navigate_json_path, CsvReadOptions,
 };
 use crate::sql::parser::ast::{DataFormat, HttpMethod, WebCTESpec};
 
@@ -218,8 +218,7 @@ impl WebDataFetcher {
                     .with_context(|| "Failed to parse JSON for path extraction")?;
 
                 // Navigate to the specified path
-                let extracted = self
-                    .navigate_json_path(&json_value, json_path)
+                let extracted = navigate_json_path(&json_value, json_path)
                     .with_context(|| format!("Failed to extract JSON path: {}", json_path))?;
 
                 // Convert extracted value to bytes and parse as table
@@ -449,8 +448,7 @@ impl WebDataFetcher {
             .with_context(|| "Failed to parse JSON for path extraction")?;
 
         // Navigate to the specified path
-        let extracted = self
-            .navigate_json_path(&json_value, json_path)
+        let extracted = navigate_json_path(&json_value, json_path)
             .with_context(|| format!("Failed to extract JSON path: {}", json_path))?;
 
         // If the extracted value is already an array, use it directly
@@ -466,69 +464,6 @@ impl WebDataFetcher {
         // Re-parse the extracted JSON as a DataTable
         let reader = Cursor::new(extracted_bytes);
         load_json_from_reader(reader, "extracted", "web", json_path)
-    }
-
-    /// Navigate to a specific path in JSON structure.
-    ///
-    /// Supports two forms per dotted segment:
-    ///   - `name`     — descend into an object key
-    ///   - `name[]`   — descend into `name` (must be an array), then map the
-    ///                  remainder of the path across every element
-    ///
-    /// Example for an ES response:
-    ///   `JSON_PATH 'hits.hits[]._source'`
-    /// returns an array of `_source` objects, one per hit — i.e. the
-    /// `_source` fields become the top-level row shape consumed by the loader.
-    fn navigate_json_path(
-        &self,
-        value: &serde_json::Value,
-        path: &str,
-    ) -> Result<serde_json::Value> {
-        let parts: Vec<&str> = path.split('.').filter(|p| !p.is_empty()).collect();
-        Self::walk_json_path(value, &parts)
-    }
-
-    fn walk_json_path(value: &serde_json::Value, parts: &[&str]) -> Result<serde_json::Value> {
-        let Some((head, tail)) = parts.split_first() else {
-            return Ok(value.clone());
-        };
-
-        // Array projection: `name[]` (or bare `[]`) maps the rest of the path
-        // across each element of an array.
-        if let Some(name) = head.strip_suffix("[]") {
-            let array_val = if name.is_empty() {
-                value
-            } else {
-                value
-                    .get(name)
-                    .ok_or_else(|| anyhow::anyhow!("Path '{}' not found in JSON", name))?
-            };
-            let arr = array_val.as_array().ok_or_else(|| {
-                let kind = match array_val {
-                    serde_json::Value::Null => "null",
-                    serde_json::Value::Bool(_) => "bool",
-                    serde_json::Value::Number(_) => "number",
-                    serde_json::Value::String(_) => "string",
-                    serde_json::Value::Array(_) => "array",
-                    serde_json::Value::Object(_) => "object",
-                };
-                anyhow::anyhow!(
-                    "Expected array at '{}' for [] projection, got {}",
-                    if name.is_empty() { "<root>" } else { name },
-                    kind
-                )
-            })?;
-            let mut projected = Vec::with_capacity(arr.len());
-            for el in arr {
-                projected.push(Self::walk_json_path(el, tail)?);
-            }
-            return Ok(serde_json::Value::Array(projected));
-        }
-
-        let next = value
-            .get(head)
-            .ok_or_else(|| anyhow::anyhow!("Path '{}' not found in JSON", head))?;
-        Self::walk_json_path(next, tail)
     }
 
     /// Resolve environment variables in values (${VAR_NAME} or $VAR_NAME syntax)

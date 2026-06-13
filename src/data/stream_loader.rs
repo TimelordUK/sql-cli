@@ -413,6 +413,78 @@ pub fn parse_json_records(content: &str) -> Result<Vec<JsonValue>> {
     Ok(out)
 }
 
+/// Navigate to a sub-value of a JSON document using a dotted path.
+///
+/// This is the shared "find the rows" step used by both the WEB CTE
+/// `JSON_PATH` clause and `READ_JSON(path, json_path)`. It only *locates* a
+/// value; it deliberately does not filter, transform, or pluck scalars — that
+/// is SQL's job (use a WHERE clause / column list once the rows are loaded).
+/// Anything beyond locating the row set is out of scope; pipe through `jq`.
+///
+/// Supports two forms per dotted segment:
+///   - `name`     — descend into an object key
+///   - `name[]`   — descend into `name` (must be an array), then map the
+///                  remainder of the path across every element. A bare `[]`
+///                  projects over the current value when it is already an array.
+///
+/// Example for an Elasticsearch response:
+///   `hits.hits[]._source`
+/// returns an array of `_source` objects, one per hit — i.e. the `_source`
+/// fields become the top-level row shape consumed by the loader.
+///
+/// An empty path (or one that is only dots) returns the value unchanged.
+pub fn navigate_json_path(value: &JsonValue, path: &str) -> Result<JsonValue> {
+    let parts: Vec<&str> = path.split('.').filter(|p| !p.is_empty()).collect();
+    walk_json_path(value, &parts)
+}
+
+fn walk_json_path(value: &JsonValue, parts: &[&str]) -> Result<JsonValue> {
+    let Some((head, tail)) = parts.split_first() else {
+        return Ok(value.clone());
+    };
+
+    // Array projection: `name[]` (or bare `[]`) maps the rest of the path
+    // across each element of an array.
+    if let Some(name) = head.strip_suffix("[]") {
+        let array_val = if name.is_empty() {
+            value
+        } else {
+            value
+                .get(name)
+                .ok_or_else(|| anyhow::anyhow!("Path '{}' not found in JSON", name))?
+        };
+        let arr = array_val.as_array().ok_or_else(|| {
+            anyhow::anyhow!(
+                "Expected array at '{}' for [] projection, got {}",
+                if name.is_empty() { "<root>" } else { name },
+                json_kind(array_val)
+            )
+        })?;
+        let mut projected = Vec::with_capacity(arr.len());
+        for el in arr {
+            projected.push(walk_json_path(el, tail)?);
+        }
+        return Ok(JsonValue::Array(projected));
+    }
+
+    let next = value
+        .get(head)
+        .ok_or_else(|| anyhow::anyhow!("Path '{}' not found in JSON", head))?;
+    walk_json_path(next, tail)
+}
+
+/// Human-readable JSON type name, for error messages.
+fn json_kind(value: &JsonValue) -> &'static str {
+    match value {
+        JsonValue::Null => "null",
+        JsonValue::Bool(_) => "bool",
+        JsonValue::Number(_) => "number",
+        JsonValue::String(_) => "string",
+        JsonValue::Array(_) => "array",
+        JsonValue::Object(_) => "object",
+    }
+}
+
 /// Compute the ordered union of object keys across the first `sample_size`
 /// records. Order of first occurrence is preserved so the column layout is
 /// stable. Non-object records are skipped.
@@ -579,6 +651,76 @@ fn is_null_field(raw_line: &str, field_index: usize, delimiter: char) -> bool {
 mod tests {
     use super::*;
     use std::io::Cursor;
+
+    // ---- navigate_json_path tests ----
+
+    #[test]
+    fn test_navigate_json_path_descends_object_key() {
+        // The TeamCity-style case: object with a nested array one level down.
+        let doc = serde_json::json!({
+            "count": 2,
+            "project": [{"id": "a"}, {"id": "b"}]
+        });
+        let extracted = navigate_json_path(&doc, "project").unwrap();
+        assert!(extracted.is_array());
+        assert_eq!(extracted.as_array().unwrap().len(), 2);
+    }
+
+    #[test]
+    fn test_navigate_json_path_nested_descent() {
+        // TeamCity actually wraps as { projects: { project: [...] } }.
+        let doc = serde_json::json!({
+            "projects": {"project": [{"id": "a"}, {"id": "b"}, {"id": "c"}]}
+        });
+        let extracted = navigate_json_path(&doc, "projects.project").unwrap();
+        assert_eq!(extracted.as_array().unwrap().len(), 3);
+    }
+
+    #[test]
+    fn test_navigate_json_path_array_projection() {
+        // Elasticsearch-style: project _source out of each hit.
+        let doc = serde_json::json!({
+            "hits": {"hits": [
+                {"_source": {"id": 1}},
+                {"_source": {"id": 2}}
+            ]}
+        });
+        let extracted = navigate_json_path(&doc, "hits.hits[]._source").unwrap();
+        let arr = extracted.as_array().unwrap();
+        assert_eq!(arr.len(), 2);
+        assert_eq!(arr[1]["id"], serde_json::json!(2));
+    }
+
+    #[test]
+    fn test_navigate_json_path_bare_projection_over_root_array() {
+        let doc = serde_json::json!([{"v": {"x": 1}}, {"v": {"x": 2}}]);
+        let extracted = navigate_json_path(&doc, "[].v").unwrap();
+        let arr = extracted.as_array().unwrap();
+        assert_eq!(arr[0]["x"], serde_json::json!(1));
+    }
+
+    #[test]
+    fn test_navigate_json_path_empty_path_is_identity() {
+        let doc = serde_json::json!({"a": 1});
+        let extracted = navigate_json_path(&doc, "").unwrap();
+        assert_eq!(extracted, doc);
+    }
+
+    #[test]
+    fn test_navigate_json_path_missing_key_errors() {
+        let doc = serde_json::json!({"a": 1});
+        let err = navigate_json_path(&doc, "b").unwrap_err();
+        assert!(err.to_string().contains("not found"), "{}", err);
+    }
+
+    #[test]
+    fn test_navigate_json_path_projection_on_non_array_errors() {
+        let doc = serde_json::json!({"a": {"not": "an array"}});
+        let err = navigate_json_path(&doc, "a[]").unwrap_err();
+        let msg = err.to_string();
+        assert!(msg.contains("Expected array"), "{}", msg);
+        assert!(msg.contains("object"), "{}", msg);
+    }
 
     #[test]
     fn test_csv_from_reader() {
