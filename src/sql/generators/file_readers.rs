@@ -1,8 +1,8 @@
 use crate::data::advanced_csv_loader::AdvancedCsvLoader;
 use crate::data::datatable::{DataColumn, DataRow, DataTable, DataType, DataValue};
 use crate::data::stream_loader::{
-    collect_column_names, detect_delimiter_from_path, parse_delimiter_arg as parse_delim_byte,
-    parse_json_records, CsvReadOptions,
+    collect_column_names, detect_delimiter_from_path, navigate_json_path,
+    parse_delimiter_arg as parse_delim_byte, parse_json_records, CsvReadOptions,
 };
 use crate::sql::generators::TableGenerator;
 use anyhow::{anyhow, Result};
@@ -568,13 +568,22 @@ fn json_records_to_table(
     Ok(table)
 }
 
-/// READ_JSON(path) - Read a whole JSON document and emit one row per object.
+/// READ_JSON(path [, json_path]) - Read a whole JSON document and emit one row per object.
 ///
 /// Accepts either a JSON array of objects (`[{...}, {...}]`, possibly
 /// pretty-printed across many lines) or newline-delimited JSON (JSONL); the
 /// format is auto-detected. This is the multi-line counterpart to READ_JSONL,
 /// which requires exactly one object per line. Pass `-` as the path to read
 /// from stdin (shares the same cached-once buffer as the other stdin readers).
+///
+/// The optional `json_path` drills into a nested document to *locate the rows*
+/// before tabularizing — the same dotted/`[]` syntax as the WEB CTE `JSON_PATH`
+/// clause (see [`navigate_json_path`]). This handles the common API shape of an
+/// object wrapping the array you want, e.g. TeamCity's
+/// `{ "projects": { "project": [...] } }` via `READ_JSON('-', 'projects.project')`,
+/// or Elasticsearch's `READ_JSON('-', 'hits.hits[]._source')`. The path only
+/// finds the row set; use a normal SELECT/WHERE to pick columns and filter —
+/// anything more (predicates, scalar plucking) is a job for a `jq` pre-process.
 pub struct ReadJson;
 
 impl TableGenerator for ReadJson {
@@ -589,11 +598,14 @@ impl TableGenerator for ReadJson {
     }
 
     fn generate(&self, args: Vec<DataValue>) -> Result<Arc<DataTable>> {
-        if args.len() != 1 {
-            return Err(anyhow!("READ_JSON expects 1 argument: (path)"));
+        if args.is_empty() || args.len() > 2 {
+            return Err(anyhow!(
+                "READ_JSON expects 1 or 2 arguments: (path [, json_path])"
+            ));
         }
 
         let path = require_string(&args, 0, "READ_JSON")?;
+        let json_path = optional_string(&args, 1);
 
         let content = if path == "-" {
             // Reconstruct the document from the cached stdin lines so other
@@ -612,19 +624,36 @@ impl TableGenerator for ReadJson {
                 .map_err(|e| anyhow!("READ_JSON failed to read '{}': {}", path, e))?
         };
 
-        let records =
-            parse_json_records(&content).map_err(|e| anyhow!("READ_JSON parse error: {}", e))?;
+        let records = match json_path {
+            // No path: keep the auto-detecting array/JSONL fast path.
+            None => {
+                parse_json_records(&content).map_err(|e| anyhow!("READ_JSON parse error: {}", e))?
+            }
+            // Path given: parse the whole document, drill to the row set, then
+            // normalise to a list of records (array -> rows, single object -> 1
+            // row). Non-object records are rejected later by the table builder.
+            Some(path) => {
+                let value: JsonValue = serde_json::from_str(&content)
+                    .map_err(|e| anyhow!("READ_JSON parse error: {}", e))?;
+                let extracted = navigate_json_path(&value, &path)
+                    .map_err(|e| anyhow!("READ_JSON json_path '{}': {}", path, e))?;
+                match extracted {
+                    JsonValue::Array(arr) => arr,
+                    other => vec![other],
+                }
+            }
+        };
 
         let table = json_records_to_table(records, "read_json", "READ_JSON")?;
         Ok(Arc::new(table))
     }
 
     fn description(&self) -> &str {
-        "Read a whole JSON document — a JSON array of objects (possibly pretty-printed) or newline-delimited JSON — and emit one row per object. Pass '-' as path to read from stdin. Unlike READ_JSONL, the input may span multiple lines per record."
+        "Read a whole JSON document — a JSON array of objects (possibly pretty-printed) or newline-delimited JSON — and emit one row per object. Pass '-' as path to read from stdin. Optional second arg is a JSON path (dotted, with '[]' array projection — same as the WEB CTE JSON_PATH) that drills into a nested document to locate the rows, e.g. READ_JSON('-', 'projects.project'). Unlike READ_JSONL, the input may span multiple lines per record."
     }
 
     fn arg_count(&self) -> usize {
-        1
+        2
     }
 }
 
@@ -1322,17 +1351,6 @@ not json at all
     }
 
     #[test]
-    fn test_read_json_rejects_too_many_args() {
-        let err = ReadJson
-            .generate(vec![
-                DataValue::String("a".to_string()),
-                DataValue::String("b".to_string()),
-            ])
-            .unwrap_err();
-        assert!(err.to_string().contains("1 argument"));
-    }
-
-    #[test]
     fn test_read_json_requires_path() {
         assert!(ReadJson.generate(vec![]).is_err());
     }
@@ -1345,5 +1363,99 @@ not json at all
             )])
             .unwrap_err();
         assert!(err.to_string().contains("READ_JSON failed to read"));
+    }
+
+    #[test]
+    fn test_read_json_json_path_drills_into_nested_array() {
+        // TeamCity-style: object wrapping the array we actually want.
+        let f = write_tmp(
+            r#"{
+  "count": 2,
+  "project": [
+    {"id": "a", "name": "Alpha"},
+    {"id": "b", "name": "Beta"}
+  ]
+}"#,
+        );
+        let table = ReadJson
+            .generate(vec![
+                DataValue::String(f.path().to_string_lossy().to_string()),
+                DataValue::String("project".to_string()),
+            ])
+            .unwrap();
+        assert_eq!(table.row_count(), 2);
+        assert_eq!(table.column_count(), 2);
+        let id_col = col_index(&table, "id");
+        assert_eq!(
+            table.get_value(1, id_col).unwrap(),
+            &DataValue::String("b".to_string())
+        );
+    }
+
+    #[test]
+    fn test_read_json_json_path_with_array_projection() {
+        // Elasticsearch-style hits.hits[]._source projection.
+        let f = write_tmp(
+            r#"{
+  "hits": {
+    "hits": [
+      {"_source": {"id": 1, "user": "alice"}},
+      {"_source": {"id": 2, "user": "bob"}}
+    ]
+  }
+}"#,
+        );
+        let table = ReadJson
+            .generate(vec![
+                DataValue::String(f.path().to_string_lossy().to_string()),
+                DataValue::String("hits.hits[]._source".to_string()),
+            ])
+            .unwrap();
+        assert_eq!(table.row_count(), 2);
+        let user_col = col_index(&table, "user");
+        assert_eq!(
+            table.get_value(0, user_col).unwrap(),
+            &DataValue::String("alice".to_string())
+        );
+    }
+
+    #[test]
+    fn test_read_json_json_path_single_object_becomes_one_row() {
+        let f = write_tmp(r#"{"meta": {"id": 7, "name": "solo"}}"#);
+        let table = ReadJson
+            .generate(vec![
+                DataValue::String(f.path().to_string_lossy().to_string()),
+                DataValue::String("meta".to_string()),
+            ])
+            .unwrap();
+        assert_eq!(table.row_count(), 1);
+        let id_col = col_index(&table, "id");
+        assert_eq!(table.get_value(0, id_col).unwrap(), &DataValue::Integer(7));
+    }
+
+    #[test]
+    fn test_read_json_json_path_missing_key_errors() {
+        let f = write_tmp(r#"{"project": []}"#);
+        let err = ReadJson
+            .generate(vec![
+                DataValue::String(f.path().to_string_lossy().to_string()),
+                DataValue::String("nope".to_string()),
+            ])
+            .unwrap_err();
+        let msg = err.to_string();
+        assert!(msg.contains("json_path"), "{}", msg);
+        assert!(msg.contains("not found"), "{}", msg);
+    }
+
+    #[test]
+    fn test_read_json_rejects_three_args() {
+        let err = ReadJson
+            .generate(vec![
+                DataValue::String("a".to_string()),
+                DataValue::String("b".to_string()),
+                DataValue::String("c".to_string()),
+            ])
+            .unwrap_err();
+        assert!(err.to_string().contains("1 or 2 arguments"));
     }
 }
