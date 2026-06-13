@@ -1,6 +1,6 @@
-# SQL CLI v1.79.1
+# SQL CLI v1.79.2
 
-**Release Date:** June 10, 2026
+**Release Date:** June 13, 2026
 
 ## 📊 Release Overview
 - **Commits in this release:** 2
@@ -11,13 +11,13 @@
 ## 📝 Changes by Category
 
 ### 🚀 New Features
-- add READ_JSON table function and error on unknown table funcs
+- add optional json_path arg to READ_JSON
 
 <details>
 <summary>📋 View all commits</summary>
 
-- Merge pull request #22 from TimelordUK/feat/read-json-table-function (TimelordUK)
-- feat(readers): add READ_JSON table function and error on unknown table funcs (TimelordUK)
+- Merge pull request #23 from TimelordUK/feat/read-json-path (TimelordUK)
+- feat(readers): add optional json_path arg to READ_JSON (TimelordUK)
 
 </details>
 
