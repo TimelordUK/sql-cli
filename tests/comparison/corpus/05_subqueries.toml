@@ -1,0 +1,52 @@
+# Tier 5 — subqueries: scalar, derived-table, IN, EXISTS, and (the interesting
+# part) correlated forms that exercise column scoping across query levels.
+
+[[case]]
+id = "scalar_subquery_uncorrelated"
+data = "international_sales.csv"
+sql = "SELECT region, amount, (SELECT MAX(amount) FROM international_sales) AS mx FROM international_sales"
+
+[[case]]
+id = "derived_table"
+data = "international_sales.csv"
+sql = "SELECT region, total FROM (SELECT region, SUM(amount) AS total FROM international_sales GROUP BY region) t"
+
+[[case]]
+id = "in_subquery_uncorrelated"
+data = "trades.csv"
+sql = "SELECT symbol, price FROM trades WHERE price IN (SELECT price FROM trades WHERE price > 185)"
+
+[[case]]
+id = "in_subquery_correlated"
+data = "trades.csv"
+sql = "SELECT symbol, price FROM trades t WHERE price IN (SELECT price FROM trades x WHERE x.symbol = t.symbol AND x.price > 185)"
+# Correlation not applied: returns empty. See "correlated subqueries" in SQL_PARITY.md.
+expect = "DIFFER"
+
+[[case]]
+id = "scalar_subquery_correlated"
+data = "international_sales.csv"
+sql = "SELECT region, amount FROM international_sales s WHERE amount = (SELECT MAX(amount) FROM international_sales x WHERE x.region = s.region)"
+# Correlation not applied: inner sees 0 rows. See "correlated subqueries" in SQL_PARITY.md.
+expect = "GAP"
+
+[[case]]
+id = "exists_correlated"
+data = "trades.csv"
+sql = "SELECT symbol, price FROM trades t WHERE EXISTS (SELECT 1 FROM trades x WHERE x.symbol = t.symbol AND x.price > t.price)"
+# EXISTS not parsed. See "correlated subqueries" in SQL_PARITY.md.
+expect = "GAP"
+
+[[case]]
+id = "not_exists_correlated"
+data = "trades.csv"
+sql = "SELECT symbol, price FROM trades t WHERE NOT EXISTS (SELECT 1 FROM trades x WHERE x.symbol = t.symbol AND x.price > t.price)"
+# NOT EXISTS parse error. See "correlated subqueries" in SQL_PARITY.md.
+expect = "GAP"
+
+[[case]]
+id = "scalar_subquery_in_select_correlated"
+data = "international_sales.csv"
+sql = "SELECT region, country, (SELECT SUM(amount) FROM international_sales x WHERE x.region = s.region) AS region_total FROM international_sales s"
+# Correlation not applied in SELECT-list scalar subquery. See SQL_PARITY.md.
+expect = "GAP"

@@ -56,12 +56,67 @@ annotation be removed.
 - **Notes:** Coercion-first is our design; CAST should be explicit sugar over the
   same rules so results stay consistent with implicit coercion.
 
+### P3 — Correlated subqueries do not apply the outer-row correlation
+- **Status:** 🔴 OPEN — **theme / root cause**, covers several corpus cases
+- **Corpus:** `05_subqueries.toml :: in_subquery_correlated` (DIFFER, returns empty),
+  `scalar_subquery_correlated` (GAP, "returned 0 rows"),
+  `scalar_subquery_in_select_correlated` (GAP),
+  `exists_correlated` (GAP), `not_exists_correlated` (GAP).
+- **Observed:** A subquery referencing an outer column (`WHERE x.region = s.region`)
+  does not see the outer row — it evaluates as if the outer reference is empty,
+  so correlated scalar subqueries error ("0 rows"), correlated `IN` returns an
+  empty set, and `EXISTS` / `NOT EXISTS` don't parse at all.
+- **Decision:** **Fix** — central to the column-scoping work. Two parts:
+  1. **Parser:** accept `[NOT] EXISTS (<subquery>)` as a predicate.
+  2. **Executor:** evaluate correlated subqueries per outer row, resolving outer
+     column references through an enclosing scope. This is the same scoping spine
+     that nested-SQL column resolution needs generally.
+- **Notes:** Uncorrelated scalar / `IN` / derived-table subqueries already AGREE;
+  the gap is specifically the outer-row binding. Highest-leverage fix here — one
+  root cause unlocks five cases and the broader nested-scoping goal.
+
+### P4 — Self-join of the base table fails to resolve
+- **Status:** 🔴 OPEN
+- **Corpus:** `04_joins.toml :: self_join_base`
+- **Observed:** `FROM trades a JOIN trades b ...` → "Cannot resolve table 'trades'
+  for JOIN". Joins to **derived tables / CTEs** built from the same source already
+  work (those cases AGREE); only re-referencing the base table by name fails.
+- **Decision:** **Fix** — register the loaded source so it can be referenced more
+  than once (with aliases) in a join.
+
+### P5 — `CROSS JOIN` to a FROM-less subquery has wrong cardinality
+- **Status:** 🔴 OPEN
+- **Corpus:** `04_joins.toml :: cross_join_constant`
+- **Observed:** `trades t CROSS JOIN (SELECT 1 AS k) c` returns 92×92 = 8464 rows
+  instead of 92. A FROM-less subquery (`SELECT 1 AS k`) yields one row per outer
+  row instead of a single constant row.
+- **Decision:** **Fix** — a FROM-less SELECT must produce exactly one row.
+
+### P6 — `INTERSECT` / `EXCEPT` not implemented
+- **Status:** 🔴 OPEN
+- **Corpus:** `06_ctes_setops.toml :: intersect`, `except`
+- **Observed:** "INTERSECT is not yet implemented" / "EXCEPT is not yet implemented".
+  `UNION` and `UNION ALL` already AGREE.
+- **Decision:** **Fix** — implement alongside the existing `UNION` set-op path.
+
 ---
 
-## Won't fix (intentional divergences)
+## Deferred / won't fix (intentional)
 
-_None yet. When we consciously diverge from the reference engine, record it here
-with the rationale so the DIFFER is understood, not mistaken for a bug._
+### D1 — Recursive CTEs (`WITH RECURSIVE`)
+- **Status:** ⚪ DEFERRED (considered, not supported)
+- **Corpus:** `06_ctes_setops.toml :: recursive_cte`
+- **Observed:** Parser rejects the `name(col, ...)` column-list form;
+  `WITH RECURSIVE` is not implemented.
+- **Rationale:** Considered and consciously deferred. It belongs to a larger
+  potential design direction — a script/session **scope** that can hold
+  variables, staged temp tables, and iterative evaluation — which is out of scope
+  for the current "vanilla SQL consistency" effort. Revisit if/when that scope
+  layer is pursued. Not a bug; do not let the corpus case churn — keep `expect = "GAP"`.
+
+_When we consciously diverge from the reference engine on results (rather than
+simply not implementing a feature), record it here with the rationale so the
+DIFFER is understood, not mistaken for a bug._
 
 ---
 
