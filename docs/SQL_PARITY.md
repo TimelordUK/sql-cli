@@ -9,6 +9,20 @@ and either **fix** divergences or record **why we won't**.
   `tests/comparison/reports/compare_<ref>.md` (the machine's current GAP/DIFFER list).
 - **This file:** the curated, human decisions behind those buckets. The report
   says *what* diverges right now; this file says *what we're doing about it and why*.
+- **CI gate:** `runner.py --check` runs in `.github/workflows/test-complete.yml`
+  (job *SQL Parity*) and fails the build on any drift from the contract below.
+
+### Regression contract
+
+Each corpus case carries an expectation; `--check` fails if reality disagrees:
+
+- a case with `expect = "GAP" | "DIFFER" | ...` must still be in that bucket;
+- a case with **no** `expect` must be `AGREE`.
+
+This means: fixing a gap is a deliberate edit (drop the `expect`, flip the entry
+below to 🟢), and any *regression* of a passing case is caught automatically. So
+as we work through the backlog, the formal comparison — not just the older test
+suites — is what locks the gains in.
 
 Parity is **broad-brush**, not byte-for-byte. We follow SQL-standard / DuckDB
 semantics where reasonable, and consciously diverge where our design

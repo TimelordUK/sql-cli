@@ -15,10 +15,14 @@ Usage:
     uv run python tests/comparison/runner.py 01 02           # only those tiers
     uv run python tests/comparison/runner.py --verbose       # show diff detail
     uv run python tests/comparison/runner.py --ref duckdb    # pick reference
+    uv run python tests/comparison/runner.py --check         # CI gate (exit 1 on drift)
 
-A case may declare `expect = "gap"` (etc.) in its TOML; the run flags any case
-whose bucket no longer matches its declared expectation, so closing a gap is
-visible without editing the harness.
+Regression contract (enforced by --check, used in CI):
+  - a case with `expect = "GAP"` (etc.) must still be in that bucket;
+  - a case with NO `expect` must be AGREE.
+Any violation fails the check. So a fixed gap, a regressed AGREE, or a new
+un-annotated non-AGREE case all surface immediately. Closing a gap is therefore
+a deliberate edit (drop the `expect`); regressions are caught for free.
 """
 
 from __future__ import annotations
@@ -82,6 +86,7 @@ def bucket(cli_res, ref_res, sql) -> tuple[str, str | None]:
 def main() -> int:
     argv = sys.argv[1:]
     verbose = "--verbose" in argv
+    check = "--check" in argv
     ref_name = "duckdb"
     if "--ref" in argv:
         ref_name = argv[argv.index("--ref") + 1]
@@ -101,7 +106,7 @@ def main() -> int:
     print(f"=== sql-cli vs {ref.name} :: {len(cases)} cases ===\n")
 
     counts: dict[str, int] = {}
-    surprises: list[str] = []
+    violations: list[str] = []
     report_rows = []
 
     for case in cases:
@@ -121,8 +126,9 @@ def main() -> int:
                 print(f"    {C.DIM}{line}{C.NC}")
 
         expect = case.get("expect")
-        if expect and expect.upper() != b:
-            surprises.append(f"{cid}: declared '{expect}' but is '{b}'")
+        expected_bucket = (expect or "AGREE").upper()
+        if b != expected_bucket:
+            violations.append(f"{cid}: expected '{expected_bucket}' but is '{b}'")
 
         report_rows.append(
             {"id": cid, "tier": case["tier"], "file": case["_file"], "sql": sql,
@@ -135,13 +141,25 @@ def main() -> int:
             color, glyph = BUCKET_STYLE[b]
             print(f"  {color}{glyph} {b:9}{C.NC} {counts[b]}")
 
-    if surprises:
-        print(f"\n{C.YELLOW}Expectation changes ({len(surprises)}):{C.NC}")
-        for s in surprises:
-            print(f"  - {s}")
-
     write_reports(ref.name, report_rows, counts)
     print(f"\nReports written to {REPORT_DIR}/")
+
+    if violations:
+        color = C.RED if check else C.YELLOW
+        label = "Contract violations" if check else "Drift from expectations"
+        print(f"\n{color}{label} ({len(violations)}):{C.NC}")
+        for v in violations:
+            print(f"  - {v}")
+        print(
+            f"\n{C.DIM}A case with `expect` must match its bucket; a case with no "
+            f"`expect` must be AGREE.\n  Fixed a gap? drop its `expect`. New gap? "
+            f"add `expect = \"GAP\"` and log it in docs/SQL_PARITY.md.{C.NC}"
+        )
+        if check:
+            return 1
+    elif check:
+        print(f"\n{C.GREEN}Parity contract holds ({len(report_rows)} cases).{C.NC}")
+
     return 0
 
 

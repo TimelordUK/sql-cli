@@ -13,7 +13,20 @@ uv run python tests/comparison/runner.py            # all tiers
 uv run python tests/comparison/runner.py 01 02      # only tiers 01, 02
 uv run python tests/comparison/runner.py --verbose  # show diff detail for every case
 uv run python tests/comparison/runner.py --ref duckdb
+uv run python tests/comparison/runner.py --check    # CI gate: exit 1 on any drift
 ```
+
+## Regression gate (`--check`)
+
+`--check` enforces the parity contract and exits non-zero on any violation:
+
+- a case with `expect = "GAP"` (etc.) **must** still be in that bucket;
+- a case with **no** `expect` **must** be `AGREE`.
+
+So a regressed `AGREE`, a silently-closed gap, or a new un-annotated non-`AGREE`
+case all fail the check. Closing a gap is a deliberate edit (drop the `expect`
+and log it in `docs/SQL_PARITY.md`); regressions are caught for free. This is the
+form run in CI (`.github/workflows/test-complete.yml`, job *SQL Parity*).
 
 Requires `cargo build --release` (the harness shells out to `target/release/sql-cli`)
 and the `duckdb` test dependency (`uv add --group test duckdb`, already in `pyproject.toml`).
