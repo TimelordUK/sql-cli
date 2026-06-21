@@ -1,0 +1,76 @@
+# Tier 3 — scalar functions: string, math, conditional, NULL handling.
+# These probe semantic parity (arg order, rounding, CASE) and surface gaps.
+
+[[case]]
+id = "fn_upper"
+data = "trades.csv"
+sql = "SELECT UPPER(symbol) AS u FROM trades"
+
+[[case]]
+id = "fn_lower"
+data = "trades.csv"
+sql = "SELECT LOWER(symbol) AS l FROM trades"
+
+[[case]]
+id = "fn_length"
+data = "instruments.csv"
+sql = "SELECT name, LENGTH(name) AS n FROM instruments"
+
+[[case]]
+id = "fn_substring"
+data = "trades.csv"
+sql = "SELECT SUBSTRING(symbol, 1, 2) AS s FROM trades"
+# sql-cli SUBSTRING is 0-indexed; SQL standard / DuckDB is 1-indexed.
+expect = "DIFFER"
+
+[[case]]
+id = "fn_trim"
+data = "instruments.csv"
+sql = "SELECT TRIM(name) AS t FROM instruments"
+
+[[case]]
+id = "fn_concat"
+data = "international_sales.csv"
+sql = "SELECT region || '-' || country AS combo FROM international_sales"
+
+[[case]]
+id = "fn_abs"
+data = "trades.csv"
+sql = "SELECT ABS(price - 185) AS d FROM trades"
+
+[[case]]
+id = "fn_round"
+data = "trades.csv"
+sql = "SELECT ROUND(price, 0) AS r FROM trades"
+
+[[case]]
+id = "fn_ceil_floor"
+data = "trades.csv"
+sql = "SELECT CEIL(price) AS c, FLOOR(price) AS f FROM trades"
+
+[[case]]
+id = "fn_mod"
+data = "trades.csv"
+sql = "SELECT volume % 100 AS m FROM trades"
+
+[[case]]
+id = "fn_coalesce"
+data = "instruments.csv"
+sql = "SELECT instrument_id, COALESCE(coupon_rate, 0) AS cr FROM instruments"
+
+[[case]]
+id = "fn_case_simple"
+data = "trades.csv"
+sql = "SELECT symbol, CASE WHEN price > 185 THEN 'high' ELSE 'low' END AS tier FROM trades"
+
+[[case]]
+id = "fn_case_searched"
+data = "international_sales.csv"
+sql = "SELECT region, CASE WHEN amount > 2000 THEN 'big' WHEN amount > 1000 THEN 'mid' ELSE 'small' END AS bucket FROM international_sales"
+
+[[case]]
+id = "fn_cast_int"
+data = "trades.csv"
+sql = "SELECT CAST(price AS INTEGER) AS pi FROM trades"
+# Parser does not yet accept CAST(expr AS type).
+expect = "GAP"

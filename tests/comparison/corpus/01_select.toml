@@ -1,0 +1,63 @@
+# Tier 1 — vanilla SELECT: projection, DISTINCT, aliases, arithmetic, ORDER BY.
+# Computed columns are aliased so column names line up across engines.
+
+[[case]]
+id = "select_star"
+data = "trades.csv"
+sql = "SELECT * FROM trades"
+tier = "01"
+
+[[case]]
+id = "select_columns"
+data = "trades.csv"
+sql = "SELECT symbol, price, volume FROM trades"
+
+[[case]]
+id = "select_alias"
+data = "trades.csv"
+sql = "SELECT symbol AS ticker, price AS px FROM trades"
+
+[[case]]
+id = "select_arithmetic"
+data = "trades.csv"
+sql = "SELECT symbol, price * volume AS notional FROM trades"
+
+[[case]]
+id = "select_constant"
+data = "trades.csv"
+sql = "SELECT symbol, 1 AS one, 'x' AS lit FROM trades"
+
+[[case]]
+id = "distinct_single"
+data = "trades.csv"
+sql = "SELECT DISTINCT symbol FROM trades"
+
+[[case]]
+id = "distinct_multi"
+data = "international_sales.csv"
+sql = "SELECT DISTINCT region, currency FROM international_sales"
+
+[[case]]
+id = "order_by_asc"
+data = "trades.csv"
+sql = "SELECT symbol, price FROM trades ORDER BY price ASC"
+
+[[case]]
+id = "order_by_desc"
+data = "trades.csv"
+sql = "SELECT symbol, price FROM trades ORDER BY price DESC"
+
+[[case]]
+id = "order_by_multi"
+data = "international_sales.csv"
+sql = "SELECT region, country, amount FROM international_sales ORDER BY region ASC, amount DESC"
+
+[[case]]
+id = "order_by_limit"
+data = "trades.csv"
+sql = "SELECT symbol, price FROM trades ORDER BY price DESC LIMIT 5"
+
+[[case]]
+id = "order_by_expr"
+data = "trades.csv"
+sql = "SELECT symbol, price, volume FROM trades ORDER BY price * volume DESC"

@@ -27,3 +27,8 @@ packages = ["tests"]
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
+
+[dependency-groups]
+test = [
+    "duckdb>=1.5.4",
+]

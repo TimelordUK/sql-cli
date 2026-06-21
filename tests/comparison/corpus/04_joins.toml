@@ -1,0 +1,38 @@
+# Tier 4 — joins. The harness loads one source file per case (table = file stem),
+# so joins are expressed within a single source: self-join, and joins to derived
+# tables / CTEs built from that source. Multi-file joins need a harness extension
+# (tracked in README roadmap) and are not covered yet.
+
+[[case]]
+id = "self_join_base"
+data = "trades.csv"
+sql = "SELECT a.symbol AS s, a.price AS hi, b.price AS lo FROM trades a JOIN trades b ON a.symbol = b.symbol AND a.price > b.price"
+# Base table cannot be referenced twice: "Cannot resolve table 'trades' for JOIN".
+expect = "GAP"
+
+[[case]]
+id = "join_derived_table"
+data = "international_sales.csv"
+sql = "SELECT s.region AS region, s.amount AS amount, agg.total AS total FROM international_sales s JOIN (SELECT region, SUM(amount) AS total FROM international_sales GROUP BY region) agg ON s.region = agg.region"
+
+[[case]]
+id = "join_cte"
+data = "international_sales.csv"
+sql = "WITH agg AS (SELECT region, SUM(amount) AS total FROM international_sales GROUP BY region) SELECT s.region AS region, agg.total AS total FROM international_sales s JOIN agg ON s.region = agg.region"
+
+[[case]]
+id = "left_join_derived"
+data = "international_sales.csv"
+sql = "SELECT s.country AS country, agg.total AS total FROM international_sales s LEFT JOIN (SELECT region, SUM(amount) AS total FROM international_sales GROUP BY region) agg ON s.region = agg.region"
+
+[[case]]
+id = "join_with_filter"
+data = "international_sales.csv"
+sql = "SELECT s.country AS country, agg.total AS total FROM international_sales s JOIN (SELECT region, SUM(amount) AS total FROM international_sales GROUP BY region) agg ON s.region = agg.region WHERE agg.total > 5000"
+
+[[case]]
+id = "cross_join_constant"
+data = "trades.csv"
+sql = "SELECT t.symbol AS symbol, c.k AS k FROM trades t CROSS JOIN (SELECT 1 AS k) c"
+# FROM-less subquery yields N rows instead of 1: produces 92x92 instead of 92.
+expect = "DIFFER"
