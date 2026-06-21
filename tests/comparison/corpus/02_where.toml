@@ -1,0 +1,71 @@
+# Tier 2 — WHERE: comparisons, boolean logic, IN, BETWEEN, LIKE, NULL, subqueries.
+
+[[case]]
+id = "where_numeric_gt"
+data = "trades.csv"
+sql = "SELECT symbol, price FROM trades WHERE price > 185"
+
+[[case]]
+id = "where_string_eq"
+data = "trades.csv"
+sql = "SELECT symbol, price FROM trades WHERE symbol = 'AAPL'"
+
+[[case]]
+id = "where_and_or"
+data = "international_sales.csv"
+sql = "SELECT * FROM international_sales WHERE region = 'Europe' AND amount > 1000 OR currency = 'GBP'"
+
+[[case]]
+id = "where_in_list"
+data = "international_sales.csv"
+sql = "SELECT * FROM international_sales WHERE currency IN ('USD', 'EUR')"
+
+[[case]]
+id = "where_not_in"
+data = "international_sales.csv"
+sql = "SELECT * FROM international_sales WHERE currency NOT IN ('USD')"
+
+[[case]]
+id = "where_between"
+data = "trades.csv"
+sql = "SELECT symbol, price FROM trades WHERE price BETWEEN 180 AND 190"
+
+[[case]]
+id = "where_like_prefix"
+data = "instruments.csv"
+sql = "SELECT instrument_id, name FROM instruments WHERE name LIKE 'A%'"
+
+[[case]]
+id = "where_like_contains"
+data = "instruments.csv"
+sql = "SELECT instrument_id, name FROM instruments WHERE name LIKE '%Stock%'"
+
+[[case]]
+id = "where_is_null"
+data = "instruments.csv"
+sql = "SELECT instrument_id FROM instruments WHERE coupon_rate IS NULL"
+
+[[case]]
+id = "where_is_not_null"
+data = "instruments.csv"
+sql = "SELECT instrument_id FROM instruments WHERE coupon_rate IS NOT NULL"
+
+[[case]]
+id = "where_not_expr"
+data = "trades.csv"
+sql = "SELECT symbol FROM trades WHERE NOT (price > 185)"
+
+[[case]]
+id = "where_arith_predicate"
+data = "trades.csv"
+sql = "SELECT symbol, price, volume FROM trades WHERE price * volume > 200000"
+
+[[case]]
+id = "where_in_subquery"
+data = "international_sales.csv"
+sql = "SELECT region, amount FROM international_sales WHERE amount > (SELECT AVG(amount) FROM international_sales)"
+
+[[case]]
+id = "where_in_subquery_set"
+data = "trades.csv"
+sql = "SELECT symbol FROM trades WHERE symbol IN (SELECT symbol FROM trades WHERE price > 185)"
