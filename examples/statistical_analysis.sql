@@ -165,9 +165,9 @@ GO
 
 -- Statistical comparison between time periods
 -- Analyze how statistics change over time
--- Note: SUBSTRING uses 0-based indexing in SQL CLI
+-- Note: SQL SUBSTRING() is 1-based (SQL standard); extract YYYY-MM (7 chars)
 SELECT
-    SUBSTRING(month, 0, 7) as month,
+    SUBSTRING(month, 1, 7) as month,
     COUNT(*) as transactions,
     ROUND(AVG(sales_amount), 2) as avg_sales_amount,
     ROUND(MEDIAN(sales_amount), 2) as median_sales_amount,
@@ -176,6 +176,6 @@ SELECT
     ROUND(MAX(sales_amount), 2) as max_sales_amount,
     ROUND(MAX(sales_amount) - MIN(sales_amount), 2) as range
 FROM sales_data
-GROUP BY SUBSTRING(month, 0, 7)
+GROUP BY SUBSTRING(month, 1, 7)
 ORDER BY month;
 GO

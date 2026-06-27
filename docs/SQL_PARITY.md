@@ -47,13 +47,28 @@ annotation be removed.
 ## Open issues
 
 ### P1 — `SUBSTRING` is 0-indexed; SQL standard is 1-indexed
-- **Status:** 🔴 OPEN
-- **Corpus:** `03_functions.toml :: fn_substring`
+- **Status:** 🟢 FIXED (2026-06-27)
+- **Corpus:** `03_functions.toml :: fn_substring` (now AGREE; `expect` dropped)
 - **Observed:** `SUBSTRING('AAPL', 1, 2)` → sql-cli `'AP'`, DuckDB/standard `'AA'`.
-- **Decision:** **Fix** — make `SUBSTRING` 1-indexed per SQL standard.
-- **Notes:** String-position semantics may be inconsistent elsewhere (e.g. any
-  `INDEXOF`/`CHARINDEX`/`LEFT`/`RIGHT` style helpers). Audit all position-based
-  string functions as part of this fix, not just `SUBSTRING`.
+- **Decision:** **Fixed by splitting the two call syntaxes**, not by flipping one
+  global index. The same `SubstringMethod` struct backs both forms:
+  - **SQL function** `SUBSTRING(s, start, len)` → now **1-based** (SQL standard /
+    DuckDB / SQL Server). A `start < 1` still anchors at the head and consumes
+    part of `len`, matching DuckDB (`SUBSTRING('hello',0,2)` → `'h'`).
+  - **C# method** `s.Substring(start, len)` → stays **0-based** (.NET semantics),
+    preserving the deliberate C#-style affordance.
+  Mechanically: `SqlFunction::evaluate` is 1-based; `MethodFunction::evaluate_method`
+  is overridden to be 0-based; both delegate to a shared `SubstringMethod::extract`.
+  Method-call dispatch (`arithmetic_evaluator.rs::evaluate_method_on_value`) now
+  routes through the method registry first (`get_method().evaluate_method()`), so
+  the two forms can diverge — behavior-preserving for every other method, whose
+  default `evaluate_method` just prepends the receiver and calls `evaluate`.
+- **Notes:** This generalizes the position-function audit: `INDEXOF` (method,
+  0-based) vs `INSTR` (SQL, 1-based) already followed the same function-vs-method
+  split, and now `SUBSTRING` is consistent with it. `LEFT`/`RIGHT` take counts,
+  not positions, so are unaffected. Examples using the SQL form with 0-based
+  args were corrected (`join_left_expression_demo.sql`); the
+  `showcase_deterministic` expectation was re-captured (`'ello '` → `'Hello'`).
 
 ### P2 — `CAST(expr AS type)` not supported
 - **Status:** 🔴 OPEN

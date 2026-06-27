@@ -422,13 +422,27 @@ impl SqlFunction for SubstringMethod {
             description: "Extracts substring from string",
             returns: "STRING",
             examples: vec![
+                // C# method syntax is 0-based; SQL function syntax is 1-based.
                 "SELECT name.Substring(0, 5) FROM users",
-                "SELECT SUBSTRING(name, 0, 5) FROM users",
+                "SELECT SUBSTRING(name, 1, 5) FROM users",
             ],
         }
     }
 
     fn evaluate(&self, args: &[DataValue]) -> Result<DataValue> {
+        // SQL function form: 1-based, mirrors the SQL standard / DuckDB / SQL Server.
+        Self::extract(args, true)
+    }
+}
+
+impl SubstringMethod {
+    /// Shared substring logic. `one_based` selects SQL semantics (start at 1) vs
+    /// C# `.Substring()` semantics (start at 0).
+    ///
+    /// With 1-based indexing a `start` below 1 still anchors the window at the
+    /// first character but consumes part of the requested length (matching
+    /// DuckDB), so `SUBSTRING('hello', 0, 2)` yields `'h'`.
+    fn extract(args: &[DataValue], one_based: bool) -> Result<DataValue> {
         if args.len() < 2 || args.len() > 3 {
             return Err(anyhow!("Substring expects 2 or 3 arguments"));
         }
@@ -440,21 +454,27 @@ impl SqlFunction for SubstringMethod {
             _ => return Err(anyhow!("Substring expects a string as first argument")),
         };
 
-        let start = match &args[1] {
-            DataValue::Integer(i) => *i as usize,
+        let raw_start = match &args[1] {
+            DataValue::Integer(i) => *i,
             _ => return Err(anyhow!("Substring expects integer start position")),
         };
 
-        let result = if args.len() == 3 {
+        // Normalize to a 0-based start; clamp negatives/zero to the string head.
+        let zero_based_start = if one_based { raw_start - 1 } else { raw_start };
+        let skip = zero_based_start.max(0) as usize;
+
+        let result: String = if args.len() == 3 {
             let length = match &args[2] {
-                DataValue::Integer(i) => *i as usize,
+                DataValue::Integer(i) => *i,
                 _ => return Err(anyhow!("Substring expects integer length")),
             };
-
-            let end = (start + length).min(string.len());
-            string.chars().skip(start).take(end - start).collect()
+            // A start before the string still spends length: take = length + start
+            // when start < 0 (so positions before the head are "consumed").
+            let consumed_before = (-zero_based_start).max(0);
+            let take = (length - consumed_before).max(0) as usize;
+            string.chars().skip(skip).take(take).collect()
         } else {
-            string.chars().skip(start).collect()
+            string.chars().skip(skip).collect()
         };
 
         Ok(DataValue::String(result))
@@ -468,6 +488,13 @@ impl MethodFunction for SubstringMethod {
 
     fn method_name(&self) -> &'static str {
         "Substring"
+    }
+
+    fn evaluate_method(&self, receiver: &DataValue, args: &[DataValue]) -> Result<DataValue> {
+        // C# `.Substring()` form keeps 0-based indexing (.NET semantics).
+        let mut full_args = vec![receiver.clone()];
+        full_args.extend_from_slice(args);
+        Self::extract(&full_args, false)
     }
 }
 
