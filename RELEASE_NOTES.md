@@ -1,23 +1,28 @@
-# SQL CLI v1.79.2
+# SQL CLI v1.79.3
 
-**Release Date:** June 13, 2026
+**Release Date:** June 27, 2026
 
 ## 📊 Release Overview
-- **Commits in this release:** 2
-- **Files updated:** 3
+- **Commits in this release:** 4
+- **Files updated:** 15
 
 ## ✨ Highlights
+
+### 🔍 Enhanced Debugging
+- **Better Diagnostics**: Improved error messages and state dumps
 
 ## 📝 Changes by Category
 
 ### 🚀 New Features
-- add optional json_path arg to READ_JSON
+- add differential SQL parity harness vs DuckDB
 
 <details>
 <summary>📋 View all commits</summary>
 
-- Merge pull request #23 from TimelordUK/feat/read-json-path (TimelordUK)
-- feat(readers): add optional json_path arg to READ_JSON (TimelordUK)
+- Merge pull request #24 from TimelordUK/feat/sql-parity-harness (TimelordUK)
+- ci(parity): add --check regression gate and CI job vs DuckDB (TimelordUK)
+- test(parity): add tiers 4-6 (joins, subqueries, CTEs/set-ops) (TimelordUK)
+- feat(tests): add differential SQL parity harness vs DuckDB (TimelordUK)
 
 </details>
 
