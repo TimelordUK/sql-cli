@@ -1,28 +1,23 @@
-# SQL CLI v1.79.3
+# SQL CLI v1.79.4
 
 **Release Date:** June 27, 2026
 
 ## 📊 Release Overview
-- **Commits in this release:** 4
-- **Files updated:** 15
+- **Commits in this release:** 2
+- **Files updated:** 8
 
 ## ✨ Highlights
 
-### 🔍 Enhanced Debugging
-- **Better Diagnostics**: Improved error messages and state dumps
-
 ## 📝 Changes by Category
 
-### 🚀 New Features
-- add differential SQL parity harness vs DuckDB
+### 🐛 Bug Fixes
+- make SQL SUBSTRING() 1-based, keep .Substring() method 0-based
 
 <details>
 <summary>📋 View all commits</summary>
 
-- Merge pull request #24 from TimelordUK/feat/sql-parity-harness (TimelordUK)
-- ci(parity): add --check regression gate and CI job vs DuckDB (TimelordUK)
-- test(parity): add tiers 4-6 (joins, subqueries, CTEs/set-ops) (TimelordUK)
-- feat(tests): add differential SQL parity harness vs DuckDB (TimelordUK)
+- Merge pull request #25 from TimelordUK/fix/substring-1-based-sql (TimelordUK)
+- fix(functions): make SQL SUBSTRING() 1-based, keep .Substring() method 0-based (TimelordUK)
 
 </details>
 
