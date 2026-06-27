@@ -47,7 +47,8 @@ JOIN inventory ON UPPER(products.code) = inventory.CODE;
 GO
 
 -- Example 3: LEFT-side SUBSTRING() - Extract key prefix
--- Note: SUBSTRING is 0-indexed (like most programming languages)
+-- Note: SQL SUBSTRING() is 1-indexed (SQL standard); the C# `.Substring()`
+-- method form is 0-indexed.
 WITH
     orders AS (
         SELECT 'NYC-12345' as order_id, 100.00 as amount
@@ -61,11 +62,11 @@ WITH
     )
 SELECT
     orders.order_id,
-    SUBSTRING(orders.order_id, 0, 3) as region_code,
+    SUBSTRING(orders.order_id, 1, 3) as region_code,
     regions.name as region_name,
     orders.amount
 FROM orders
-JOIN regions ON SUBSTRING(orders.order_id, 0, 3) = regions.code;
+JOIN regions ON SUBSTRING(orders.order_id, 1, 3) = regions.code;
 GO
 
 -- Example 4: LEFT-side nested functions - UPPER(TRIM())

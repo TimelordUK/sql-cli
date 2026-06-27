@@ -1416,7 +1416,21 @@ impl<'a> ArithmeticEvaluator<'a> {
         args: &[SqlExpression],
         row_index: usize,
     ) -> Result<DataValue> {
-        // First, try to proxy the method through the function registry
+        // Method-call syntax (`x.Method(...)`) dispatches through the method
+        // registry first, so a function can give its C#-style method form
+        // different semantics from its SQL function form (e.g. SUBSTRING is
+        // 1-based as a function but `.Substring()` is 0-based like .NET).
+        // The default `evaluate_method` just prepends the receiver and calls
+        // `evaluate`, so this is behavior-preserving for every other method.
+        if let Some(method_fn) = self.function_registry.get_method(method) {
+            let mut method_args = Vec::with_capacity(args.len());
+            for arg in args {
+                method_args.push(self.evaluate(arg, row_index)?);
+            }
+            return method_fn.evaluate_method(value, &method_args);
+        }
+
+        // Otherwise, proxy the method through the function registry.
         // Many string methods have corresponding functions (TRIM, LENGTH, CONTAINS, etc.)
 
         // Map method names to function names (case-insensitive matching)

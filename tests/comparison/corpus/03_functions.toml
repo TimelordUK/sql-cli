@@ -20,8 +20,8 @@ sql = "SELECT name, LENGTH(name) AS n FROM instruments"
 id = "fn_substring"
 data = "trades.csv"
 sql = "SELECT SUBSTRING(symbol, 1, 2) AS s FROM trades"
-# sql-cli SUBSTRING is 0-indexed; SQL standard / DuckDB is 1-indexed.
-expect = "DIFFER"
+# SQL SUBSTRING() is 1-indexed, matching the SQL standard / DuckDB.
+# (The C# `.Substring()` method form stays 0-indexed — .NET semantics.)
 
 [[case]]
 id = "fn_trim"
