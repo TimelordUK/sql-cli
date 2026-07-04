@@ -72,5 +72,29 @@ sql = "SELECT region, CASE WHEN amount > 2000 THEN 'big' WHEN amount > 1000 THEN
 id = "fn_cast_int"
 data = "trades.csv"
 sql = "SELECT CAST(price AS INTEGER) AS pi FROM trades"
-# Parser does not yet accept CAST(expr AS type).
-expect = "GAP"
+# CAST(expr AS type) is now supported. Float->int rounds to nearest (DuckDB
+# rounds rather than truncates); we use round-half-to-even to match it.
+
+[[case]]
+id = "fn_cast_int_to_double"
+data = "trades.csv"
+sql = "SELECT CAST(volume AS DOUBLE) AS vd FROM trades"
+
+[[case]]
+id = "fn_cast_num_to_varchar"
+data = "trades.csv"
+# Numeric string vs float collapses under normalization, so surface formatting
+# (185.5 vs 185.50) does not matter -- this asserts the value round-trips.
+sql = "SELECT CAST(price AS VARCHAR) AS ps FROM trades"
+
+[[case]]
+id = "fn_cast_precision_ignored"
+data = "trades.csv"
+# A precision/scale spec parses and is ignored; we cast within our own types.
+sql = "SELECT CAST(price AS DECIMAL(10, 2)) AS pd FROM trades"
+
+[[case]]
+id = "fn_try_cast_null_on_failure"
+data = "trades.csv"
+# TRY_CAST of a non-numeric string yields NULL rather than erroring.
+sql = "SELECT symbol, TRY_CAST(symbol AS INTEGER) AS n FROM trades"
