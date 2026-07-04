@@ -12,6 +12,7 @@ pub mod bigint;
 pub mod bitwise;
 pub mod bitwise_string;
 pub mod case_convert;
+pub mod cast;
 pub mod chemistry;
 pub mod comparison;
 pub mod constants;
@@ -714,12 +715,16 @@ impl FunctionRegistry {
 
     /// Register conversion functions
     fn register_conversion_functions(&mut self) {
+        use cast::CastFunction;
         use convert::ConvertFunction;
         use roman::{FromRoman, ToRoman};
 
         self.register(Box::new(ConvertFunction));
         self.register(Box::new(ToRoman));
         self.register(Box::new(FromRoman));
+        // CAST(expr AS type) / expr::type, plus the NULL-on-failure TRY_CAST.
+        self.register(Box::new(CastFunction { try_cast: false }));
+        self.register(Box::new(CastFunction { try_cast: true }));
     }
 
     /// Register statistical functions

@@ -137,6 +137,13 @@ where
                     } else {
                         Err("Expected identifier after '.'".to_string())
                     }
+                // CAST(expr AS type) / TRY_CAST(expr AS type) — the `AS type`
+                // form is not a normal argument list, so intercept it here and
+                // lower it into a two-arg function call CAST(expr, 'TYPE').
+                } else if (id_upper == "CAST" || id_upper == "TRY_CAST")
+                    && matches!(ExpressionParser::current_token(parser), Token::LeftParen)
+                {
+                    parse_cast_expression(parser, &id_upper)
                 // Check if this is a function call
                 } else if matches!(ExpressionParser::current_token(parser), Token::LeftParen) {
                     debug!(function = %id_upper, "Parsing function call");
@@ -550,6 +557,74 @@ where
         column: Box::new(column),
         delimiter,
     })
+}
+
+/// Parse a CAST / TRY_CAST expression.
+/// Syntax: `CAST(expr AS type)`.
+/// The current token on entry is the opening `(`. The result is lowered into a
+/// `FunctionCall` so it flows through the existing evaluator and AST machinery:
+/// `CAST(expr, 'TYPE')` where the type name is carried as a string literal.
+fn parse_cast_expression<P>(parser: &mut P, func_name: &str) -> Result<SqlExpression, String>
+where
+    P: ParsePrimary + ExpressionParser + ?Sized,
+{
+    ExpressionParser::advance(parser); // consume (
+
+    let inner = parser.parse_logical_or()?;
+
+    ExpressionParser::consume(parser, Token::As)?;
+
+    let type_name = parse_cast_type_name(parser)?;
+
+    ExpressionParser::consume(parser, Token::RightParen)?;
+
+    let name = if func_name.eq_ignore_ascii_case("TRY_CAST") {
+        "TRY_CAST"
+    } else {
+        "CAST"
+    };
+
+    debug!(target = %type_name, "Parsed CAST expression");
+    Ok(SqlExpression::FunctionCall {
+        name: name.to_string(),
+        args: vec![inner, SqlExpression::StringLiteral(type_name)],
+        distinct: false,
+    })
+}
+
+/// Read a SQL type name for CAST, e.g. `INTEGER`, `VARCHAR`, `DOUBLE`,
+/// `TIMESTAMP`. An optional precision/scale specifier such as `DECIMAL(10, 2)`
+/// or `VARCHAR(50)` is consumed and discarded — we coerce within our own type
+/// confines and do not honour width or scale.
+fn parse_cast_type_name<P>(parser: &mut P) -> Result<String, String>
+where
+    P: ParsePrimary + ExpressionParser + ?Sized,
+{
+    let type_name = match ExpressionParser::current_token(parser) {
+        Token::Identifier(id) => id.clone(),
+        // DATETIME is the one type spelling the lexer reserves as a keyword.
+        Token::DateTime => "DATETIME".to_string(),
+        other => {
+            return Err(format!(
+                "Expected a type name after AS in CAST, got {other:?}"
+            ))
+        }
+    };
+    ExpressionParser::advance(parser);
+
+    // Skip an optional (precision) or (precision, scale) specifier.
+    if matches!(ExpressionParser::current_token(parser), Token::LeftParen) {
+        ExpressionParser::advance(parser); // consume (
+        while !matches!(ExpressionParser::current_token(parser), Token::RightParen) {
+            if matches!(ExpressionParser::current_token(parser), Token::Eof) {
+                return Err("Unterminated type specifier in CAST".to_string());
+            }
+            ExpressionParser::advance(parser);
+        }
+        ExpressionParser::consume(parser, Token::RightParen)?;
+    }
+
+    Ok(type_name)
 }
 
 /// Trait that parsers must implement to use primary expression parsing

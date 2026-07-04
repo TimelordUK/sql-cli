@@ -71,19 +71,35 @@ annotation be removed.
   `showcase_deterministic` expectation was re-captured (`'ello '` → `'Hello'`).
 
 ### P2 — `CAST(expr AS type)` not supported
-- **Status:** 🔴 OPEN
-- **Corpus:** `03_functions.toml :: fn_cast_int`
-- **Observed:** Parse error `Expected RightParen, found As`. There is no `CAST`
-  in the parser; the engine relies on evaluation-time **coercion**, and `CONVERT`
-  is unit conversion (3 args), not type casting.
-- **Decision:** **Fix (best-effort within constraints).** Add `CAST(expr AS type)`
-  to the parser and map it onto the existing coercion layer
-  (`src/data/arithmetic_evaluator.rs` / `DataValue`). Support the common target
-  types we can represent: INTEGER/BIGINT, DOUBLE/FLOAT/REAL, VARCHAR/TEXT,
-  BOOLEAN, DATE/TIMESTAMP. Types we cannot faithfully represent are documented
-  as unsupported rather than silently mis-cast.
-- **Notes:** Coercion-first is our design; CAST should be explicit sugar over the
-  same rules so results stay consistent with implicit coercion.
+- **Status:** 🟢 FIXED (2026-07-04)
+- **Corpus:** `03_functions.toml :: fn_cast_int` (now AGREE; `expect` dropped),
+  plus `fn_cast_int_to_double`, `fn_cast_num_to_varchar`,
+  `fn_cast_precision_ignored`, `fn_try_cast_null_on_failure`.
+- **Observed (before):** Parse error `Expected RightParen, found As`. There was no
+  `CAST` in the parser; the engine relied on evaluation-time **coercion**, and
+  `CONVERT` is unit conversion (3 args), not type casting.
+- **Decision:** **Fixed as explicit sugar over the coercion layer.** `CAST` /
+  `TRY_CAST` are **lowered in the parser** into a two-arg function call
+  `CAST(expr, 'TYPE')` (the `AS type` clause is intercepted in
+  `src/sql/parser/expressions/primary.rs`), so they flow through the existing
+  evaluator, WHERE path, and every AST walker without a new `SqlExpression`
+  variant. The cast itself is a registry function
+  (`src/sql/functions/cast.rs`) — matching the "everything goes through the
+  registry" principle.
+- **Type confines (deliberate):** we collapse SQL's char/numeric "zoo" onto the
+  five types `DataValue` stores — INTEGER, DOUBLE (FLOAT/REAL/DECIMAL/NUMERIC),
+  VARCHAR (CHAR/TEXT/STRING/…), BOOLEAN, DATE/TIMESTAMP. A precision/scale spec
+  such as `DECIMAL(10,2)` or `VARCHAR(50)` **parses and is ignored** — no
+  fixed-width CHAR, no decimal scale. Target types we cannot represent (e.g.
+  `BLOB`) are a **query error**, even under `TRY_CAST`.
+- **Semantics matched to DuckDB:** NULL casts to NULL; float→int **rounds**
+  (DuckDB rounds, does not truncate) using **round-half-to-even** so `.5` ties
+  agree (`CAST(2.5 AS INT)=2`); `CAST` errors on an invalid value while
+  `TRY_CAST` yields NULL.
+- **Notes:** Coercion-first is our design; CAST is explicit sugar over the same
+  rules so results stay consistent with implicit coercion. The DuckDB-idiomatic
+  `expr::type` postfix operator is a deliberate follow-up (needs a lexer token);
+  the portable `CAST(... AS ...)` form works in both engines for the corpus.
 
 ### P3 — Correlated subqueries do not apply the outer-row correlation
 - **Status:** 🔴 OPEN — **theme / root cause**, covers several corpus cases
