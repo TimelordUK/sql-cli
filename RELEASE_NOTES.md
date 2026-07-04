@@ -1,23 +1,23 @@
-# SQL CLI v1.79.4
+# SQL CLI v1.80.0
 
-**Release Date:** June 27, 2026
+**Release Date:** July 04, 2026
 
 ## 📊 Release Overview
 - **Commits in this release:** 2
-- **Files updated:** 8
+- **Files updated:** 6
 
 ## ✨ Highlights
 
 ## 📝 Changes by Category
 
-### 🐛 Bug Fixes
-- make SQL SUBSTRING() 1-based, keep .Substring() method 0-based
+### 🚀 New Features
+- add CAST(expr AS type) and TRY_CAST within our type confines
 
 <details>
 <summary>📋 View all commits</summary>
 
-- Merge pull request #25 from TimelordUK/fix/substring-1-based-sql (TimelordUK)
-- fix(functions): make SQL SUBSTRING() 1-based, keep .Substring() method 0-based (TimelordUK)
+- Merge pull request #26 from TimelordUK/feat/sql-cast-operator (TimelordUK)
+- feat(sql): add CAST(expr AS type) and TRY_CAST within our type confines (TimelordUK)
 
 </details>
 
