@@ -1373,8 +1373,11 @@ impl QueryEngine {
                             table.clone()
                         }
                     } else {
-                        // No FROM clause - use the provided table
-                        table.clone()
+                        // No FROM clause (e.g. `SELECT 1 AS k`) must yield exactly one
+                        // row, independent of any outer/source table. Reusing the caller's
+                        // `table` here made a FROM-less subquery emit one row per outer row,
+                        // which exploded `CROSS JOIN (SELECT 1 AS k)` cardinality (P5).
+                        Arc::new(DataTable::dual())
                     }
                 }
             }
@@ -1398,6 +1401,16 @@ impl QueryEngine {
             plan.set_rows_in(source_table.row_count());
 
             let join_executor = HashJoinExecutor::new(self.case_insensitive);
+
+            // Name of the main FROM table, so a plain base table can be joined to
+            // itself (P4: `FROM trades a JOIN trades b ...`). Derived tables / CTEs
+            // in the FROM don't have a re-referenceable base name and are skipped.
+            #[allow(deprecated)]
+            let base_table_name = match statement.from_source {
+                Some(TableSource::Table(ref n)) => Some(n.clone()),
+                _ => statement.from_table.clone(),
+            };
+
             let mut current_table = source_table;
 
             for (idx, join_clause) in statement.joins.iter().enumerate() {
@@ -1438,6 +1451,35 @@ impl QueryEngine {
                                 }
                             }
 
+                            Arc::new(materialized)
+                        } else if base_table_name.as_deref().is_some_and(|base| {
+                            if self.case_insensitive {
+                                base.eq_ignore_ascii_case(name)
+                            } else {
+                                base == name
+                            }
+                        }) {
+                            // Self-join of the base table (P4): re-reference the
+                            // already-loaded source. The right side's columns collide
+                            // by name with the left, so HashJoinExecutor renames them
+                            // to `<alias>.<col>` using join_clause.alias; we also rewrite
+                            // qualified names here so `b.col` resolves in projection.
+                            let mut materialized = (*table).clone();
+                            if let Some(ref alias) = join_clause.alias {
+                                for column in materialized.columns_mut() {
+                                    if let Some(ref qualified_name) = column.qualified_name {
+                                        if qualified_name.starts_with(&format!("{}.", name)) {
+                                            column.qualified_name = Some(qualified_name.replace(
+                                                &format!("{}.", name),
+                                                &format!("{}.", alias),
+                                            ));
+                                        }
+                                    }
+                                    if column.source_table.as_ref() == Some(name) {
+                                        column.source_table = Some(alias.clone());
+                                    }
+                                }
+                            }
                             Arc::new(materialized)
                         } else {
                             // For now, we need the actual table data

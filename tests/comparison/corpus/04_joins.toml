@@ -7,8 +7,31 @@
 id = "self_join_base"
 data = "trades.csv"
 sql = "SELECT a.symbol AS s, a.price AS hi, b.price AS lo FROM trades a JOIN trades b ON a.symbol = b.symbol AND a.price > b.price"
-# Base table cannot be referenced twice: "Cannot resolve table 'trades' for JOIN".
-expect = "GAP"
+# FIXED (P4): the base table can now be re-referenced with aliases in a join.
+
+[[case]]
+id = "self_join_aggregate"
+data = "trades.csv"
+sql = "SELECT a.symbol AS symbol, COUNT(*) AS pairs FROM trades a JOIN trades b ON a.symbol = b.symbol GROUP BY a.symbol ORDER BY a.symbol"
+# Pins P4: base self-join feeding a GROUP BY aggregate.
+
+[[case]]
+id = "self_left_join_base"
+data = "trades.csv"
+sql = "SELECT a.symbol AS s, a.price AS ap, b.price AS bp FROM trades a LEFT JOIN trades b ON a.symbol = b.symbol AND a.price > b.price"
+# Pins P4: LEFT self-join of the base table (unmatched left rows keep NULL bp).
+# Written left-table-first to avoid the separate operand-orientation bug (P7).
+
+[[case]]
+id = "join_condition_operand_order"
+data = "trades.csv"
+sql = "SELECT a.price AS ap, b.price AS bp FROM trades a JOIN trades b ON a.symbol = b.symbol AND b.price < a.price"
+# P7 (NEW GAP): multi-condition nested-loop joins evaluate an extra condition's
+# operands by syntactic position (left_expr->left table, right_expr->right table),
+# ignoring the actual alias. `b.price < a.price` (right-table column first) is thus
+# evaluated as `a.price < b.price`, returning rows that violate the predicate.
+# Same query written `a.price > b.price` AGREEs. Affects INNER and LEFT paths.
+expect = "DIFFER"
 
 [[case]]
 id = "join_derived_table"
@@ -34,5 +57,17 @@ sql = "SELECT s.country AS country, agg.total AS total FROM international_sales 
 id = "cross_join_constant"
 data = "trades.csv"
 sql = "SELECT t.symbol AS symbol, c.k AS k FROM trades t CROSS JOIN (SELECT 1 AS k) c"
-# FROM-less subquery yields N rows instead of 1: produces 92x92 instead of 92.
-expect = "DIFFER"
+# FIXED (P5): FROM-less subquery now yields exactly one row via DUAL, so this
+# CROSS JOIN produces 92 rows and AGREEs with DuckDB.
+
+[[case]]
+id = "cross_join_constant_multicol"
+data = "trades.csv"
+sql = "SELECT t.symbol AS symbol, c.a AS a, c.b AS b FROM trades t CROSS JOIN (SELECT 1 AS a, 2 AS b) c"
+# Pins P5 for a multi-column FROM-less subquery: still exactly one constant row.
+
+[[case]]
+id = "from_less_derived_main"
+data = "trades.csv"
+sql = "SELECT x.k AS k, x.n AS n FROM (SELECT 1 AS k, 2 AS n) x"
+# Pins P5 for a FROM-less subquery used directly as the main FROM: one row.
