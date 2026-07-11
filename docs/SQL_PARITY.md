@@ -121,21 +121,27 @@ annotation be removed.
   root cause unlocks five cases and the broader nested-scoping goal.
 
 ### P4 — Self-join of the base table fails to resolve
-- **Status:** 🔴 OPEN
-- **Corpus:** `04_joins.toml :: self_join_base`
-- **Observed:** `FROM trades a JOIN trades b ...` → "Cannot resolve table 'trades'
-  for JOIN". Joins to **derived tables / CTEs** built from the same source already
-  work (those cases AGREE); only re-referencing the base table by name fails.
-- **Decision:** **Fix** — register the loaded source so it can be referenced more
-  than once (with aliases) in a join.
+- **Status:** 🟢 FIXED (2026-07-11)
+- **Corpus:** `04_joins.toml :: self_join_base`, `self_join_aggregate`,
+  `self_left_join_base` (all AGREE)
+- **Observed (was):** `FROM trades a JOIN trades b ...` → "Cannot resolve table
+  'trades' for JOIN". Joins to derived tables / CTEs built from the same source
+  already worked; only re-referencing the base table by name failed.
+- **Fix:** In `query_engine.rs`, when a JOIN target names the main FROM table it
+  now re-references the already-loaded source (`base_table_name` check) and applies
+  the join alias to its qualified columns, mirroring the CTE-in-join path. The
+  right side's columns collide by name with the left, so `HashJoinExecutor` renames
+  them to `<alias>.<col>`, which lets `b.col` resolve in projection.
 
 ### P5 — `CROSS JOIN` to a FROM-less subquery has wrong cardinality
-- **Status:** 🔴 OPEN
-- **Corpus:** `04_joins.toml :: cross_join_constant`
-- **Observed:** `trades t CROSS JOIN (SELECT 1 AS k) c` returns 92×92 = 8464 rows
-  instead of 92. A FROM-less subquery (`SELECT 1 AS k`) yields one row per outer
-  row instead of a single constant row.
-- **Decision:** **Fix** — a FROM-less SELECT must produce exactly one row.
+- **Status:** 🟢 FIXED (2026-07-11)
+- **Corpus:** `04_joins.toml :: cross_join_constant` (now AGREEs)
+- **Observed (was):** `trades t CROSS JOIN (SELECT 1 AS k) c` returned 92×92 = 8464
+  rows instead of 92. A FROM-less subquery (`SELECT 1 AS k`) yielded one row per
+  outer row instead of a single constant row.
+- **Fix:** A FROM-less SELECT now sources from `DataTable::dual()` (a single-row
+  DUAL table) instead of reusing the caller's outer table, in
+  `query_engine.rs`. It produces exactly one row.
 
 ### P6 — `INTERSECT` / `EXCEPT` not implemented
 - **Status:** 🔴 OPEN
@@ -143,6 +149,23 @@ annotation be removed.
 - **Observed:** "INTERSECT is not yet implemented" / "EXCEPT is not yet implemented".
   `UNION` and `UNION ALL` already AGREE.
 - **Decision:** **Fix** — implement alongside the existing `UNION` set-op path.
+
+### P7 — Multi-condition join evaluates extra-condition operands by position
+- **Status:** 🔴 OPEN (found 2026-07-11 while pinning P4)
+- **Corpus:** `04_joins.toml :: join_condition_operand_order` (DIFFER)
+- **Observed:** `... JOIN trades b ON a.symbol = b.symbol AND b.price < a.price`
+  returns rows where `bp > ap`, violating the predicate. The multi-condition
+  nested-loop paths (`nested_loop_join_{inner,left}_multi` in `hash_join.rs`)
+  evaluate each extra condition's `left_expr` against the **left** table and
+  `right_expr` against the **right** table by *syntactic position*, ignoring the
+  actual alias/table each operand belongs to. So `b.price < a.price` (right-table
+  column written first) is silently evaluated as `a.price < b.price`. Writing the
+  same predicate left-table-first (`a.price > b.price`) AGREEs. Affects INNER and
+  LEFT joins.
+- **Decision:** **Fix** — resolve each operand's owning table (by alias qualifier)
+  and evaluate against that table, applying the operator as written. Needs the left
+  alias threaded into the join executor (currently only the right/join alias is
+  passed). Silent wrong answer → high priority.
 
 ---
 
