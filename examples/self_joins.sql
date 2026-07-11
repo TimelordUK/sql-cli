@@ -16,11 +16,14 @@
 
 -- --------------------------------------------------------------------------
 -- 1. Triangular running total: for each n, the sum of all numbers up to n.
---    Classic self-join on `a.n >= b.n`. Expect 1, 3, 6, 10, ..., 55.
+--    Classic self-join on `a.n >= b.n`. STRING_AGG lists the actual members
+--    that make up each total, so you can see 1+2+...+n = running_total.
+--    Expect 1, 3, 6, 10, ..., 55 with members "1", "1,2", "1,2,3", ...
 -- --------------------------------------------------------------------------
 SELECT
-    a.n            AS n,
-    SUM(b.n)       AS running_total
+    a.n                     AS n,
+    SUM(b.n)                AS running_total,
+    STRING_AGG(b.n, ',')    AS members
 FROM numbers_1_100 a
 INNER JOIN numbers_1_100 b ON a.n >= b.n
 WHERE a.n <= 10
@@ -44,15 +47,17 @@ ORDER BY a.n;
 GO
 
 -- --------------------------------------------------------------------------
--- 3. Self-join feeding an aggregate: how many pairs (a, b) share the same
---    parity for each n in 1..10. Shows a non-trivial ON predicate over the
---    same base table.
+-- 3. Companion to #1 over the reverse join (`a.n < b.n`): for each n, how many
+--    numbers lie above it and what they are. COUNT + STRING_AGG on the same
+--    self-join. (n=10 has nothing above it in 1..10, so it drops from the
+--    INNER join.)
 -- --------------------------------------------------------------------------
 SELECT
-    a.n                    AS n,
-    COUNT(*)               AS same_parity_pairs
+    a.n                     AS n,
+    COUNT(*)                AS count_above,
+    STRING_AGG(b.n, ',')    AS numbers_above
 FROM numbers_1_100 a
-INNER JOIN numbers_1_100 b ON (a.n % 2) = (b.n % 2)
+INNER JOIN numbers_1_100 b ON a.n < b.n
 WHERE a.n <= 10 AND b.n <= 10
 GROUP BY a.n
 ORDER BY a.n;
