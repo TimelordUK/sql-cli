@@ -1,23 +1,29 @@
-# SQL CLI v1.80.0
+# SQL CLI v1.80.1
 
-**Release Date:** July 04, 2026
+**Release Date:** July 11, 2026
 
 ## 📊 Release Overview
-- **Commits in this release:** 2
-- **Files updated:** 6
+- **Commits in this release:** 4
+- **Files updated:** 4
 
 ## ✨ Highlights
 
 ## 📝 Changes by Category
 
 ### 🚀 New Features
-- add CAST(expr AS type) and TRY_CAST within our type confines
+- fix CROSS JOIN cardinality and base-table self-join (DuckDB parity)
+
+### 📚 Documentation
+- show self-join members with STRING_AGG in self_joins.sql
+- add self_joins.sql demonstrating DuckDB-parity join fixes
 
 <details>
 <summary>📋 View all commits</summary>
 
-- Merge pull request #26 from TimelordUK/feat/sql-cast-operator (TimelordUK)
-- feat(sql): add CAST(expr AS type) and TRY_CAST within our type confines (TimelordUK)
+- docs(examples): show self-join members with STRING_AGG in self_joins.sql (TimelordUK)
+- docs(examples): add self_joins.sql demonstrating DuckDB-parity join fixes (TimelordUK)
+- Merge pull request #27 from TimelordUK/feat/joins-selfjoin-crossjoin-parity (TimelordUK)
+- feat(sql): fix CROSS JOIN cardinality and base-table self-join (DuckDB parity) (TimelordUK)
 
 </details>
 
