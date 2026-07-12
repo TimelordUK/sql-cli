@@ -1,29 +1,26 @@
-# SQL CLI v1.80.1
+# SQL CLI v1.80.2
 
-**Release Date:** July 11, 2026
+**Release Date:** July 12, 2026
 
 ## 📊 Release Overview
-- **Commits in this release:** 4
-- **Files updated:** 4
+- **Commits in this release:** 2
+- **Files updated:** 6
 
 ## ✨ Highlights
 
+### 🔍 Enhanced Debugging
+- **Better Diagnostics**: Improved error messages and state dumps
+
 ## 📝 Changes by Category
 
-### 🚀 New Features
-- fix CROSS JOIN cardinality and base-table self-join (DuckDB parity)
-
-### 📚 Documentation
-- show self-join members with STRING_AGG in self_joins.sql
-- add self_joins.sql demonstrating DuckDB-parity join fixes
+### 🐛 Bug Fixes
+- route multi-condition ON operands by alias, not position (P7)
 
 <details>
 <summary>📋 View all commits</summary>
 
-- docs(examples): show self-join members with STRING_AGG in self_joins.sql (TimelordUK)
-- docs(examples): add self_joins.sql demonstrating DuckDB-parity join fixes (TimelordUK)
-- Merge pull request #27 from TimelordUK/feat/joins-selfjoin-crossjoin-parity (TimelordUK)
-- feat(sql): fix CROSS JOIN cardinality and base-table self-join (DuckDB parity) (TimelordUK)
+- Merge pull request #28 from TimelordUK/fix/p7-join-operand-order (TimelordUK)
+- fix(joins): route multi-condition ON operands by alias, not position (P7) (TimelordUK)
 
 </details>
 
