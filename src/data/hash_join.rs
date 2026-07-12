@@ -221,6 +221,7 @@ impl HashJoinExecutor {
                         right_table,
                         &join_clause.condition.conditions,
                         &join_clause.alias,
+                        true, // join-alias table is the `right_table` argument
                     )
                 }
             }
@@ -252,6 +253,7 @@ impl HashJoinExecutor {
                         right_table,
                         &join_clause.condition.conditions,
                         &join_clause.alias,
+                        true, // join-alias table is the `right_table` argument
                     )
                 }
             }
@@ -284,12 +286,15 @@ impl HashJoinExecutor {
                     )
                 } else {
                     // Right join is just a left join with tables swapped
-                    // Pass the original conditions - nested_loop_join_left_multi will handle the swap
+                    // Pass the original conditions - nested_loop_join_left_multi will handle the swap.
+                    // Tables are swapped, so the join-alias columns live in the `left_table`
+                    // argument here, not the `right_table` one.
                     self.nested_loop_join_left_multi(
                         right_table,
                         left_table,
                         &join_clause.condition.conditions,
                         &join_clause.alias,
+                        false, // swapped: join-alias table is the `left_table` argument
                     )
                 }
             }
@@ -313,6 +318,74 @@ impl HashJoinExecutor {
                 }
             }
             _ => None, // Complex expression - cannot use fast path
+        }
+    }
+
+    /// The table/alias qualifier of a simple column operand, if any
+    /// (e.g. `b` for `b.price`). Non-column or unqualified operands yield `None`.
+    fn expr_table_prefix(expr: &SqlExpression) -> Option<&str> {
+        match expr {
+            SqlExpression::Column(col) => col.table_prefix.as_deref(),
+            _ => None,
+        }
+    }
+
+    /// Decide which physical table a multi-condition ON operand should be
+    /// evaluated against (P7). Historically these paths evaluated the syntactic
+    /// left operand against the left table and the right operand against the
+    /// right table, which silently reversed predicates written right-table-first
+    /// (e.g. `b.price < a.price` became `a.price < b.price`). We instead route by
+    /// the operand's alias qualifier: an operand whose prefix is the join alias
+    /// belongs to the joined table; any other prefix belongs to the opposite
+    /// table. `join_alias_is_right` says which argument holds the join-alias
+    /// columns (the `right_table` arg for INNER/LEFT, the `left_table` arg for the
+    /// swapped RIGHT path). Unqualified operands fall back to the syntactic
+    /// position (`default_is_right`).
+    fn operand_uses_right(
+        &self,
+        expr: &SqlExpression,
+        join_alias: &Option<String>,
+        join_alias_is_right: bool,
+        default_is_right: bool,
+    ) -> bool {
+        if let (Some(prefix), Some(alias)) = (Self::expr_table_prefix(expr), join_alias.as_deref())
+        {
+            let matches_join_alias = if self.case_insensitive {
+                prefix.eq_ignore_ascii_case(alias)
+            } else {
+                prefix == alias
+            };
+            // Operand belongs to the join-alias table when its prefix matches,
+            // otherwise to the opposite side. Map that to right/left arg.
+            return if matches_join_alias {
+                join_alias_is_right
+            } else {
+                !join_alias_is_right
+            };
+        }
+        default_is_right
+    }
+
+    /// Evaluate a single ON-condition operand against the table it actually
+    /// belongs to (chosen via [`operand_uses_right`]), using the matching
+    /// per-row index. This is what makes `b.price < a.price` evaluate correctly
+    /// regardless of which side is written first (P7).
+    #[allow(clippy::too_many_arguments)]
+    fn eval_join_operand(
+        &self,
+        expr: &SqlExpression,
+        left_evaluator: &mut ArithmeticEvaluator,
+        right_evaluator: &mut ArithmeticEvaluator,
+        left_row_idx: usize,
+        right_row_idx: usize,
+        join_alias: &Option<String>,
+        join_alias_is_right: bool,
+        default_is_right: bool,
+    ) -> Result<DataValue> {
+        if self.operand_uses_right(expr, join_alias, join_alias_is_right, default_is_right) {
+            right_evaluator.evaluate(expr, right_row_idx)
+        } else {
+            left_evaluator.evaluate(expr, left_row_idx)
         }
     }
 
@@ -933,6 +1006,7 @@ impl HashJoinExecutor {
         right_table: Arc<DataTable>,
         conditions: &[crate::sql::parser::ast::SingleJoinCondition],
         join_alias: &Option<String>,
+        join_alias_is_right: bool,
     ) -> Result<DataTable> {
         let start = std::time::Instant::now();
 
@@ -1010,25 +1084,45 @@ impl HashJoinExecutor {
                 // Check all conditions - all must be true for a match
                 let mut all_conditions_met = true;
                 for condition in conditions.iter() {
-                    // Evaluate left expression for this row
-                    let left_value =
-                        match left_evaluator.evaluate(&condition.left_expr, left_row_idx) {
-                            Ok(val) => val,
-                            Err(_) => {
-                                all_conditions_met = false;
-                                break;
-                            }
-                        };
+                    // Route each operand to its owning table by alias qualifier
+                    // rather than syntactic position (P7). `left_expr` defaults to
+                    // the left table, `right_expr` to the right table, but an
+                    // explicit alias overrides that default.
+                    let left_val = self.eval_join_operand(
+                        &condition.left_expr,
+                        &mut left_evaluator,
+                        &mut right_evaluator,
+                        left_row_idx,
+                        right_row_idx,
+                        join_alias,
+                        join_alias_is_right,
+                        false, // left_expr defaults to the left table
+                    );
+                    let left_value = match left_val {
+                        Ok(val) => val,
+                        Err(_) => {
+                            all_conditions_met = false;
+                            break;
+                        }
+                    };
 
-                    // Evaluate right expression for this row
-                    let right_value =
-                        match right_evaluator.evaluate(&condition.right_expr, right_row_idx) {
-                            Ok(val) => val,
-                            Err(_) => {
-                                all_conditions_met = false;
-                                break;
-                            }
-                        };
+                    let right_val = self.eval_join_operand(
+                        &condition.right_expr,
+                        &mut left_evaluator,
+                        &mut right_evaluator,
+                        left_row_idx,
+                        right_row_idx,
+                        join_alias,
+                        join_alias_is_right,
+                        true, // right_expr defaults to the right table
+                    );
+                    let right_value = match right_val {
+                        Ok(val) => val,
+                        Err(_) => {
+                            all_conditions_met = false;
+                            break;
+                        }
+                    };
 
                     if !self.compare_values(&left_value, &right_value, &condition.operator) {
                         all_conditions_met = false;
@@ -1062,6 +1156,7 @@ impl HashJoinExecutor {
         right_table: Arc<DataTable>,
         conditions: &[crate::sql::parser::ast::SingleJoinCondition],
         join_alias: &Option<String>,
+        join_alias_is_right: bool,
     ) -> Result<DataTable> {
         let start = std::time::Instant::now();
 
@@ -1143,25 +1238,43 @@ impl HashJoinExecutor {
                 // Check all conditions - all must be true for a match
                 let mut all_conditions_met = true;
                 for condition in conditions.iter() {
-                    // Evaluate left expression for this row
-                    let left_value =
-                        match left_evaluator.evaluate(&condition.left_expr, left_row_idx) {
-                            Ok(val) => val,
-                            Err(_) => {
-                                all_conditions_met = false;
-                                break;
-                            }
-                        };
+                    // Route each operand to its owning table by alias qualifier
+                    // rather than syntactic position (P7).
+                    let left_val = self.eval_join_operand(
+                        &condition.left_expr,
+                        &mut left_evaluator,
+                        &mut right_evaluator,
+                        left_row_idx,
+                        right_row_idx,
+                        join_alias,
+                        join_alias_is_right,
+                        false, // left_expr defaults to the left table
+                    );
+                    let left_value = match left_val {
+                        Ok(val) => val,
+                        Err(_) => {
+                            all_conditions_met = false;
+                            break;
+                        }
+                    };
 
-                    // Evaluate right expression for this row
-                    let right_value =
-                        match right_evaluator.evaluate(&condition.right_expr, right_row_idx) {
-                            Ok(val) => val,
-                            Err(_) => {
-                                all_conditions_met = false;
-                                break;
-                            }
-                        };
+                    let right_val = self.eval_join_operand(
+                        &condition.right_expr,
+                        &mut left_evaluator,
+                        &mut right_evaluator,
+                        left_row_idx,
+                        right_row_idx,
+                        join_alias,
+                        join_alias_is_right,
+                        true, // right_expr defaults to the right table
+                    );
+                    let right_value = match right_val {
+                        Ok(val) => val,
+                        Err(_) => {
+                            all_conditions_met = false;
+                            break;
+                        }
+                    };
 
                     if !self.compare_values(&left_value, &right_value, &condition.operator) {
                         all_conditions_met = false;

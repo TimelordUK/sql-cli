@@ -11,12 +11,15 @@ from __future__ import annotations
 
 import json
 import subprocess
+import sys
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
-SQL_CLI = PROJECT_ROOT / "target" / "release" / "sql-cli"
+# The release binary is `sql-cli` on Unix and `sql-cli.exe` on Windows.
+_SQL_CLI_BASE = PROJECT_ROOT / "target" / "release" / "sql-cli"
+SQL_CLI = _SQL_CLI_BASE.with_suffix(".exe") if sys.platform == "win32" else _SQL_CLI_BASE
 DATA_DIR = PROJECT_ROOT / "data"
 
 
