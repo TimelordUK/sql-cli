@@ -26,11 +26,23 @@ sql = "SELECT a.symbol AS s, a.price AS ap, b.price AS bp FROM trades a LEFT JOI
 id = "join_condition_operand_order"
 data = "trades.csv"
 sql = "SELECT a.price AS ap, b.price AS bp FROM trades a JOIN trades b ON a.symbol = b.symbol AND b.price < a.price"
-# P7 (NEW GAP): multi-condition nested-loop joins evaluate an extra condition's
-# operands by syntactic position (left_expr->left table, right_expr->right table),
-# ignoring the actual alias. `b.price < a.price` (right-table column first) is thus
-# evaluated as `a.price < b.price`, returning rows that violate the predicate.
-# Same query written `a.price > b.price` AGREEs. Affects INNER and LEFT paths.
+# P7 (FIXED 2026-07-12): multi-condition nested-loop joins used to evaluate an
+# extra condition's operands by syntactic position (left_expr->left table,
+# right_expr->right table), ignoring the actual alias, so `b.price < a.price`
+# (right-table column first) was silently evaluated as `a.price < b.price`.
+# Operands are now routed to their owning table by alias qualifier, so this
+# AGREEs regardless of operand order.
+
+[[case]]
+id = "right_join_multi_condition"
+data = "trades.csv"
+sql = "SELECT a.symbol AS s, a.price AS ap, b.price AS bp FROM trades a RIGHT JOIN trades b ON a.symbol = b.symbol AND a.price < b.price"
+# P8 (NEW, found 2026-07-12 while verifying P7): multi-condition RIGHT JOIN
+# diverges. The RIGHT path reuses the LEFT nested-loop with tables swapped and
+# passes the join alias unchanged, so the swapped-in table's columns are labelled
+# with the wrong alias (a.* values surface as bp, b.* as ap) and NULLs are emitted
+# for the wrong side (b instead of a). Row count matches but content differs.
+# Single-condition RIGHT joins (hash path) AGREE. Scoped as a separate follow-up.
 expect = "DIFFER"
 
 [[case]]

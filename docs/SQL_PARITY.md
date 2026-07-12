@@ -151,21 +151,50 @@ annotation be removed.
 - **Decision:** **Fix** — implement alongside the existing `UNION` set-op path.
 
 ### P7 — Multi-condition join evaluates extra-condition operands by position
-- **Status:** 🔴 OPEN (found 2026-07-11 while pinning P4)
-- **Corpus:** `04_joins.toml :: join_condition_operand_order` (DIFFER)
-- **Observed:** `... JOIN trades b ON a.symbol = b.symbol AND b.price < a.price`
-  returns rows where `bp > ap`, violating the predicate. The multi-condition
+- **Status:** 🟢 FIXED (2026-07-12)
+- **Corpus:** `04_joins.toml :: join_condition_operand_order` (now AGREEs)
+- **Observed (was):** `... JOIN trades b ON a.symbol = b.symbol AND b.price < a.price`
+  returned rows where `bp > ap`, violating the predicate. The multi-condition
   nested-loop paths (`nested_loop_join_{inner,left}_multi` in `hash_join.rs`)
-  evaluate each extra condition's `left_expr` against the **left** table and
+  evaluated each extra condition's `left_expr` against the **left** table and
   `right_expr` against the **right** table by *syntactic position*, ignoring the
   actual alias/table each operand belongs to. So `b.price < a.price` (right-table
-  column written first) is silently evaluated as `a.price < b.price`. Writing the
-  same predicate left-table-first (`a.price > b.price`) AGREEs. Affects INNER and
+  column written first) was silently evaluated as `a.price < b.price`. Writing the
+  same predicate left-table-first (`a.price > b.price`) AGREEd. Affected INNER and
   LEFT joins.
-- **Decision:** **Fix** — resolve each operand's owning table (by alias qualifier)
-  and evaluate against that table, applying the operator as written. Needs the left
-  alias threaded into the join executor (currently only the right/join alias is
-  passed). Silent wrong answer → high priority.
+- **Fix:** Each ON operand is now routed to its owning table by *alias qualifier*
+  rather than syntactic position, in `hash_join.rs`. `operand_uses_right` decides
+  the side: an operand whose prefix equals the join alias belongs to the joined
+  table, any other prefix belongs to the opposite table, and unqualified operands
+  fall back to the old positional default. A `join_alias_is_right` flag threaded
+  into `nested_loop_join_{inner,left}_multi` keeps this correct for the swapped
+  RIGHT-join path (where the join-alias columns live in the `left_table` arg).
+  This is orientation-independent and needs no separate left-alias plumbing: the
+  left/current table accumulates every non-join alias, so "prefix != join alias →
+  left table" holds for chained joins too. The operator is then applied between the
+  two operands exactly as written.
+- **Regression test:** `tests/join_operand_order_tests.rs` pins the self-consistency
+  property (operand order can't change the result) for INNER and LEFT in plain
+  `cargo test`, independent of the DuckDB corpus.
+
+### P8 — Multi-condition RIGHT JOIN mislabels columns and NULLs the wrong side
+- **Status:** 🔴 OPEN (found 2026-07-12 while verifying P7)
+- **Corpus:** `04_joins.toml :: right_join_multi_condition` (DIFFER)
+- **Observed:** `... a RIGHT JOIN trades b ON a.symbol = b.symbol AND a.price < b.price`
+  returns the right *number* of rows but wrong content: the outer (`a`) columns'
+  values surface under `b`'s alias and vice-versa, and NULLs are emitted for the
+  wrong side (the `b` columns instead of the unmatched `a` columns). The RIGHT path
+  reuses `nested_loop_join_left_multi` with the tables swapped but passes the join
+  alias unchanged, so result-column aliasing and the outer-side NULL emission are
+  applied to the swapped-in table. This is **separate from P7** — the P7 operand
+  routing is orientation-correct here; the defect is in RIGHT-join column assembly.
+- **Scope note:** Single-condition RIGHT joins (the hash path) AGREE, so this is
+  confined to the multi-condition nested-loop RIGHT path. Not part of the P7 fix;
+  logged as a follow-up rather than expanded into this change.
+- **Decision:** **Fix** (candidate) — when swapping tables for RIGHT, also swap the
+  alias/outer-side bookkeeping so result columns and NULLs track the physical
+  tables. Silent wrong answer, but narrower blast radius than P7 (RIGHT + multi
+  condition only). Pinned as DIFFER meanwhile.
 
 ---
 
