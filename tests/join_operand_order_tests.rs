@@ -9,6 +9,10 @@
 //! are the same predicate, so they must return identical result sets. That
 //! property needs no reference engine, so it runs in plain `cargo test` — the
 //! gap the corpus (DuckDB differential, Parity CI job) couldn't cover locally.
+//!
+//! The RIGHT-join test at the bottom pins P8: multi-condition RIGHT JOIN used to
+//! reuse the LEFT builder with the tables swapped, which inverted the `a.*`/`b.*`
+//! column labels and NULLed the wrong side. See docs/SQL_PARITY.md :: P8.
 
 use sql_cli::data::datatable::{DataColumn, DataRow, DataTable, DataType, DataValue};
 use sql_cli::execution::{ExecutionContext, StatementExecutor};
@@ -146,4 +150,94 @@ fn left_join_operand_order_is_symmetric() {
         nulls, 2,
         "the two per-symbol minimum-price rows have no smaller mate"
     );
+}
+
+/// Like `ap_bp_rows`, but the outer (kept) side is `bp` — a RIGHT JOIN keeps every
+/// `b` row and NULL-fills `ap`, so `ap` may be NULL and `bp` never is.
+fn ap_bp_rows_right(sql: &str) -> Vec<(Option<i64>, i64)> {
+    let context = &mut ExecutionContext::new(Arc::new(trades_table()));
+    let executor = StatementExecutor::new();
+    let mut parser = Parser::new(sql);
+    let stmt = parser
+        .parse()
+        .unwrap_or_else(|e| panic!("parse failed for `{sql}`: {e}"));
+    let result = executor
+        .execute(stmt, context)
+        .unwrap_or_else(|e| panic!("exec failed for `{sql}`: {e}"));
+
+    let view = &result.dataview;
+    let src = view.source();
+    let ap_idx = src.get_column_index("ap").expect("ap column");
+    let bp_idx = src.get_column_index("bp").expect("bp column");
+
+    let as_int = |v: &DataValue| -> Option<i64> {
+        match v {
+            DataValue::Integer(i) => Some(*i),
+            DataValue::Float(f) => Some(*f as i64),
+            DataValue::Null => None,
+            other => panic!("unexpected price value: {other:?}"),
+        }
+    };
+
+    let mut rows: Vec<(Option<i64>, i64)> = (0..view.row_count())
+        .map(|r| {
+            let ap = as_int(&src.get_value(r, ap_idx).expect("ap value"));
+            let bp = as_int(&src.get_value(r, bp_idx).expect("bp value"))
+                .expect("bp is never NULL on the RIGHT outer side");
+            (ap, bp)
+        })
+        .collect();
+    rows.sort();
+    rows
+}
+
+#[test]
+fn right_join_multi_condition_labels_correct_side() {
+    // P8: `a RIGHT JOIN b ON a.symbol = b.symbol AND a.price < b.price` keeps every
+    // `b` row. The `a.*` values must land under `ap` and `b.*` under `bp` (not the
+    // reverse), and unmatched rows must NULL the `a` (ap) side, not `b`.
+    let right_first = ap_bp_rows_right(
+        "SELECT a.price AS ap, b.price AS bp \
+         FROM trades a RIGHT JOIN trades b ON a.symbol = b.symbol AND a.price < b.price",
+    );
+    // Same predicate, operands written joined-side first — must agree (P7 holds
+    // through the RIGHT path too).
+    let joined_first = ap_bp_rows_right(
+        "SELECT a.price AS ap, b.price AS bp \
+         FROM trades a RIGHT JOIN trades b ON a.symbol = b.symbol AND b.price > a.price",
+    );
+    assert_eq!(
+        right_first, joined_first,
+        "RIGHT JOIN must be independent of ON-operand order"
+    );
+
+    // Expected (per trades_table): every b row kept; ap = a.price where a.price <
+    // b.price, else NULL. b=(A,10)->NULL, b=(A,20)->10, b=(A,30)->{10,20},
+    // b=(B,5)->NULL, b=(B,15)->5.
+    assert_eq!(
+        right_first,
+        vec![
+            (None, 5),
+            (None, 10),
+            (Some(5), 15),
+            (Some(10), 20),
+            (Some(10), 30),
+            (Some(20), 30),
+        ]
+    );
+
+    // The kept (bp) side is never NULL (enforced by the helper); only ap NULLs.
+    // If the labels were swapped (the P8 bug) the NULLs would appear under bp.
+    let ap_nulls = right_first.iter().filter(|(ap, _)| ap.is_none()).count();
+    assert_eq!(ap_nulls, 2, "two b rows have no smaller-priced a mate");
+
+    // Every matched row satisfies ap < bp — impossible if the values were swapped.
+    for (ap, bp) in &right_first {
+        if let Some(ap) = ap {
+            assert!(
+                *ap < *bp,
+                "matched row (ap={ap}, bp={bp}) violates a.price < b.price — labels swapped?"
+            );
+        }
+    }
 }

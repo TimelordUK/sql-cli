@@ -285,16 +285,19 @@ impl HashJoinExecutor {
                         &join_clause.alias,
                     )
                 } else {
-                    // Right join is just a left join with tables swapped
-                    // Pass the original conditions - nested_loop_join_left_multi will handle the swap.
-                    // Tables are swapped, so the join-alias columns live in the `left_table`
-                    // argument here, not the `right_table` one.
-                    self.nested_loop_join_left_multi(
-                        right_table,
-                        left_table,
+                    // Multi-condition RIGHT JOIN (P8). Historically this reused
+                    // `nested_loop_join_left_multi` with the tables swapped, which
+                    // matched/paired rows correctly but assembled the result in
+                    // `[joined, FROM]` column order and relabelled the swapped-in
+                    // FROM table with the join alias — so `a.*`/`b.*` labels (and
+                    // the NULL side) inverted. Use a dedicated builder that keeps
+                    // the physical FROM table first and only the joined table
+                    // carries the alias.
+                    self.nested_loop_join_right_multi(
+                        left_table,  // physical FROM table (a.*)
+                        right_table, // physical joined table (b.*, carries join alias)
                         &join_clause.condition.conditions,
                         &join_clause.alias,
-                        false, // swapped: join-alias table is the `left_table` argument
                     )
                 }
             }
@@ -1306,6 +1309,198 @@ impl HashJoinExecutor {
 
         info!(
             "Nested loop LEFT JOIN complete: {} matches, {} nulls in {:?}",
+            match_count,
+            null_count,
+            start.elapsed()
+        );
+
+        Ok(result)
+    }
+
+    /// Nested loop join for RIGHT JOIN with multiple conditions (P8).
+    ///
+    /// A RIGHT JOIN keeps every row of the *joined* table (`b`), NULL-filling the
+    /// FROM table (`a`) where nothing matches. It is tempting to model this as a
+    /// LEFT join with the two tables swapped, but that swaps the *result* layout
+    /// too: columns come out `[joined, FROM]` and the join alias lands on the
+    /// swapped-in FROM table, so `a.*`/`b.*` labels (and the NULL side) invert.
+    ///
+    /// This builder instead keeps the physical layout stable and inverts only the
+    /// iteration/NULL-fill direction:
+    ///   - result columns are `[FROM (a.*), joined (b.*)]`, exactly like INNER/LEFT,
+    ///     so the FROM table keeps its qualified names and only the joined table
+    ///     carries the join alias on a name collision;
+    ///   - the outer loop is over the joined table so every `b` row is emitted in
+    ///     `b` order, with the FROM columns NULLed when no `a` row matches.
+    ///
+    /// Operand routing (P7) is preserved: `a.price < b.price` evaluates against the
+    /// tables named by the aliases regardless of which side is written first.
+    fn nested_loop_join_right_multi(
+        &self,
+        from_table: Arc<DataTable>,
+        joined_table: Arc<DataTable>,
+        conditions: &[crate::sql::parser::ast::SingleJoinCondition],
+        join_alias: &Option<String>,
+    ) -> Result<DataTable> {
+        let start = std::time::Instant::now();
+
+        info!(
+            "Executing nested loop RIGHT JOIN with {} conditions: {} x {} rows",
+            conditions.len(),
+            from_table.row_count(),
+            joined_table.row_count()
+        );
+
+        // Create result table with columns in [FROM, joined] order.
+        let mut result = DataTable::new("joined");
+
+        // Add columns from the FROM table (a.*), unchanged — these are NULLable
+        // because unmatched joined rows NULL-fill this side.
+        for col in &from_table.columns {
+            result.add_column(DataColumn {
+                name: col.name.clone(),
+                data_type: col.data_type.clone(),
+                nullable: true, // Always nullable for outer join
+                unique_values: col.unique_values,
+                null_count: col.null_count,
+                metadata: col.metadata.clone(),
+                qualified_name: col.qualified_name.clone(),
+                source_table: col.source_table.clone(),
+            });
+        }
+
+        // Add columns from the joined table (b.*). On a name collision with a FROM
+        // column, qualify with the join alias — only the joined table takes it.
+        for col in &joined_table.columns {
+            if !from_table
+                .columns
+                .iter()
+                .any(|from_col| from_col.name == col.name)
+            {
+                result.add_column(DataColumn {
+                    name: col.name.clone(),
+                    data_type: col.data_type.clone(),
+                    nullable: col.nullable,
+                    unique_values: col.unique_values,
+                    null_count: col.null_count,
+                    metadata: col.metadata.clone(),
+                    qualified_name: col.qualified_name.clone(),
+                    source_table: col.source_table.clone(),
+                });
+            } else {
+                let (column_name, qualified_name) = if let Some(alias) = join_alias {
+                    (
+                        format!("{}.{}", alias, col.name),
+                        Some(format!("{}.{}", alias, col.name)),
+                    )
+                } else {
+                    (format!("{}_right", col.name), col.qualified_name.clone())
+                };
+                result.add_column(DataColumn {
+                    name: column_name,
+                    data_type: col.data_type.clone(),
+                    nullable: col.nullable,
+                    unique_values: col.unique_values,
+                    null_count: col.null_count,
+                    metadata: col.metadata.clone(),
+                    qualified_name,
+                    source_table: join_alias.clone().or_else(|| col.source_table.clone()),
+                });
+            }
+        }
+
+        // Create evaluators for both sides. The join-alias (joined) table is the
+        // "right" evaluator, so alias-qualified operands route correctly (P7).
+        let mut from_evaluator = ArithmeticEvaluator::new(&from_table);
+        let mut joined_evaluator = ArithmeticEvaluator::new(&joined_table);
+
+        // Outer loop over the joined table so every joined row is kept in order.
+        let mut match_count = 0;
+        let mut null_count = 0;
+
+        for (joined_row_idx, joined_row) in joined_table.rows.iter().enumerate() {
+            let mut found_match = false;
+
+            for (from_row_idx, from_row) in from_table.rows.iter().enumerate() {
+                // Check all conditions - all must be true for a match.
+                let mut all_conditions_met = true;
+                for condition in conditions.iter() {
+                    // Operands route by alias qualifier (P7). The FROM table is the
+                    // "left" evaluator, the joined (alias) table is the "right" one,
+                    // so `join_alias_is_right = true`. Unqualified operands fall back
+                    // to syntactic position (left_expr->FROM, right_expr->joined).
+                    let left_val = self.eval_join_operand(
+                        &condition.left_expr,
+                        &mut from_evaluator,
+                        &mut joined_evaluator,
+                        from_row_idx,
+                        joined_row_idx,
+                        join_alias,
+                        true,  // join-alias table is the "right" evaluator
+                        false, // left_expr defaults to the FROM table
+                    );
+                    let left_value = match left_val {
+                        Ok(val) => val,
+                        Err(_) => {
+                            all_conditions_met = false;
+                            break;
+                        }
+                    };
+
+                    let right_val = self.eval_join_operand(
+                        &condition.right_expr,
+                        &mut from_evaluator,
+                        &mut joined_evaluator,
+                        from_row_idx,
+                        joined_row_idx,
+                        join_alias,
+                        true, // join-alias table is the "right" evaluator
+                        true, // right_expr defaults to the joined table
+                    );
+                    let right_value = match right_val {
+                        Ok(val) => val,
+                        Err(_) => {
+                            all_conditions_met = false;
+                            break;
+                        }
+                    };
+
+                    if !self.compare_values(&left_value, &right_value, &condition.operator) {
+                        all_conditions_met = false;
+                        break;
+                    }
+                }
+
+                if all_conditions_met {
+                    // Emit [FROM values, joined values].
+                    let mut joined_result_row = DataRow { values: Vec::new() };
+                    joined_result_row.values.extend_from_slice(&from_row.values);
+                    joined_result_row
+                        .values
+                        .extend_from_slice(&joined_row.values);
+                    result.add_row(joined_result_row);
+                    match_count += 1;
+                    found_match = true;
+                }
+            }
+
+            // No matching FROM row: emit NULLs for the FROM columns, then the
+            // joined row's values.
+            if !found_match {
+                let mut joined_result_row = DataRow { values: Vec::new() };
+                for _ in 0..from_table.column_count() {
+                    joined_result_row.values.push(DataValue::Null);
+                }
+                joined_result_row
+                    .values
+                    .extend_from_slice(&joined_row.values);
+                result.add_row(joined_result_row);
+                null_count += 1;
+            }
+        }
+
+        info!(
+            "Nested loop RIGHT JOIN complete: {} matches, {} nulls in {:?}",
             match_count,
             null_count,
             start.elapsed()
