@@ -37,13 +37,12 @@ sql = "SELECT a.price AS ap, b.price AS bp FROM trades a JOIN trades b ON a.symb
 id = "right_join_multi_condition"
 data = "trades.csv"
 sql = "SELECT a.symbol AS s, a.price AS ap, b.price AS bp FROM trades a RIGHT JOIN trades b ON a.symbol = b.symbol AND a.price < b.price"
-# P8 (NEW, found 2026-07-12 while verifying P7): multi-condition RIGHT JOIN
-# diverges. The RIGHT path reuses the LEFT nested-loop with tables swapped and
-# passes the join alias unchanged, so the swapped-in table's columns are labelled
-# with the wrong alias (a.* values surface as bp, b.* as ap) and NULLs are emitted
-# for the wrong side (b instead of a). Row count matches but content differs.
-# Single-condition RIGHT joins (hash path) AGREE. Scoped as a separate follow-up.
-expect = "DIFFER"
+# P8 (FIXED 2026-07-17): multi-condition RIGHT JOIN used to reuse the LEFT
+# nested-loop with the tables swapped and the join alias unchanged, so the
+# swapped-in FROM table's columns were labelled with the wrong alias (a.* values
+# surfaced as bp, b.* as ap) and NULLs landed on the wrong side (b instead of a).
+# A dedicated `nested_loop_join_right_multi` now emits columns in [FROM, joined]
+# order with the alias only on the joined table, so this AGREEs.
 
 [[case]]
 id = "join_derived_table"

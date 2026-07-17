@@ -178,23 +178,30 @@ annotation be removed.
   `cargo test`, independent of the DuckDB corpus.
 
 ### P8 — Multi-condition RIGHT JOIN mislabels columns and NULLs the wrong side
-- **Status:** 🔴 OPEN (found 2026-07-12 while verifying P7)
-- **Corpus:** `04_joins.toml :: right_join_multi_condition` (DIFFER)
+- **Status:** 🟢 FIXED (found 2026-07-12 while verifying P7; fixed 2026-07-17)
+- **Corpus:** `04_joins.toml :: right_join_multi_condition` (now AGREE)
 - **Observed:** `... a RIGHT JOIN trades b ON a.symbol = b.symbol AND a.price < b.price`
-  returns the right *number* of rows but wrong content: the outer (`a`) columns'
-  values surface under `b`'s alias and vice-versa, and NULLs are emitted for the
+  returned the right *number* of rows but wrong content: the outer (`a`) columns'
+  values surfaced under `b`'s alias and vice-versa, and NULLs were emitted for the
   wrong side (the `b` columns instead of the unmatched `a` columns). The RIGHT path
-  reuses `nested_loop_join_left_multi` with the tables swapped but passes the join
-  alias unchanged, so result-column aliasing and the outer-side NULL emission are
-  applied to the swapped-in table. This is **separate from P7** — the P7 operand
-  routing is orientation-correct here; the defect is in RIGHT-join column assembly.
-- **Scope note:** Single-condition RIGHT joins (the hash path) AGREE, so this is
-  confined to the multi-condition nested-loop RIGHT path. Not part of the P7 fix;
-  logged as a follow-up rather than expanded into this change.
-- **Decision:** **Fix** (candidate) — when swapping tables for RIGHT, also swap the
-  alias/outer-side bookkeeping so result columns and NULLs track the physical
-  tables. Silent wrong answer, but narrower blast radius than P7 (RIGHT + multi
-  condition only). Pinned as DIFFER meanwhile.
+  reused `nested_loop_join_left_multi` with the tables swapped but passed the join
+  alias unchanged, so both the `[joined, FROM]` result-column order and the
+  outer-side NULL emission were applied to the swapped-in table. This was
+  **separate from P7** — the P7 operand routing was orientation-correct here; the
+  defect was purely in RIGHT-join result-column assembly.
+- **Scope note:** Single-condition RIGHT joins (the hash path) always AGREEd, so
+  this was confined to the multi-condition nested-loop RIGHT path.
+- **Fix:** Added a dedicated `nested_loop_join_right_multi` in `hash_join.rs`
+  instead of reusing the swapped LEFT builder. It emits result columns in
+  `[FROM, joined]` order (matching INNER/LEFT), keeps the FROM table's qualified
+  names, applies the join alias only to the joined table on a name collision, and
+  iterates the joined table as the outer loop so every joined row is kept and the
+  FROM columns NULL-fill on no match. Operand routing (P7) is preserved. Data and
+  matching were already correct — this was a labelling/ordering change only.
+- **Regression test:** `tests/join_operand_order_tests.rs ::
+  right_join_multi_condition_labels_correct_side` pins that the `a.*`/`b.*` values
+  land under the correct aliases and NULLs fall on the FROM side, in plain
+  `cargo test` (independent of the DuckDB corpus).
 
 ---
 
