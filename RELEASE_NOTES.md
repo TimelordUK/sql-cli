@@ -1,26 +1,23 @@
-# SQL CLI v1.80.2
+# SQL CLI v1.80.3
 
-**Release Date:** July 12, 2026
+**Release Date:** July 17, 2026
 
 ## 📊 Release Overview
 - **Commits in this release:** 2
-- **Files updated:** 6
+- **Files updated:** 4
 
 ## ✨ Highlights
-
-### 🔍 Enhanced Debugging
-- **Better Diagnostics**: Improved error messages and state dumps
 
 ## 📝 Changes by Category
 
 ### 🐛 Bug Fixes
-- route multi-condition ON operands by alias, not position (P7)
+- correct column labels/NULL side for multi-condition RIGHT JOIN (P8)
 
 <details>
 <summary>📋 View all commits</summary>
 
-- Merge pull request #28 from TimelordUK/fix/p7-join-operand-order (TimelordUK)
-- fix(joins): route multi-condition ON operands by alias, not position (P7) (TimelordUK)
+- Merge pull request #29 from TimelordUK/fix/p8-right-join-multi-column-labels (TimelordUK)
+- fix(joins): correct column labels/NULL side for multi-condition RIGHT JOIN (P8) (TimelordUK)
 
 </details>
 
