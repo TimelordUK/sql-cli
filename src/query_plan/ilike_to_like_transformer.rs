@@ -32,9 +32,9 @@
 
 use crate::query_plan::pipeline::ASTTransformer;
 use crate::sql::parser::ast::{
-    CTEType, Condition, OrderByItem, SelectItem, SelectStatement, SimpleWhenBranch, SqlExpression,
-    WhenBranch, WhereClause, CTE,
+    CTEType, Condition, OrderByItem, SelectItem, SelectStatement, SqlExpression, WhereClause, CTE,
 };
+use crate::sql::parser::walk;
 use anyhow::Result;
 use tracing::debug;
 
@@ -68,68 +68,13 @@ impl ILikeToLikeTransformer {
                 }
             }
 
-            // Recursively transform nested expressions
-            SqlExpression::BinaryOp { left, op, right } => SqlExpression::BinaryOp {
-                left: Box::new(self.transform_expression(*left)),
-                op,
-                right: Box::new(self.transform_expression(*right)),
-            },
-
-            SqlExpression::FunctionCall {
-                name,
-                args,
-                distinct,
-            } => SqlExpression::FunctionCall {
-                name,
-                args: args
-                    .into_iter()
-                    .map(|arg| self.transform_expression(arg))
-                    .collect(),
-                distinct,
-            },
-
-            SqlExpression::CaseExpression {
-                when_branches,
-                else_branch,
-            } => SqlExpression::CaseExpression {
-                when_branches: when_branches
-                    .into_iter()
-                    .map(|branch| WhenBranch {
-                        condition: Box::new(self.transform_expression(*branch.condition)),
-                        result: Box::new(self.transform_expression(*branch.result)),
-                    })
-                    .collect(),
-                else_branch: else_branch.map(|e| Box::new(self.transform_expression(*e))),
-            },
-
-            SqlExpression::SimpleCaseExpression {
-                expr,
-                when_branches,
-                else_branch,
-            } => SqlExpression::SimpleCaseExpression {
-                expr: Box::new(self.transform_expression(*expr)),
-                when_branches: when_branches
-                    .into_iter()
-                    .map(|branch| SimpleWhenBranch {
-                        value: Box::new(self.transform_expression(*branch.value)),
-                        result: Box::new(self.transform_expression(*branch.result)),
-                    })
-                    .collect(),
-                else_branch: else_branch.map(|e| Box::new(self.transform_expression(*e))),
-            },
-
-            SqlExpression::Between { expr, lower, upper } => SqlExpression::Between {
-                expr: Box::new(self.transform_expression(*expr)),
-                lower: Box::new(self.transform_expression(*lower)),
-                upper: Box::new(self.transform_expression(*upper)),
-            },
-
-            SqlExpression::InList { expr, values } => SqlExpression::InList {
-                expr: Box::new(self.transform_expression(*expr)),
-                values: values
-                    .into_iter()
-                    .map(|v| self.transform_expression(v))
-                    .collect(),
+            // Subqueries are a scope boundary for `walk::map_children`, which
+            // will not descend into a nested statement. ILIKE -> LIKE is
+            // scope-independent, so this transformer deliberately crosses that
+            // boundary and these arms stay explicit. Delegating them would
+            // silently stop ILIKE being rewritten inside subqueries.
+            SqlExpression::ScalarSubquery { query } => SqlExpression::ScalarSubquery {
+                query: Box::new(self.transform_statement(*query)),
             },
 
             SqlExpression::InSubquery { expr, subquery } => SqlExpression::InSubquery {
@@ -137,71 +82,34 @@ impl ILikeToLikeTransformer {
                 subquery: Box::new(self.transform_statement(*subquery)),
             },
 
-            SqlExpression::NotInList { expr, values } => SqlExpression::NotInList {
-                expr: Box::new(self.transform_expression(*expr)),
-                values: values
-                    .into_iter()
-                    .map(|v| self.transform_expression(v))
-                    .collect(),
-            },
-
-            SqlExpression::MethodCall {
-                object,
-                method,
-                args,
-            } => SqlExpression::MethodCall {
-                object,
-                method,
-                args: args
-                    .into_iter()
-                    .map(|arg| self.transform_expression(arg))
-                    .collect(),
-            },
-
-            SqlExpression::ChainedMethodCall { base, method, args } => {
-                SqlExpression::ChainedMethodCall {
-                    base: Box::new(self.transform_expression(*base)),
-                    method,
-                    args: args
-                        .into_iter()
-                        .map(|arg| self.transform_expression(arg))
-                        .collect(),
-                }
-            }
-
-            SqlExpression::Not { expr } => SqlExpression::Not {
-                expr: Box::new(self.transform_expression(*expr)),
-            },
-
-            SqlExpression::ScalarSubquery { query } => SqlExpression::ScalarSubquery {
-                query: Box::new(self.transform_statement(*query)),
-            },
-
             SqlExpression::NotInSubquery { expr, subquery } => SqlExpression::NotInSubquery {
                 expr: Box::new(self.transform_expression(*expr)),
                 subquery: Box::new(self.transform_statement(*subquery)),
             },
 
-            SqlExpression::WindowFunction {
-                name,
-                args,
-                window_spec,
-            } => SqlExpression::WindowFunction {
-                name,
-                args: args
+            // Previously missing: the tuple forms fell into the hand-rolled
+            // catch-all, so neither the LHS operands nor the subquery were
+            // transformed at all.
+            SqlExpression::InSubqueryTuple { exprs, subquery } => SqlExpression::InSubqueryTuple {
+                exprs: exprs
                     .into_iter()
-                    .map(|arg| self.transform_expression(arg))
+                    .map(|e| self.transform_expression(e))
                     .collect(),
-                window_spec,
+                subquery: Box::new(self.transform_statement(*subquery)),
             },
 
-            SqlExpression::Unnest { column, delimiter } => SqlExpression::Unnest {
-                column: Box::new(self.transform_expression(*column)),
-                delimiter,
-            },
+            SqlExpression::NotInSubqueryTuple { exprs, subquery } => {
+                SqlExpression::NotInSubqueryTuple {
+                    exprs: exprs
+                        .into_iter()
+                        .map(|e| self.transform_expression(e))
+                        .collect(),
+                    subquery: Box::new(self.transform_statement(*subquery)),
+                }
+            }
 
-            // Literals and simple expressions don't need transformation
-            _ => expr,
+            // Everything else is plain traversal.
+            other => walk::map_children(other, |e| self.transform_expression(e)),
         }
     }
 
@@ -368,6 +276,86 @@ impl ASTTransformer for ILikeToLikeTransformer {
 mod tests {
     use super::*;
     use crate::sql::parser::ast::{ColumnRef, QuoteStyle};
+    use crate::sql::recursive_parser::Parser;
+
+    /// Render just enough of an expression to assert on operators, so these
+    /// tests don't depend on the exact AST shape.
+    fn ops_in(expr: &SqlExpression) -> Vec<String> {
+        let mut ops = Vec::new();
+        crate::sql::parser::walk::visit_all(expr, &mut |e| {
+            if let SqlExpression::BinaryOp { op, .. } = e {
+                ops.push(op.clone());
+            }
+        });
+        ops
+    }
+
+    /// Regression for the walk.rs migration.
+    ///
+    /// `WindowSpec::order_by` holds real expressions, and the old hand-rolled
+    /// walker passed `window_spec` through untouched — so an ILIKE inside
+    /// `OVER (ORDER BY ...)` was silently left as ILIKE and would reach the
+    /// executor as an unknown operator.
+    #[test]
+    fn transforms_ilike_inside_window_order_by() {
+        let stmt = Parser::new(
+            "SELECT ROW_NUMBER() OVER (ORDER BY CASE WHEN name ILIKE '%a%' THEN 1 ELSE 0 END) AS rn FROM t",
+        )
+        .parse()
+        .expect("query should parse");
+
+        let result = ILikeToLikeTransformer::new().transform_statement(stmt);
+
+        let expr = result
+            .select_items
+            .iter()
+            .find_map(|i| match i {
+                SelectItem::Expression { expr, .. } => Some(expr),
+                _ => None,
+            })
+            .expect("expected a projected expression");
+
+        let ops = ops_in(expr);
+        assert!(
+            !ops.iter().any(|o| o == "ILIKE"),
+            "ILIKE inside a window ORDER BY must be rewritten, found ops: {ops:?}"
+        );
+        assert!(
+            ops.iter().any(|o| o == "LIKE"),
+            "expected a LIKE after rewriting, found ops: {ops:?}"
+        );
+    }
+
+    /// The tuple subquery forms fell into the old catch-all, so neither the
+    /// LHS operands nor the subquery body were transformed.
+    #[test]
+    fn transforms_ilike_inside_tuple_subquery() {
+        let stmt = Parser::new(
+            "SELECT a FROM t WHERE (a, b) IN (SELECT x, y FROM u WHERE note ILIKE '%z%')",
+        )
+        .parse()
+        .expect("query should parse");
+
+        let result = ILikeToLikeTransformer::new().transform_statement(stmt);
+
+        let cond = &result.where_clause.expect("where clause").conditions[0].expr;
+        let inner = match cond {
+            SqlExpression::InSubqueryTuple { subquery, .. } => subquery,
+            other => panic!("expected a tuple IN subquery, got {other:?}"),
+        };
+        let inner_cond = &inner
+            .where_clause
+            .as_ref()
+            .expect("inner where clause")
+            .conditions[0]
+            .expr;
+
+        let ops = ops_in(inner_cond);
+        assert!(
+            !ops.iter().any(|o| o == "ILIKE"),
+            "ILIKE inside a tuple subquery must be rewritten, found ops: {ops:?}"
+        );
+    }
 
     #[test]
     fn test_ilike_simple() {
