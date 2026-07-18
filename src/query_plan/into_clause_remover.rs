@@ -41,9 +41,7 @@ impl IntoClauseRemover {
         statement.into_table = None;
 
         // Remove from subquery in FROM clause
-        if let Some(subquery) = statement.from_subquery.take() {
-            statement.from_subquery = Some(Box::new(Self::remove_from_statement(*subquery)));
-        }
+        statement.map_from_subquery(Self::remove_from_statement);
 
         // Remove from JOIN subqueries
         statement.joins = statement

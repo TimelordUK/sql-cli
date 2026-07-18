@@ -184,7 +184,7 @@ impl ExpressionLifter {
                 lifted_ctes.push(cte);
 
                 // Update the main query to reference the CTE
-                stmt.from_table = Some(lift_expr.suggested_name);
+                stmt.set_from_table(lift_expr.suggested_name);
 
                 // Replace the complex WHERE expression with a simple column reference
                 use crate::sql::parser::ast::Condition;
@@ -354,16 +354,9 @@ impl ExpressionLifter {
         }
 
         stmt.select_items = new_select_items;
-        // Set from_source to reference the CTE (preferred)
-        stmt.from_source = Some(crate::sql::parser::ast::TableSource::Table(
-            cte_name.clone(),
-        ));
-        // Also set deprecated field for backward compatibility
-        #[allow(deprecated)]
-        {
-            stmt.from_table = Some(cte_name.clone());
-            stmt.from_subquery = None;
-        }
+        // Point the FROM clause at the CTE (keeps from_source and the legacy
+        // fields in sync)
+        stmt.set_from_table(cte_name.clone());
         stmt.where_clause = None; // Already in the CTE
 
         CTE {

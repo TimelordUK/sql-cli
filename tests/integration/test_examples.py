@@ -324,7 +324,9 @@ def capture_expectation(cli_path: str, example_name: str, expectations_dir: Path
     print("To test: ./tests/integration/test_examples.py", example_name)
 
 def main():
-    cli_path = './target/release/sql-cli'
+    # Windows builds the binary with a .exe suffix (same resolution as
+    # tests/comparison/engines.py); without this the suite aborts on win32.
+    cli_path = './target/release/sql-cli.exe' if sys.platform == 'win32' else './target/release/sql-cli'
     examples_dir = Path('examples')
     expectations_dir = Path('examples/expectations')
 
