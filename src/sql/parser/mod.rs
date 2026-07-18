@@ -10,6 +10,7 @@ pub mod file_cte_parser;
 pub mod formatter;
 pub mod legacy;
 pub mod lexer;
+pub mod walk;
 pub mod web_cte_parser;
 
 // Re-export commonly used types for convenience
