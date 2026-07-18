@@ -128,16 +128,27 @@ feature work**, and so we can tell the difference between "this is awkward" and
 - **Impact:** A new expression variant is *silently* dropped by the formatter,
   the lifters, and the aggregate detector. The failure mode is a wrong answer or
   a no-op, not a build error.
-- **Confirmed live bugs from this pattern** (both pre-existing, neither yet fixed):
-  - `expression_lifter::extract_column_references` never handles `MethodCall`,
-    `ChainedMethodCall`, `Unnest`, `InSubquery`, or the tuple subquery variants.
-  - `having_alias_transformer::collect_aggregates_in_having` handles only
-    `FunctionCall`, `BinaryOp`, `Not` — **an aggregate inside a `CASE` in a
-    `HAVING` clause is never found.**
+- **Confirmed live bugs from this pattern.** These are not hypothetical — each
+  was reproduced against the CLI and is now pinned by a corpus case:
+
+  | Parity entry | Symptom | Severity |
+  |---|---|---|
+  | [P9](SQL_PARITY.md) | `HAVING` with an aggregate inside `BETWEEN` / `IN` / `CASE` returns wrong rows, **silently, in both directions** | **wrong results, no error** |
+  | [P11](SQL_PARITY.md) | A `SELECT` alias on the LHS of an `IN` subquery → `Column not found` | hard error |
+  | *(fixed, PR #33)* | `ILIKE` inside `OVER (ORDER BY ...)` left unrewritten, reaching the executor as an unknown operator | hard error |
+  | *(fixed, PR #33)* | `INTO` inside `(a, b) IN (SELECT ...)` never removed | reaches executor |
+
+  P9 is the one that matters most: `HAVING COUNT(*) BETWEEN 1 AND 2` returned
+  4 rows where DuckDB returns 1, with no error. A catch-all turned a missing
+  match arm into a wrong answer.
+
+- **The corpus had no `HAVING` coverage at all** before 2026-07-18, which is why
+  P9 survived. Absence of a test bucket is itself a finding: when migrating a
+  transformer, check whether the clause it serves is represented in
+  `tests/comparison/corpus/`.
 - **Decision:** Fix by attrition through the R2 migration; each transformer that
-  moves onto `walk` loses its catch-all. Worth a follow-up to confirm the two
-  bugs above with failing tests before their transformers migrate, so the fix is
-  demonstrated rather than assumed.
+  moves onto `walk` loses its catch-all. Write the failing corpus case **before**
+  migrating the transformer, so the fix is demonstrated rather than assumed.
 
 ### R4 — Transformer test fixtures use ASTs the parser never produces
 - **Status:** 🔴 OPEN
@@ -234,3 +245,5 @@ R5 dead code ─────── opportunistic
 |---|---|---|
 | 2026-07-18 | R1 partial: FROM sync helpers; four desync sites fixed; dead lifter deleted | #30 |
 | 2026-07-18 | R2 partial: `walk.rs` traversal helpers landed (additive) | #31 |
+| 2026-07-18 | R2 group 1: the three boundary-crossing transformers migrated; two silent bugs fixed | #33 |
+| 2026-07-18 | R3 evidence: P9–P12 filed after probing the engine; corpus gains tier 07 (grouping) | — |
