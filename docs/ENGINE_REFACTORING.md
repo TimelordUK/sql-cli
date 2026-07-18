@@ -84,7 +84,8 @@ feature work**, and so we can tell the difference between "this is awkward" and
   the scope work.
 
 ### R2 — Branch logic over `SqlExpression` is copy-pasted everywhere
-- **Status:** 🟡 IN PROGRESS — helpers landed (PR #31); transformer migration outstanding
+- **Status:** 🟡 IN PROGRESS — helpers landed (#31), crossing forms made primitive
+  (#35), 3 of 11 transformers migrated; 8 outstanding
 - **Where:** `src/query_plan/*.rs`, `src/data/*.rs`, `src/analysis/*.rs`
 - **Observed:** No traversal abstraction existed. **446
   `SqlExpression::<Variant>` patterns across 40 files**, every consumer
@@ -113,10 +114,26 @@ feature work**, and so we can tell the difference between "this is awkward" and
     crossing — the day an `Exists` is added. Both crossing closures take an
     explicit `ctx` parameter: a `&mut self` transformer cannot hand out two
     closures that each capture `self` mutably.
-- **Next:** Migrate the ~10 `query_plan` transformers, one commit each. Treat
-  `having_alias_transformer` as a behaviour **fix**, not a refactor (see R3).
-  Note `WindowSpec::order_by` is now descended into, so each migration needs a
-  per-transformer behaviour check rather than a blanket "pure refactor" claim.
+- **Migrated so far:** `cte_hoister`, `into_clause_remover`,
+  `ilike_to_like_transformer` — i.e. exactly the three that cross the scope
+  boundary. All three now delegate; none names a subquery variant.
+- **Next, in priority order.** Counts are `SqlExpression::` patterns remaining
+  in each file, as a rough size guide:
+
+  | Transformer | Patterns | Note |
+  |---|---|---|
+  | `having_alias_transformer` | 30 | **A fix, not a refactor** — this is [P9](SQL_PARITY.md). Write the failing corpus case *first*. |
+  | `where_alias_expander` | 60 | Largest. Outer-alias scoping is correct only *by omission* — the opaque `map_children` is load-bearing here. |
+  | `group_by_alias_expander` | 34 | Same scoping caveat. |
+  | `order_by_alias_transformer` | 18 | Same scoping caveat. |
+  | `expression_lifter` | 35 | |
+  | `in_operator_lifter` | 21 | Related to [P11](SQL_PARITY.md). |
+  | `correlated_subquery_analyzer` | 12 | Touches P3; likely wants the crossing form. |
+  | `pivot_expander` / `qualify_to_where_transformer` | 10 / 9 | Smallest; good warm-ups. |
+
+  One commit each. **`WindowSpec::order_by` is now descended into**, so every
+  migration needs a per-transformer behaviour check — a blanket "pure refactor"
+  claim is not available, and two of the bugs #33 fixed were exactly this.
 
 ### R3 — Catch-all match arms silently swallow new variants
 - **Status:** 🔴 OPEN
