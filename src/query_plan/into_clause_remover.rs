@@ -1,4 +1,5 @@
-use crate::sql::parser::ast::SelectStatement;
+use crate::sql::parser::ast::{SelectStatement, SqlExpression};
+use crate::sql::parser::walk;
 
 /// INTO Clause Remover - Removes INTO clause from AST for execution
 ///
@@ -106,11 +107,17 @@ impl IntoClauseRemover {
     }
 
     /// Remove INTO from expressions (handles subqueries)
-    fn remove_from_expression(
-        expr: crate::sql::parser::ast::SqlExpression,
-    ) -> crate::sql::parser::ast::SqlExpression {
-        use crate::sql::parser::ast::SqlExpression;
-
+    ///
+    /// The only real rule here is about subqueries: every nested
+    /// `SelectStatement` needs its `into_table` cleared. Everything else is
+    /// plain traversal, delegated to [`walk::map_children`].
+    ///
+    /// The subquery arms must stay explicit. `map_children` treats a subquery
+    /// statement as a **scope boundary** and deliberately does not descend into
+    /// it — correct for the alias expanders, but exactly what this transformer
+    /// has to do. Delegating them would silently stop INTO being removed from
+    /// nested queries.
+    fn remove_from_expression(expr: SqlExpression) -> SqlExpression {
         match expr {
             SqlExpression::ScalarSubquery { query } => SqlExpression::ScalarSubquery {
                 query: Box::new(Self::remove_from_statement(*query)),
@@ -123,75 +130,25 @@ impl IntoClauseRemover {
                 expr: Box::new(Self::remove_from_expression(*expr)),
                 subquery: Box::new(Self::remove_from_statement(*subquery)),
             },
-            SqlExpression::BinaryOp { left, op, right } => SqlExpression::BinaryOp {
-                left: Box::new(Self::remove_from_expression(*left)),
-                op,
-                right: Box::new(Self::remove_from_expression(*right)),
-            },
-            SqlExpression::FunctionCall {
-                name,
-                args,
-                distinct,
-            } => SqlExpression::FunctionCall {
-                name,
-                args: args
+            // Previously missing: the tuple forms fell into the catch-all, so
+            // `WHERE (a, b) IN (SELECT ... INTO #t ...)` kept its INTO clause.
+            SqlExpression::InSubqueryTuple { exprs, subquery } => SqlExpression::InSubqueryTuple {
+                exprs: exprs
                     .into_iter()
-                    .map(|arg| Self::remove_from_expression(arg))
+                    .map(Self::remove_from_expression)
                     .collect(),
-                distinct,
+                subquery: Box::new(Self::remove_from_statement(*subquery)),
             },
-            SqlExpression::CaseExpression {
-                when_branches,
-                else_branch,
-            } => SqlExpression::CaseExpression {
-                when_branches: when_branches
-                    .into_iter()
-                    .map(|branch| crate::sql::parser::ast::WhenBranch {
-                        condition: Box::new(Self::remove_from_expression(*branch.condition)),
-                        result: Box::new(Self::remove_from_expression(*branch.result)),
-                    })
-                    .collect(),
-                else_branch: else_branch.map(|e| Box::new(Self::remove_from_expression(*e))),
-            },
-            SqlExpression::SimpleCaseExpression {
-                expr,
-                when_branches,
-                else_branch,
-            } => SqlExpression::SimpleCaseExpression {
-                expr: Box::new(Self::remove_from_expression(*expr)),
-                when_branches: when_branches
-                    .into_iter()
-                    .map(|branch| crate::sql::parser::ast::SimpleWhenBranch {
-                        value: Box::new(Self::remove_from_expression(*branch.value)),
-                        result: Box::new(Self::remove_from_expression(*branch.result)),
-                    })
-                    .collect(),
-                else_branch: else_branch.map(|e| Box::new(Self::remove_from_expression(*e))),
-            },
-            SqlExpression::InList { expr, values } => SqlExpression::InList {
-                expr: Box::new(Self::remove_from_expression(*expr)),
-                values: values
-                    .into_iter()
-                    .map(|e| Self::remove_from_expression(e))
-                    .collect(),
-            },
-            SqlExpression::NotInList { expr, values } => SqlExpression::NotInList {
-                expr: Box::new(Self::remove_from_expression(*expr)),
-                values: values
-                    .into_iter()
-                    .map(|e| Self::remove_from_expression(e))
-                    .collect(),
-            },
-            SqlExpression::Between { expr, lower, upper } => SqlExpression::Between {
-                expr: Box::new(Self::remove_from_expression(*expr)),
-                lower: Box::new(Self::remove_from_expression(*lower)),
-                upper: Box::new(Self::remove_from_expression(*upper)),
-            },
-            SqlExpression::Not { expr } => SqlExpression::Not {
-                expr: Box::new(Self::remove_from_expression(*expr)),
-            },
-            // Terminal expressions don't contain subqueries
-            other => other,
+            SqlExpression::NotInSubqueryTuple { exprs, subquery } => {
+                SqlExpression::NotInSubqueryTuple {
+                    exprs: exprs
+                        .into_iter()
+                        .map(Self::remove_from_expression)
+                        .collect(),
+                    subquery: Box::new(Self::remove_from_statement(*subquery)),
+                }
+            }
+            other => walk::map_children(other, Self::remove_from_expression),
         }
     }
 }
@@ -200,6 +157,40 @@ impl IntoClauseRemover {
 mod tests {
     use super::*;
     use crate::sql::parser::ast::IntoTable;
+
+    /// Regression for the walk.rs migration: the tuple subquery forms used to
+    /// fall into the hand-rolled catch-all, so an INTO inside
+    /// `(a, b) IN (SELECT ...)` was never removed and would reach the executor.
+    ///
+    /// Parsed rather than hand-built so the AST is one the parser actually
+    /// produces (see R4 in docs/ENGINE_REFACTORING.md).
+    #[test]
+    fn removes_into_inside_tuple_subquery() {
+        use crate::sql::recursive_parser::Parser;
+
+        let stmt = Parser::new("SELECT a FROM t WHERE (a, b) IN (SELECT x, y FROM u INTO #inner)")
+            .parse()
+            .expect("query should parse");
+
+        // Precondition: the parser really did put an INTO on the inner query.
+        let inner_into = |s: &SelectStatement| match &s.where_clause {
+            Some(w) => match &w.conditions[0].expr {
+                SqlExpression::InSubqueryTuple { subquery, .. } => subquery.into_table.clone(),
+                other => panic!("expected a tuple IN subquery, got {other:?}"),
+            },
+            None => panic!("expected a where clause"),
+        };
+        assert!(
+            inner_into(&stmt).is_some(),
+            "test is meaningless unless the inner query starts with an INTO"
+        );
+
+        let result = IntoClauseRemover::remove_into_clause(stmt);
+        assert!(
+            inner_into(&result).is_none(),
+            "INTO must be removed from inside a tuple subquery"
+        );
+    }
 
     #[test]
     fn test_remove_simple_into() {
