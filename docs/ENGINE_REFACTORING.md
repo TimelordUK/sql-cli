@@ -98,12 +98,21 @@ feature work**, and so we can tell the difference between "this is awkward" and
   expression form multiplies across ~40 files.
 - **Done so far:** `src/sql/parser/walk.rs` — `map_children` (owned rewrite) and
   `visit_children` / `visit_all` (borrowing collector), exhaustive, no catch-all.
-  Two design rules worth preserving:
+  Three design rules worth preserving:
   - **Direct children only, callers drive recursion** — this is what collapses a
     transformer to its one real rule plus a delegate.
   - **Scope boundary = walker boundary** — subquery statements are not descended
     into. Auto-descending would break the alias expanders, which get outer-alias
     scoping right today only *by omission*.
+  - **The crossing forms are the primitives** — `map_children_crossing` /
+    `visit_children_crossing` take a second closure for the nested statement,
+    and the opaque forms are those with an identity/no-op handler. This keeps
+    the set of subquery-bearing variants written down *once*. Transformers that
+    must cross (CTE hoisting, INTO removal, `ILIKE`) previously hand-listed
+    those five variants each, which compiles clean — and silently stops
+    crossing — the day an `Exists` is added. Both crossing closures take an
+    explicit `ctx` parameter: a `&mut self` transformer cannot hand out two
+    closures that each capture `self` mutably.
 - **Next:** Migrate the ~10 `query_plan` transformers, one commit each. Treat
   `having_alias_transformer` as a behaviour **fix**, not a refactor (see R3).
   Note `WindowSpec::order_by` is now descended into, so each migration needs a
@@ -120,8 +129,8 @@ feature work**, and so we can tell the difference between "this is awkward" and
   src/sql/parser/formatter.rs:139
   src/sql/parser/formatter.rs:668
   src/sql/recursive_parser.rs:569
-  src/sql/parser/walk.rs:63     (added by R2)
-  src/sql/parser/walk.rs:214    (added by R2)
+  src/sql/parser/walk.rs:108    (added by R2 — map_children_crossing)
+  src/sql/parser/walk.rs:280    (added by R2 — visit_children_crossing)
   ```
 
   Every other consumer compiled clean and would have silently ignored it.
@@ -247,3 +256,4 @@ R5 dead code ─────── opportunistic
 | 2026-07-18 | R2 partial: `walk.rs` traversal helpers landed (additive) | #31 |
 | 2026-07-18 | R2 group 1: the three boundary-crossing transformers migrated; two silent bugs fixed | #33 |
 | 2026-07-18 | R3 evidence: P9–P12 filed after probing the engine; corpus gains tier 07 (grouping) | — |
+| 2026-07-18 | R2: `*_crossing` helpers become the primitives; the three crossing transformers stop hand-listing subquery variants | — |

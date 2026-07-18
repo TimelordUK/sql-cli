@@ -125,47 +125,21 @@ impl CTEHoister {
 
     /// Hoist CTEs from an expression
     ///
-    /// The only real rule is the subquery arms: recurse into the nested
-    /// statement so its CTEs get pulled up to the top level. They stay
-    /// explicit because [`walk::map_children`] treats a subquery statement as
-    /// a scope boundary -- crossing it is precisely this transformer's job.
+    /// The only real rule is the nested statements: recurse into them so their
+    /// CTEs get pulled up to the top level. `map_children` treats a subquery
+    /// statement as a scope boundary, and crossing it is precisely this
+    /// transformer's job, so this uses the `crossing` form -- which keeps the
+    /// list of subquery-bearing variants in `walk` rather than here.
+    ///
+    /// `self` is threaded through as the walk context because both closures
+    /// need it mutably; capturing it twice would not borrow-check.
     fn hoist_from_expression(&mut self, expr: SqlExpression) -> SqlExpression {
-        match expr {
-            SqlExpression::ScalarSubquery { query } => SqlExpression::ScalarSubquery {
-                query: Box::new(self.hoist_from_statement(*query)),
-            },
-            SqlExpression::InSubquery { expr, subquery } => SqlExpression::InSubquery {
-                expr: Box::new(self.hoist_from_expression(*expr)),
-                subquery: Box::new(self.hoist_from_statement(*subquery)),
-            },
-            SqlExpression::NotInSubquery { expr, subquery } => SqlExpression::NotInSubquery {
-                expr: Box::new(self.hoist_from_expression(*expr)),
-                subquery: Box::new(self.hoist_from_statement(*subquery)),
-            },
-            // Defensive, not a demonstrable fix: the tuple forms fell into the
-            // old catch-all, but the parser currently rejects WITH anywhere in
-            // expression position ("Tuple IN requires a subquery on the right"),
-            // so no input reaches these arms today. Kept for symmetry with the
-            // other subquery arms, which are equally unreachable for the same
-            // reason.
-            SqlExpression::InSubqueryTuple { exprs, subquery } => SqlExpression::InSubqueryTuple {
-                exprs: exprs
-                    .into_iter()
-                    .map(|e| self.hoist_from_expression(e))
-                    .collect(),
-                subquery: Box::new(self.hoist_from_statement(*subquery)),
-            },
-            SqlExpression::NotInSubqueryTuple { exprs, subquery } => {
-                SqlExpression::NotInSubqueryTuple {
-                    exprs: exprs
-                        .into_iter()
-                        .map(|e| self.hoist_from_expression(e))
-                        .collect(),
-                    subquery: Box::new(self.hoist_from_statement(*subquery)),
-                }
-            }
-            other => walk::map_children(other, |e| self.hoist_from_expression(e)),
-        }
+        walk::map_children_crossing(
+            expr,
+            self,
+            |h, e| h.hoist_from_expression(e),
+            |h, stmt| Box::new(h.hoist_from_statement(*stmt)),
+        )
     }
 
     /// Recursively hoist from a WHERE clause
@@ -237,34 +211,17 @@ impl CTEHoister {
 
     /// Find CTE references in an expression
     ///
-    /// The only real rule is the subquery arms: descend into the nested
-    /// statement and look for CTE references there. Those must stay explicit
-    /// because [`walk::visit_children`] treats a subquery statement as a scope
-    /// boundary and will not enter it. Everything else is plain traversal.
+    /// The only real rule is the nested statements: descend into them and look
+    /// for CTE references there. `visit_children` treats a subquery statement
+    /// as a scope boundary and will not enter it, so this uses the `crossing`
+    /// form. `deps` is the walk context -- both closures need it mutably.
     fn find_cte_refs_in_expression(&self, expr: &SqlExpression, deps: &mut HashSet<String>) {
-        match expr {
-            SqlExpression::ScalarSubquery { query } => {
-                self.find_cte_references(query, deps);
-            }
-            SqlExpression::InSubquery { expr, subquery }
-            | SqlExpression::NotInSubquery { expr, subquery } => {
-                self.find_cte_refs_in_expression(expr, deps);
-                self.find_cte_references(subquery, deps);
-            }
-            // Tuple forms were missing from the old catch-all. Unlike the
-            // hoisting path these ARE reachable: the subquery need not contain
-            // a WITH, only a reference to an already-hoisted CTE.
-            SqlExpression::InSubqueryTuple { exprs, subquery }
-            | SqlExpression::NotInSubqueryTuple { exprs, subquery } => {
-                for e in exprs {
-                    self.find_cte_refs_in_expression(e, deps);
-                }
-                self.find_cte_references(subquery, deps);
-            }
-            other => {
-                walk::visit_children(other, |child| self.find_cte_refs_in_expression(child, deps))
-            }
-        }
+        walk::visit_children_crossing(
+            expr,
+            deps,
+            |deps, child| self.find_cte_refs_in_expression(child, deps),
+            |deps, stmt| self.find_cte_references(stmt, deps),
+        )
     }
 
     /// Get CTEs in dependency order

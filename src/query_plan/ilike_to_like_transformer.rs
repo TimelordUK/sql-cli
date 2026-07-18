@@ -68,48 +68,16 @@ impl ILikeToLikeTransformer {
                 }
             }
 
-            // Subqueries are a scope boundary for `walk::map_children`, which
-            // will not descend into a nested statement. ILIKE -> LIKE is
-            // scope-independent, so this transformer deliberately crosses that
-            // boundary and these arms stay explicit. Delegating them would
-            // silently stop ILIKE being rewritten inside subqueries.
-            SqlExpression::ScalarSubquery { query } => SqlExpression::ScalarSubquery {
-                query: Box::new(self.transform_statement(*query)),
-            },
-
-            SqlExpression::InSubquery { expr, subquery } => SqlExpression::InSubquery {
-                expr: Box::new(self.transform_expression(*expr)),
-                subquery: Box::new(self.transform_statement(*subquery)),
-            },
-
-            SqlExpression::NotInSubquery { expr, subquery } => SqlExpression::NotInSubquery {
-                expr: Box::new(self.transform_expression(*expr)),
-                subquery: Box::new(self.transform_statement(*subquery)),
-            },
-
-            // Previously missing: the tuple forms fell into the hand-rolled
-            // catch-all, so neither the LHS operands nor the subquery were
-            // transformed at all.
-            SqlExpression::InSubqueryTuple { exprs, subquery } => SqlExpression::InSubqueryTuple {
-                exprs: exprs
-                    .into_iter()
-                    .map(|e| self.transform_expression(e))
-                    .collect(),
-                subquery: Box::new(self.transform_statement(*subquery)),
-            },
-
-            SqlExpression::NotInSubqueryTuple { exprs, subquery } => {
-                SqlExpression::NotInSubqueryTuple {
-                    exprs: exprs
-                        .into_iter()
-                        .map(|e| self.transform_expression(e))
-                        .collect(),
-                    subquery: Box::new(self.transform_statement(*subquery)),
-                }
-            }
-
-            // Everything else is plain traversal.
-            other => walk::map_children(other, |e| self.transform_expression(e)),
+            // Everything else is plain traversal. ILIKE -> LIKE is
+            // scope-independent, so we cross the subquery boundary: the
+            // `crossing` form rewrites nested statements too, without this
+            // file having to name the subquery-bearing variants itself.
+            other => walk::map_children_crossing(
+                other,
+                &mut (),
+                |_, e| self.transform_expression(e),
+                |_, stmt| Box::new(self.transform_statement(*stmt)),
+            ),
         }
     }
 

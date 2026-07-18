@@ -110,46 +110,18 @@ impl IntoClauseRemover {
     ///
     /// The only real rule here is about subqueries: every nested
     /// `SelectStatement` needs its `into_table` cleared. Everything else is
-    /// plain traversal, delegated to [`walk::map_children`].
+    /// plain traversal, delegated to [`walk::map_children_crossing`].
     ///
-    /// The subquery arms must stay explicit. `map_children` treats a subquery
-    /// statement as a **scope boundary** and deliberately does not descend into
-    /// it — correct for the alias expanders, but exactly what this transformer
-    /// has to do. Delegating them would silently stop INTO being removed from
-    /// nested queries.
+    /// `map_children` treats a subquery statement as a **scope boundary** and
+    /// deliberately does not descend into it — correct for the alias expanders,
+    /// but exactly what this transformer has to do, hence the `crossing` form.
     fn remove_from_expression(expr: SqlExpression) -> SqlExpression {
-        match expr {
-            SqlExpression::ScalarSubquery { query } => SqlExpression::ScalarSubquery {
-                query: Box::new(Self::remove_from_statement(*query)),
-            },
-            SqlExpression::InSubquery { expr, subquery } => SqlExpression::InSubquery {
-                expr: Box::new(Self::remove_from_expression(*expr)),
-                subquery: Box::new(Self::remove_from_statement(*subquery)),
-            },
-            SqlExpression::NotInSubquery { expr, subquery } => SqlExpression::NotInSubquery {
-                expr: Box::new(Self::remove_from_expression(*expr)),
-                subquery: Box::new(Self::remove_from_statement(*subquery)),
-            },
-            // Previously missing: the tuple forms fell into the catch-all, so
-            // `WHERE (a, b) IN (SELECT ... INTO #t ...)` kept its INTO clause.
-            SqlExpression::InSubqueryTuple { exprs, subquery } => SqlExpression::InSubqueryTuple {
-                exprs: exprs
-                    .into_iter()
-                    .map(Self::remove_from_expression)
-                    .collect(),
-                subquery: Box::new(Self::remove_from_statement(*subquery)),
-            },
-            SqlExpression::NotInSubqueryTuple { exprs, subquery } => {
-                SqlExpression::NotInSubqueryTuple {
-                    exprs: exprs
-                        .into_iter()
-                        .map(Self::remove_from_expression)
-                        .collect(),
-                    subquery: Box::new(Self::remove_from_statement(*subquery)),
-                }
-            }
-            other => walk::map_children(other, Self::remove_from_expression),
-        }
+        walk::map_children_crossing(
+            expr,
+            &mut (),
+            |_, e| Self::remove_from_expression(e),
+            |_, stmt| Box::new(Self::remove_from_statement(*stmt)),
+        )
     }
 }
 
