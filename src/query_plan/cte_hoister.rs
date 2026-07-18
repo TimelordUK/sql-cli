@@ -1,6 +1,7 @@
 use crate::sql::parser::ast::{
-    CTEType, Condition, SelectItem, SelectStatement, SqlExpression, WhereClause, CTE,
+    CTEType, SelectItem, SelectStatement, SqlExpression, WhereClause, CTE,
 };
+use crate::sql::parser::walk;
 use std::collections::{HashMap, HashSet};
 
 /// CTE Hoister - Analyzes and rewrites nested CTEs
@@ -123,111 +124,55 @@ impl CTEHoister {
     }
 
     /// Hoist CTEs from an expression
+    ///
+    /// The only real rule is the subquery arms: recurse into the nested
+    /// statement so its CTEs get pulled up to the top level. They stay
+    /// explicit because [`walk::map_children`] treats a subquery statement as
+    /// a scope boundary -- crossing it is precisely this transformer's job.
     fn hoist_from_expression(&mut self, expr: SqlExpression) -> SqlExpression {
         match expr {
-            SqlExpression::ScalarSubquery { query } => {
-                let rewritten = self.hoist_from_statement(*query);
-                SqlExpression::ScalarSubquery {
-                    query: Box::new(rewritten),
-                }
-            }
-            SqlExpression::BinaryOp { left, op, right } => SqlExpression::BinaryOp {
-                left: Box::new(self.hoist_from_expression(*left)),
-                op,
-                right: Box::new(self.hoist_from_expression(*right)),
+            SqlExpression::ScalarSubquery { query } => SqlExpression::ScalarSubquery {
+                query: Box::new(self.hoist_from_statement(*query)),
             },
-            SqlExpression::FunctionCall {
-                name,
-                args,
-                distinct,
-            } => SqlExpression::FunctionCall {
-                name,
-                args: args
-                    .into_iter()
-                    .map(|arg| self.hoist_from_expression(arg))
-                    .collect(),
-                distinct,
-            },
-            SqlExpression::CaseExpression {
-                when_branches,
-                else_branch,
-            } => SqlExpression::CaseExpression {
-                when_branches: when_branches
-                    .into_iter()
-                    .map(|branch| crate::sql::parser::ast::WhenBranch {
-                        condition: Box::new(self.hoist_from_expression(*branch.condition)),
-                        result: Box::new(self.hoist_from_expression(*branch.result)),
-                    })
-                    .collect(),
-                else_branch: else_branch.map(|e| Box::new(self.hoist_from_expression(*e))),
-            },
-            SqlExpression::InList { expr, values } => SqlExpression::InList {
+            SqlExpression::InSubquery { expr, subquery } => SqlExpression::InSubquery {
                 expr: Box::new(self.hoist_from_expression(*expr)),
-                values: values
+                subquery: Box::new(self.hoist_from_statement(*subquery)),
+            },
+            SqlExpression::NotInSubquery { expr, subquery } => SqlExpression::NotInSubquery {
+                expr: Box::new(self.hoist_from_expression(*expr)),
+                subquery: Box::new(self.hoist_from_statement(*subquery)),
+            },
+            // Defensive, not a demonstrable fix: the tuple forms fell into the
+            // old catch-all, but the parser currently rejects WITH anywhere in
+            // expression position ("Tuple IN requires a subquery on the right"),
+            // so no input reaches these arms today. Kept for symmetry with the
+            // other subquery arms, which are equally unreachable for the same
+            // reason.
+            SqlExpression::InSubqueryTuple { exprs, subquery } => SqlExpression::InSubqueryTuple {
+                exprs: exprs
                     .into_iter()
                     .map(|e| self.hoist_from_expression(e))
                     .collect(),
+                subquery: Box::new(self.hoist_from_statement(*subquery)),
             },
-            SqlExpression::NotInList { expr, values } => SqlExpression::NotInList {
-                expr: Box::new(self.hoist_from_expression(*expr)),
-                values: values
-                    .into_iter()
-                    .map(|e| self.hoist_from_expression(e))
-                    .collect(),
-            },
-            SqlExpression::InSubquery { expr, subquery } => {
-                let rewritten = self.hoist_from_statement(*subquery);
-                SqlExpression::InSubquery {
-                    expr: Box::new(self.hoist_from_expression(*expr)),
-                    subquery: Box::new(rewritten),
+            SqlExpression::NotInSubqueryTuple { exprs, subquery } => {
+                SqlExpression::NotInSubqueryTuple {
+                    exprs: exprs
+                        .into_iter()
+                        .map(|e| self.hoist_from_expression(e))
+                        .collect(),
+                    subquery: Box::new(self.hoist_from_statement(*subquery)),
                 }
             }
-            SqlExpression::NotInSubquery { expr, subquery } => {
-                let rewritten = self.hoist_from_statement(*subquery);
-                SqlExpression::NotInSubquery {
-                    expr: Box::new(self.hoist_from_expression(*expr)),
-                    subquery: Box::new(rewritten),
-                }
-            }
-            SqlExpression::Between { expr, lower, upper } => SqlExpression::Between {
-                expr: Box::new(self.hoist_from_expression(*expr)),
-                lower: Box::new(self.hoist_from_expression(*lower)),
-                upper: Box::new(self.hoist_from_expression(*upper)),
-            },
-            SqlExpression::Not { expr } => SqlExpression::Not {
-                expr: Box::new(self.hoist_from_expression(*expr)),
-            },
-            // For other expression types that might contain subqueries
-            SqlExpression::SimpleCaseExpression {
-                expr,
-                when_branches,
-                else_branch,
-            } => SqlExpression::SimpleCaseExpression {
-                expr: Box::new(self.hoist_from_expression(*expr)),
-                when_branches: when_branches
-                    .into_iter()
-                    .map(|branch| crate::sql::parser::ast::SimpleWhenBranch {
-                        value: Box::new(self.hoist_from_expression(*branch.value)),
-                        result: Box::new(self.hoist_from_expression(*branch.result)),
-                    })
-                    .collect(),
-                else_branch: else_branch.map(|e| Box::new(self.hoist_from_expression(*e))),
-            },
-            // Terminal expressions don't contain subqueries
-            other => other,
+            other => walk::map_children(other, |e| self.hoist_from_expression(e)),
         }
     }
 
-    /// Hoist CTEs from WHERE clause
+    /// Recursively hoist from a WHERE clause
     fn hoist_from_where_clause(&mut self, where_clause: &mut WhereClause) {
         for condition in &mut where_clause.conditions {
             condition.expr = self.hoist_from_expression(condition.expr.clone());
         }
-    }
-
-    /// Recursively hoist from a condition
-    fn hoist_from_condition(&mut self, condition: &mut Condition) {
-        condition.expr = self.hoist_from_expression(condition.expr.clone());
     }
 
     /// Add a CTE to the hoisted collection
@@ -291,67 +236,34 @@ impl CTEHoister {
     }
 
     /// Find CTE references in an expression
+    ///
+    /// The only real rule is the subquery arms: descend into the nested
+    /// statement and look for CTE references there. Those must stay explicit
+    /// because [`walk::visit_children`] treats a subquery statement as a scope
+    /// boundary and will not enter it. Everything else is plain traversal.
     fn find_cte_refs_in_expression(&self, expr: &SqlExpression, deps: &mut HashSet<String>) {
         match expr {
             SqlExpression::ScalarSubquery { query } => {
                 self.find_cte_references(query, deps);
             }
-            SqlExpression::InSubquery { subquery, .. } => {
+            SqlExpression::InSubquery { expr, subquery }
+            | SqlExpression::NotInSubquery { expr, subquery } => {
+                self.find_cte_refs_in_expression(expr, deps);
                 self.find_cte_references(subquery, deps);
             }
-            SqlExpression::NotInSubquery { subquery, .. } => {
+            // Tuple forms were missing from the old catch-all. Unlike the
+            // hoisting path these ARE reachable: the subquery need not contain
+            // a WITH, only a reference to an already-hoisted CTE.
+            SqlExpression::InSubqueryTuple { exprs, subquery }
+            | SqlExpression::NotInSubqueryTuple { exprs, subquery } => {
+                for e in exprs {
+                    self.find_cte_refs_in_expression(e, deps);
+                }
                 self.find_cte_references(subquery, deps);
             }
-            SqlExpression::FunctionCall { args, .. } => {
-                for arg in args {
-                    self.find_cte_refs_in_expression(arg, deps);
-                }
+            other => {
+                walk::visit_children(other, |child| self.find_cte_refs_in_expression(child, deps))
             }
-            SqlExpression::BinaryOp { left, right, .. } => {
-                self.find_cte_refs_in_expression(left, deps);
-                self.find_cte_refs_in_expression(right, deps);
-            }
-            SqlExpression::CaseExpression {
-                when_branches,
-                else_branch,
-            } => {
-                for branch in when_branches {
-                    self.find_cte_refs_in_expression(&branch.condition, deps);
-                    self.find_cte_refs_in_expression(&branch.result, deps);
-                }
-                if let Some(else_expr) = else_branch {
-                    self.find_cte_refs_in_expression(else_expr, deps);
-                }
-            }
-            SqlExpression::SimpleCaseExpression {
-                expr,
-                when_branches,
-                else_branch,
-            } => {
-                self.find_cte_refs_in_expression(expr, deps);
-                for branch in when_branches {
-                    self.find_cte_refs_in_expression(&branch.value, deps);
-                    self.find_cte_refs_in_expression(&branch.result, deps);
-                }
-                if let Some(else_expr) = else_branch {
-                    self.find_cte_refs_in_expression(else_expr, deps);
-                }
-            }
-            SqlExpression::InList { expr, values } | SqlExpression::NotInList { expr, values } => {
-                self.find_cte_refs_in_expression(expr, deps);
-                for value in values {
-                    self.find_cte_refs_in_expression(value, deps);
-                }
-            }
-            SqlExpression::Between { expr, lower, upper } => {
-                self.find_cte_refs_in_expression(expr, deps);
-                self.find_cte_refs_in_expression(lower, deps);
-                self.find_cte_refs_in_expression(upper, deps);
-            }
-            SqlExpression::Not { expr } => {
-                self.find_cte_refs_in_expression(expr, deps);
-            }
-            _ => {}
         }
     }
 
