@@ -215,7 +215,7 @@ impl InOperatorLifter {
         stmt.ctes.push(cte);
 
         // Update the FROM clause to use the CTE
-        stmt.from_table = Some(cte_name);
+        stmt.set_from_table(cte_name);
 
         true
     }
@@ -289,5 +289,50 @@ mod tests {
                 right: Box::new(SqlExpression::NumberLiteral("1".to_string())),
             }
         ));
+    }
+
+    /// Regression: the lifter must repoint `from_source` at the lifted CTE, not
+    /// just the legacy `from_table`.
+    ///
+    /// The executor reads `from_source` first and only falls back to
+    /// `from_table`, so rewriting one without the other left `from_source`
+    /// pointing at the original base table — which has no lifted column.
+    ///
+    /// Parsed here rather than hand-built: the parser populates both fields,
+    /// which is what makes the desync reachable. A fixture with
+    /// `from_source: None` cannot catch this.
+    #[test]
+    fn test_rewrite_query_repoints_from_source_to_cte() {
+        use crate::sql::recursive_parser::Parser;
+
+        let mut parser = Parser::new("SELECT symbol FROM trades WHERE LOWER(symbol) IN ('aapl')");
+        let mut stmt = parser.parse().expect("query should parse");
+
+        // Precondition: the parser sets both representations.
+        #[allow(deprecated)]
+        {
+            assert_eq!(stmt.from_table.as_deref(), Some("trades"));
+        }
+        assert!(matches!(
+            stmt.from_source,
+            Some(TableSource::Table(ref t)) if t == "trades"
+        ));
+
+        assert!(
+            InOperatorLifter::new().rewrite_query(&mut stmt),
+            "LOWER(col) IN (...) should trigger lifting"
+        );
+
+        #[allow(deprecated)]
+        let rewritten = stmt.from_table.clone().expect("from_table should be set");
+        assert_eq!(rewritten, "trades_lifted");
+
+        match stmt.from_source {
+            Some(TableSource::Table(ref t)) => assert_eq!(
+                t, &rewritten,
+                "from_source must follow from_table to the lifted CTE"
+            ),
+            ref other => panic!("expected from_source to name the lifted CTE, got {other:?}"),
+        }
     }
 }

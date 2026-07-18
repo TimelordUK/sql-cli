@@ -58,8 +58,8 @@ impl CTEHoister {
     /// Recursively hoist CTEs from a SELECT statement
     fn hoist_from_statement(&mut self, mut statement: SelectStatement) -> SelectStatement {
         // Hoist from subquery in FROM clause
-        if let Some(subquery) = statement.from_subquery.take() {
-            let rewritten_sub = self.hoist_from_statement(*subquery);
+        statement.map_from_subquery(|subquery| {
+            let rewritten_sub = self.hoist_from_statement(subquery);
 
             // If the subquery has CTEs, hoist them
             for cte in rewritten_sub.ctes.clone() {
@@ -67,11 +67,11 @@ impl CTEHoister {
             }
 
             // Return the subquery without its CTEs (they're hoisted)
-            statement.from_subquery = Some(Box::new(SelectStatement {
+            SelectStatement {
                 ctes: Vec::new(),
                 ..rewritten_sub
-            }));
-        }
+            }
+        });
 
         // Hoist from CTEs in this statement
         let local_ctes = statement.ctes.drain(..).collect::<Vec<_>>();
@@ -414,6 +414,59 @@ impl CTEHoister {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Regression: hoisting a derived table must rewrite the `from_source`
+    /// copy, not only the legacy `from_subquery`.
+    ///
+    /// The parser fills both with clones of the same subquery, and the executor
+    /// reads `from_source`. Rewriting one alone left a stale pre-hoist copy in
+    /// the field that actually gets executed.
+    ///
+    /// This currently produces the right answer either way — the stale copy is
+    /// a self-contained statement that still carries its own CTEs — so the
+    /// desync is latent, not a live wrong-results bug. The assertion pins the
+    /// two representations together before the correlated-subquery work starts
+    /// depending on `from_source` being authoritative.
+    #[test]
+    fn test_derived_table_hoisting_updates_from_source() {
+        use crate::sql::parser::ast::TableSource;
+        use crate::sql::recursive_parser::Parser;
+
+        let mut parser = Parser::new(
+            "SELECT symbol FROM (WITH x AS (SELECT symbol FROM trades) SELECT symbol FROM x) sub",
+        );
+        let stmt = parser.parse().expect("query should parse");
+
+        let hoisted = CTEHoister::hoist_ctes(stmt);
+
+        // The inner CTE was lifted to the top level.
+        assert_eq!(hoisted.ctes.len(), 1, "inner CTE should be hoisted");
+        assert_eq!(hoisted.ctes[0].name, "x");
+
+        // Both representations must show the CTE-stripped subquery. Before the
+        // fix, from_source still held the original with `ctes.len() == 1`.
+        #[allow(deprecated)]
+        let legacy = hoisted
+            .from_subquery
+            .as_ref()
+            .expect("from_subquery should be present");
+        assert!(legacy.ctes.is_empty(), "legacy copy should be stripped");
+
+        match hoisted.from_source {
+            Some(TableSource::DerivedTable {
+                ref query,
+                ref alias,
+            }) => {
+                assert!(
+                    query.ctes.is_empty(),
+                    "from_source holds a stale pre-hoist subquery with {} CTE(s)",
+                    query.ctes.len()
+                );
+                assert_eq!(alias, "sub", "derived-table alias must survive the rewrite");
+            }
+            ref other => panic!("expected a DerivedTable from_source, got {other:?}"),
+        }
+    }
 
     #[test]
     fn test_simple_cte_hoisting() {

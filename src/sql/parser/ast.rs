@@ -515,6 +515,62 @@ impl Default for SelectStatement {
     }
 }
 
+impl SelectStatement {
+    /// Point the FROM clause at a named table, updating `from_source` and the
+    /// legacy fields together.
+    ///
+    /// Both representations must move in lockstep: the executor
+    /// (`query_engine.rs`) reads `from_source` first and only falls back to
+    /// `from_table`, so a rewrite that touches just the legacy field is
+    /// silently discarded whenever `from_source` is populated.
+    pub fn set_from_table(&mut self, table: String) {
+        self.from_source = Some(TableSource::Table(table.clone()));
+        #[allow(deprecated)]
+        {
+            self.from_table = Some(table);
+            self.from_subquery = None;
+            self.from_function = None;
+        }
+    }
+
+    /// Replace the derived table (subquery) in the FROM clause, updating
+    /// `from_source` and the legacy field together.
+    ///
+    /// The parser populates `from_subquery` and `from_source::DerivedTable`
+    /// with clones of the same subquery, so rewriting only the former leaves a
+    /// stale copy in `from_source` — which is the one the executor reads. The
+    /// existing derived-table alias is preserved.
+    pub fn set_from_subquery(&mut self, query: Box<SelectStatement>) {
+        #[allow(deprecated)]
+        let alias = match &self.from_source {
+            Some(TableSource::DerivedTable { alias, .. }) => alias.clone(),
+            _ => self.from_alias.clone().unwrap_or_default(),
+        };
+        self.from_source = Some(TableSource::DerivedTable {
+            query: query.clone(),
+            alias,
+        });
+        #[allow(deprecated)]
+        {
+            self.from_subquery = Some(query);
+        }
+    }
+
+    /// Rewrite the derived table (subquery) in the FROM clause in place, if
+    /// there is one, keeping `from_source` and the legacy field in sync.
+    ///
+    /// Prefer this over taking `from_subquery` and reassigning it: the
+    /// take-then-restore pattern leaves the `from_source` copy stale in
+    /// between, and the alias is easy to drop on the way through.
+    pub fn map_from_subquery(&mut self, f: impl FnOnce(SelectStatement) -> SelectStatement) {
+        #[allow(deprecated)]
+        let taken = self.from_subquery.take();
+        if let Some(subquery) = taken {
+            self.set_from_subquery(Box::new(f(*subquery)));
+        }
+    }
+}
+
 /// INTO clause for creating temporary tables
 #[derive(Debug, Clone, PartialEq)]
 pub struct IntoTable {
