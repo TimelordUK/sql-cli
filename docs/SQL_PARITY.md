@@ -11,6 +11,9 @@ and either **fix** divergences or record **why we won't**.
   says *what* diverges right now; this file says *what we're doing about it and why*.
 - **CI gate:** `runner.py --check` runs in `.github/workflows/test-complete.yml`
   (job *SQL Parity*) and fails the build on any drift from the contract below.
+- **Companion log:** [`ENGINE_REFACTORING.md`](ENGINE_REFACTORING.md) (R-numbers)
+  tracks *structural* debt rather than wrong answers. Where a parity gap turns
+  out to have a shape problem underneath it, the P-entry links to the R-entry.
 
 ### Regression contract
 
@@ -119,6 +122,12 @@ annotation be removed.
 - **Notes:** Uncorrelated scalar / `IN` / derived-table subqueries already AGREE;
   the gap is specifically the outer-row binding. Highest-leverage fix here — one
   root cause unlocks five cases and the broader nested-scoping goal.
+- **Structural root cause:** [R7](ENGINE_REFACTORING.md) — subqueries are
+  *substituted* by an up-front AST rewrite pass, never *evaluated* per row, so
+  there is no outer row to correlate against. Groundwork tracked as
+  [R2](ENGINE_REFACTORING.md) (traversal helpers, needed before the `EXISTS`
+  variant can be added safely) and [R6](ENGINE_REFACTORING.md) (the existing
+  correlation analyzer is unwired and untested).
 
 ### P4 — Self-join of the base table fails to resolve
 - **Status:** 🟢 FIXED (2026-07-11)

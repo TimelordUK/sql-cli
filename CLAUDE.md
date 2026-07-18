@@ -380,6 +380,14 @@ The script parser is basic - it chunks on `GO` statements, so proper formatting 
 
 ## 🔗 Quick Links
 
+### Books of Work (read before starting engine changes)
+- **`docs/SQL_PARITY.md`** — P-numbered log of divergences vs DuckDB (*do we
+  return the right answer?*). Backed by `tests/comparison/` and a CI gate.
+- **`docs/ENGINE_REFACTORING.md`** — R-numbered log of structural debt (*can we
+  keep changing the engine safely?*). Records why groundwork is sequenced the
+  way it is, and which refactors are deliberately deferred.
+
+### Code
 - Function Registry: `src/sql/functions/mod.rs`
 - Parser: `src/sql/recursive_parser.rs`
 - Expression Evaluator: `src/data/arithmetic_evaluator.rs`
