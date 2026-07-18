@@ -69,3 +69,12 @@ sql = "SELECT region, amount FROM international_sales WHERE amount > (SELECT AVG
 id = "where_in_subquery_set"
 data = "trades.csv"
 sql = "SELECT symbol FROM trades WHERE symbol IN (SELECT symbol FROM trades WHERE price > 185)"
+
+[[case]]
+id = "select_alias_in_in_subquery"
+data = "trades.csv"
+sql = "SELECT symbol, price * 2 AS dbl FROM trades WHERE dbl IN (SELECT price * 2 FROM trades WHERE price > 185)"
+# P11: a SELECT alias used as the LHS of an IN-subquery is never expanded, so
+# the query errors with "Column 'dbl' not found". The same alias works fine as
+# the LHS of a plain comparison or an IN-list.
+expect = "GAP"

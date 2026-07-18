@@ -1,0 +1,67 @@
+# Tier 7 — GROUP BY and HAVING.
+#
+# Added 2026-07-18. Until now the corpus had no HAVING coverage at all, which
+# is why the P9 family below went unnoticed: aggregates reached by anything
+# other than a bare comparison are silently mishandled. See SQL_PARITY.md.
+
+[[case]]
+id = "group_by_count"
+data = "international_sales.csv"
+sql = "SELECT region, COUNT(*) AS n FROM international_sales GROUP BY region ORDER BY region"
+
+[[case]]
+id = "group_by_sum"
+data = "international_sales.csv"
+sql = "SELECT region, SUM(amount) AS total FROM international_sales GROUP BY region ORDER BY region"
+
+[[case]]
+id = "group_by_multi_key"
+data = "international_sales.csv"
+sql = "SELECT region, product, COUNT(*) AS n FROM international_sales GROUP BY region, product ORDER BY region, product"
+
+# --- HAVING: the baseline that works ---
+
+[[case]]
+id = "having_comparison"
+data = "international_sales.csv"
+sql = "SELECT region, COUNT(*) AS n FROM international_sales GROUP BY region HAVING COUNT(*) > 2 ORDER BY region"
+
+[[case]]
+id = "having_sum_comparison"
+data = "international_sales.csv"
+sql = "SELECT region, SUM(amount) AS total FROM international_sales GROUP BY region HAVING SUM(amount) > 5000 ORDER BY region"
+
+# --- HAVING: P9 family — aggregate nested in a non-comparison operator ---
+
+[[case]]
+id = "having_between"
+data = "international_sales.csv"
+sql = "SELECT region, COUNT(*) AS n FROM international_sales GROUP BY region HAVING COUNT(*) BETWEEN 1 AND 2 ORDER BY region"
+# P9: aggregate inside BETWEEN is never rewritten to its alias, so the predicate
+# does not filter — silently UNDER-filters and returns groups it should exclude.
+expect = "DIFFER"
+
+[[case]]
+id = "having_in_list"
+data = "international_sales.csv"
+sql = "SELECT region, COUNT(*) AS n FROM international_sales GROUP BY region HAVING COUNT(*) IN (4, 5) ORDER BY region"
+# P9: aggregate inside IN is never rewritten — silently returns 0 rows.
+# NB values must MATCH real group counts (5/10/4/1). An earlier draft used
+# IN (2, 3), which no group satisfies, so both engines returned 0 rows and the
+# case passed for the wrong reason.
+expect = "DIFFER"
+
+[[case]]
+id = "having_case"
+data = "international_sales.csv"
+sql = "SELECT region, COUNT(*) AS n FROM international_sales GROUP BY region HAVING CASE WHEN COUNT(*) > 2 THEN 1 ELSE 0 END = 1 ORDER BY region"
+# P9: aggregate inside CASE is never rewritten — silently OVER-filters to 0 rows.
+expect = "DIFFER"
+
+[[case]]
+id = "having_not"
+data = "international_sales.csv"
+sql = "SELECT region, COUNT(*) AS n FROM international_sales GROUP BY region HAVING NOT (COUNT(*) > 2) ORDER BY region"
+# P10: the aggregate IS rewritten here, but the evaluator has no arm for Not,
+# so this errors rather than returning wrong rows.
+expect = "GAP"

@@ -45,3 +45,11 @@ data = "trades.csv"
 sql = "WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM n WHERE i < 5) SELECT i FROM n"
 # Recursive CTEs are a known, considered, deferred design item (not supported).
 expect = "GAP"
+
+[[case]]
+id = "cte_in_expression_position"
+data = "trades.csv"
+sql = "SELECT symbol, price FROM trades WHERE price > (WITH avg_cte AS (SELECT AVG(price) AS a FROM trades) SELECT a FROM avg_cte)"
+# P12: WITH is rejected anywhere in expression position ("Unexpected token in
+# primary expression: With"). DuckDB allows a CTE inside a scalar subquery.
+expect = "GAP"

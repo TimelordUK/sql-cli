@@ -212,6 +212,81 @@ annotation be removed.
   land under the correct aliases and NULLs fall on the FROM side, in plain
   `cargo test` (independent of the DuckDB corpus).
 
+### P9 — `HAVING` silently mishandles an aggregate nested in a non-comparison operator
+- **Status:** 🔴 OPEN — **theme**, covers three corpus cases
+- **Corpus:** `07_grouping.toml :: having_between` (DIFFER), `having_in_list`
+  (DIFFER), `having_case` (DIFFER). `having_comparison` /
+  `having_sum_comparison` AGREE.
+- **Observed:** `HavingAliasTransformer` rewrites an aggregate in `HAVING` to
+  reference its computed alias, but its traversal handles only `FunctionCall`,
+  `BinaryOp` and `Not`. An aggregate reached through any other operator is never
+  rewritten, and the result is **silently wrong in both directions**:
+
+  | Query | Correct | sql-cli |
+  |---|---|---|
+  | `HAVING COUNT(*) BETWEEN 1 AND 2` | 1 row | **4 rows** (under-filters) |
+  | `HAVING COUNT(*) IN (4, 5)` | 2 rows | **0 rows** (over-filters) |
+  | `HAVING CASE WHEN COUNT(*) > 2 THEN 1 ELSE 0 END = 1` | 2 rows | **0 rows** |
+
+  No error is raised in any of these — the predicate simply doesn't do what it
+  says. `HAVING COUNT(*) > 2` works, which is why this went unnoticed.
+- **Found:** 2026-07-18, while surveying transformers for the
+  [R2](ENGINE_REFACTORING.md) walker migration. **Not found by testing** — the
+  corpus had no `HAVING` coverage at all before this entry.
+- **Root cause:** [R3](ENGINE_REFACTORING.md) — hand-rolled traversals ending in
+  a `_ => {}` catch-all. `collect_aggregates_in_having` and
+  `rewrite_having_expression` each miss 14 of the 24 expression variants. The
+  code comment at `having_alias_transformer.rs:213` acknowledges the untransformed
+  aggregate "will fail later"; in practice it does not fail, it returns wrong rows.
+- **Decision:** **Fix** via the R2 migration — moving both functions onto
+  `walk::visit_children` / `map_children` retires the catch-all and covers every
+  variant. Constraint: the aggregate arm must *not* delegate to the walker, or it
+  would start recursing into aggregate arguments and break the deliberate
+  "no nested aggregates" invariant.
+
+### P10 — `HAVING NOT (...)` errors in the evaluator
+- **Status:** 🔴 OPEN
+- **Corpus:** `07_grouping.toml :: having_not` (GAP)
+- **Observed:** `HAVING NOT (COUNT(*) > 2)` →
+  `Unsupported expression type for arithmetic evaluation: Not { ... }`.
+- **Distinct from P9:** here the aggregate *is* rewritten correctly (the
+  transformer does handle `Not`), and the failure is downstream — the arithmetic
+  evaluator has no `Not` arm for a post-aggregation predicate. Fixing P9 will not
+  fix this.
+- **Decision:** **Fix** — add the missing evaluator arm. Small and independent.
+
+### P11 — A `SELECT` alias is not expanded on the LHS of an `IN` subquery
+- **Status:** 🔴 OPEN
+- **Corpus:** `02_where.toml :: select_alias_in_in_subquery` (GAP)
+- **Observed:** `SELECT symbol, price * 2 AS dbl FROM trades WHERE dbl IN
+  (SELECT ...)` → `Column 'dbl' not found`. The same alias resolves fine as the
+  LHS of a plain comparison or an `IN`-list, so this is specific to the subquery
+  form.
+- **Root cause:** [R3](ENGINE_REFACTORING.md). `WhereAliasExpander` never matches
+  `InSubquery` / `NotInSubquery` / the tuple forms, so the **same-scope** LHS
+  operand is skipped along with the subquery. Note the expander is right not to
+  descend into the subquery *body* (different scope) — the bug is that it drops
+  the operand too.
+- **Decision:** **Fix** via the R2 migration. `walk` visits `InSubquery`'s `expr`
+  while still treating the nested statement as a scope boundary, which is exactly
+  the required behaviour.
+
+### P12 — `WITH` is rejected in expression position
+- **Status:** 🔴 OPEN
+- **Corpus:** `06_ctes_setops.toml :: cte_in_expression_position` (GAP)
+- **Observed:** `WHERE price > (WITH avg_cte AS (...) SELECT a FROM avg_cte)` →
+  `Parse error: Unexpected token in primary expression: With`. Rejected in every
+  expression position tried — scalar subquery, `BETWEEN` operand, `IN`-list
+  element, and tuple `IN` (which reports "Tuple IN requires a subquery on the
+  right"). DuckDB accepts a CTE inside a scalar subquery.
+- **Found:** 2026-07-18, while trying to write a regression test for the
+  `cte_hoister` walker migration — the test could not be expressed.
+- **Side effect worth noting:** the `ScalarSubquery` / `InSubquery` arms of
+  `CTEHoister::hoist_from_expression` are therefore **unreachable dead code**
+  today; expression-position CTE hoisting has never had an input.
+- **Decision:** **Fix** — a parser change (accept `WITH` where a subquery is
+  already accepted). The hoister machinery to handle the result already exists.
+
 ---
 
 ## Deferred / won't fix (intentional)
