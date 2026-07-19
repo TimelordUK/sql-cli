@@ -32,6 +32,7 @@ use crate::query_plan::pipeline::ASTTransformer;
 use crate::sql::parser::ast::{
     CTEType, ColumnRef, QuoteStyle, SelectItem, SelectStatement, SqlExpression, TableSource,
 };
+use crate::sql::parser::walk;
 use anyhow::Result;
 use std::collections::HashMap;
 use tracing::debug;
@@ -133,28 +134,23 @@ impl HavingAliasTransformer {
     }
 
     /// Collect all aggregate function calls from a HAVING expression
+    ///
+    /// The one real rule is the aggregate itself; everything else is plain
+    /// traversal. This deliberately does **not** delegate the aggregate arm to
+    /// the walker: recursing into an aggregate's arguments would break the
+    /// "no nested aggregates" invariant the old code kept by hand.
+    ///
+    /// The old version matched only `BinaryOp`, `Not` and `FunctionCall` before
+    /// its catch-all, so an aggregate reached through `BETWEEN`, `IN` or `CASE`
+    /// was never collected and never promoted -- P9, silently wrong rows.
     fn collect_aggregates_in_having(expr: &SqlExpression, found: &mut Vec<SqlExpression>) {
-        match expr {
-            SqlExpression::FunctionCall { args, .. } if Self::is_aggregate_function(expr) => {
-                found.push(expr.clone());
-                // Don't recurse into aggregate args — nested aggregates aren't supported anyway
-                let _ = args;
-            }
-            SqlExpression::BinaryOp { left, right, .. } => {
-                Self::collect_aggregates_in_having(left, found);
-                Self::collect_aggregates_in_having(right, found);
-            }
-            SqlExpression::Not { expr } => {
-                Self::collect_aggregates_in_having(expr, found);
-            }
-            SqlExpression::FunctionCall { args, .. } => {
-                // Non-aggregate function — check its arguments for aggregates
-                for arg in args {
-                    Self::collect_aggregates_in_having(arg, found);
-                }
-            }
-            _ => {}
+        if Self::is_aggregate_function(expr) {
+            found.push(expr.clone());
+            return;
         }
+        walk::visit_children(expr, |child| {
+            Self::collect_aggregates_in_having(child, found)
+        });
     }
 
     /// Promote aggregates in HAVING that aren't already in SELECT into hidden
@@ -192,14 +188,21 @@ impl HavingAliasTransformer {
     }
 
     /// Rewrite a HAVING expression to use aliases instead of aggregates
+    ///
+    /// Mirrors [`Self::collect_aggregates_in_having`]: handle the aggregate,
+    /// delegate the rest, and do not descend into an aggregate's arguments.
+    ///
+    /// Note the subquery boundary works in our favour here — `map_children`
+    /// does not descend into a nested `SelectStatement`, so an aggregate
+    /// belonging to a subquery's own scope is correctly left alone.
     fn rewrite_having_expression(
-        expr: &SqlExpression,
+        expr: SqlExpression,
         aggregate_map: &HashMap<String, String>,
     ) -> SqlExpression {
-        match expr {
-            SqlExpression::FunctionCall { .. } if Self::is_aggregate_function(expr) => {
-                let normalized = Self::normalize_aggregate_expr(expr);
-                if let Some(alias) = aggregate_map.get(&normalized) {
+        if Self::is_aggregate_function(&expr) {
+            let normalized = Self::normalize_aggregate_expr(&expr);
+            return match aggregate_map.get(&normalized) {
+                Some(alias) => {
                     debug!(
                         "Rewriting aggregate {} to column reference {}",
                         normalized, alias
@@ -209,37 +212,15 @@ impl HavingAliasTransformer {
                         quote_style: QuoteStyle::None,
                         table_prefix: None,
                     })
-                } else {
-                    // Aggregate not found in SELECT - leave as is (will fail later with clear error)
-                    expr.clone()
                 }
-            }
-            SqlExpression::BinaryOp { left, op, right } => SqlExpression::BinaryOp {
-                left: Box::new(Self::rewrite_having_expression(left, aggregate_map)),
-                op: op.clone(),
-                right: Box::new(Self::rewrite_having_expression(right, aggregate_map)),
-            },
-            SqlExpression::Not { expr } => SqlExpression::Not {
-                expr: Box::new(Self::rewrite_having_expression(expr, aggregate_map)),
-            },
-            SqlExpression::FunctionCall {
-                name,
-                args,
-                distinct,
-            } => {
-                // Non-aggregate function — recurse into args
-                SqlExpression::FunctionCall {
-                    name: name.clone(),
-                    args: args
-                        .iter()
-                        .map(|a| Self::rewrite_having_expression(a, aggregate_map))
-                        .collect(),
-                    distinct: *distinct,
-                }
-            }
-            // For other expressions, return as-is
-            _ => expr.clone(),
+                // Aggregate not found in SELECT - leave as is
+                None => expr,
+            };
         }
+
+        walk::map_children(expr, |child| {
+            Self::rewrite_having_expression(child, aggregate_map)
+        })
     }
 
     /// Transform a SelectStatement and recursively apply to nested statements
@@ -301,16 +282,17 @@ impl HavingAliasTransformer {
 
         // Step 2: Rewrite HAVING clause to use aliases
         if let Some(having_expr) = stmt.having.take() {
-            let rewritten = Self::rewrite_having_expression(&having_expr, &aggregate_map);
-            if format!("{:?}", having_expr) != format!("{:?}", rewritten) {
+            // Snapshot for the log line only, so the rewrite can consume the
+            // expression rather than deep-cloning it at every level.
+            let before = format!("{having_expr:?}");
+            let rewritten = Self::rewrite_having_expression(having_expr, &aggregate_map);
+            if before != format!("{rewritten:?}") {
                 debug!(
                     "Rewrote HAVING clause with {} aggregate alias(es)",
                     aggregate_map.len()
                 );
-                stmt.having = Some(rewritten);
-            } else {
-                stmt.having = Some(having_expr);
             }
+            stmt.having = Some(rewritten);
         }
     }
 }
@@ -415,6 +397,74 @@ mod tests {
         assert_eq!(transformer.generate_alias(), "__agg_1");
         assert_eq!(transformer.generate_alias(), "__agg_2");
         assert_eq!(transformer.generate_alias(), "__agg_3");
+    }
+
+    /// P9 regression. An aggregate reached through `BETWEEN` / `IN` / `CASE`
+    /// used to fall into the catch-all: never collected, never promoted, never
+    /// rewritten — so the predicate silently didn't filter. The corpus pins the
+    /// row counts against DuckDB; this pins the mechanism, so a regression
+    /// shows up in `cargo test` and not only in the parity harness.
+    #[test]
+    fn rewrites_aggregates_nested_in_non_comparison_operators() {
+        use crate::sql::recursive_parser::Parser;
+
+        for (label, sql) in [
+            (
+                "BETWEEN",
+                "SELECT region, COUNT(*) AS n FROM t GROUP BY region HAVING COUNT(*) BETWEEN 1 AND 2",
+            ),
+            (
+                "IN",
+                "SELECT region, COUNT(*) AS n FROM t GROUP BY region HAVING COUNT(*) IN (4, 5)",
+            ),
+            (
+                "CASE",
+                "SELECT region, COUNT(*) AS n FROM t GROUP BY region HAVING CASE WHEN COUNT(*) > 2 THEN 1 ELSE 0 END = 1",
+            ),
+        ] {
+            let stmt = Parser::new(sql).parse().expect("should parse");
+            let result = HavingAliasTransformer::new()
+                .transform(stmt)
+                .expect("transform should succeed");
+
+            let having = result.having.expect("having clause");
+            let mut aggregates_left = 0;
+            crate::sql::parser::walk::visit_all(&having, &mut |e| {
+                if HavingAliasTransformer::is_aggregate_function(e) {
+                    aggregates_left += 1;
+                }
+            });
+
+            assert_eq!(
+                aggregates_left, 0,
+                "{label}: every aggregate in HAVING must be rewritten to its alias, \
+                 leaving none behind; got {having:?}"
+            );
+        }
+    }
+
+    /// The other half of the invariant: an aggregate's *arguments* must stay
+    /// untraversed, which is why the aggregate arm returns early instead of
+    /// delegating to the walker.
+    #[test]
+    fn does_not_descend_into_aggregate_arguments() {
+        let inner = SqlExpression::FunctionCall {
+            name: "COUNT".to_string(),
+            args: vec![SqlExpression::Column(ColumnRef {
+                name: "x".to_string(),
+                quote_style: QuoteStyle::None,
+                table_prefix: None,
+            })],
+            distinct: false,
+        };
+
+        let mut found = Vec::new();
+        HavingAliasTransformer::collect_aggregates_in_having(&inner, &mut found);
+        assert_eq!(
+            found.len(),
+            1,
+            "an aggregate is collected as one unit, not walked into"
+        );
     }
 
     #[test]

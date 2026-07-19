@@ -85,7 +85,7 @@ feature work**, and so we can tell the difference between "this is awkward" and
 
 ### R2 — Branch logic over `SqlExpression` is copy-pasted everywhere
 - **Status:** 🟡 IN PROGRESS — helpers landed (#31), crossing forms made primitive
-  (#35), 3 of 11 transformers migrated; 8 outstanding
+  (#35), 4 of 11 transformers migrated; 7 outstanding
 - **Where:** `src/query_plan/*.rs`, `src/data/*.rs`, `src/analysis/*.rs`
 - **Observed:** No traversal abstraction existed. **446
   `SqlExpression::<Variant>` patterns across 40 files**, every consumer
@@ -116,13 +116,19 @@ feature work**, and so we can tell the difference between "this is awkward" and
     closures that each capture `self` mutably.
 - **Migrated so far:** `cte_hoister`, `into_clause_remover`,
   `ilike_to_like_transformer` — i.e. exactly the three that cross the scope
-  boundary. All three now delegate; none names a subquery variant.
+  boundary; all three now delegate and none names a subquery variant — plus
+  `having_alias_transformer`, which closed [P9](SQL_PARITY.md).
+- **The migration is paying for itself.** Every transformer moved onto `walk` so
+  far has either fixed a live silent bug or been proven not to have one. P9 is
+  the clearest case: 74 lines of hand-rolled match became 24, and three corpus
+  cases went DIFFER → AGREE with no other change. Use it as the template —
+  *handle the one real rule, return early, delegate everything else*.
 - **Next, in priority order.** Counts are `SqlExpression::` patterns remaining
   in each file, as a rough size guide:
 
   | Transformer | Patterns | Note |
   |---|---|---|
-  | `having_alias_transformer` | 30 | **A fix, not a refactor** — this is [P9](SQL_PARITY.md). Write the failing corpus case *first*. |
+  | ~~`having_alias_transformer`~~ | ~~30~~ | ✅ Done 2026-07-19 — closed [P9](SQL_PARITY.md). |
   | `where_alias_expander` | 60 | Largest. Outer-alias scoping is correct only *by omission* — the opaque `map_children` is load-bearing here. |
   | `group_by_alias_expander` | 34 | Same scoping caveat. |
   | `order_by_alias_transformer` | 18 | Same scoping caveat. |
@@ -274,3 +280,4 @@ R5 dead code ─────── opportunistic
 | 2026-07-18 | R2 group 1: the three boundary-crossing transformers migrated; two silent bugs fixed | #33 |
 | 2026-07-18 | R3 evidence: P9–P12 filed after probing the engine; corpus gains tier 07 (grouping) | — |
 | 2026-07-18 | R2: `*_crossing` helpers become the primitives; the three crossing transformers stop hand-listing subquery variants | #35 |
+| 2026-07-19 | R2: `having_alias_transformer` migrated — closes P9, three corpus cases DIFFER → AGREE | — |

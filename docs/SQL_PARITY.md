@@ -213,10 +213,10 @@ annotation be removed.
   `cargo test` (independent of the DuckDB corpus).
 
 ### P9 — `HAVING` silently mishandles an aggregate nested in a non-comparison operator
-- **Status:** 🔴 OPEN — **theme**, covers three corpus cases
-- **Corpus:** `07_grouping.toml :: having_between` (DIFFER), `having_in_list`
-  (DIFFER), `having_case` (DIFFER). `having_comparison` /
-  `having_sum_comparison` AGREE.
+- **Status:** 🟢 CLOSED 2026-07-19 — all three corpus cases now AGREE
+- **Corpus:** `07_grouping.toml :: having_between`, `having_in_list`,
+  `having_case` — `expect` dropped, they are plain AGREE cases now.
+  `having_comparison` / `having_sum_comparison` were already AGREE.
 - **Observed:** `HavingAliasTransformer` rewrites an aggregate in `HAVING` to
   reference its computed alias, but its traversal handles only `FunctionCall`,
   `BinaryOp` and `Not`. An aggregate reached through any other operator is never
@@ -243,6 +243,18 @@ annotation be removed.
   variant. Constraint: the aggregate arm must *not* delegate to the walker, or it
   would start recursing into aggregate arguments and break the deliberate
   "no nested aggregates" invariant.
+- **Fixed:** 2026-07-19. Both functions now read "handle the aggregate, delegate
+  the rest" — `collect_aggregates_in_having` returns early on an aggregate then
+  calls `visit_children`; `rewrite_having_expression` does the same with
+  `map_children`. 74 lines of hand-rolled match became 24. The constraint above
+  held: the early return *is* what keeps aggregate arguments untraversed.
+  Two things worth recording, neither obvious before the migration:
+  - **The subquery boundary works in our favour.** `map_children` does not
+    descend into a nested `SelectStatement`, so an aggregate belonging to a
+    subquery's own scope is correctly left alone — the outer HAVING must not
+    claim it. The opaque default is load-bearing here, not incidental.
+  - **`having_not` stayed a GAP**, exactly as P10 predicted. Good evidence the
+    two entries were correctly split rather than being one finding.
 
 ### P10 — `HAVING NOT (...)` errors in the evaluator
 - **Status:** 🔴 OPEN
