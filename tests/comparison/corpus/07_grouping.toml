@@ -37,26 +37,23 @@ sql = "SELECT region, SUM(amount) AS total FROM international_sales GROUP BY reg
 id = "having_between"
 data = "international_sales.csv"
 sql = "SELECT region, COUNT(*) AS n FROM international_sales GROUP BY region HAVING COUNT(*) BETWEEN 1 AND 2 ORDER BY region"
-# P9: aggregate inside BETWEEN is never rewritten to its alias, so the predicate
-# does not filter — silently UNDER-filters and returns groups it should exclude.
-expect = "DIFFER"
+# Was P9 (silently UNDER-filtered, returning groups it should exclude).
+# Closed 2026-07-19 by migrating HavingAliasTransformer onto the walk helpers.
 
 [[case]]
 id = "having_in_list"
 data = "international_sales.csv"
 sql = "SELECT region, COUNT(*) AS n FROM international_sales GROUP BY region HAVING COUNT(*) IN (4, 5) ORDER BY region"
-# P9: aggregate inside IN is never rewritten — silently returns 0 rows.
+# Was P9 (silently returned 0 rows). Closed 2026-07-19.
 # NB values must MATCH real group counts (5/10/4/1). An earlier draft used
 # IN (2, 3), which no group satisfies, so both engines returned 0 rows and the
 # case passed for the wrong reason.
-expect = "DIFFER"
 
 [[case]]
 id = "having_case"
 data = "international_sales.csv"
 sql = "SELECT region, COUNT(*) AS n FROM international_sales GROUP BY region HAVING CASE WHEN COUNT(*) > 2 THEN 1 ELSE 0 END = 1 ORDER BY region"
-# P9: aggregate inside CASE is never rewritten — silently OVER-filters to 0 rows.
-expect = "DIFFER"
+# Was P9 (silently OVER-filtered to 0 rows). Closed 2026-07-19.
 
 [[case]]
 id = "having_not"
