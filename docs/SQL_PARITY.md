@@ -292,20 +292,44 @@ annotation be removed.
   matching DuckDB.
 
 ### P11 — A `SELECT` alias is not expanded on the LHS of an `IN` subquery
-- **Status:** 🔴 OPEN
-- **Corpus:** `02_where.toml :: select_alias_in_in_subquery` (GAP)
-- **Observed:** `SELECT symbol, price * 2 AS dbl FROM trades WHERE dbl IN
+- **Status:** 🟢 FIXED (2026-07-25)
+- **Corpus:** `02_where.toml :: select_alias_in_in_subquery` (now AGREE; `expect`
+  dropped)
+- **Observed (was):** `SELECT symbol, price * 2 AS dbl FROM trades WHERE dbl IN
   (SELECT ...)` → `Column 'dbl' not found`. The same alias resolves fine as the
-  LHS of a plain comparison or an `IN`-list, so this is specific to the subquery
-  form.
-- **Root cause:** [R3](ENGINE_REFACTORING.md). `WhereAliasExpander` never matches
-  `InSubquery` / `NotInSubquery` / the tuple forms, so the **same-scope** LHS
-  operand is skipped along with the subquery. Note the expander is right not to
-  descend into the subquery *body* (different scope) — the bug is that it drops
-  the operand too.
-- **Decision:** **Fix** via the R2 migration. `walk` visits `InSubquery`'s `expr`
-  while still treating the nested statement as a scope boundary, which is exactly
-  the required behaviour.
+  LHS of a plain comparison or an `IN`-list, so this looked specific to the
+  subquery form.
+- **Root cause (documented):** [R3](ENGINE_REFACTORING.md). `WhereAliasExpander`
+  never matched `InSubquery` / `NotInSubquery` / the tuple forms, so the
+  **same-scope** LHS operand was skipped along with the subquery.
+- **Second, undocumented layer (found while fixing):** the alias fix alone was
+  *necessary but not sufficient*. Once `dbl` expands to `price * 2`, the LHS is a
+  compound expression — and `price * 2 IN (SELECT ...)` **fails even with no
+  alias at all**. The `InOperatorLifter` transformer normally lifts an
+  expression-LHS `IN`-list into a computed CTE column, but it only matches
+  `InList` / `NotInList`; an `IN`-**subquery**'s `InList` is synthesized *later*
+  by `SubqueryExecutor`, after the lifter has run, so `evaluate_in_list` received
+  a raw expression LHS and its `extract_column_name` errored. This was a
+  pre-existing bug the alias case merely exposed.
+- **Fix (two parts):**
+  1. **R2 migration of `WhereAliasExpander`.** Rewrote `expand_expression` to
+     intercept only the two nodes that carry a real rule (a bare column naming an
+     alias; a method-call *string* receiver the walker can't reach) and delegate
+     all structural recursion to `walk::map_children`. That retired ~230 lines of
+     hand-rolled arms **and** the `_ => (clone, false)` catch-all, and picked up
+     the four subquery-LHS variants for free — the walker visits their same-scope
+     operands while treating the nested `SelectStatement` as an opaque scope
+     boundary (so a `dbl` inside the subquery body is correctly left alone).
+     Regression: `where_alias_expander.rs ::
+     test_expands_alias_on_in_subquery_lhs_not_body`.
+  2. **Expression LHS in `evaluate_in_list` / `evaluate_between`.** Added
+     `RecursiveWhereEvaluator::evaluate_operand_value`, which looks up a plain
+     column but evaluates any other expression through the `ArithmeticEvaluator`
+     — the same delegation `evaluate_binary_op` already does for its LHS. Both
+     `IN` and `BETWEEN` now accept a compound LHS.
+- **Note:** the ideal long-term home for part 2 is the [R7](ENGINE_REFACTORING.md)
+  per-row subquery evaluation; this is the correct localized fix until then, and
+  it stands on its own (it fixes alias-free `expr IN (subquery)` too).
 
 ### P12 — `WITH` is rejected in expression position
 - **Status:** 🟢 FIXED (2026-07-25)

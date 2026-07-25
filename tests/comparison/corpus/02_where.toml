@@ -74,7 +74,10 @@ sql = "SELECT symbol FROM trades WHERE symbol IN (SELECT symbol FROM trades WHER
 id = "select_alias_in_in_subquery"
 data = "trades.csv"
 sql = "SELECT symbol, price * 2 AS dbl FROM trades WHERE dbl IN (SELECT price * 2 FROM trades WHERE price > 185)"
-# P11: a SELECT alias used as the LHS of an IN-subquery is never expanded, so
-# the query errors with "Column 'dbl' not found". The same alias works fine as
-# the LHS of a plain comparison or an IN-list.
-expect = "GAP"
+# Was P11: a SELECT alias on the LHS of an IN-subquery errored ("Column 'dbl'
+# not found"). Fixed 2026-07-25 in two layers: (1) WhereAliasExpander migrated
+# onto walk::map_children, which visits the subquery LHS operand (the alias)
+# while leaving the subquery body opaque; (2) the substituted IN-list's LHS may
+# be an arbitrary expression (price*2), which the IN-subquery path never lifted,
+# so evaluate_in_list/between now evaluate an expression LHS via the arithmetic
+# evaluator. Now AGREE.

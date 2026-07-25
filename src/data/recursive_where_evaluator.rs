@@ -737,6 +737,35 @@ impl<'a, 'ctx, 'exec> RecursiveWhereEvaluator<'a, 'ctx, 'exec> {
         }
     }
 
+    /// Resolve the value of a WHERE operand that is expected to yield a scalar:
+    /// a plain column reference (looked up in the row) or an arbitrary
+    /// expression (evaluated with the `ArithmeticEvaluator`). IN / BETWEEN take
+    /// such an operand on their left; it is usually a bare column, but after an
+    /// IN-subquery is substituted into an IN-list the LHS keeps its original
+    /// expression form (e.g. `price * 2`), which the `InOperatorLifter` never
+    /// got to lift because that runs before subquery substitution. Mirrors the
+    /// arithmetic delegation `evaluate_binary_op` already does for its LHS.
+    fn evaluate_operand_value(
+        &self,
+        expr: &SqlExpression,
+        row_index: usize,
+    ) -> Result<Option<DataValue>> {
+        match expr {
+            SqlExpression::Column(_) => {
+                let column_name = self.extract_column_name(expr)?;
+                let col_index = self
+                    .table
+                    .get_column_index(&column_name)
+                    .ok_or_else(|| anyhow::anyhow!("Column '{}' not found", column_name))?;
+                Ok(self.table.get_value(row_index, col_index).cloned())
+            }
+            _ => {
+                let mut evaluator = ArithmeticEvaluator::new(self.table);
+                Ok(Some(evaluator.evaluate(expr, row_index)?))
+            }
+        }
+    }
+
     fn evaluate_in_list(
         &self,
         expr: &SqlExpression,
@@ -744,13 +773,7 @@ impl<'a, 'ctx, 'exec> RecursiveWhereEvaluator<'a, 'ctx, 'exec> {
         row_index: usize,
         _ignore_case: bool,
     ) -> Result<bool> {
-        let column_name = self.extract_column_name(expr)?;
-        let col_index = self
-            .table
-            .get_column_index(&column_name)
-            .ok_or_else(|| anyhow::anyhow!("Column '{}' not found", column_name))?;
-
-        let cell_value = self.table.get_value(row_index, col_index).cloned();
+        let cell_value = self.evaluate_operand_value(expr, row_index)?;
 
         for value_expr in values {
             let compare_value = self.extract_value(value_expr)?;
@@ -773,13 +796,7 @@ impl<'a, 'ctx, 'exec> RecursiveWhereEvaluator<'a, 'ctx, 'exec> {
         upper: &SqlExpression,
         row_index: usize,
     ) -> Result<bool> {
-        let column_name = self.extract_column_name(expr)?;
-        let col_index = self
-            .table
-            .get_column_index(&column_name)
-            .ok_or_else(|| anyhow::anyhow!("Column '{}' not found", column_name))?;
-
-        let cell_value = self.table.get_value(row_index, col_index).cloned();
+        let cell_value = self.evaluate_operand_value(expr, row_index)?;
         let lower_value = self.extract_value(lower)?;
         let upper_value = self.extract_value(upper)?;
 
