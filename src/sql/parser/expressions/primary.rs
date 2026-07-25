@@ -259,9 +259,14 @@ where
             debug!("Parsing parenthesized expression or subquery");
             ExpressionParser::advance(parser); // consume (
 
-            // Check if this is a subquery (starts with SELECT)
-            if matches!(ExpressionParser::current_token(parser), Token::Select) {
-                debug!("Detected subquery - parsing SELECT statement");
+            // Check if this is a subquery. It starts with SELECT, or with WITH
+            // for a CTE in expression position (P12) — parse_subquery() dispatches
+            // a leading WITH to the CTE parser, so both forms flow through here.
+            if matches!(
+                ExpressionParser::current_token(parser),
+                Token::Select | Token::With
+            ) {
+                debug!("Detected subquery - parsing SELECT/WITH statement");
                 let subquery = parser.parse_subquery()?;
                 ExpressionParser::consume(parser, Token::RightParen)?;
                 Ok(SqlExpression::ScalarSubquery {
@@ -286,7 +291,10 @@ where
                         Token::In => {
                             ExpressionParser::advance(parser); // consume IN
                             ExpressionParser::consume(parser, Token::LeftParen)?;
-                            if !matches!(ExpressionParser::current_token(parser), Token::Select) {
+                            if !matches!(
+                                ExpressionParser::current_token(parser),
+                                Token::Select | Token::With
+                            ) {
                                 return Err("Tuple IN requires a subquery on the right".to_string());
                             }
                             let subquery = parser.parse_subquery()?;
@@ -303,7 +311,10 @@ where
                             }
                             ExpressionParser::advance(parser); // consume IN
                             ExpressionParser::consume(parser, Token::LeftParen)?;
-                            if !matches!(ExpressionParser::current_token(parser), Token::Select) {
+                            if !matches!(
+                                ExpressionParser::current_token(parser),
+                                Token::Select | Token::With
+                            ) {
                                 return Err(
                                     "Tuple NOT IN requires a subquery on the right".to_string()
                                 );

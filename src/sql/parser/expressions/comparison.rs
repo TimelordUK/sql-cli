@@ -55,8 +55,9 @@ where
             parser.advance(); // consume IN
             parser.consume(Token::LeftParen)?;
 
-            // Check if this is a subquery (starts with SELECT)
-            if matches!(parser.current_token(), Token::Select) {
+            // Check if this is a subquery (starts with SELECT, or WITH for a
+            // CTE in expression position — P12).
+            if matches!(parser.current_token(), Token::Select | Token::With) {
                 debug!("Detected NOT IN subquery");
                 let subquery = parser.parse_subquery()?;
                 parser.consume(Token::RightParen)?;
@@ -168,8 +169,9 @@ where
         parser.advance(); // consume IN
         parser.consume(Token::LeftParen)?;
 
-        // Check if this is a subquery (starts with SELECT)
-        if matches!(parser.current_token(), Token::Select) {
+        // Check if this is a subquery (starts with SELECT, or WITH for a CTE
+        // in expression position — P12).
+        if matches!(parser.current_token(), Token::Select | Token::With) {
             debug!("Detected IN subquery");
             let subquery = parser.parse_subquery()?;
             parser.consume(Token::RightParen)?;

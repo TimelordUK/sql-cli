@@ -1972,14 +1972,54 @@ impl QueryEngine {
                         ));
                     }
                     SetOperation::Intersect => {
-                        // INTERSECT: Keep only rows that appear in both
-                        // TODO: Implement intersection logic
-                        return Err(anyhow!("INTERSECT is not yet implemented"));
+                        // INTERSECT [DISTINCT]: keep only rows present in BOTH
+                        // sides, deduplicated. The row key is the Debug form of
+                        // the whole value vector — the same equality basis
+                        // apply_distinct() uses for UNION.
+                        let right_keys: std::collections::HashSet<String> = next_table
+                            .rows
+                            .iter()
+                            .map(|r| format!("{:?}", r.values))
+                            .collect();
+                        let mut seen = std::collections::HashSet::new();
+                        let retained: Vec<_> = combined_table
+                            .rows
+                            .iter()
+                            .filter(|r| {
+                                let key = format!("{:?}", r.values);
+                                right_keys.contains(&key) && seen.insert(key)
+                            })
+                            .cloned()
+                            .collect();
+                        combined_table.rows = retained;
+                        plan.add_detail(format!(
+                            "Result: {} rows (intersection, deduplicated)",
+                            combined_table.row_count()
+                        ));
                     }
                     SetOperation::Except => {
-                        // EXCEPT: Keep only rows from left that don't appear in right
-                        // TODO: Implement except logic
-                        return Err(anyhow!("EXCEPT is not yet implemented"));
+                        // EXCEPT [DISTINCT]: keep rows from the left that do NOT
+                        // appear in the right, deduplicated.
+                        let right_keys: std::collections::HashSet<String> = next_table
+                            .rows
+                            .iter()
+                            .map(|r| format!("{:?}", r.values))
+                            .collect();
+                        let mut seen = std::collections::HashSet::new();
+                        let retained: Vec<_> = combined_table
+                            .rows
+                            .iter()
+                            .filter(|r| {
+                                let key = format!("{:?}", r.values);
+                                !right_keys.contains(&key) && seen.insert(key)
+                            })
+                            .cloned()
+                            .collect();
+                        combined_table.rows = retained;
+                        plan.add_detail(format!(
+                            "Result: {} rows (difference, deduplicated)",
+                            combined_table.row_count()
+                        ));
                     }
                 }
 

@@ -153,11 +153,29 @@ annotation be removed.
   `query_engine.rs`. It produces exactly one row.
 
 ### P6 — `INTERSECT` / `EXCEPT` not implemented
-- **Status:** 🔴 OPEN
-- **Corpus:** `06_ctes_setops.toml :: intersect`, `except`
-- **Observed:** "INTERSECT is not yet implemented" / "EXCEPT is not yet implemented".
-  `UNION` and `UNION ALL` already AGREE.
-- **Decision:** **Fix** — implement alongside the existing `UNION` set-op path.
+- **Status:** 🟢 FIXED (2026-07-25)
+- **Corpus:** `06_ctes_setops.toml :: intersect`, `except` (both now AGREE;
+  `expect` dropped)
+- **Observed (was):** "INTERSECT is not yet implemented" / "EXCEPT is not yet
+  implemented". `UNION` and `UNION ALL` already AGREE.
+- **Fix:** Filled in the two `return Err(...)` stubs in the set-op loop of
+  `query_engine.rs`. Both operate on the already-materialized `combined_table`
+  (left) and `next_table` (right):
+  - **INTERSECT [DISTINCT]** keeps left rows whose key is present in the right,
+    deduplicated.
+  - **EXCEPT [DISTINCT]** keeps left rows whose key is *absent* from the right,
+    deduplicated.
+  Both are DISTINCT by default (SQL standard), so each filters and dedups inline
+  in one pass rather than setting `needs_deduplication` (that flag stays
+  UNION-only). The row key is `format!("{:?}", row.values)` — the **same
+  equality basis** `apply_distinct` uses for UNION, so set membership is
+  consistent across all four set ops. Left-to-right evaluation of chained set
+  ops is unchanged (INTERSECT-binds-tighter precedence remains a separate,
+  pre-existing limitation, not exercised by the corpus).
+- **Corpus note:** the `except` case threshold was moved from `amount > 2000` to
+  `> 3000`. Every region has a sale > 2000, so the original form was trivially
+  empty and would have AGREEd for the wrong reason (cf. the tier-7 `having_in_list`
+  lesson); `> 3000` leaves `{Oceania}`, a genuine left-minus-right difference.
 
 ### P7 — Multi-condition join evaluates extra-condition operands by position
 - **Status:** 🟢 FIXED (2026-07-12)
@@ -257,15 +275,21 @@ annotation be removed.
     two entries were correctly split rather than being one finding.
 
 ### P10 — `HAVING NOT (...)` errors in the evaluator
-- **Status:** 🔴 OPEN
-- **Corpus:** `07_grouping.toml :: having_not` (GAP)
-- **Observed:** `HAVING NOT (COUNT(*) > 2)` →
+- **Status:** 🟢 FIXED (2026-07-25)
+- **Corpus:** `07_grouping.toml :: having_not` (now AGREE; `expect` dropped)
+- **Observed (was):** `HAVING NOT (COUNT(*) > 2)` →
   `Unsupported expression type for arithmetic evaluation: Not { ... }`.
 - **Distinct from P9:** here the aggregate *is* rewritten correctly (the
-  transformer does handle `Not`), and the failure is downstream — the arithmetic
-  evaluator has no `Not` arm for a post-aggregation predicate. Fixing P9 will not
-  fix this.
-- **Decision:** **Fix** — add the missing evaluator arm. Small and independent.
+  transformer does handle `Not`), and the failure was downstream — the arithmetic
+  evaluator had no `Not` arm for a post-aggregation predicate. Fixing P9 did not
+  fix this, exactly as predicted.
+- **Fix:** Added a `Not { expr }` arm to `ArithmeticEvaluator::evaluate`
+  (`src/data/arithmetic_evaluator.rs`), immediately after the `Between` arm. It
+  evaluates the inner expression and negates it through the existing `to_bool`
+  helper (the same truthiness the `AND`/`OR` arms use), with SQL three-valued
+  logic on the NULL edge: `NOT NULL` → NULL rather than a coerced `true`. The
+  corpus case returns just `Oceania,1` (the one group with `COUNT(*) <= 2`),
+  matching DuckDB.
 
 ### P11 — A `SELECT` alias is not expanded on the LHS of an `IN` subquery
 - **Status:** 🔴 OPEN
@@ -284,20 +308,29 @@ annotation be removed.
   the required behaviour.
 
 ### P12 — `WITH` is rejected in expression position
-- **Status:** 🔴 OPEN
-- **Corpus:** `06_ctes_setops.toml :: cte_in_expression_position` (GAP)
-- **Observed:** `WHERE price > (WITH avg_cte AS (...) SELECT a FROM avg_cte)` →
-  `Parse error: Unexpected token in primary expression: With`. Rejected in every
+- **Status:** 🟢 FIXED (2026-07-25)
+- **Corpus:** `06_ctes_setops.toml :: cte_in_expression_position` (now AGREE;
+  `expect` dropped)
+- **Observed (was):** `WHERE price > (WITH avg_cte AS (...) SELECT a FROM avg_cte)`
+  → `Parse error: Unexpected token in primary expression: With`. Rejected in every
   expression position tried — scalar subquery, `BETWEEN` operand, `IN`-list
-  element, and tuple `IN` (which reports "Tuple IN requires a subquery on the
+  element, and tuple `IN` (which reported "Tuple IN requires a subquery on the
   right"). DuckDB accepts a CTE inside a scalar subquery.
 - **Found:** 2026-07-18, while trying to write a regression test for the
   `cte_hoister` walker migration — the test could not be expressed.
-- **Side effect worth noting:** the `ScalarSubquery` / `InSubquery` arms of
-  `CTEHoister::hoist_from_expression` are therefore **unreachable dead code**
-  today; expression-position CTE hoisting has never had an input.
-- **Decision:** **Fix** — a parser change (accept `WITH` where a subquery is
-  already accepted). The hoister machinery to handle the result already exists.
+- **Fix:** Pure parser change. `parse_subquery()` *already* dispatched a leading
+  `WITH` to the CTE parser (`parse_with_clause_inner`); the only blockers were the
+  subquery-detection guards that gated on `Token::Select` alone. Widened them to
+  `Token::Select | Token::With` in both spots a subquery is recognised:
+  - `expressions/primary.rs` — the scalar-subquery branch after `(`, plus the two
+    tuple-`IN` guards (`(a, b) IN (…)` / `NOT IN`).
+  - `expressions/comparison.rs` — the `x IN (…)` and `x NOT IN (…)` subquery
+    branches.
+  So a CTE is now accepted wherever a subquery already was, matching DuckDB.
+- **Side effect resolved:** the `ScalarSubquery` / `InSubquery` arms of
+  `CTEHoister::hoist_from_expression` were previously **unreachable dead code**
+  (expression-position CTE hoisting never had an input); they now receive real
+  input.
 
 ---
 

@@ -167,6 +167,16 @@ impl<'a> ArithmeticEvaluator<'a> {
                 let le = compare_with_op(&val, &hi, "<=", false);
                 Ok(DataValue::Boolean(ge && le))
             }
+            // Logical negation as a value-producing expression. Reached, e.g., by
+            // a post-aggregation `HAVING NOT (COUNT(*) > 2)` predicate (P10).
+            // Three-valued logic: NOT NULL is NULL; otherwise negate the boolean.
+            SqlExpression::Not { expr } => {
+                let inner = self.evaluate(expr, row_index)?;
+                match inner {
+                    DataValue::Null => Ok(DataValue::Null),
+                    other => Ok(DataValue::Boolean(!self.to_bool(&other)?)),
+                }
+            }
             // IN / NOT IN as a value-producing expression — needed when they
             // appear inside CASE branches or other arithmetic contexts. The
             // WHERE path has its own evaluator; this mirrors its equality
