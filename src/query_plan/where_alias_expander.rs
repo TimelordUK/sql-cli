@@ -34,6 +34,7 @@
 
 use crate::query_plan::pipeline::ASTTransformer;
 use crate::sql::parser::ast::{SelectItem, SelectStatement, SqlExpression};
+use crate::sql::parser::walk;
 use anyhow::Result;
 use std::collections::HashMap;
 use tracing::debug;
@@ -66,16 +67,26 @@ impl WhereAliasExpander {
         aliases
     }
 
-    /// Recursively expand aliases in an expression
-    /// Returns the expanded expression and whether any expansion occurred
+    /// Recursively expand aliases in an expression.
+    /// Returns the expanded expression and whether any expansion occurred.
+    ///
+    /// Only two node kinds carry a real rule; everything else is pure structural
+    /// recursion, so it is delegated to [`walk::map_children`]. That helper is
+    /// exhaustive by construction and treats a nested subquery's `SelectStatement`
+    /// as an **opaque scope boundary** — it descends into the same-scope operands
+    /// of `InSubquery` / `NotInSubquery` / the tuple forms (fixing P11: an alias
+    /// on the LHS of `x IN (SELECT ...)`) while never reaching into the subquery
+    /// body, where an outer alias must not leak. Before this migration those
+    /// variants fell into a `_ => (clone, false)` catch-all and the LHS operand
+    /// was silently skipped along with the subquery.
     fn expand_expression(
         expr: &SqlExpression,
         aliases: &HashMap<String, SqlExpression>,
     ) -> (SqlExpression, bool) {
         match expr {
-            // Check if this column reference is actually an alias
+            // Rule 1: a bare (un-prefixed) column reference that names a SELECT
+            // alias is replaced by that alias's expression.
             SqlExpression::Column(col_ref) => {
-                // Only expand if it's a simple column (no table prefix)
                 if col_ref.table_prefix.is_none() {
                     if let Some(alias_expr) = aliases.get(&col_ref.name) {
                         debug!(
@@ -88,209 +99,10 @@ impl WhereAliasExpander {
                 (expr.clone(), false)
             }
 
-            // Recursively expand binary operations
-            SqlExpression::BinaryOp { left, op, right } => {
-                let (new_left, left_expanded) = Self::expand_expression(left, aliases);
-                let (new_right, right_expanded) = Self::expand_expression(right, aliases);
-                let expanded = left_expanded || right_expanded;
-
-                (
-                    SqlExpression::BinaryOp {
-                        left: Box::new(new_left),
-                        op: op.clone(),
-                        right: Box::new(new_right),
-                    },
-                    expanded,
-                )
-            }
-
-            // Expand in NOT expressions
-            SqlExpression::Not { expr: inner } => {
-                let (new_expr, expanded) = Self::expand_expression(inner, aliases);
-                (
-                    SqlExpression::Not {
-                        expr: Box::new(new_expr),
-                    },
-                    expanded,
-                )
-            }
-
-            // Expand in function arguments
-            SqlExpression::FunctionCall {
-                name,
-                args,
-                distinct,
-            } => {
-                let mut expanded = false;
-                let new_args: Vec<SqlExpression> = args
-                    .iter()
-                    .map(|arg| {
-                        let (new_arg, arg_expanded) = Self::expand_expression(arg, aliases);
-                        expanded = expanded || arg_expanded;
-                        new_arg
-                    })
-                    .collect();
-
-                (
-                    SqlExpression::FunctionCall {
-                        name: name.clone(),
-                        args: new_args,
-                        distinct: *distinct,
-                    },
-                    expanded,
-                )
-            }
-
-            // Expand in IN list expressions
-            SqlExpression::InList {
-                expr: inner,
-                values,
-            } => {
-                let (new_expr, expr_expanded) = Self::expand_expression(inner, aliases);
-                let mut expanded = expr_expanded;
-
-                let new_values: Vec<SqlExpression> = values
-                    .iter()
-                    .map(|val| {
-                        let (new_val, val_expanded) = Self::expand_expression(val, aliases);
-                        expanded = expanded || val_expanded;
-                        new_val
-                    })
-                    .collect();
-
-                (
-                    SqlExpression::InList {
-                        expr: Box::new(new_expr),
-                        values: new_values,
-                    },
-                    expanded,
-                )
-            }
-
-            // Expand in NOT IN list expressions
-            SqlExpression::NotInList {
-                expr: inner,
-                values,
-            } => {
-                let (new_expr, expr_expanded) = Self::expand_expression(inner, aliases);
-                let mut expanded = expr_expanded;
-
-                let new_values: Vec<SqlExpression> = values
-                    .iter()
-                    .map(|val| {
-                        let (new_val, val_expanded) = Self::expand_expression(val, aliases);
-                        expanded = expanded || val_expanded;
-                        new_val
-                    })
-                    .collect();
-
-                (
-                    SqlExpression::NotInList {
-                        expr: Box::new(new_expr),
-                        values: new_values,
-                    },
-                    expanded,
-                )
-            }
-
-            // Expand in BETWEEN expressions
-            SqlExpression::Between { expr, lower, upper } => {
-                let (new_expr, expr_expanded) = Self::expand_expression(expr, aliases);
-                let (new_lower, lower_expanded) = Self::expand_expression(lower, aliases);
-                let (new_upper, upper_expanded) = Self::expand_expression(upper, aliases);
-                let expanded = expr_expanded || lower_expanded || upper_expanded;
-
-                (
-                    SqlExpression::Between {
-                        expr: Box::new(new_expr),
-                        lower: Box::new(new_lower),
-                        upper: Box::new(new_upper),
-                    },
-                    expanded,
-                )
-            }
-
-            // Expand in CASE expressions
-            SqlExpression::CaseExpression {
-                when_branches,
-                else_branch,
-            } => {
-                let mut expanded = false;
-                let new_branches: Vec<_> = when_branches
-                    .iter()
-                    .map(|branch| {
-                        let (new_condition, cond_expanded) =
-                            Self::expand_expression(&branch.condition, aliases);
-                        let (new_result, result_expanded) =
-                            Self::expand_expression(&branch.result, aliases);
-                        expanded = expanded || cond_expanded || result_expanded;
-
-                        crate::sql::parser::ast::WhenBranch {
-                            condition: Box::new(new_condition),
-                            result: Box::new(new_result),
-                        }
-                    })
-                    .collect();
-
-                let new_else = else_branch.as_ref().map(|e| {
-                    let (new_e, else_expanded) = Self::expand_expression(e, aliases);
-                    expanded = expanded || else_expanded;
-                    Box::new(new_e)
-                });
-
-                (
-                    SqlExpression::CaseExpression {
-                        when_branches: new_branches,
-                        else_branch: new_else,
-                    },
-                    expanded,
-                )
-            }
-
-            // Expand in simple CASE expressions
-            SqlExpression::SimpleCaseExpression {
-                expr,
-                when_branches,
-                else_branch,
-            } => {
-                let (new_expr, expr_expanded) = Self::expand_expression(expr, aliases);
-                let mut expanded = expr_expanded;
-
-                let new_branches: Vec<_> = when_branches
-                    .iter()
-                    .map(|branch| {
-                        let (new_value, value_expanded) =
-                            Self::expand_expression(&branch.value, aliases);
-                        let (new_result, result_expanded) =
-                            Self::expand_expression(&branch.result, aliases);
-                        expanded = expanded || value_expanded || result_expanded;
-
-                        crate::sql::parser::ast::SimpleWhenBranch {
-                            value: Box::new(new_value),
-                            result: Box::new(new_result),
-                        }
-                    })
-                    .collect();
-
-                let new_else = else_branch.as_ref().map(|e| {
-                    let (new_e, else_expanded) = Self::expand_expression(e, aliases);
-                    expanded = expanded || else_expanded;
-                    Box::new(new_e)
-                });
-
-                (
-                    SqlExpression::SimpleCaseExpression {
-                        expr: Box::new(new_expr),
-                        when_branches: new_branches,
-                        else_branch: new_else,
-                    },
-                    expanded,
-                )
-            }
-
-            // Expand in method calls, e.g. `alias.Contains('x')`.
-            // The receiver is a bare column-name string, so an alias can only be
-            // substituted if it resolves to a simple (un-prefixed) column.
+            // Rule 2: a method call's receiver is a bare column-name *string*, not
+            // a child expression, so the walker can't reach it. Substitute the
+            // receiver here when it names an alias resolving to a simple column,
+            // then recurse into the args normally.
             SqlExpression::MethodCall {
                 object,
                 method,
@@ -328,32 +140,18 @@ impl WhereAliasExpander {
                 )
             }
 
-            // Expand in chained method calls, e.g. `(alias).Trim().Contains('x')`.
-            // The base is itself an expression, so recurse into it normally.
-            SqlExpression::ChainedMethodCall { base, method, args } => {
-                let (new_base, base_expanded) = Self::expand_expression(base, aliases);
-                let mut expanded = base_expanded;
-                let new_args: Vec<SqlExpression> = args
-                    .iter()
-                    .map(|arg| {
-                        let (new_arg, arg_expanded) = Self::expand_expression(arg, aliases);
-                        expanded = expanded || arg_expanded;
-                        new_arg
-                    })
-                    .collect();
-
-                (
-                    SqlExpression::ChainedMethodCall {
-                        base: Box::new(new_base),
-                        method: method.clone(),
-                        args: new_args,
-                    },
-                    expanded,
-                )
+            // Everything else: structural recursion via the walker. It visits
+            // same-scope children (including subquery LHS operands) and leaves
+            // subquery bodies opaque.
+            other => {
+                let mut expanded = false;
+                let new_expr = walk::map_children(other.clone(), |child| {
+                    let (new_child, child_expanded) = Self::expand_expression(&child, aliases);
+                    expanded = expanded || child_expanded;
+                    new_child
+                });
+                (new_expr, expanded)
             }
-
-            // For all other expressions, return as-is
-            _ => (expr.clone(), false),
         }
     }
 
@@ -623,6 +421,53 @@ mod tests {
             expanded,
             SqlExpression::MethodCall { object, .. } if object == "capital"
         ));
+    }
+
+    #[test]
+    fn test_expands_alias_on_in_subquery_lhs_not_body() {
+        // P11: `WHERE dbl IN (SELECT ...)` where `dbl` aliases `price * 2`.
+        // The walker migration must expand the same-scope LHS operand while
+        // leaving the subquery body (a different scope) untouched.
+        let double = SqlExpression::BinaryOp {
+            left: Box::new(SqlExpression::Column(ColumnRef::unquoted("price".into()))),
+            op: "*".to_string(),
+            right: Box::new(SqlExpression::NumberLiteral("2".to_string())),
+        };
+        let aliases = HashMap::from([("dbl".to_string(), double.clone())]);
+
+        // The subquery body also references `dbl` — it must NOT be expanded,
+        // because that name belongs to the subquery's own scope.
+        let body = SelectStatement {
+            where_clause: Some(WhereClause {
+                conditions: vec![Condition {
+                    expr: SqlExpression::Column(ColumnRef::unquoted("dbl".into())),
+                    connector: None,
+                }],
+            }),
+            ..Default::default()
+        };
+
+        let expr = SqlExpression::InSubquery {
+            expr: Box::new(SqlExpression::Column(ColumnRef::unquoted("dbl".into()))),
+            subquery: Box::new(body.clone()),
+        };
+
+        let (expanded, changed) = WhereAliasExpander::expand_expression(&expr, &aliases);
+        assert!(changed, "the LHS alias should have been expanded");
+
+        match expanded {
+            SqlExpression::InSubquery { expr, subquery } => {
+                // LHS expanded to the aliased expression.
+                assert!(matches!(expr.as_ref(), SqlExpression::BinaryOp { .. }));
+                // Subquery body left verbatim: still the bare `dbl` column.
+                let inner = &subquery.where_clause.as_ref().unwrap().conditions[0].expr;
+                assert!(
+                    matches!(inner, SqlExpression::Column(c) if c.name == "dbl"),
+                    "subquery body must not be touched (different scope), got {inner:?}"
+                );
+            }
+            other => panic!("expected InSubquery, got {other:?}"),
+        }
     }
 
     #[test]
