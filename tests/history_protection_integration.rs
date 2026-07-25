@@ -1,34 +1,27 @@
-use serial_test::serial;
 use sql_cli::history::CommandHistory;
 use std::fs;
 use tempfile::TempDir;
 
-// `#[serial]` because this test mutates the process-global `HOME` env var.
-// Without it, parallel integration tests that resolve `AppPaths::data_dir()`
-// race against each other and intermittently fail with "No such file or
-// directory" when one test's tempdir is dropped while another is mid-write.
+// This test is fully isolated: it builds CommandHistory against an explicit
+// history file inside a tempdir via `with_history_file`, so it never touches
+// the process-global environment or the developer's real history. That removes
+// the old flakiness — the previous version redirected HOME / APPDATA, which
+// (a) didn't work on Windows at all (dirs::data_dir resolves via the Win32
+// known-folder API, ignoring those env vars) and (b) is process-global, so
+// parallel tests raced on it. No `#[serial]` needed as a result.
 #[test]
-#[serial]
 fn test_history_protection_integration() {
     println!("Testing History Protection Integration...\n");
 
-    // Create temp directory for test
+    // Create temp directory for test, mirroring the real layout: the app keeps
+    // history under a `sql-cli/` subdirectory of its data dir.
     let temp_dir = TempDir::new().unwrap();
+    let data_dir = temp_dir.path().join("sql-cli");
+    fs::create_dir_all(&data_dir).unwrap();
+    let history_file = data_dir.join("history.json");
 
-    // Set environment variables for cross-platform compatibility
-    // Windows uses APPDATA/LOCALAPPDATA, Unix uses HOME
-    #[cfg(windows)]
-    {
-        std::env::set_var("APPDATA", temp_dir.path());
-        std::env::set_var("LOCALAPPDATA", temp_dir.path());
-    }
-    #[cfg(unix)]
-    {
-        std::env::set_var("HOME", temp_dir.path());
-    }
-
-    // Create history instance
-    let mut history = CommandHistory::new().unwrap();
+    // Create history instance backed by the isolated file
+    let mut history = CommandHistory::with_history_file(history_file.clone()).unwrap();
 
     // Add some entries
     for i in 1..=5 {
@@ -40,12 +33,9 @@ fn test_history_protection_integration() {
     let entries = history.get_all();
     assert_eq!(entries.len(), 5, "Should have 5 entries");
 
-    // Check backup directory exists - use sql-cli directory (cross-platform)
-    let backup_dir = temp_dir.path().join("sql-cli").join("history_backups");
+    // Check backup directory (sibling of the history file)
+    let backup_dir = data_dir.join("history_backups");
 
-    // Directory might not exist until first backup, so let's trigger one
-    // by saving after adding entries
-    let history_file = temp_dir.path().join("sql-cli").join("history.json");
     if history_file.exists() {
         println!("History file exists at: {history_file:?}");
     }

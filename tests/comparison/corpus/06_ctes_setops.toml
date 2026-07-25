@@ -29,15 +29,18 @@ sql = "SELECT region FROM international_sales WHERE amount > 2000 UNION ALL SELE
 id = "intersect"
 data = "international_sales.csv"
 sql = "SELECT region FROM international_sales WHERE amount > 2000 INTERSECT SELECT region FROM international_sales WHERE amount < 1000"
-# "INTERSECT is not yet implemented".
-expect = "GAP"
+# Was P6 ("INTERSECT is not yet implemented"). Implemented 2026-07-25 in the
+# set-op path; INTERSECT DISTINCT keeps rows present in both sides. Returns
+# {Europe} — a non-trivial result (some regions are on only one side).
 
 [[case]]
 id = "except"
 data = "international_sales.csv"
-sql = "SELECT region FROM international_sales EXCEPT SELECT region FROM international_sales WHERE amount > 2000"
-# "EXCEPT is not yet implemented".
-expect = "GAP"
+sql = "SELECT region FROM international_sales EXCEPT SELECT region FROM international_sales WHERE amount > 3000"
+# Was P6 ("EXCEPT is not yet implemented"). Implemented 2026-07-25 alongside
+# INTERSECT. Threshold is 3000 (not 2000) deliberately: every region has a sale
+# > 2000, so that form is trivially empty and would pass for the wrong reason.
+# > 3000 leaves {Oceania} — a real left-minus-right difference.
 
 [[case]]
 id = "recursive_cte"
@@ -50,6 +53,7 @@ expect = "GAP"
 id = "cte_in_expression_position"
 data = "trades.csv"
 sql = "SELECT symbol, price FROM trades WHERE price > (WITH avg_cte AS (SELECT AVG(price) AS a FROM trades) SELECT a FROM avg_cte)"
-# P12: WITH is rejected anywhere in expression position ("Unexpected token in
-# primary expression: With"). DuckDB allows a CTE inside a scalar subquery.
-expect = "GAP"
+# Was P12: WITH was rejected in expression position ("Unexpected token in
+# primary expression: With"). Fixed 2026-07-25 — the subquery-detection guards
+# now accept a leading WITH (parse_subquery already dispatched it to the CTE
+# parser). DuckDB allows a CTE inside a scalar subquery; now AGREE.

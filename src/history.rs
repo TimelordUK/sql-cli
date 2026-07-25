@@ -65,7 +65,15 @@ impl CommandHistory {
     pub fn new() -> Result<Self> {
         let history_file = AppPaths::history_file()
             .map_err(|e| anyhow::anyhow!("Failed to get history file path: {}", e))?;
+        Self::with_history_file(history_file)
+    }
 
+    /// Build a `CommandHistory` backed by an explicit history file path, rather
+    /// than the OS-resolved app data dir. The backup directory is a sibling
+    /// `history_backups/` next to the file. Intended for tests that need full
+    /// isolation from the developer's real history without touching the
+    /// process-global environment (which parallel tests share and race on).
+    pub fn with_history_file(history_file: PathBuf) -> Result<Self> {
         // Create backup directory
         let backup_dir = history_file
             .parent()

@@ -59,6 +59,6 @@ sql = "SELECT region, COUNT(*) AS n FROM international_sales GROUP BY region HAV
 id = "having_not"
 data = "international_sales.csv"
 sql = "SELECT region, COUNT(*) AS n FROM international_sales GROUP BY region HAVING NOT (COUNT(*) > 2) ORDER BY region"
-# P10: the aggregate IS rewritten here, but the evaluator has no arm for Not,
-# so this errors rather than returning wrong rows.
-expect = "GAP"
+# Was P10: the aggregate IS rewritten here, but the arithmetic evaluator had no
+# arm for Not, so this errored. Fixed 2026-07-25 by adding the Not arm
+# (three-valued: NOT NULL -> NULL). Now AGREE.
