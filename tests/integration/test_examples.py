@@ -23,6 +23,13 @@ import sys
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
+# Windows consoles default to cp1252, which cannot encode the check/cross marks
+# this runner prints - without this the run dies on a UnicodeEncodeError before
+# reporting any results. Saves having to set PYTHONIOENCODING/PYTHONUTF8.
+if hasattr(sys.stdout, 'reconfigure'):
+    sys.stdout.reconfigure(encoding='utf-8', errors='replace')
+    sys.stderr.reconfigure(encoding='utf-8', errors='replace')
+
 # ANSI colors
 class Color:
     RED = '\033[0;31m'
@@ -51,7 +58,7 @@ def get_data_file_hint(sql_file: Path) -> Optional[str]:
     Returns absolute path if found and file exists, None otherwise.
     """
     try:
-        with open(sql_file, 'r') as f:
+        with open(sql_file, 'r', encoding='utf-8') as f:
             # Check first 10 lines for data hint
             for i, line in enumerate(f):
                 if i >= 10:
@@ -102,6 +109,11 @@ def run_sql_file(cli_path: str, sql_file: Path) -> Tuple[bool, str]:
             cmd,
             capture_output=True,
             text=True,
+            # Without this, text=True decodes the child's stdout with the
+            # locale encoding (cp1252 on Windows), mangling every non-ASCII
+            # character the engine emits and failing formal comparisons.
+            encoding='utf-8',
+            errors='replace',
             timeout=30
         )
         # Combine stdout and stderr
@@ -192,7 +204,7 @@ def compare_json(expected, actual) -> Tuple[bool, Optional[str]]:
 def should_skip_file(sql_file: Path) -> Tuple[bool, Optional[str]]:
     """Check if file should be skipped based on -- [TEST:SKIP] directive"""
     try:
-        with open(sql_file, 'r') as f:
+        with open(sql_file, 'r', encoding='utf-8') as f:
             # Check first 10 lines for [TEST:SKIP] directive
             for i, line in enumerate(f):
                 if i >= 10:
@@ -259,7 +271,7 @@ def run_test(cli_path: str, sql_file: Path, expectations_dir: Path, result: Test
 
         # Load expected output
         try:
-            with open(expectation_file, 'r') as f:
+            with open(expectation_file, 'r', encoding='utf-8') as f:
                 expected_json = json.load(f)
         except Exception as e:
             print(f"{Color.RED}✗ FAIL - Cannot load expectation: {e}{Color.NC}")
@@ -315,7 +327,7 @@ def capture_expectation(cli_path: str, example_name: str, expectations_dir: Path
     expectations_dir.mkdir(parents=True, exist_ok=True)
     expectation_file = expectations_dir / f"{example_name}.json"
 
-    with open(expectation_file, 'w') as f:
+    with open(expectation_file, 'w', encoding='utf-8') as f:
         json.dump(json_data, f, indent=2, sort_keys=True)
 
     print(f"{Color.GREEN}✓ Expectation captured successfully!{Color.NC}")
