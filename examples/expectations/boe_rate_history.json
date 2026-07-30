@@ -1,0 +1,1057 @@
+[
+  [
+    {
+      "change_bps": -25,
+      "date": "2024-08-01",
+      "event": "First cut of the easing cycle",
+      "event_category": "Disinflation",
+      "rate": 5.0
+    },
+    {
+      "change_bps": 25,
+      "date": "2023-08-03",
+      "event": "Peak of the tightening cycle",
+      "event_category": "Inflation Shock",
+      "rate": 5.25
+    },
+    {
+      "change_bps": 75,
+      "date": "2022-11-03",
+      "event": "75bp - biggest hike in 33 years",
+      "event_category": "Inflation Shock",
+      "rate": 3.0
+    },
+    {
+      "change_bps": 50,
+      "date": "2022-09-22",
+      "event": "Day before the Truss mini-Budget",
+      "event_category": "Fiscal Crisis",
+      "rate": 2.25
+    },
+    {
+      "change_bps": 15,
+      "date": "2021-12-16",
+      "event": "First hike of the inflation cycle",
+      "event_category": "Inflation Shock",
+      "rate": 0.25
+    },
+    {
+      "change_bps": -15,
+      "date": "2020-03-19",
+      "event": "Record low 0.1% as lockdown begins",
+      "event_category": "Pandemic",
+      "rate": 0.1
+    },
+    {
+      "change_bps": -50,
+      "date": "2020-03-11",
+      "event": "COVID-19 emergency cut",
+      "event_category": "Pandemic",
+      "rate": 0.25
+    },
+    {
+      "change_bps": 25,
+      "date": "2017-11-02",
+      "event": "First hike in over ten years",
+      "event_category": "Normalisation",
+      "rate": 0.5
+    },
+    {
+      "change_bps": -25,
+      "date": "2016-08-04",
+      "event": "Post-Brexit-referendum cut",
+      "event_category": "Brexit",
+      "rate": 0.25
+    },
+    {
+      "change_bps": -50,
+      "date": "2009-03-05",
+      "event": "Record low 0.5% and QE launched",
+      "event_category": "Quantitative Easing",
+      "rate": 0.5
+    },
+    {
+      "change_bps": -150,
+      "date": "2008-11-06",
+      "event": "150bp cut - largest since 1981",
+      "event_category": "Financial Crisis",
+      "rate": 3.0
+    },
+    {
+      "change_bps": -50,
+      "date": "2008-10-08",
+      "event": "Coordinated global emergency cut",
+      "event_category": "Financial Crisis",
+      "rate": 4.5
+    },
+    {
+      "change_bps": -25,
+      "date": "2007-12-06",
+      "event": "First cut of the credit crunch",
+      "event_category": "Financial Crisis",
+      "rate": 5.5
+    },
+    {
+      "change_bps": -25,
+      "date": "2003-07-10",
+      "event": "48-year low - dotcom bust trough",
+      "event_category": "Recession",
+      "rate": 3.5
+    },
+    {
+      "change_bps": -25,
+      "date": "2001-09-18",
+      "event": "Emergency coordinated cut after 9/11",
+      "event_category": "Geopolitical Shock",
+      "rate": 4.75
+    },
+    {
+      "change_bps": 25,
+      "date": "2000-02-10",
+      "event": "Peak rate weeks before Nasdaq tops out",
+      "event_category": "Asset Bubble",
+      "rate": 6.0
+    },
+    {
+      "change_bps": -25,
+      "date": "1999-06-10",
+      "event": "Dotcom bubble inflating",
+      "event_category": "Asset Bubble",
+      "rate": 5.0
+    },
+    {
+      "change_bps": -25,
+      "date": "1998-10-08",
+      "event": "LTCM collapse & Russian default",
+      "event_category": "Financial Crisis",
+      "rate": 7.25
+    },
+    {
+      "change_bps": 31,
+      "date": "1997-05-06",
+      "event": "Bank of England granted independence",
+      "event_category": "Policy Regime Change",
+      "rate": 6.25
+    },
+    {
+      "change_bps": -100,
+      "date": "1992-10-16",
+      "event": "Post-ERM easing under inflation targeting",
+      "event_category": "Policy Regime Change",
+      "rate": 7.88
+    },
+    {
+      "change_bps": -100,
+      "date": "1992-09-22",
+      "event": "Black Wednesday aftermath - ERM exit",
+      "event_category": "Currency Crisis",
+      "rate": 8.88
+    },
+    {
+      "change_bps": -100,
+      "date": "1990-10-08",
+      "event": "UK joins the ERM at DM 2.95",
+      "event_category": "ERM",
+      "rate": 13.88
+    },
+    {
+      "change_bps": 113,
+      "date": "1989-10-06",
+      "event": "Rate to 15% - Lawson resigns weeks later",
+      "event_category": "Political Crisis",
+      "rate": 14.88
+    },
+    {
+      "change_bps": 50,
+      "date": "1988-06-03",
+      "event": "Lawson Boom: start of 12 hikes in 18 months",
+      "event_category": "Credit Boom",
+      "rate": 7.88
+    },
+    {
+      "change_bps": -50,
+      "date": "1987-11-04",
+      "event": "Crash response continues",
+      "event_category": "Market Crash",
+      "rate": 8.88
+    },
+    {
+      "change_bps": -50,
+      "date": "1987-10-23",
+      "event": "Post-Black Monday emergency easing",
+      "event_category": "Market Crash",
+      "rate": 9.38
+    },
+    {
+      "change_bps": 100,
+      "date": "1986-10-15",
+      "event": "Big Bang deregulates the City",
+      "event_category": "Deregulation",
+      "rate": 10.88
+    },
+    {
+      "change_bps": 238,
+      "date": "1985-01-14",
+      "event": "Sterling near parity with the dollar",
+      "event_category": "Currency Crisis",
+      "rate": 11.88
+    },
+    {
+      "change_bps": 200,
+      "date": "1984-07-11",
+      "event": "Miners' strike & sterling pressure",
+      "event_category": "Industrial Unrest",
+      "rate": 12.0
+    },
+    {
+      "change_bps": -200,
+      "date": "1981-03-11",
+      "event": "The 364 economists' letter Budget",
+      "event_category": "Fiscal Policy",
+      "rate": 12.0
+    },
+    {
+      "change_bps": -100,
+      "date": "1980-07-03",
+      "event": "Recession bites, squeeze eases",
+      "event_category": "Recession",
+      "rate": 16.0
+    },
+    {
+      "change_bps": 300,
+      "date": "1979-11-15",
+      "event": "Record high 17% - Thatcher's monetarist squeeze",
+      "event_category": "Monetary Squeeze",
+      "rate": 17.0
+    },
+    {
+      "change_bps": 200,
+      "date": "1979-06-13",
+      "event": "Howe's first Budget: VAT nearly doubled",
+      "event_category": "Fiscal Policy",
+      "rate": 14.0
+    },
+    {
+      "change_bps": 150,
+      "date": "1979-02-08",
+      "event": "Winter of Discontent",
+      "event_category": "Industrial Unrest",
+      "rate": 14.0
+    },
+    {
+      "change_bps": -50,
+      "date": "1977-10-17",
+      "event": "Sterling stabilised, rate at decade low",
+      "event_category": "Recovery",
+      "rate": 5.0
+    },
+    {
+      "change_bps": -25,
+      "date": "1976-11-22",
+      "event": "IMF loan negotiations under way",
+      "event_category": "Currency Crisis",
+      "rate": 14.75
+    },
+    {
+      "change_bps": 200,
+      "date": "1976-10-07",
+      "event": "Sterling crisis: MLR to 15%",
+      "event_category": "Currency Crisis",
+      "rate": 15.0
+    },
+    {
+      "change_bps": null,
+      "date": "1975-01-20",
+      "event": "Post oil-shock easing begins",
+      "event_category": "Oil Shock",
+      "rate": 11.25
+    }
+  ],
+  [
+    {
+      "avg_rate": 10.7,
+      "era": "Stagflation & Sterling Crisis",
+      "high": 13.0,
+      "low": 9.0,
+      "moves": 23
+    },
+    {
+      "avg_rate": 10.06,
+      "era": "IMF Bailout & Winter of Discontent",
+      "high": 15.0,
+      "low": 5.0,
+      "moves": 32
+    },
+    {
+      "avg_rate": 12.58,
+      "era": "Monetarist Shock",
+      "high": 17.0,
+      "low": 9.13,
+      "moves": 49
+    },
+    {
+      "avg_rate": 10.66,
+      "era": "Recovery & Deregulation",
+      "high": 13.88,
+      "low": 8.56,
+      "moves": 35
+    },
+    {
+      "avg_rate": 9.43,
+      "era": "Big Bang & Lawson Boom",
+      "high": 12.88,
+      "low": 7.38,
+      "moves": 20
+    },
+    {
+      "avg_rate": 14.02,
+      "era": "Overheating & Shadowing the D-Mark",
+      "high": 14.88,
+      "low": 13.75,
+      "moves": 5
+    },
+    {
+      "avg_rate": 11.88,
+      "era": "ERM Membership",
+      "high": 13.88,
+      "low": 9.88,
+      "moves": 9
+    },
+    {
+      "avg_rate": 6.32,
+      "era": "Post-ERM Inflation Targeting",
+      "high": 8.88,
+      "low": 5.13,
+      "moves": 14
+    },
+    {
+      "avg_rate": 6.22,
+      "era": "BoE Independence & Dotcom Bubble",
+      "high": 7.5,
+      "low": 5.0,
+      "moves": 17
+    },
+    {
+      "avg_rate": 4.81,
+      "era": "Dotcom Bust",
+      "high": 5.75,
+      "low": 3.75,
+      "moves": 8
+    },
+    {
+      "avg_rate": 4.63,
+      "era": "Great Moderation & Credit Boom",
+      "high": 5.75,
+      "low": 3.5,
+      "moves": 12
+    },
+    {
+      "avg_rate": 3.47,
+      "era": "Global Financial Crisis",
+      "high": 5.5,
+      "low": 1.0,
+      "moves": 8
+    },
+    {
+      "avg_rate": 0.5,
+      "era": "ZIRP & Quantitative Easing",
+      "high": 0.5,
+      "low": 0.5,
+      "moves": 1
+    },
+    {
+      "avg_rate": 0.5,
+      "era": "Brexit Era",
+      "high": 0.75,
+      "low": 0.25,
+      "moves": 3
+    },
+    {
+      "avg_rate": 0.18,
+      "era": "COVID-19 Pandemic",
+      "high": 0.25,
+      "low": 0.1,
+      "moves": 2
+    },
+    {
+      "avg_rate": 2.46,
+      "era": "Inflation Shock",
+      "high": 5.0,
+      "low": 0.25,
+      "moves": 13
+    },
+    {
+      "avg_rate": 4.5,
+      "era": "Disinflation & Easing Cycle",
+      "high": 5.25,
+      "low": 3.75,
+      "moves": 7
+    }
+  ],
+  [
+    {
+      "biggest_single_cut": -100,
+      "cuts": 24,
+      "era": "IMF Bailout & Winter of Discontent",
+      "total_bps": -1250
+    },
+    {
+      "biggest_single_cut": -200,
+      "cuts": 41,
+      "era": "Monetarist Shock",
+      "total_bps": -1113
+    },
+    {
+      "biggest_single_cut": -100,
+      "cuts": 26,
+      "era": "Recovery & Deregulation",
+      "total_bps": -1024
+    },
+    {
+      "biggest_single_cut": -100,
+      "cuts": 10,
+      "era": "Post-ERM Inflation Targeting",
+      "total_bps": -569
+    },
+    {
+      "biggest_single_cut": -100,
+      "cuts": 9,
+      "era": "ERM Membership",
+      "total_bps": -500
+    },
+    {
+      "biggest_single_cut": -50,
+      "cuts": 10,
+      "era": "Big Bang & Lawson Boom",
+      "total_bps": -500
+    },
+    {
+      "biggest_single_cut": -150,
+      "cuts": 8,
+      "era": "Global Financial Crisis",
+      "total_bps": -475
+    },
+    {
+      "biggest_single_cut": -50,
+      "cuts": 16,
+      "era": "Stagflation & Sterling Crisis",
+      "total_bps": -450
+    },
+    {
+      "biggest_single_cut": -50,
+      "cuts": 7,
+      "era": "BoE Independence & Dotcom Bubble",
+      "total_bps": -250
+    },
+    {
+      "biggest_single_cut": -50,
+      "cuts": 8,
+      "era": "Dotcom Bust",
+      "total_bps": -225
+    },
+    {
+      "biggest_single_cut": -25,
+      "cuts": 6,
+      "era": "Disinflation & Easing Cycle",
+      "total_bps": -150
+    },
+    {
+      "biggest_single_cut": -50,
+      "cuts": 2,
+      "era": "COVID-19 Pandemic",
+      "total_bps": -65
+    },
+    {
+      "biggest_single_cut": -25,
+      "cuts": 2,
+      "era": "Great Moderation & Credit Boom",
+      "total_bps": -50
+    },
+    {
+      "biggest_single_cut": -50,
+      "cuts": 1,
+      "era": "ZIRP & Quantitative Easing",
+      "total_bps": -50
+    },
+    {
+      "biggest_single_cut": -25,
+      "cuts": 1,
+      "era": "Brexit Era",
+      "total_bps": -25
+    },
+    {
+      "biggest_single_cut": -13,
+      "cuts": 1,
+      "era": "Overheating & Shadowing the D-Mark",
+      "total_bps": -13
+    }
+  ],
+  [
+    {
+      "avg_rate": 11.47,
+      "cuts": 79,
+      "hikes": 31,
+      "moves": 110,
+      "party": "Conservative",
+      "peak": 17.0,
+      "pm": "Margaret Thatcher"
+    },
+    {
+      "avg_rate": 10.55,
+      "cuts": 16,
+      "hikes": 3,
+      "moves": 20,
+      "party": "Labour",
+      "peak": 12.0,
+      "pm": "Harold Wilson"
+    },
+    {
+      "avg_rate": 10.2,
+      "cuts": 24,
+      "hikes": 11,
+      "moves": 35,
+      "party": "Labour",
+      "peak": 15.0,
+      "pm": "James Callaghan"
+    },
+    {
+      "avg_rate": 8.25,
+      "cuts": 18,
+      "hikes": 4,
+      "moves": 22,
+      "party": "Conservative",
+      "peak": 13.38,
+      "pm": "John Major"
+    },
+    {
+      "avg_rate": 5.39,
+      "cuts": 17,
+      "hikes": 19,
+      "moves": 36,
+      "party": "Labour",
+      "peak": 7.5,
+      "pm": "Tony Blair"
+    },
+    {
+      "avg_rate": 4.38,
+      "cuts": 6,
+      "hikes": 0,
+      "moves": 6,
+      "party": "Labour",
+      "peak": 5.0,
+      "pm": "Keir Starmer"
+    },
+    {
+      "avg_rate": 4.21,
+      "cuts": 0,
+      "hikes": 7,
+      "moves": 7,
+      "party": "Conservative",
+      "peak": 5.25,
+      "pm": "Rishi Sunak"
+    },
+    {
+      "avg_rate": 3.4,
+      "cuts": 9,
+      "hikes": 1,
+      "moves": 10,
+      "party": "Labour",
+      "peak": 5.75,
+      "pm": "Gordon Brown"
+    },
+    {
+      "avg_rate": 2.25,
+      "cuts": 0,
+      "hikes": 1,
+      "moves": 1,
+      "party": "Conservative",
+      "peak": 2.25,
+      "pm": "Liz Truss"
+    },
+    {
+      "avg_rate": 0.73,
+      "cuts": 2,
+      "hikes": 6,
+      "moves": 8,
+      "party": "Conservative",
+      "peak": 1.75,
+      "pm": "Boris Johnson"
+    },
+    {
+      "avg_rate": 0.5,
+      "cuts": 1,
+      "hikes": 2,
+      "moves": 3,
+      "party": "Conservative",
+      "peak": 0.75,
+      "pm": "Theresa May"
+    }
+  ],
+  [
+    {
+      "avg_move_size": 55.4,
+      "avg_rate": 10.75,
+      "biggest_move": 300,
+      "boe_independent": false,
+      "moves": 186
+    },
+    {
+      "avg_move_size": 33.3,
+      "avg_rate": 4.13,
+      "biggest_move": 150,
+      "boe_independent": true,
+      "moves": 71
+    }
+  ],
+  [
+    {
+      "date": "2016-08-04",
+      "days_since_prev": 2709,
+      "era": "Brexit Era",
+      "rate": 0.25,
+      "years_unchanged": 7.4
+    },
+    {
+      "date": "2021-12-16",
+      "days_since_prev": 637,
+      "era": "Inflation Shock",
+      "rate": 0.25,
+      "years_unchanged": 1.7
+    },
+    {
+      "date": "2020-03-11",
+      "days_since_prev": 587,
+      "era": "COVID-19 Pandemic",
+      "rate": 0.25,
+      "years_unchanged": 1.6
+    },
+    {
+      "date": "2003-02-06",
+      "days_since_prev": 455,
+      "era": "Dotcom Bust",
+      "rate": 3.75,
+      "years_unchanged": 1.2
+    },
+    {
+      "date": "2017-11-02",
+      "days_since_prev": 455,
+      "era": "Brexit Era",
+      "rate": 0.5,
+      "years_unchanged": 1.2
+    },
+    {
+      "date": "1990-10-08",
+      "days_since_prev": 367,
+      "era": "ERM Membership",
+      "rate": 13.88,
+      "years_unchanged": 1.0
+    },
+    {
+      "date": "2001-02-08",
+      "days_since_prev": 364,
+      "era": "Dotcom Bust",
+      "rate": 5.75,
+      "years_unchanged": 1.0
+    },
+    {
+      "date": "2005-08-04",
+      "days_since_prev": 364,
+      "era": "Great Moderation & Credit Boom",
+      "rate": 4.5,
+      "years_unchanged": 1.0
+    },
+    {
+      "date": "2006-08-03",
+      "days_since_prev": 364,
+      "era": "Great Moderation & Credit Boom",
+      "rate": 4.75,
+      "years_unchanged": 1.0
+    },
+    {
+      "date": "2024-08-01",
+      "days_since_prev": 364,
+      "era": "Disinflation & Easing Cycle",
+      "rate": 5.0,
+      "years_unchanged": 1.0
+    }
+  ],
+  [
+    {
+      "high": 14.31,
+      "low": 9.13,
+      "moves": 36,
+      "swing": 5.18,
+      "yr": 1982.0
+    },
+    {
+      "high": 14.0,
+      "low": 5.0,
+      "moves": 19,
+      "swing": 9.0,
+      "yr": 1977.0
+    },
+    {
+      "high": 15.0,
+      "low": 9.0,
+      "moves": 14,
+      "swing": 6.0,
+      "yr": 1976.0
+    },
+    {
+      "high": 12.0,
+      "low": 9.75,
+      "moves": 13,
+      "swing": 2.25,
+      "yr": 1975.0
+    },
+    {
+      "high": 12.0,
+      "low": 8.56,
+      "moves": 13,
+      "swing": 3.44,
+      "yr": 1984.0
+    },
+    {
+      "high": 12.88,
+      "low": 7.38,
+      "moves": 12,
+      "swing": 5.5,
+      "yr": 1988.0
+    },
+    {
+      "high": 15.13,
+      "low": 12.0,
+      "moves": 9,
+      "swing": 3.13,
+      "yr": 1981.0
+    },
+    {
+      "high": 11.0,
+      "low": 9.06,
+      "moves": 9,
+      "swing": 1.94,
+      "yr": 1983.0
+    },
+    {
+      "high": 10.38,
+      "low": 8.38,
+      "moves": 8,
+      "swing": 2.0,
+      "yr": 1987.0
+    },
+    {
+      "high": 3.5,
+      "low": 0.5,
+      "moves": 8,
+      "swing": 3.0,
+      "yr": 2022.0
+    }
+  ],
+  [
+    {
+      "month": "January",
+      "month_no": 1.0,
+      "moves": 24
+    },
+    {
+      "month": "February",
+      "month_no": 2.0,
+      "moves": 23
+    },
+    {
+      "month": "March",
+      "month_no": 3.0,
+      "moves": 26
+    },
+    {
+      "month": "April",
+      "month_no": 4.0,
+      "moves": 21
+    },
+    {
+      "month": "May",
+      "month_no": 5.0,
+      "moves": 20
+    },
+    {
+      "month": "June",
+      "month_no": 6.0,
+      "moves": 16
+    },
+    {
+      "month": "July",
+      "month_no": 7.0,
+      "moves": 20
+    },
+    {
+      "month": "August",
+      "month_no": 8.0,
+      "moves": 32
+    },
+    {
+      "month": "September",
+      "month_no": 9.0,
+      "moves": 16
+    },
+    {
+      "month": "October",
+      "month_no": 10.0,
+      "moves": 17
+    },
+    {
+      "month": "November",
+      "month_no": 11.0,
+      "moves": 29
+    },
+    {
+      "month": "December",
+      "month_no": 12.0,
+      "moves": 14
+    }
+  ],
+  [
+    {
+      "chancellor": "Alistair Darling",
+      "change_bps": 25,
+      "date": "2007-07-05",
+      "day": "Thursday",
+      "event": null,
+      "rate": 5.75
+    },
+    {
+      "chancellor": "Alistair Darling",
+      "change_bps": -25,
+      "date": "2007-12-06",
+      "day": "Thursday",
+      "event": "First cut of the credit crunch",
+      "rate": 5.5
+    },
+    {
+      "chancellor": "Alistair Darling",
+      "change_bps": -25,
+      "date": "2008-02-07",
+      "day": "Thursday",
+      "event": null,
+      "rate": 5.25
+    },
+    {
+      "chancellor": "Alistair Darling",
+      "change_bps": -25,
+      "date": "2008-04-10",
+      "day": "Thursday",
+      "event": null,
+      "rate": 5.0
+    },
+    {
+      "chancellor": "Alistair Darling",
+      "change_bps": -50,
+      "date": "2008-10-08",
+      "day": "Wednesday",
+      "event": "Coordinated global emergency cut",
+      "rate": 4.5
+    },
+    {
+      "chancellor": "Alistair Darling",
+      "change_bps": -150,
+      "date": "2008-11-06",
+      "day": "Thursday",
+      "event": "150bp cut - largest since 1981",
+      "rate": 3.0
+    },
+    {
+      "chancellor": "Alistair Darling",
+      "change_bps": -100,
+      "date": "2008-12-04",
+      "day": "Thursday",
+      "event": null,
+      "rate": 2.0
+    },
+    {
+      "chancellor": "Alistair Darling",
+      "change_bps": -50,
+      "date": "2009-01-08",
+      "day": "Thursday",
+      "event": null,
+      "rate": 1.5
+    },
+    {
+      "chancellor": "Alistair Darling",
+      "change_bps": -50,
+      "date": "2009-02-05",
+      "day": "Thursday",
+      "event": null,
+      "rate": 1.0
+    },
+    {
+      "chancellor": "Alistair Darling",
+      "change_bps": -50,
+      "date": "2009-03-05",
+      "day": "Thursday",
+      "event": "Record low 0.5% and QE launched",
+      "rate": 0.5
+    }
+  ],
+  [
+    {
+      "change_bps": 15,
+      "date": "2021-12-16",
+      "lag_rate": 0.1,
+      "prev_rate": 0.1,
+      "rate": 0.25
+    },
+    {
+      "change_bps": 25,
+      "date": "2022-02-03",
+      "lag_rate": 0.25,
+      "prev_rate": 0.25,
+      "rate": 0.5
+    },
+    {
+      "change_bps": 25,
+      "date": "2022-03-17",
+      "lag_rate": 0.5,
+      "prev_rate": 0.5,
+      "rate": 0.75
+    },
+    {
+      "change_bps": 25,
+      "date": "2022-05-05",
+      "lag_rate": 0.75,
+      "prev_rate": 0.75,
+      "rate": 1.0
+    },
+    {
+      "change_bps": 25,
+      "date": "2022-06-16",
+      "lag_rate": 1.0,
+      "prev_rate": 1.0,
+      "rate": 1.25
+    },
+    {
+      "change_bps": 50,
+      "date": "2022-08-04",
+      "lag_rate": 1.25,
+      "prev_rate": 1.25,
+      "rate": 1.75
+    },
+    {
+      "change_bps": 50,
+      "date": "2022-09-22",
+      "lag_rate": 1.75,
+      "prev_rate": 1.75,
+      "rate": 2.25
+    },
+    {
+      "change_bps": 75,
+      "date": "2022-11-03",
+      "lag_rate": 2.25,
+      "prev_rate": 2.25,
+      "rate": 3.0
+    },
+    {
+      "change_bps": 50,
+      "date": "2022-12-15",
+      "lag_rate": 3.0,
+      "prev_rate": 3.0,
+      "rate": 3.5
+    },
+    {
+      "change_bps": 50,
+      "date": "2023-02-02",
+      "lag_rate": 3.5,
+      "prev_rate": 3.5,
+      "rate": 4.0
+    },
+    {
+      "change_bps": 25,
+      "date": "2023-03-23",
+      "lag_rate": 4.0,
+      "prev_rate": 4.0,
+      "rate": 4.25
+    },
+    {
+      "change_bps": 25,
+      "date": "2023-05-11",
+      "lag_rate": 4.25,
+      "prev_rate": 4.25,
+      "rate": 4.5
+    },
+    {
+      "change_bps": 50,
+      "date": "2023-06-22",
+      "lag_rate": 4.5,
+      "prev_rate": 4.5,
+      "rate": 5.0
+    }
+  ],
+  [
+    {
+      "band": "10%+ (crisis money)",
+      "first_year": 1975.0,
+      "last_year": 1991.0,
+      "moves": 121
+    },
+    {
+      "band": "5-10% (old normal)",
+      "first_year": 1975.0,
+      "last_year": 2024.0,
+      "moves": 97
+    },
+    {
+      "band": "1-5% (modern normal)",
+      "first_year": 2001.0,
+      "last_year": 2025.0,
+      "moves": 31
+    },
+    {
+      "band": "0-1% (emergency)",
+      "first_year": 2009.0,
+      "last_year": 2022.0,
+      "moves": 9
+    }
+  ],
+  [
+    {
+      "avg_rate": 11.32,
+      "first_move": "1975-01-20",
+      "governor": "Gordon Richardson",
+      "last_move": "1983-06-14",
+      "moves": 110
+    },
+    {
+      "avg_rate": 10.55,
+      "first_move": "1983-08-09",
+      "governor": "Robin Leigh-Pemberton",
+      "last_move": "1993-01-26",
+      "moves": 67
+    },
+    {
+      "avg_rate": 5.81,
+      "first_move": "1993-11-23",
+      "governor": "Eddie George",
+      "last_move": "2003-02-06",
+      "moves": 35
+    },
+    {
+      "avg_rate": 3.99,
+      "first_move": "2003-07-10",
+      "governor": "Mervyn King",
+      "last_move": "2009-03-05",
+      "moves": 21
+    },
+    {
+      "avg_rate": 0.44,
+      "first_move": "2016-08-04",
+      "governor": "Mark Carney",
+      "last_move": "2020-03-11",
+      "moves": 4
+    },
+    {
+      "avg_rate": 3.03,
+      "first_move": "2020-03-19",
+      "governor": "Andrew Bailey",
+      "last_move": "2025-12-18",
+      "moves": 21
+    }
+  ]
+]
