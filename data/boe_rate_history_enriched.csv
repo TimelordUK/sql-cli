@@ -1,0 +1,259 @@
+date,rate,prev_rate,change_bps,direction,days_since_prev,era,event,event_category,pm,party,chancellor,governor,boe_independent
+1975-01-20,11.25,,,First,,Stagflation & Sterling Crisis,Post oil-shock easing begins,Oil Shock,Harold Wilson,Labour,Denis Healey,Gordon Richardson,false
+1975-01-27,11.00,11.25,-25,Cut,7,Stagflation & Sterling Crisis,,,Harold Wilson,Labour,Denis Healey,Gordon Richardson,false
+1975-02-10,10.75,11.00,-25,Cut,14,Stagflation & Sterling Crisis,,,Harold Wilson,Labour,Denis Healey,Gordon Richardson,false
+1975-02-17,10.50,10.75,-25,Cut,7,Stagflation & Sterling Crisis,,,Harold Wilson,Labour,Denis Healey,Gordon Richardson,false
+1975-03-10,10.25,10.50,-25,Cut,21,Stagflation & Sterling Crisis,,,Harold Wilson,Labour,Denis Healey,Gordon Richardson,false
+1975-03-24,10.00,10.25,-25,Cut,14,Stagflation & Sterling Crisis,,,Harold Wilson,Labour,Denis Healey,Gordon Richardson,false
+1975-04-21,9.75,10.00,-25,Cut,28,Stagflation & Sterling Crisis,,,Harold Wilson,Labour,Denis Healey,Gordon Richardson,false
+1975-05-05,10.00,9.75,25,Hike,14,Stagflation & Sterling Crisis,,,Harold Wilson,Labour,Denis Healey,Gordon Richardson,false
+1975-07-28,11.00,10.00,100,Hike,84,Stagflation & Sterling Crisis,,,Harold Wilson,Labour,Denis Healey,Gordon Richardson,false
+1975-10-06,12.00,11.00,100,Hike,70,Stagflation & Sterling Crisis,,,Harold Wilson,Labour,Denis Healey,Gordon Richardson,false
+1975-11-17,11.75,12.00,-25,Cut,42,Stagflation & Sterling Crisis,,,Harold Wilson,Labour,Denis Healey,Gordon Richardson,false
+1975-12-01,11.50,11.75,-25,Cut,14,Stagflation & Sterling Crisis,,,Harold Wilson,Labour,Denis Healey,Gordon Richardson,false
+1975-12-29,11.25,11.50,-25,Cut,28,Stagflation & Sterling Crisis,,,Harold Wilson,Labour,Denis Healey,Gordon Richardson,false
+1976-01-05,11.00,11.25,-25,Cut,7,Stagflation & Sterling Crisis,,,Harold Wilson,Labour,Denis Healey,Gordon Richardson,false
+1976-01-19,10.75,11.00,-25,Cut,14,Stagflation & Sterling Crisis,,,Harold Wilson,Labour,Denis Healey,Gordon Richardson,false
+1976-01-26,10.50,10.75,-25,Cut,7,Stagflation & Sterling Crisis,,,Harold Wilson,Labour,Denis Healey,Gordon Richardson,false
+1976-02-02,10.00,10.50,-50,Cut,7,Stagflation & Sterling Crisis,,,Harold Wilson,Labour,Denis Healey,Gordon Richardson,false
+1976-02-09,9.50,10.00,-50,Cut,7,Stagflation & Sterling Crisis,,,Harold Wilson,Labour,Denis Healey,Gordon Richardson,false
+1976-03-01,9.25,9.50,-25,Cut,21,Stagflation & Sterling Crisis,,,Harold Wilson,Labour,Denis Healey,Gordon Richardson,false
+1976-03-08,9.00,9.25,-25,Cut,7,Stagflation & Sterling Crisis,,,Harold Wilson,Labour,Denis Healey,Gordon Richardson,false
+1976-04-26,10.50,9.00,150,Hike,49,Stagflation & Sterling Crisis,,,James Callaghan,Labour,Denis Healey,Gordon Richardson,false
+1976-05-24,11.50,10.50,100,Hike,28,Stagflation & Sterling Crisis,,,James Callaghan,Labour,Denis Healey,Gordon Richardson,false
+1976-09-13,13.00,11.50,150,Hike,112,Stagflation & Sterling Crisis,,,James Callaghan,Labour,Denis Healey,Gordon Richardson,false
+1976-10-07,15.00,13.00,200,Hike,24,IMF Bailout & Winter of Discontent,Sterling crisis: MLR to 15%,Currency Crisis,James Callaghan,Labour,Denis Healey,Gordon Richardson,false
+1976-11-22,14.75,15.00,-25,Cut,46,IMF Bailout & Winter of Discontent,IMF loan negotiations under way,Currency Crisis,James Callaghan,Labour,Denis Healey,Gordon Richardson,false
+1976-12-20,14.50,14.75,-25,Cut,28,IMF Bailout & Winter of Discontent,,,James Callaghan,Labour,Denis Healey,Gordon Richardson,false
+1976-12-29,14.25,14.50,-25,Cut,9,IMF Bailout & Winter of Discontent,,,James Callaghan,Labour,Denis Healey,Gordon Richardson,false
+1977-01-10,14.00,14.25,-25,Cut,12,IMF Bailout & Winter of Discontent,,,James Callaghan,Labour,Denis Healey,Gordon Richardson,false
+1977-01-24,13.25,14.00,-75,Cut,14,IMF Bailout & Winter of Discontent,,,James Callaghan,Labour,Denis Healey,Gordon Richardson,false
+1977-01-31,12.25,13.25,-100,Cut,7,IMF Bailout & Winter of Discontent,,,James Callaghan,Labour,Denis Healey,Gordon Richardson,false
+1977-02-03,12.00,12.25,-25,Cut,3,IMF Bailout & Winter of Discontent,,,James Callaghan,Labour,Denis Healey,Gordon Richardson,false
+1977-03-10,11.00,12.00,-100,Cut,35,IMF Bailout & Winter of Discontent,,,James Callaghan,Labour,Denis Healey,Gordon Richardson,false
+1977-03-21,10.50,11.00,-50,Cut,11,IMF Bailout & Winter of Discontent,,,James Callaghan,Labour,Denis Healey,Gordon Richardson,false
+1977-03-31,9.50,10.50,-100,Cut,10,IMF Bailout & Winter of Discontent,,,James Callaghan,Labour,Denis Healey,Gordon Richardson,false
+1977-04-12,9.25,9.50,-25,Cut,12,IMF Bailout & Winter of Discontent,,,James Callaghan,Labour,Denis Healey,Gordon Richardson,false
+1977-04-18,9.00,9.25,-25,Cut,6,IMF Bailout & Winter of Discontent,,,James Callaghan,Labour,Denis Healey,Gordon Richardson,false
+1977-04-25,8.75,9.00,-25,Cut,7,IMF Bailout & Winter of Discontent,,,James Callaghan,Labour,Denis Healey,Gordon Richardson,false
+1977-05-02,8.25,8.75,-50,Cut,7,IMF Bailout & Winter of Discontent,,,James Callaghan,Labour,Denis Healey,Gordon Richardson,false
+1977-05-16,8.00,8.25,-25,Cut,14,IMF Bailout & Winter of Discontent,,,James Callaghan,Labour,Denis Healey,Gordon Richardson,false
+1977-08-08,7.50,8.00,-50,Cut,84,IMF Bailout & Winter of Discontent,,,James Callaghan,Labour,Denis Healey,Gordon Richardson,false
+1977-08-15,7.00,7.50,-50,Cut,7,IMF Bailout & Winter of Discontent,,,James Callaghan,Labour,Denis Healey,Gordon Richardson,false
+1977-09-12,6.50,7.00,-50,Cut,28,IMF Bailout & Winter of Discontent,,,James Callaghan,Labour,Denis Healey,Gordon Richardson,false
+1977-09-19,6.00,6.50,-50,Cut,7,IMF Bailout & Winter of Discontent,,,James Callaghan,Labour,Denis Healey,Gordon Richardson,false
+1977-10-10,5.50,6.00,-50,Cut,21,IMF Bailout & Winter of Discontent,,,James Callaghan,Labour,Denis Healey,Gordon Richardson,false
+1977-10-17,5.00,5.50,-50,Cut,7,IMF Bailout & Winter of Discontent,"Sterling stabilised, rate at decade low",Recovery,James Callaghan,Labour,Denis Healey,Gordon Richardson,false
+1977-11-28,7.00,5.00,200,Hike,42,IMF Bailout & Winter of Discontent,,,James Callaghan,Labour,Denis Healey,Gordon Richardson,false
+1978-01-09,6.50,7.00,-50,Cut,42,IMF Bailout & Winter of Discontent,,,James Callaghan,Labour,Denis Healey,Gordon Richardson,false
+1978-04-12,7.50,6.50,100,Hike,93,IMF Bailout & Winter of Discontent,,,James Callaghan,Labour,Denis Healey,Gordon Richardson,false
+1978-05-08,8.75,7.50,125,Hike,26,IMF Bailout & Winter of Discontent,,,James Callaghan,Labour,Denis Healey,Gordon Richardson,false
+1978-05-15,9.00,8.75,25,Hike,7,IMF Bailout & Winter of Discontent,,,James Callaghan,Labour,Denis Healey,Gordon Richardson,false
+1978-06-08,10.00,9.00,100,Hike,24,IMF Bailout & Winter of Discontent,,,James Callaghan,Labour,Denis Healey,Gordon Richardson,false
+1978-11-09,12.50,10.00,250,Hike,154,IMF Bailout & Winter of Discontent,,,James Callaghan,Labour,Denis Healey,Gordon Richardson,false
+1979-02-08,14.00,12.50,150,Hike,91,IMF Bailout & Winter of Discontent,Winter of Discontent,Industrial Unrest,James Callaghan,Labour,Denis Healey,Gordon Richardson,false
+1979-03-01,13.00,14.00,-100,Cut,21,IMF Bailout & Winter of Discontent,,,James Callaghan,Labour,Denis Healey,Gordon Richardson,false
+1979-04-05,12.00,13.00,-100,Cut,35,IMF Bailout & Winter of Discontent,,,James Callaghan,Labour,Denis Healey,Gordon Richardson,false
+1979-06-13,14.00,12.00,200,Hike,69,Monetarist Shock,Howe's first Budget: VAT nearly doubled,Fiscal Policy,Margaret Thatcher,Conservative,Geoffrey Howe,Gordon Richardson,false
+1979-11-15,17.00,14.00,300,Hike,155,Monetarist Shock,Record high 17% - Thatcher's monetarist squeeze,Monetary Squeeze,Margaret Thatcher,Conservative,Geoffrey Howe,Gordon Richardson,false
+1980-07-03,16.00,17.00,-100,Cut,231,Monetarist Shock,"Recession bites, squeeze eases",Recession,Margaret Thatcher,Conservative,Geoffrey Howe,Gordon Richardson,false
+1980-11-25,14.00,16.00,-200,Cut,145,Monetarist Shock,,,Margaret Thatcher,Conservative,Geoffrey Howe,Gordon Richardson,false
+1981-03-11,12.00,14.00,-200,Cut,106,Monetarist Shock,The 364 economists' letter Budget,Fiscal Policy,Margaret Thatcher,Conservative,Geoffrey Howe,Gordon Richardson,false
+1981-08-25,12.69,12.00,69,Hike,167,Monetarist Shock,,,Margaret Thatcher,Conservative,Geoffrey Howe,Gordon Richardson,false
+1981-09-15,14.00,12.69,131,Hike,21,Monetarist Shock,,,Margaret Thatcher,Conservative,Geoffrey Howe,Gordon Richardson,false
+1981-10-12,15.00,14.00,100,Hike,27,Monetarist Shock,,,Margaret Thatcher,Conservative,Geoffrey Howe,Gordon Richardson,false
+1981-10-28,15.13,15.00,13,Hike,16,Monetarist Shock,,,Margaret Thatcher,Conservative,Geoffrey Howe,Gordon Richardson,false
+1981-11-06,15.06,15.13,-7,Cut,9,Monetarist Shock,,,Margaret Thatcher,Conservative,Geoffrey Howe,Gordon Richardson,false
+1981-11-09,14.63,15.06,-43,Cut,3,Monetarist Shock,,,Margaret Thatcher,Conservative,Geoffrey Howe,Gordon Richardson,false
+1981-11-25,14.56,14.63,-7,Cut,16,Monetarist Shock,,,Margaret Thatcher,Conservative,Geoffrey Howe,Gordon Richardson,false
+1981-12-04,14.38,14.56,-18,Cut,9,Monetarist Shock,,,Margaret Thatcher,Conservative,Geoffrey Howe,Gordon Richardson,false
+1982-01-18,14.31,14.38,-7,Cut,45,Monetarist Shock,,,Margaret Thatcher,Conservative,Geoffrey Howe,Gordon Richardson,false
+1982-01-19,14.25,14.31,-6,Cut,1,Monetarist Shock,,,Margaret Thatcher,Conservative,Geoffrey Howe,Gordon Richardson,false
+1982-01-20,14.13,14.25,-12,Cut,1,Monetarist Shock,,,Margaret Thatcher,Conservative,Geoffrey Howe,Gordon Richardson,false
+1982-01-21,14.00,14.13,-13,Cut,1,Monetarist Shock,,,Margaret Thatcher,Conservative,Geoffrey Howe,Gordon Richardson,false
+1982-01-22,13.88,14.00,-12,Cut,1,Monetarist Shock,,,Margaret Thatcher,Conservative,Geoffrey Howe,Gordon Richardson,false
+1982-02-22,13.81,13.88,-7,Cut,31,Monetarist Shock,,,Margaret Thatcher,Conservative,Geoffrey Howe,Gordon Richardson,false
+1982-02-25,13.63,13.81,-18,Cut,3,Monetarist Shock,,,Margaret Thatcher,Conservative,Geoffrey Howe,Gordon Richardson,false
+1982-03-10,13.25,13.63,-38,Cut,13,Monetarist Shock,,,Margaret Thatcher,Conservative,Geoffrey Howe,Gordon Richardson,false
+1982-04-16,13.13,13.25,-12,Cut,37,Monetarist Shock,,,Margaret Thatcher,Conservative,Geoffrey Howe,Gordon Richardson,false
+1982-04-19,13.00,13.13,-13,Cut,3,Monetarist Shock,,,Margaret Thatcher,Conservative,Geoffrey Howe,Gordon Richardson,false
+1982-04-20,13.13,13.00,13,Hike,1,Monetarist Shock,,,Margaret Thatcher,Conservative,Geoffrey Howe,Gordon Richardson,false
+1982-06-08,12.63,13.13,-50,Cut,49,Monetarist Shock,,,Margaret Thatcher,Conservative,Geoffrey Howe,Gordon Richardson,false
+1982-07-09,12.50,12.63,-13,Cut,31,Monetarist Shock,,,Margaret Thatcher,Conservative,Geoffrey Howe,Gordon Richardson,false
+1982-07-12,12.25,12.50,-25,Cut,3,Monetarist Shock,,,Margaret Thatcher,Conservative,Geoffrey Howe,Gordon Richardson,false
+1982-07-13,12.13,12.25,-12,Cut,1,Monetarist Shock,,,Margaret Thatcher,Conservative,Geoffrey Howe,Gordon Richardson,false
+1982-07-21,12.06,12.13,-7,Cut,8,Monetarist Shock,,,Margaret Thatcher,Conservative,Geoffrey Howe,Gordon Richardson,false
+1982-07-26,11.94,12.06,-12,Cut,5,Monetarist Shock,,,Margaret Thatcher,Conservative,Geoffrey Howe,Gordon Richardson,false
+1982-07-28,11.81,11.94,-13,Cut,2,Monetarist Shock,,,Margaret Thatcher,Conservative,Geoffrey Howe,Gordon Richardson,false
+1982-07-29,11.75,11.81,-6,Cut,1,Monetarist Shock,,,Margaret Thatcher,Conservative,Geoffrey Howe,Gordon Richardson,false
+1982-07-30,11.63,11.75,-12,Cut,1,Monetarist Shock,,,Margaret Thatcher,Conservative,Geoffrey Howe,Gordon Richardson,false
+1982-08-02,11.56,11.63,-7,Cut,3,Monetarist Shock,,,Margaret Thatcher,Conservative,Geoffrey Howe,Gordon Richardson,false
+1982-08-04,11.50,11.56,-6,Cut,2,Monetarist Shock,,,Margaret Thatcher,Conservative,Geoffrey Howe,Gordon Richardson,false
+1982-08-16,11.38,11.50,-12,Cut,12,Monetarist Shock,,,Margaret Thatcher,Conservative,Geoffrey Howe,Gordon Richardson,false
+1982-08-17,11.25,11.38,-13,Cut,1,Monetarist Shock,,,Margaret Thatcher,Conservative,Geoffrey Howe,Gordon Richardson,false
+1982-08-24,11.13,11.25,-12,Cut,7,Monetarist Shock,,,Margaret Thatcher,Conservative,Geoffrey Howe,Gordon Richardson,false
+1982-08-25,11.00,11.13,-13,Cut,1,Monetarist Shock,,,Margaret Thatcher,Conservative,Geoffrey Howe,Gordon Richardson,false
+1982-08-26,10.88,11.00,-12,Cut,1,Monetarist Shock,,,Margaret Thatcher,Conservative,Geoffrey Howe,Gordon Richardson,false
+1982-08-27,10.63,10.88,-25,Cut,1,Monetarist Shock,,,Margaret Thatcher,Conservative,Geoffrey Howe,Gordon Richardson,false
+1982-09-27,10.50,10.63,-13,Cut,31,Monetarist Shock,,,Margaret Thatcher,Conservative,Geoffrey Howe,Gordon Richardson,false
+1982-09-28,10.38,10.50,-12,Cut,1,Monetarist Shock,,,Margaret Thatcher,Conservative,Geoffrey Howe,Gordon Richardson,false
+1982-09-29,10.25,10.38,-13,Cut,1,Monetarist Shock,,,Margaret Thatcher,Conservative,Geoffrey Howe,Gordon Richardson,false
+1982-09-30,10.13,10.25,-12,Cut,1,Monetarist Shock,,,Margaret Thatcher,Conservative,Geoffrey Howe,Gordon Richardson,false
+1982-10-12,9.63,10.13,-50,Cut,12,Monetarist Shock,,,Margaret Thatcher,Conservative,Geoffrey Howe,Gordon Richardson,false
+1982-11-01,9.38,9.63,-25,Cut,20,Monetarist Shock,,,Margaret Thatcher,Conservative,Geoffrey Howe,Gordon Richardson,false
+1982-11-02,9.13,9.38,-25,Cut,1,Monetarist Shock,,,Margaret Thatcher,Conservative,Geoffrey Howe,Gordon Richardson,false
+1982-11-26,10.00,9.13,87,Hike,24,Monetarist Shock,,,Margaret Thatcher,Conservative,Geoffrey Howe,Gordon Richardson,false
+1983-01-12,11.00,10.00,100,Hike,47,Recovery & Deregulation,,,Margaret Thatcher,Conservative,Geoffrey Howe,Gordon Richardson,false
+1983-03-15,10.56,11.00,-44,Cut,62,Recovery & Deregulation,,,Margaret Thatcher,Conservative,Geoffrey Howe,Gordon Richardson,false
+1983-04-13,10.31,10.56,-25,Cut,29,Recovery & Deregulation,,,Margaret Thatcher,Conservative,Geoffrey Howe,Gordon Richardson,false
+1983-04-14,10.06,10.31,-25,Cut,1,Recovery & Deregulation,,,Margaret Thatcher,Conservative,Geoffrey Howe,Gordon Richardson,false
+1983-06-13,9.81,10.06,-25,Cut,60,Recovery & Deregulation,,,Margaret Thatcher,Conservative,Nigel Lawson,Gordon Richardson,false
+1983-06-14,9.56,9.81,-25,Cut,1,Recovery & Deregulation,,,Margaret Thatcher,Conservative,Nigel Lawson,Gordon Richardson,false
+1983-08-09,9.44,9.56,-12,Cut,56,Recovery & Deregulation,,,Margaret Thatcher,Conservative,Nigel Lawson,Robin Leigh-Pemberton,false
+1983-08-10,9.56,9.44,12,Hike,1,Recovery & Deregulation,,,Margaret Thatcher,Conservative,Nigel Lawson,Robin Leigh-Pemberton,false
+1983-10-03,9.06,9.56,-50,Cut,54,Recovery & Deregulation,,,Margaret Thatcher,Conservative,Nigel Lawson,Robin Leigh-Pemberton,false
+1984-03-07,8.81,9.06,-25,Cut,156,Recovery & Deregulation,,,Margaret Thatcher,Conservative,Nigel Lawson,Robin Leigh-Pemberton,false
+1984-03-14,8.56,8.81,-25,Cut,7,Recovery & Deregulation,,,Margaret Thatcher,Conservative,Nigel Lawson,Robin Leigh-Pemberton,false
+1984-05-10,9.06,8.56,50,Hike,57,Recovery & Deregulation,,,Margaret Thatcher,Conservative,Nigel Lawson,Robin Leigh-Pemberton,false
+1984-06-29,8.88,9.06,-18,Cut,50,Recovery & Deregulation,,,Margaret Thatcher,Conservative,Nigel Lawson,Robin Leigh-Pemberton,false
+1984-07-06,10.00,8.88,112,Hike,7,Recovery & Deregulation,,,Margaret Thatcher,Conservative,Nigel Lawson,Robin Leigh-Pemberton,false
+1984-07-11,12.00,10.00,200,Hike,5,Recovery & Deregulation,Miners' strike & sterling pressure,Industrial Unrest,Margaret Thatcher,Conservative,Nigel Lawson,Robin Leigh-Pemberton,false
+1984-08-08,11.50,12.00,-50,Cut,28,Recovery & Deregulation,,,Margaret Thatcher,Conservative,Nigel Lawson,Robin Leigh-Pemberton,false
+1984-08-09,11.00,11.50,-50,Cut,1,Recovery & Deregulation,,,Margaret Thatcher,Conservative,Nigel Lawson,Robin Leigh-Pemberton,false
+1984-08-16,10.75,11.00,-25,Cut,7,Recovery & Deregulation,,,Margaret Thatcher,Conservative,Nigel Lawson,Robin Leigh-Pemberton,false
+1984-08-17,10.50,10.75,-25,Cut,1,Recovery & Deregulation,,,Margaret Thatcher,Conservative,Nigel Lawson,Robin Leigh-Pemberton,false
+1984-11-05,10.00,10.50,-50,Cut,80,Recovery & Deregulation,,,Margaret Thatcher,Conservative,Nigel Lawson,Robin Leigh-Pemberton,false
+1984-11-19,9.75,10.00,-25,Cut,14,Recovery & Deregulation,,,Margaret Thatcher,Conservative,Nigel Lawson,Robin Leigh-Pemberton,false
+1984-11-23,9.50,9.75,-25,Cut,4,Recovery & Deregulation,,,Margaret Thatcher,Conservative,Nigel Lawson,Robin Leigh-Pemberton,false
+1985-01-14,11.88,9.50,238,Hike,52,Recovery & Deregulation,Sterling near parity with the dollar,Currency Crisis,Margaret Thatcher,Conservative,Nigel Lawson,Robin Leigh-Pemberton,false
+1985-01-28,13.88,11.88,200,Hike,14,Recovery & Deregulation,,,Margaret Thatcher,Conservative,Nigel Lawson,Robin Leigh-Pemberton,false
+1985-03-20,13.38,13.88,-50,Cut,51,Recovery & Deregulation,,,Margaret Thatcher,Conservative,Nigel Lawson,Robin Leigh-Pemberton,false
+1985-03-28,12.88,13.38,-50,Cut,8,Recovery & Deregulation,,,Margaret Thatcher,Conservative,Nigel Lawson,Robin Leigh-Pemberton,false
+1985-04-19,12.38,12.88,-50,Cut,22,Recovery & Deregulation,,,Margaret Thatcher,Conservative,Nigel Lawson,Robin Leigh-Pemberton,false
+1985-07-11,11.88,12.38,-50,Cut,83,Recovery & Deregulation,,,Margaret Thatcher,Conservative,Nigel Lawson,Robin Leigh-Pemberton,false
+1985-07-26,11.38,11.88,-50,Cut,15,Recovery & Deregulation,,,Margaret Thatcher,Conservative,Nigel Lawson,Robin Leigh-Pemberton,false
+1986-01-15,12.38,11.38,100,Hike,173,Recovery & Deregulation,,,Margaret Thatcher,Conservative,Nigel Lawson,Robin Leigh-Pemberton,false
+1986-03-19,11.38,12.38,-100,Cut,63,Recovery & Deregulation,,,Margaret Thatcher,Conservative,Nigel Lawson,Robin Leigh-Pemberton,false
+1986-04-11,10.88,11.38,-50,Cut,23,Recovery & Deregulation,,,Margaret Thatcher,Conservative,Nigel Lawson,Robin Leigh-Pemberton,false
+1986-04-18,10.38,10.88,-50,Cut,7,Recovery & Deregulation,,,Margaret Thatcher,Conservative,Nigel Lawson,Robin Leigh-Pemberton,false
+1986-05-23,9.88,10.38,-50,Cut,35,Recovery & Deregulation,,,Margaret Thatcher,Conservative,Nigel Lawson,Robin Leigh-Pemberton,false
+1986-10-15,10.88,9.88,100,Hike,145,Recovery & Deregulation,Big Bang deregulates the City,Deregulation,Margaret Thatcher,Conservative,Nigel Lawson,Robin Leigh-Pemberton,false
+1987-03-09,10.38,10.88,-50,Cut,145,Big Bang & Lawson Boom,,,Margaret Thatcher,Conservative,Nigel Lawson,Robin Leigh-Pemberton,false
+1987-03-18,9.88,10.38,-50,Cut,9,Big Bang & Lawson Boom,,,Margaret Thatcher,Conservative,Nigel Lawson,Robin Leigh-Pemberton,false
+1987-04-28,9.38,9.88,-50,Cut,41,Big Bang & Lawson Boom,,,Margaret Thatcher,Conservative,Nigel Lawson,Robin Leigh-Pemberton,false
+1987-05-08,8.88,9.38,-50,Cut,10,Big Bang & Lawson Boom,,,Margaret Thatcher,Conservative,Nigel Lawson,Robin Leigh-Pemberton,false
+1987-08-06,9.88,8.88,100,Hike,90,Big Bang & Lawson Boom,,,Margaret Thatcher,Conservative,Nigel Lawson,Robin Leigh-Pemberton,false
+1987-10-23,9.38,9.88,-50,Cut,78,Big Bang & Lawson Boom,Post-Black Monday emergency easing,Market Crash,Margaret Thatcher,Conservative,Nigel Lawson,Robin Leigh-Pemberton,false
+1987-11-04,8.88,9.38,-50,Cut,12,Big Bang & Lawson Boom,Crash response continues,Market Crash,Margaret Thatcher,Conservative,Nigel Lawson,Robin Leigh-Pemberton,false
+1987-12-03,8.38,8.88,-50,Cut,29,Big Bang & Lawson Boom,,,Margaret Thatcher,Conservative,Nigel Lawson,Robin Leigh-Pemberton,false
+1988-02-01,8.88,8.38,50,Hike,60,Big Bang & Lawson Boom,,,Margaret Thatcher,Conservative,Nigel Lawson,Robin Leigh-Pemberton,false
+1988-03-17,8.38,8.88,-50,Cut,45,Big Bang & Lawson Boom,,,Margaret Thatcher,Conservative,Nigel Lawson,Robin Leigh-Pemberton,false
+1988-04-08,7.88,8.38,-50,Cut,22,Big Bang & Lawson Boom,,,Margaret Thatcher,Conservative,Nigel Lawson,Robin Leigh-Pemberton,false
+1988-05-17,7.38,7.88,-50,Cut,39,Big Bang & Lawson Boom,,,Margaret Thatcher,Conservative,Nigel Lawson,Robin Leigh-Pemberton,false
+1988-06-03,7.88,7.38,50,Hike,17,Big Bang & Lawson Boom,Lawson Boom: start of 12 hikes in 18 months,Credit Boom,Margaret Thatcher,Conservative,Nigel Lawson,Robin Leigh-Pemberton,false
+1988-06-10,8.38,7.88,50,Hike,7,Big Bang & Lawson Boom,,,Margaret Thatcher,Conservative,Nigel Lawson,Robin Leigh-Pemberton,false
+1988-06-24,8.88,8.38,50,Hike,14,Big Bang & Lawson Boom,,,Margaret Thatcher,Conservative,Nigel Lawson,Robin Leigh-Pemberton,false
+1988-07-07,9.88,8.88,100,Hike,13,Big Bang & Lawson Boom,,,Margaret Thatcher,Conservative,Nigel Lawson,Robin Leigh-Pemberton,false
+1988-07-21,10.38,9.88,50,Hike,14,Big Bang & Lawson Boom,,,Margaret Thatcher,Conservative,Nigel Lawson,Robin Leigh-Pemberton,false
+1988-08-08,10.88,10.38,50,Hike,18,Big Bang & Lawson Boom,,,Margaret Thatcher,Conservative,Nigel Lawson,Robin Leigh-Pemberton,false
+1988-08-25,11.88,10.88,100,Hike,17,Big Bang & Lawson Boom,,,Margaret Thatcher,Conservative,Nigel Lawson,Robin Leigh-Pemberton,false
+1988-11-25,12.88,11.88,100,Hike,92,Big Bang & Lawson Boom,,,Margaret Thatcher,Conservative,Nigel Lawson,Robin Leigh-Pemberton,false
+1989-05-25,13.75,12.88,87,Hike,181,Overheating & Shadowing the D-Mark,,,Margaret Thatcher,Conservative,Nigel Lawson,Robin Leigh-Pemberton,false
+1989-08-31,13.84,13.75,9,Hike,98,Overheating & Shadowing the D-Mark,,,Margaret Thatcher,Conservative,Nigel Lawson,Robin Leigh-Pemberton,false
+1989-09-04,13.88,13.84,4,Hike,4,Overheating & Shadowing the D-Mark,,,Margaret Thatcher,Conservative,Nigel Lawson,Robin Leigh-Pemberton,false
+1989-09-08,13.75,13.88,-13,Cut,4,Overheating & Shadowing the D-Mark,,,Margaret Thatcher,Conservative,Nigel Lawson,Robin Leigh-Pemberton,false
+1989-10-06,14.88,13.75,113,Hike,28,Overheating & Shadowing the D-Mark,Rate to 15% - Lawson resigns weeks later,Political Crisis,Margaret Thatcher,Conservative,Nigel Lawson,Robin Leigh-Pemberton,false
+1990-10-08,13.88,14.88,-100,Cut,367,ERM Membership,UK joins the ERM at DM 2.95,ERM,Margaret Thatcher,Conservative,John Major,Robin Leigh-Pemberton,false
+1991-02-13,13.38,13.88,-50,Cut,128,ERM Membership,,,John Major,Conservative,Norman Lamont,Robin Leigh-Pemberton,false
+1991-02-27,12.88,13.38,-50,Cut,14,ERM Membership,,,John Major,Conservative,Norman Lamont,Robin Leigh-Pemberton,false
+1991-03-22,12.38,12.88,-50,Cut,23,ERM Membership,,,John Major,Conservative,Norman Lamont,Robin Leigh-Pemberton,false
+1991-04-12,11.88,12.38,-50,Cut,21,ERM Membership,,,John Major,Conservative,Norman Lamont,Robin Leigh-Pemberton,false
+1991-05-24,11.38,11.88,-50,Cut,42,ERM Membership,,,John Major,Conservative,Norman Lamont,Robin Leigh-Pemberton,false
+1991-07-12,10.88,11.38,-50,Cut,49,ERM Membership,,,John Major,Conservative,Norman Lamont,Robin Leigh-Pemberton,false
+1991-09-04,10.38,10.88,-50,Cut,54,ERM Membership,,,John Major,Conservative,Norman Lamont,Robin Leigh-Pemberton,false
+1992-05-05,9.88,10.38,-50,Cut,244,ERM Membership,,,John Major,Conservative,Norman Lamont,Robin Leigh-Pemberton,false
+1992-09-22,8.88,9.88,-100,Cut,140,Post-ERM Inflation Targeting,Black Wednesday aftermath - ERM exit,Currency Crisis,John Major,Conservative,Norman Lamont,Robin Leigh-Pemberton,false
+1992-10-16,7.88,8.88,-100,Cut,24,Post-ERM Inflation Targeting,Post-ERM easing under inflation targeting,Policy Regime Change,John Major,Conservative,Norman Lamont,Robin Leigh-Pemberton,false
+1992-11-13,6.88,7.88,-100,Cut,28,Post-ERM Inflation Targeting,,,John Major,Conservative,Norman Lamont,Robin Leigh-Pemberton,false
+1993-01-26,5.88,6.88,-100,Cut,74,Post-ERM Inflation Targeting,,,John Major,Conservative,Norman Lamont,Robin Leigh-Pemberton,false
+1993-11-23,5.38,5.88,-50,Cut,301,Post-ERM Inflation Targeting,,,John Major,Conservative,Kenneth Clarke,Eddie George,false
+1994-02-08,5.13,5.38,-25,Cut,77,Post-ERM Inflation Targeting,,,John Major,Conservative,Kenneth Clarke,Eddie George,false
+1994-09-12,5.63,5.13,50,Hike,216,Post-ERM Inflation Targeting,,,John Major,Conservative,Kenneth Clarke,Eddie George,false
+1994-12-07,6.13,5.63,50,Hike,86,Post-ERM Inflation Targeting,,,John Major,Conservative,Kenneth Clarke,Eddie George,false
+1995-02-02,6.63,6.13,50,Hike,57,Post-ERM Inflation Targeting,,,John Major,Conservative,Kenneth Clarke,Eddie George,false
+1995-12-13,6.38,6.63,-25,Cut,314,Post-ERM Inflation Targeting,,,John Major,Conservative,Kenneth Clarke,Eddie George,false
+1996-01-18,6.13,6.38,-25,Cut,36,Post-ERM Inflation Targeting,,,John Major,Conservative,Kenneth Clarke,Eddie George,false
+1996-03-08,5.94,6.13,-19,Cut,50,Post-ERM Inflation Targeting,,,John Major,Conservative,Kenneth Clarke,Eddie George,false
+1996-06-06,5.69,5.94,-25,Cut,90,Post-ERM Inflation Targeting,,,John Major,Conservative,Kenneth Clarke,Eddie George,false
+1996-10-30,5.94,5.69,25,Hike,146,Post-ERM Inflation Targeting,,,John Major,Conservative,Kenneth Clarke,Eddie George,false
+1997-05-06,6.25,5.94,31,Hike,188,BoE Independence & Dotcom Bubble,Bank of England granted independence,Policy Regime Change,Tony Blair,Labour,Gordon Brown,Eddie George,true
+1997-06-06,6.50,6.25,25,Hike,31,BoE Independence & Dotcom Bubble,,,Tony Blair,Labour,Gordon Brown,Eddie George,true
+1997-07-10,6.75,6.50,25,Hike,34,BoE Independence & Dotcom Bubble,,,Tony Blair,Labour,Gordon Brown,Eddie George,true
+1997-08-07,7.00,6.75,25,Hike,28,BoE Independence & Dotcom Bubble,,,Tony Blair,Labour,Gordon Brown,Eddie George,true
+1997-11-06,7.25,7.00,25,Hike,91,BoE Independence & Dotcom Bubble,,,Tony Blair,Labour,Gordon Brown,Eddie George,true
+1998-06-04,7.50,7.25,25,Hike,210,BoE Independence & Dotcom Bubble,,,Tony Blair,Labour,Gordon Brown,Eddie George,true
+1998-10-08,7.25,7.50,-25,Cut,126,BoE Independence & Dotcom Bubble,LTCM collapse & Russian default,Financial Crisis,Tony Blair,Labour,Gordon Brown,Eddie George,true
+1998-11-05,6.75,7.25,-50,Cut,28,BoE Independence & Dotcom Bubble,,,Tony Blair,Labour,Gordon Brown,Eddie George,true
+1998-12-10,6.25,6.75,-50,Cut,35,BoE Independence & Dotcom Bubble,,,Tony Blair,Labour,Gordon Brown,Eddie George,true
+1999-01-07,6.00,6.25,-25,Cut,28,BoE Independence & Dotcom Bubble,,,Tony Blair,Labour,Gordon Brown,Eddie George,true
+1999-02-04,5.50,6.00,-50,Cut,28,BoE Independence & Dotcom Bubble,,,Tony Blair,Labour,Gordon Brown,Eddie George,true
+1999-04-08,5.25,5.50,-25,Cut,63,BoE Independence & Dotcom Bubble,,,Tony Blair,Labour,Gordon Brown,Eddie George,true
+1999-06-10,5.00,5.25,-25,Cut,63,BoE Independence & Dotcom Bubble,Dotcom bubble inflating,Asset Bubble,Tony Blair,Labour,Gordon Brown,Eddie George,true
+1999-09-08,5.25,5.00,25,Hike,90,BoE Independence & Dotcom Bubble,,,Tony Blair,Labour,Gordon Brown,Eddie George,true
+1999-11-04,5.50,5.25,25,Hike,57,BoE Independence & Dotcom Bubble,,,Tony Blair,Labour,Gordon Brown,Eddie George,true
+2000-01-13,5.75,5.50,25,Hike,70,BoE Independence & Dotcom Bubble,,,Tony Blair,Labour,Gordon Brown,Eddie George,true
+2000-02-10,6.00,5.75,25,Hike,28,BoE Independence & Dotcom Bubble,Peak rate weeks before Nasdaq tops out,Asset Bubble,Tony Blair,Labour,Gordon Brown,Eddie George,true
+2001-02-08,5.75,6.00,-25,Cut,364,Dotcom Bust,,,Tony Blair,Labour,Gordon Brown,Eddie George,true
+2001-04-05,5.50,5.75,-25,Cut,56,Dotcom Bust,,,Tony Blair,Labour,Gordon Brown,Eddie George,true
+2001-05-10,5.25,5.50,-25,Cut,35,Dotcom Bust,,,Tony Blair,Labour,Gordon Brown,Eddie George,true
+2001-08-02,5.00,5.25,-25,Cut,84,Dotcom Bust,,,Tony Blair,Labour,Gordon Brown,Eddie George,true
+2001-09-18,4.75,5.00,-25,Cut,47,Dotcom Bust,Emergency coordinated cut after 9/11,Geopolitical Shock,Tony Blair,Labour,Gordon Brown,Eddie George,true
+2001-10-04,4.50,4.75,-25,Cut,16,Dotcom Bust,,,Tony Blair,Labour,Gordon Brown,Eddie George,true
+2001-11-08,4.00,4.50,-50,Cut,35,Dotcom Bust,,,Tony Blair,Labour,Gordon Brown,Eddie George,true
+2003-02-06,3.75,4.00,-25,Cut,455,Dotcom Bust,,,Tony Blair,Labour,Gordon Brown,Eddie George,true
+2003-07-10,3.50,3.75,-25,Cut,154,Great Moderation & Credit Boom,48-year low - dotcom bust trough,Recession,Tony Blair,Labour,Gordon Brown,Mervyn King,true
+2003-11-06,3.75,3.50,25,Hike,119,Great Moderation & Credit Boom,,,Tony Blair,Labour,Gordon Brown,Mervyn King,true
+2004-02-05,4.00,3.75,25,Hike,91,Great Moderation & Credit Boom,,,Tony Blair,Labour,Gordon Brown,Mervyn King,true
+2004-05-06,4.25,4.00,25,Hike,91,Great Moderation & Credit Boom,,,Tony Blair,Labour,Gordon Brown,Mervyn King,true
+2004-06-10,4.50,4.25,25,Hike,35,Great Moderation & Credit Boom,,,Tony Blair,Labour,Gordon Brown,Mervyn King,true
+2004-08-05,4.75,4.50,25,Hike,56,Great Moderation & Credit Boom,,,Tony Blair,Labour,Gordon Brown,Mervyn King,true
+2005-08-04,4.50,4.75,-25,Cut,364,Great Moderation & Credit Boom,,,Tony Blair,Labour,Gordon Brown,Mervyn King,true
+2006-08-03,4.75,4.50,25,Hike,364,Great Moderation & Credit Boom,,,Tony Blair,Labour,Gordon Brown,Mervyn King,true
+2006-11-09,5.00,4.75,25,Hike,98,Great Moderation & Credit Boom,,,Tony Blair,Labour,Gordon Brown,Mervyn King,true
+2007-01-11,5.25,5.00,25,Hike,63,Great Moderation & Credit Boom,,,Tony Blair,Labour,Gordon Brown,Mervyn King,true
+2007-05-10,5.50,5.25,25,Hike,119,Great Moderation & Credit Boom,,,Tony Blair,Labour,Gordon Brown,Mervyn King,true
+2007-07-05,5.75,5.50,25,Hike,56,Great Moderation & Credit Boom,,,Gordon Brown,Labour,Alistair Darling,Mervyn King,true
+2007-12-06,5.50,5.75,-25,Cut,154,Global Financial Crisis,First cut of the credit crunch,Financial Crisis,Gordon Brown,Labour,Alistair Darling,Mervyn King,true
+2008-02-07,5.25,5.50,-25,Cut,63,Global Financial Crisis,,,Gordon Brown,Labour,Alistair Darling,Mervyn King,true
+2008-04-10,5.00,5.25,-25,Cut,63,Global Financial Crisis,,,Gordon Brown,Labour,Alistair Darling,Mervyn King,true
+2008-10-08,4.50,5.00,-50,Cut,181,Global Financial Crisis,Coordinated global emergency cut,Financial Crisis,Gordon Brown,Labour,Alistair Darling,Mervyn King,true
+2008-11-06,3.00,4.50,-150,Cut,29,Global Financial Crisis,150bp cut - largest since 1981,Financial Crisis,Gordon Brown,Labour,Alistair Darling,Mervyn King,true
+2008-12-04,2.00,3.00,-100,Cut,28,Global Financial Crisis,,,Gordon Brown,Labour,Alistair Darling,Mervyn King,true
+2009-01-08,1.50,2.00,-50,Cut,35,Global Financial Crisis,,,Gordon Brown,Labour,Alistair Darling,Mervyn King,true
+2009-02-05,1.00,1.50,-50,Cut,28,Global Financial Crisis,,,Gordon Brown,Labour,Alistair Darling,Mervyn King,true
+2009-03-05,0.50,1.00,-50,Cut,28,ZIRP & Quantitative Easing,Record low 0.5% and QE launched,Quantitative Easing,Gordon Brown,Labour,Alistair Darling,Mervyn King,true
+2016-08-04,0.25,0.50,-25,Cut,2709,Brexit Era,Post-Brexit-referendum cut,Brexit,Theresa May,Conservative,Philip Hammond,Mark Carney,true
+2017-11-02,0.50,0.25,25,Hike,455,Brexit Era,First hike in over ten years,Normalisation,Theresa May,Conservative,Philip Hammond,Mark Carney,true
+2018-08-02,0.75,0.50,25,Hike,273,Brexit Era,,,Theresa May,Conservative,Philip Hammond,Mark Carney,true
+2020-03-11,0.25,0.75,-50,Cut,587,COVID-19 Pandemic,COVID-19 emergency cut,Pandemic,Boris Johnson,Conservative,Rishi Sunak,Mark Carney,true
+2020-03-19,0.10,0.25,-15,Cut,8,COVID-19 Pandemic,Record low 0.1% as lockdown begins,Pandemic,Boris Johnson,Conservative,Rishi Sunak,Andrew Bailey,true
+2021-12-16,0.25,0.10,15,Hike,637,Inflation Shock,First hike of the inflation cycle,Inflation Shock,Boris Johnson,Conservative,Rishi Sunak,Andrew Bailey,true
+2022-02-03,0.50,0.25,25,Hike,49,Inflation Shock,,,Boris Johnson,Conservative,Rishi Sunak,Andrew Bailey,true
+2022-03-17,0.75,0.50,25,Hike,42,Inflation Shock,,,Boris Johnson,Conservative,Rishi Sunak,Andrew Bailey,true
+2022-05-05,1.00,0.75,25,Hike,49,Inflation Shock,,,Boris Johnson,Conservative,Rishi Sunak,Andrew Bailey,true
+2022-06-16,1.25,1.00,25,Hike,42,Inflation Shock,,,Boris Johnson,Conservative,Rishi Sunak,Andrew Bailey,true
+2022-08-04,1.75,1.25,50,Hike,49,Inflation Shock,,,Boris Johnson,Conservative,Nadhim Zahawi,Andrew Bailey,true
+2022-09-22,2.25,1.75,50,Hike,49,Inflation Shock,Day before the Truss mini-Budget,Fiscal Crisis,Liz Truss,Conservative,Kwasi Kwarteng,Andrew Bailey,true
+2022-11-03,3.00,2.25,75,Hike,42,Inflation Shock,75bp - biggest hike in 33 years,Inflation Shock,Rishi Sunak,Conservative,Jeremy Hunt,Andrew Bailey,true
+2022-12-15,3.50,3.00,50,Hike,42,Inflation Shock,,,Rishi Sunak,Conservative,Jeremy Hunt,Andrew Bailey,true
+2023-02-02,4.00,3.50,50,Hike,49,Inflation Shock,,,Rishi Sunak,Conservative,Jeremy Hunt,Andrew Bailey,true
+2023-03-23,4.25,4.00,25,Hike,49,Inflation Shock,,,Rishi Sunak,Conservative,Jeremy Hunt,Andrew Bailey,true
+2023-05-11,4.50,4.25,25,Hike,49,Inflation Shock,,,Rishi Sunak,Conservative,Jeremy Hunt,Andrew Bailey,true
+2023-06-22,5.00,4.50,50,Hike,42,Inflation Shock,,,Rishi Sunak,Conservative,Jeremy Hunt,Andrew Bailey,true
+2023-08-03,5.25,5.00,25,Hike,42,Disinflation & Easing Cycle,Peak of the tightening cycle,Inflation Shock,Rishi Sunak,Conservative,Jeremy Hunt,Andrew Bailey,true
+2024-08-01,5.00,5.25,-25,Cut,364,Disinflation & Easing Cycle,First cut of the easing cycle,Disinflation,Keir Starmer,Labour,Rachel Reeves,Andrew Bailey,true
+2024-11-07,4.75,5.00,-25,Cut,98,Disinflation & Easing Cycle,,,Keir Starmer,Labour,Rachel Reeves,Andrew Bailey,true
+2025-02-06,4.50,4.75,-25,Cut,91,Disinflation & Easing Cycle,,,Keir Starmer,Labour,Rachel Reeves,Andrew Bailey,true
+2025-05-08,4.25,4.50,-25,Cut,91,Disinflation & Easing Cycle,,,Keir Starmer,Labour,Rachel Reeves,Andrew Bailey,true
+2025-08-07,4.00,4.25,-25,Cut,91,Disinflation & Easing Cycle,,,Keir Starmer,Labour,Rachel Reeves,Andrew Bailey,true
+2025-12-18,3.75,4.00,-25,Cut,133,Disinflation & Easing Cycle,,,Keir Starmer,Labour,Rachel Reeves,Andrew Bailey,true
