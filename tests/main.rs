@@ -199,6 +199,9 @@ mod test_window_context;
 #[path = "test_yanked_query.rs"]
 mod test_yanked_query;
 
+#[path = "test_yank_single_row_repro.rs"]
+mod test_yank_single_row_repro;
+
 #[path = "tui_integration_test.rs"]
 mod tui_integration_test;
 

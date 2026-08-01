@@ -631,9 +631,20 @@ impl BufferAPI for Buffer {
 
     // --- Table Navigation ---
     fn get_selected_row(&self) -> Option<usize> {
-        // For backward compatibility, check if table_state has a selection
-        // This maintains the old API behavior where None means no selection
-        self.table_state.selected()
+        // The crosshair is the position the table actually renders, so derive the
+        // selection from it rather than from table_state. table_state is only written
+        // by row navigation and query execution, so it stays None after a file load
+        // (or after a filter that leaves a single row, where j/k never fires) - which
+        // used to make yank report "No row selected" on a perfectly visible cell.
+        //
+        // None now means "there is no data", and the row is clamped to the current
+        // view so a filter that shrinks the results can't leave us reading past the end.
+        let row_count = self.visible_row_count();
+        if row_count == 0 {
+            None
+        } else {
+            Some(self.view_state.crosshair_row.min(row_count - 1))
+        }
     }
 
     fn set_selected_row(&mut self, row: Option<usize>) {
@@ -1264,6 +1275,18 @@ impl BufferAPI for Buffer {
 }
 
 impl Buffer {
+    /// Number of rows currently visible, preferring the `DataView` (which knows about
+    /// filtering) and falling back to the raw `DataTable` for legacy buffers.
+    fn visible_row_count(&self) -> usize {
+        if let Some(ref dataview) = self.dataview {
+            dataview.row_count()
+        } else if let Some(ref datatable) = self.datatable {
+            datatable.row_count()
+        } else {
+            0
+        }
+    }
+
     /// Create a new empty buffer
     #[must_use]
     pub fn new(id: usize) -> Self {

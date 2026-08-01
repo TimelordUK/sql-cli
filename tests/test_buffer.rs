@@ -2,6 +2,24 @@ use serde_json::json;
 use sql_cli::api_client::{QueryInfo, QueryResponse};
 use sql_cli::buffer::{AppMode, Buffer, BufferAPI, SortOrder};
 
+/// Build a `QueryResponse` with `rows` rows, for tests that need data on screen.
+fn make_test_response(rows: usize) -> QueryResponse {
+    QueryResponse {
+        data: (0..rows)
+            .map(|i| json!({"id": i, "name": format!("row{i}")}))
+            .collect(),
+        count: rows,
+        query: QueryInfo {
+            select: vec!["id".to_string(), "name".to_string()],
+            where_clause: None,
+            order_by: None,
+        },
+        source: None,
+        table: None,
+        cached: None,
+    }
+}
+
 #[test]
 fn test_buffer_basic_operations() {
     let mut buffer = Buffer::new(1);
@@ -116,12 +134,25 @@ fn test_buffer_results() {
 fn test_buffer_navigation() {
     let mut buffer = Buffer::new(1);
 
-    // Test row selection
+    // The selection is derived from the visible data, so an empty buffer has none
+    assert_eq!(buffer.get_selected_row(), None);
+
+    // Test row selection against real data
+    buffer
+        .set_results_as_datatable(Some(make_test_response(10)))
+        .unwrap();
+
     buffer.set_selected_row(Some(5));
     assert_eq!(buffer.get_selected_row(), Some(5));
 
+    // Setting None resets the crosshair to the first row rather than clearing the
+    // selection - with data on screen there is always a selectable row
     buffer.set_selected_row(None);
-    assert_eq!(buffer.get_selected_row(), None);
+    assert_eq!(buffer.get_selected_row(), Some(0));
+
+    // Out-of-range positions are clamped to the last visible row
+    buffer.set_selected_row(Some(99));
+    assert_eq!(buffer.get_selected_row(), Some(9));
 
     // Test scroll offset
     buffer.set_scroll_offset((10, 20));

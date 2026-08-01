@@ -3,6 +3,26 @@
 /// using the new proxy-based architecture
 use sql_cli::app_state_container::AppStateContainer;
 use sql_cli::buffer::{Buffer, BufferAPI, BufferManager, SelectionMode};
+use sql_cli::data::datatable::{DataColumn, DataRow, DataTable, DataValue};
+use std::sync::Arc;
+
+/// A `DataTable` with `rows` rows and 8 columns, for tests that need data on screen.
+fn make_datatable(rows: usize) -> DataTable {
+    let mut table = DataTable::new("test");
+    for c in 0..8 {
+        table.add_column(DataColumn::new(format!("col{c}")));
+    }
+    for r in 0..rows {
+        table
+            .add_row(DataRow::new(
+                (0..8)
+                    .map(|c| DataValue::Integer((r * 8 + c) as i64))
+                    .collect(),
+            ))
+            .unwrap();
+    }
+    table
+}
 
 #[test]
 #[ignore = "Disabled: test is unreliable due to file system dependencies in CommandHistory::new()"]
@@ -176,6 +196,8 @@ fn test_proxy_with_no_buffer() {
 fn test_direct_buffer_viewstate_access() {
     // Test that we can also access ViewState directly from Buffer
     let mut buffer = Buffer::new(1);
+    // get_selected_row() derives from the visible data, so give the buffer some
+    buffer.set_datatable(Some(Arc::new(make_datatable(20))));
 
     // Modify ViewState directly
     buffer.view_state.crosshair_row = 15;
