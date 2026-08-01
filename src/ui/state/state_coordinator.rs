@@ -351,6 +351,7 @@ impl StateCoordinator {
     /// Returns the number of matching rows
     pub fn apply_text_filter_with_refs(
         state_container: &mut AppStateContainer,
+        viewport_manager: &RefCell<Option<ViewportManager>>,
         pattern: &str,
     ) -> usize {
         let case_insensitive = state_container.is_case_insensitive();
@@ -374,6 +375,35 @@ impl StateCoordinator {
             debug!("No DataView available for text filtering");
             0
         };
+
+        // Reset navigation to the first match, the same way the fuzzy filter does.
+        // Without this the crosshair keeps pointing at wherever it was before the
+        // filter, which can now be past the end of the narrowed view.
+        if rows_after > 0 {
+            // Preserve horizontal scroll
+            let col_offset = state_container.get_scroll_offset().1;
+
+            state_container.set_selected_row(Some(0));
+            state_container.set_scroll_offset((0, col_offset));
+            state_container.set_table_selected_row(Some(0));
+
+            {
+                let mut nav = state_container.navigation_mut();
+                nav.selected_row = 0;
+                nav.scroll_offset.0 = 0;
+            }
+
+            if let Ok(mut vm_borrow) = viewport_manager.try_borrow_mut() {
+                if let Some(ref mut vm) = *vm_borrow {
+                    vm.set_crosshair_row(0);
+                    vm.set_scroll_offset(0, col_offset);
+                    debug!(
+                        "StateCoordinator: Reset viewport to first match (row 0) with {} total matches",
+                        rows_after
+                    );
+                }
+            }
+        }
 
         // Update status message
         let status = if pattern.is_empty() {

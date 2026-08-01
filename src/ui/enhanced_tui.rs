@@ -4911,8 +4911,11 @@ impl EnhancedTuiApp {
 
         // Delegate state coordination to StateCoordinator
         use crate::ui::state::state_coordinator::StateCoordinator;
-        let _rows_after =
-            StateCoordinator::apply_text_filter_with_refs(&mut self.state_container, pattern);
+        let _rows_after = StateCoordinator::apply_text_filter_with_refs(
+            &mut self.state_container,
+            &self.viewport_manager,
+            pattern,
+        );
 
         // Update ViewportManager with the filtered DataView
         // Sync the dataview to both managers
