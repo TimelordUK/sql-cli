@@ -1,6 +1,6 @@
-# SQL CLI v1.82.0
+# SQL CLI v1.82.1
 
-**Release Date:** July 25, 2026
+**Release Date:** August 01, 2026
 
 ## 📊 Release Overview
 - **Commits in this release:** 5
@@ -8,27 +8,23 @@
 
 ## ✨ Highlights
 
-### 🔍 Enhanced Debugging
-- **Better Diagnostics**: Improved error messages and state dumps
-
-### 💾 Data Protection
-- **History Recovery**: Automatic recovery from corrupted files
-- **Atomic Writes**: Safer file operations to prevent data loss
-
 ## 📝 Changes by Category
 
+### 🚀 New Features
+- Bank of England rate history, 1975-2025
+
 ### 🐛 Bug Fixes
-- close P11 — SELECT alias on the LHS of an IN-subquery
-- close P10 (HAVING NOT), P6 (INTERSECT/EXCEPT), P12 (WITH in expr)
+- yank cell/row no longer reports "No row selected"
+- make the examples runner encoding-safe on Windows
 
 <details>
 <summary>📋 View all commits</summary>
 
-- Merge pull request #39 from TimelordUK/fix/p11-alias-in-in-subquery (TimelordUK)
-- fix(parity): close P11 — SELECT alias on the LHS of an IN-subquery (TimelordUK)
-- Merge pull request #38 from TimelordUK/fix/parity-p10-p6-p12-and-test-reliability (TimelordUK)
-- test(history): make history_protection_integration reliable cross-platform (TimelordUK)
-- fix(parity): close P10 (HAVING NOT), P6 (INTERSECT/EXCEPT), P12 (WITH in expr) (TimelordUK)
+- Merge pull request #41 from TimelordUK/fix/yank-cell-single-row-selection (TimelordUK)
+- fix(tui): yank cell/row no longer reports "No row selected" (TimelordUK)
+- Merge pull request #40 from TimelordUK/feat/boe-rate-history-example (TimelordUK)
+- feat(examples): Bank of England rate history, 1975-2025 (TimelordUK)
+- fix(tests): make the examples runner encoding-safe on Windows (TimelordUK)
 
 </details>
 
