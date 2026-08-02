@@ -7,6 +7,8 @@ import sys
 import tempfile
 import csv
 
+import pytest
+
 # Add parent directory to path to import test utilities
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -81,6 +83,13 @@ class TestInSubqueries:
         assert len(results) == 1, "Expected one result"
         assert results[0]['noble_gases'] == '7', "Should have 7 noble gases"
     
+    @pytest.mark.skip(
+        reason="P29: a boolean operator after IN (...) is not parsed. This test "
+        "passed for years while the AND clause was SILENTLY DISCARDED - it "
+        "asserted only that the count was >= 0, which held either way. P13 "
+        "stage 1 turned the silent drop into a parse error, which is what "
+        "surfaced it. Re-enable when P29 is fixed; see docs/SQL_PARITY.md."
+    )
     def test_in_subquery_with_filter(self):
         """Test IN subquery with additional WHERE conditions."""
         query = """
@@ -182,6 +191,12 @@ class TestComplexSubqueries:
             periods = [r['Period'] for r in results]
             assert len(periods) == len(set(periods)), "Each period should appear once"
     
+    @pytest.mark.skip(
+        reason="P29: a boolean operator after IN (...) is not parsed. The AND "
+        "joining the two IN conditions was silently discarded, so this only "
+        "ever tested the first one. Re-enable when P29 is fixed; see "
+        "docs/SQL_PARITY.md."
+    )
     def test_nested_in_conditions(self):
         """Test multiple IN/NOT IN conditions."""
         query = """

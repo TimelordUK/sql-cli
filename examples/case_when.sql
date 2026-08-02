@@ -14,7 +14,7 @@ SELECT
         ELSE RPAD(value,5,'#')
     END as label
 FROM range(1,7);
-end
+GO
 
 
 

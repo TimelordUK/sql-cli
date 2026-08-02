@@ -1426,10 +1426,14 @@ fn handle_non_interactive_query(
         parsed_args.query_arg.clone().unwrap()
     };
 
-    // Check if this is a multi-statement script (contains GO separator)
+    // Route to the script executor for a GO-separated batch file OR for anything
+    // holding more than one `;`-separated statement. GO stays exactly as it was;
+    // this only stops `a; b;` input from reaching the single-statement path,
+    // where the parser used to run `a` and silently discard `b` (P13).
     let is_script = query
         .lines()
-        .any(|line| line.trim().eq_ignore_ascii_case("go"));
+        .any(|line| line.trim().eq_ignore_ascii_case("go"))
+        || sql_cli::sql::script_parser::ScriptParser::is_multi_statement(&query);
 
     // Find the data file if provided. .tsv / .psv are routed through the CSV
     // loader which auto-detects the delimiter from the extension. When

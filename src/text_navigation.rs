@@ -219,6 +219,7 @@ impl TextNavigator {
             Token::NumberLiteral(s) => s,
             Token::Star => "*",
             Token::Comma => ",",
+            Token::Semicolon => ";",
             Token::Colon => ":",
             Token::Dot => ".",
             Token::LeftParen => "(",

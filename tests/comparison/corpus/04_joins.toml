@@ -82,3 +82,19 @@ id = "from_less_derived_main"
 data = "trades.csv"
 sql = "SELECT x.k AS k, x.n AS n FROM (SELECT 1 AS k, 2 AS n) x"
 # Pins P5 for a FROM-less subquery used directly as the main FROM: one row.
+
+# --- P27: OR in a JOIN ON clause ---
+
+[[case]]
+id = "join_on_or_condition"
+data = "null_edges.csv"
+sql = "SELECT a.id AS aid, b.id AS bid FROM null_edges a INNER JOIN null_edges b ON a.id = b.id OR a.id = b.partner_id ORDER BY a.id, b.id"
+expect = "GAP"
+# P27, added 2026-08-02. Only the first condition is parsed. Until P13 stage 1
+# the `OR ...` remainder was silently DISCARDED, so the join ran on a truncated
+# predicate and returned wrong rows with no error — examples/chemistry.sql had
+# been shipping exactly that. It is a parse error now, which is why this sits in
+# GAP: a refusal is the correct intermediate state.
+#
+# AND in a join condition already works and is well covered by the P7/P8 cases
+# above, so this is specifically OR.

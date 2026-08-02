@@ -137,6 +137,135 @@ impl ScriptParser {
         directives
     }
 
+    /// Split a `GO` batch into individual statements on top-level `;`.
+    ///
+    /// `GO` remains the batch separator it has always been — nothing about
+    /// existing scripts changes shape. This only recovers statements that were
+    /// previously glued together into one string, where the parser would parse
+    /// the first and **silently discard the rest** (P13). `prime_numbers.sql`
+    /// had a whole `SELECT` that never ran for exactly this reason.
+    ///
+    /// Quote- and comment-aware, so a `;` inside a string literal, a quoted
+    /// identifier, a line comment or a block comment does not split. Doubled
+    /// quotes (`'O''Brien'`) are handled as the escape they are rather than as
+    /// a close-then-reopen.
+    ///
+    /// Statement *scope* is unaffected: the script executor builds one
+    /// `ExecutionContext` for the whole file, so `SELECT ... INTO #tmp` stays
+    /// visible to later statements whether they are separated by `;` or `GO`.
+    fn split_on_semicolons(batch: &str) -> Vec<String> {
+        let mut out = Vec::new();
+        let mut current = String::new();
+        let mut chars = batch.chars().peekable();
+        let mut in_single = false;
+        let mut in_double = false;
+        let mut in_line_comment = false;
+        let mut in_block_comment = false;
+
+        while let Some(ch) = chars.next() {
+            if in_line_comment {
+                current.push(ch);
+                if ch == '\n' {
+                    in_line_comment = false;
+                }
+                continue;
+            }
+            if in_block_comment {
+                current.push(ch);
+                if ch == '*' && chars.peek() == Some(&'/') {
+                    current.push(chars.next().unwrap());
+                    in_block_comment = false;
+                }
+                continue;
+            }
+            if in_single || in_double {
+                let quote = if in_single { '\'' } else { '"' };
+                current.push(ch);
+                if ch == quote {
+                    if chars.peek() == Some(&quote) {
+                        current.push(chars.next().unwrap()); // escaped quote
+                    } else if in_single {
+                        in_single = false;
+                    } else {
+                        in_double = false;
+                    }
+                }
+                continue;
+            }
+
+            match ch {
+                '\'' => {
+                    in_single = true;
+                    current.push(ch);
+                }
+                '"' => {
+                    in_double = true;
+                    current.push(ch);
+                }
+                '-' if chars.peek() == Some(&'-') => {
+                    in_line_comment = true;
+                    current.push(ch);
+                }
+                '/' if chars.peek() == Some(&'*') => {
+                    in_block_comment = true;
+                    current.push(ch);
+                }
+                ';' => {
+                    let stmt = current.trim().to_string();
+                    if !stmt.is_empty() {
+                        out.push(stmt);
+                    }
+                    current.clear();
+                }
+                _ => current.push(ch),
+            }
+        }
+
+        let last = current.trim().to_string();
+        if !last.is_empty() {
+            out.push(last);
+        }
+        out
+    }
+
+    /// True if the text holds more than one top-level statement, i.e. it needs
+    /// the script executor even though it has no `GO` separator.
+    ///
+    /// Without this a `;`-separated file routes to the single-query path, which
+    /// parses the whole thing as one statement — historically running only the
+    /// first and silently dropping the rest (P13).
+    #[must_use]
+    pub fn is_multi_statement(sql: &str) -> bool {
+        Self::split_on_semicolons(sql)
+            .iter()
+            .filter(|s| !Self::is_comment_only(s))
+            .count()
+            > 1
+    }
+
+    /// Turn one accumulated batch into zero or more `ScriptStatement`s.
+    /// Batch-level directives (e.g. `-- [SKIP]`) apply to every statement in it.
+    fn push_batch(batch: &str, pending_comments: &[String], statements: &mut Vec<ScriptStatement>) {
+        let batch = batch.trim();
+        if batch.is_empty() || Self::is_comment_only(batch) {
+            return;
+        }
+
+        let directives = Self::parse_directives(pending_comments);
+
+        for stmt in Self::split_on_semicolons(batch) {
+            if Self::is_comment_only(&stmt) {
+                continue;
+            }
+            let statement_type =
+                Self::parse_exit_statement(&stmt).unwrap_or(ScriptStatementType::Query(stmt));
+            statements.push(ScriptStatement {
+                statement_type,
+                directives: directives.clone(),
+            });
+        }
+    }
+
     /// Parse the script into ScriptStatements with directives
     /// GO must be on its own line (case-insensitive)
     pub fn parse_script_statements(&self) -> Vec<ScriptStatement> {
@@ -149,21 +278,7 @@ impl ScriptParser {
 
             // Check if this line is just "GO" (case-insensitive)
             if trimmed.eq_ignore_ascii_case("go") {
-                // Add the current statement if it's not empty
-                let statement = current_statement.trim().to_string();
-                if !statement.is_empty() && !Self::is_comment_only(&statement) {
-                    // Parse directives from pending comments
-                    let directives = Self::parse_directives(&pending_comments);
-
-                    // Check if this is an EXIT statement
-                    let statement_type = Self::parse_exit_statement(&statement)
-                        .unwrap_or_else(|| ScriptStatementType::Query(statement));
-
-                    statements.push(ScriptStatement {
-                        statement_type,
-                        directives,
-                    });
-                }
+                Self::push_batch(&current_statement, &pending_comments, &mut statements);
                 current_statement.clear();
                 pending_comments.clear();
             } else if trimmed.starts_with("--") {
@@ -183,19 +298,8 @@ impl ScriptParser {
             }
         }
 
-        // Don't forget the last statement if there's no trailing GO
-        let statement = current_statement.trim().to_string();
-        if !statement.is_empty() && !Self::is_comment_only(&statement) {
-            let directives = Self::parse_directives(&pending_comments);
-
-            let statement_type = Self::parse_exit_statement(&statement)
-                .unwrap_or_else(|| ScriptStatementType::Query(statement));
-
-            statements.push(ScriptStatement {
-                statement_type,
-                directives,
-            });
-        }
+        // Don't forget the last batch if there's no trailing GO
+        Self::push_batch(&current_statement, &pending_comments, &mut statements);
 
         statements
     }

@@ -76,11 +76,25 @@ Suggested fix order, by silent blast radius:
 | | Finding | Why first |
 |---|---|---|
 | ~~1~~ | ~~[P21](#p21) windows evaluated before `WHERE`~~ | ✅ **Fixed 2026-08-02** |
-| 2 | [P13](#p13) trailing tokens discarded | Silent, unbounded scope — any typo becomes a different working query |
-| 3 | [P18](#p18)/[P19](#p19) three-valued logic | Silent, and P18 produces *extra* rows |
-| 4 | [P24](#p24) `RANGE` treated as `ROWS` | Silent, hits the common `SUM(x) OVER (ORDER BY y)` running-total form |
-| 5 | [P14](#p14), [P16](#p16), [P17](#p17), [P20](#p20), [P23](#p23) | Smaller, self-contained, decisions already taken |
-| 6 | [P22](#p22), [P25](#p25), [P26](#p26), [P15](#p15) | Hard errors — visible, so less urgent than any of the above |
+| ~~2~~ | ~~[P13](#p13) trailing tokens discarded~~ | ✅ **Stage 1 done 2026-08-02**; stage 2 (`NULLS FIRST`/`LAST`) is item 6 below |
+| **3** | **[P30](#p30) `cond AND col IN (list)` returns 0 rows** | Silent, *still live*, and plain everyday SQL — returns nothing, which reads as "no data" rather than as a bug |
+| **4** | **[P28](#p28) `INTO #tmp` stages unfiltered rows** | Silent, and it *corrupts staged data* — the stage-then-combine workflow quietly carries rows the user filtered out |
+| **5** | **[P29](#p29) boolean operator after `IN (...)`** | Was silently dropping the rest of the `WHERE`; same area as P30, fix together |
+| **6** | **[P27](#p27) `OR` in `JOIN ... ON`** | Was a silent wrong answer until P13 stage 1 turned it into an error; shipped examples were affected |
+| 7 | [P18](#p18)/[P19](#p19) three-valued logic | Silent, and P18 produces *extra* rows |
+| 8 | [P24](#p24) `RANGE` treated as `ROWS` | Silent, hits the common `SUM(x) OVER (ORDER BY y)` running-total form |
+| 9 | [P14](#p14), [P16](#p16), [P17](#p17), [P20](#p20), [P23](#p23), P13 stage 2 | Smaller, self-contained, decisions already taken |
+| 10 | [P22](#p22), [P25](#p25), [P26](#p26), [P15](#p15) | Hard errors — visible, so less urgent than any of the above |
+
+P27–P30 jump the queue because all four were found *by* fixing something else,
+and all four are the dangerous shape: wrong data that looks plausible. Two of
+them hide themselves especially well — P28's "too many rows" invites adding
+another filter downstream until the output looks right, and P30's zero rows
+reads as "no matching data" rather than as a defect.
+
+That four serious silent bugs fell out of fixing one parser check is the
+strongest argument yet for the corpus approach: none of them had a failing unit
+test, and two had *passing* ones asserting the broken behaviour.
 
 P3 (correlated subqueries) stays gated on the R7/R6 structural work in
 [`ENGINE_REFACTORING.md`](ENGINE_REFACTORING.md) and is not part of this queue.
@@ -410,7 +424,8 @@ annotation be removed.
   input.
 
 ### P13 — Unparsed trailing tokens are silently discarded, taking later clauses with them
-- **Status:** 🔴 OPEN
+- **Status:** 🟡 STAGE 1 DONE (2026-08-02) — the parser now rejects trailing
+  input. Stage 2 (implement `NULLS FIRST` / `LAST`) outstanding.
 - **Corpus:** `08_ordering.toml :: trailing_garbage_token` (OURS_ONLY — the root
   cause, pinned directly), `order_by_nulls_last_limit` and
   `order_by_nulls_first_limit` (DIFFER — the instance users actually hit).
@@ -448,6 +463,75 @@ annotation be removed.
   the *lost LIMIT* only — the actual NULL ordering semantics remain untested.
   Tier 08 needs a fixture containing NULLs before that can be asserted either
   way.
+- **Stage 1, as built (2026-08-02).** `Parser::parse` now ends with
+  `expect_end_of_statement()`, which accepts an optional trailing `;` and
+  trailing comments and otherwise errors with the offending token and its
+  position. Three supporting fixes were needed, each a real bug in its own right:
+  1. **`;` became a real token.** It had been falling through the lexer's
+     catch-all as `Identifier(";")`. Adding `Token::Semicolon` required exactly
+     **one** exhaustive match arm across the whole tree — a neat measurement of
+     [R3](ENGINE_REFACTORING.md): everywhere else would have silently ignored it.
+  2. **`''` escapes in string literals were never implemented.** `read_string`
+     stopped at the first inner quote, so `'O''Brien'` lexed as two literals and
+     the parser discarded the second — the query meant `WHERE name = 'O'`. There
+     was a passing test asserting that query "should parse"; it did, into the
+     wrong thing. Now matches DuckDB on `'O''Brien'`, `'a''b''c'` and `''`.
+  3. **`;`-separated statements were being dropped.** Script batches split on
+     `GO` only, so `a; b;` inside one batch parsed `a` and silently discarded
+     `b`. `prime_numbers.sql` had a whole `SELECT` that had never run. Batches
+     are now sub-split on top-level `;` (quote- and comment-aware, so a `;`
+     inside a literal does not split), and `-q`/`-f` input holding more than one
+     statement routes to the script executor instead of the single-query path.
+     `GO` semantics are untouched, and statement *scope* is unaffected — the
+     executor builds one `ExecutionContext` per script, so `INTO #tmp` stays
+     visible across both separators (verified explicitly).
+- **What stage 1 exposed.** Beyond the above: `OR` in a `JOIN ... ON` clause is
+  not parsed ([P27](#p27)), and a stray `end` token had been sitting unnoticed in
+  `examples/case_when.sql`. Two examples (`prime_numbers`,
+  `physics_astronomy_showcase`) gained a result-set each once their dropped
+  statements started running; both were checked before re-capturing.
+
+### P27 — `OR` in a `JOIN ... ON` clause is not parsed
+- **Status:** 🔴 OPEN — **high priority: was a silent wrong answer until P13**
+- **Corpus:** `04_joins.toml :: join_on_or_condition` (GAP).
+- **Observed:** `... INNER JOIN b ON a.x = b.x OR a.y = b.y` parses only the
+  first condition. Until P13 stage 1 the `OR ...` remainder was **silently
+  discarded**, so the join ran on a *truncated predicate* and returned wrong
+  rows with no error. Since stage 1 it is a parse error, which is why this is
+  filed as a GAP rather than a DIFFER.
+- **Found:** 2026-08-02, by P13 stage 1 rejecting what it had previously
+  swallowed — in `examples/chemistry.sql`, which had been shipping wrong results
+  from `ON Year = latest_year OR Year = earliest_year`.
+- **Decision:** **Fix.** Join conditions should accept the same boolean
+  expressions `WHERE` does; `AND` already works (multi-condition joins are
+  well covered — see P7/P8), so this is `OR` specifically.
+
+### P28 — `SELECT ... INTO #tmp` stages the *unfiltered* rows
+- **Status:** 🔴 OPEN — **high priority: silent, and it corrupts staged data**
+- **Corpus:** none possible — `INTO #tmp` is our own extension and the reference
+  engine has no equivalent, so the oracle here is **our own behaviour
+  disagreeing with itself**. Needs a `cargo test` regression when fixed.
+- **Observed:** the `WHERE` clause is ignored when the result is staged:
+
+  ```sql
+  SELECT COUNT(*) FROM null_edges WHERE score IS NOT NULL;      -- 8  correct
+  SELECT id, score INTO #a FROM null_edges WHERE score IS NOT NULL;
+  SELECT COUNT(*) FROM #a;                                      -- 12 WRONG
+  ```
+
+  Both `INTO` placements (before `FROM`, and after all clauses) do it.
+- **Confirmed pre-existing**, not introduced by the P13 work: reproduced from a
+  clean build of `main` with all local changes stashed.
+- **Why it matters more than the row count suggests.** This is the
+  stage-then-combine workflow — pull several sources, stage each into a temp
+  table, join them at the end. Every staged table silently contains rows the
+  user filtered out, and the error only shows up as "too many rows" much later,
+  by which point the natural response is to add *more* filters downstream until
+  the output looks right — which masks it permanently.
+- **Same family as [P21](#p21):** a filter that is applied on the direct path but
+  not on a secondary one. Worth checking, when fixing, whether any other
+  consumer of a query result takes the same unfiltered route.
+- **Decision:** **Fix**, near the top of the queue.
 
 ### P14 — An ungrouped aggregate over an empty set returns no row
 - **Status:** 🔴 OPEN
@@ -781,6 +865,43 @@ annotation be removed.
   validity check; they belong to the post-aggregation stage. Note this is the
   same pipeline-position confusion as P21, approached from the other end — both
   come down to *when* windows are evaluated relative to the rest of the query.
+
+### P29 — A boolean operator after `IN (...)` is not parsed
+- **Status:** 🔴 OPEN — **high priority: was a silent wrong answer until P13**
+- **Corpus:** `02_where.toml :: in_list_then_and`, `in_subquery_then_and` (GAP).
+- **Observed:** `WHERE score IN (50, 70) AND team = 'alpha'` does not parse the
+  `AND ...`. Until P13 stage 1 the remainder was **silently discarded**, so the
+  query returned 4 rows (the `IN` alone) instead of 2, with no error. Same for
+  `OR`, and for the `IN (subquery)` form.
+- **Specific to `IN`.** `AND` is fine everywhere else — plain comparisons,
+  three-way chains, after `LIKE`, after `BETWEEN` — all verified. `NOT IN`
+  followed by `AND` also parses. It is the `IN` predicate that fails to hand
+  control back to the boolean-expression parser.
+- **Found:** 2026-08-02, by P13 stage 1 rejecting what it had been swallowing.
+  Surfaced through `tests/python_tests/test_subqueries.py`, whose two affected
+  tests had been passing while the filter they were testing was ignored — one
+  asserted only `count >= 0`, which is true whether or not the `AND` applies.
+- **Decision:** **Fix**, with [P30](#p30) — the two are the same area and a fix
+  should address both operand orders together.
+
+### P30 — `<cond> AND <col> IN (list)` returns zero rows
+- **Status:** 🔴 OPEN — **high priority: silent, and still live after P13**
+- **Corpus:** `02_where.toml :: and_then_in_list` (DIFFER).
+- **Observed:** with the operands the other way round from P29 the query
+  *parses* — and returns nothing:
+
+  ```sql
+  SELECT id, team, score FROM null_edges WHERE team = 'alpha' AND score IN (50, 70)
+  --  ours: 0 rows        DuckDB: (1, alpha, 50), (2, alpha, 50)
+  ```
+
+- **Distinct from P29.** That one is a parse gap and is now a hard error; this is
+  an *evaluation* bug that survives P13 stage 1 untouched. `where_in_with_null_col`
+  (an `IN` with no other condition) AGREEs, so `IN` alone is correct — it is the
+  combination that fails, and it fails **silently in the direction of returning
+  nothing**, which reads as "no matching data" rather than as a bug.
+- **Confirmed pre-existing**, reproduced from a clean build of `main`.
+- **Decision:** **Fix**, with P29.
 
 ---
 

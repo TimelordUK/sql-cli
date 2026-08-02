@@ -105,6 +105,10 @@ pub enum Token {
     // Operators
     Dot,
     Comma,
+    /// Statement terminator. Previously fell through the catch-all and lexed as
+    /// `Identifier(";")`, which the parser then silently ignored along with
+    /// everything after it (P13).
+    Semicolon,
     Colon,
     LeftParen,
     RightParen,
@@ -484,6 +488,18 @@ impl Lexer {
 
         while let Some(ch) = self.current_char {
             if ch == quote_char {
+                // SQL escapes a quote by doubling it: 'O''Brien' is one literal
+                // meaning O'Brien, and "a""b" likewise for quoted identifiers.
+                // Without this the literal ended at the first inner quote and the
+                // remainder became a SECOND literal — which the parser then
+                // silently discarded along with the rest of the statement (P13),
+                // turning `WHERE name = 'O''Brien'` into `WHERE name = 'O'`.
+                if self.peek(1) == Some(quote_char) {
+                    result.push(quote_char);
+                    self.advance(); // consume the first quote
+                    self.advance(); // consume the second
+                    continue;
+                }
                 self.advance(); // skip closing quote
                 break;
             }
@@ -574,6 +590,10 @@ impl Lexer {
             Some(',') => {
                 self.advance();
                 Token::Comma
+            }
+            Some(';') => {
+                self.advance();
+                Token::Semicolon
             }
             Some(':') => {
                 self.advance();
@@ -731,6 +751,10 @@ impl Lexer {
             Some(',') => {
                 self.advance();
                 Token::Comma
+            }
+            Some(';') => {
+                self.advance();
+                Token::Semicolon
             }
             Some(':') => {
                 self.advance();

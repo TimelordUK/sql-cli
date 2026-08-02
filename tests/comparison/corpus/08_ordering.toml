@@ -89,39 +89,41 @@ sql = "SELECT id FROM null_edges ORDER BY id LIMIT 100"
 id = "order_by_nulls_last_no_limit"
 data = "international_sales.csv"
 sql = "SELECT country, amount FROM international_sales ORDER BY amount DESC NULLS LAST"
-# AGREEs, and this is the control that pins P13 down: with no LIMIT to lose,
-# the statement survives. NB it also agrees for a second, accidental reason —
-# see the P17 cases below — but on a NULL-free fixture only the first applies.
+expect = "GAP"
+# Was AGREE while P13 was live — the NULLS clause was silently ignored and, with
+# no LIMIT to lose, the remaining query happened to be the one the user meant.
+# Since P13 stage 1 (2026-08-02) we correctly REJECT the clause we do not
+# implement. Flips to AGREE when P13 stage 2 implements NULLS FIRST/LAST.
 
 [[case]]
 id = "order_by_nulls_last_limit"
 data = "international_sales.csv"
 sql = "SELECT country, amount FROM international_sales ORDER BY amount DESC NULLS LAST LIMIT 3"
-expect = "DIFFER"
-# P13. Returns all 20 rows instead of 3, with no error. Identical to
-# `order_by_limit` above but for the NULLS LAST clause.
+expect = "GAP"
+# Was P13: returned all 20 rows instead of 3, silently, because NULLS LAST took
+# the LIMIT with it. Now a parse error — the correct intermediate state, since a
+# refusal beats a different-query-that-succeeds. Flips to AGREE with stage 2.
 
 [[case]]
 id = "order_by_nulls_first_limit"
 data = "international_sales.csv"
 sql = "SELECT country, amount FROM international_sales ORDER BY amount NULLS FIRST LIMIT 3"
-expect = "DIFFER"
-# P13, the FIRST/ASC form — same defect, so the fix must clear both.
+expect = "GAP"
+# Same, the FIRST/ASC form.
 
 [[case]]
 id = "trailing_garbage_token"
 data = "international_sales.csv"
 sql = "SELECT country, amount FROM international_sales ORDER BY amount DESC FROBNICATE LIMIT 3"
-expect = "OURS_ONLY"
-# P13's ACTUAL root cause, pinned directly: `FROBNICATE` is not SQL by any
-# reading, yet we accept the statement and silently drop the LIMIT after it.
-# The reference engine rejects it, which is the correct behaviour and why this
-# sits in OURS_ONLY rather than DIFFER. NULLS LAST above is merely the instance
-# a user is likely to hit; this case is the defect.
+expect = "BOTH_ERR"
+# P13's root cause, pinned directly. `FROBNICATE` is not SQL by any reading, yet
+# we used to accept the statement and silently drop the LIMIT after it. Both
+# engines now reject it, which is the whole point of the fix — this case moving
+# OURS_ONLY -> BOTH_ERR is what "we stopped processing garbage" looks like.
 #
-# When P13 is fixed this becomes a parse error and moves to BOTH_ERR, and the
-# two NULLS cases above move DIFFER -> GAP (not AGREE) until NULLS ordering is
-# actually implemented. Expect that churn; it is progress, not regression.
+# NB `FROM international_sales FROBNICATE` still runs, correctly: there the word
+# is a table alias, which is valid SQL and accepted by the reference engine too.
+# The defect was only ever about tokens with nowhere to belong.
 
 # --- P16: ORDER BY <ordinal> is silently ignored ---
 
