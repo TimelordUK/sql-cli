@@ -46,6 +46,17 @@
   ],
   [
     {
+      "category": "=== ORBITAL DISTANCES ===",
+      "earth": 149597870700.0,
+      "jupiter": 778600000000.0,
+      "mars": 227900000000.0,
+      "mercury": 57910000000.0,
+      "saturn": 1433500000000.0,
+      "venus": 108200000000.0
+    }
+  ],
+  [
+    {
       "category": "=== PHYSICS CALCULATIONS ===",
       "earth_escape_velocity": 0.001770421859221024,
       "earth_orbital_velocity": 29789.111319772674,

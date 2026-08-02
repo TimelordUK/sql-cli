@@ -333,8 +333,46 @@ impl Parser {
             stmt
         };
 
+        self.expect_end_of_statement()?;
+
         self.trace_exit("parse", &Ok(&result));
         Ok(result)
+    }
+
+    /// Require that the whole input was consumed.
+    ///
+    /// Without this the parser stops at the first token it cannot place and
+    /// **silently ignores the rest of the statement** — so `ORDER BY x FROBNICATE
+    /// LIMIT 3` ran clean and dropped the LIMIT, and any typo or unsupported
+    /// clause quietly became a different query that succeeded (P13).
+    ///
+    /// A single trailing `;` is accepted: it terminates a statement rather than
+    /// being part of one. Script batches are already split on `GO` and have their
+    /// `;` stripped before reaching here, so this is for the `-q` path and for
+    /// anyone who ends a query out of habit.
+    fn expect_end_of_statement(&mut self) -> Result<(), String> {
+        if matches!(self.current_token, Token::Semicolon) {
+            self.advance();
+        }
+
+        // Trailing comments are content, not leftovers.
+        while matches!(
+            self.current_token,
+            Token::LineComment(_) | Token::BlockComment(_)
+        ) {
+            self.advance();
+        }
+
+        if matches!(self.current_token, Token::Eof) {
+            return Ok(());
+        }
+
+        Err(format!(
+            "Unexpected {} after end of statement (at position {}). \
+             The rest of the query would be ignored.",
+            describe_token(&self.current_token),
+            self.get_position()
+        ))
     }
 
     /// Public wrapper that accepts pre-collected comments and checks parens
@@ -2474,6 +2512,27 @@ fn analyze_statement(
     }
 
     (CursorContext::Unknown, None)
+}
+
+/// Render a token for an error message: the literal text where we have it, so the
+/// user sees what they typed rather than an internal variant name.
+fn describe_token(token: &Token) -> String {
+    if let Some(kw) = token.as_keyword_str() {
+        return format!("keyword '{kw}'");
+    }
+    match token {
+        Token::Identifier(s) | Token::QuotedIdentifier(s) => format!("'{s}'"),
+        Token::StringLiteral(s) => format!("string literal '{s}'"),
+        Token::NumberLiteral(s) => format!("number '{s}'"),
+        Token::Comma => "','".to_string(),
+        Token::Semicolon => "';'".to_string(),
+        Token::LeftParen => "'('".to_string(),
+        Token::RightParen => "')'".to_string(),
+        Token::Star => "'*'".to_string(),
+        Token::Dot => "'.'".to_string(),
+        Token::Eof => "end of input".to_string(),
+        other => format!("{other:?}"),
+    }
 }
 
 /// Helper function to find the last occurrence of a token type in the token stream

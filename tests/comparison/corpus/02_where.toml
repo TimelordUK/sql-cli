@@ -81,3 +81,35 @@ sql = "SELECT symbol, price * 2 AS dbl FROM trades WHERE dbl IN (SELECT price * 
 # be an arbitrary expression (price*2), which the IN-subquery path never lifted,
 # so evaluate_in_list/between now evaluate an expression LHS via the arithmetic
 # evaluator. Now AGREE.
+
+# --- P29 / P30: IN combined with another condition ---
+
+[[case]]
+id = "in_list_then_and"
+data = "null_edges.csv"
+sql = "SELECT id FROM null_edges WHERE score IN (50, 70) AND team = 'alpha' ORDER BY id"
+expect = "GAP"
+# P29. A boolean operator FOLLOWING an `IN (...)` predicate is not parsed. Until
+# P13 stage 1 the remainder was silently discarded — this query returned 4 rows
+# (the `IN` alone) instead of 2, with no error. Now a parse error, which is why
+# it sits in GAP. `AND` works fine everywhere else, including after LIKE and
+# BETWEEN, so this is specific to IN.
+
+[[case]]
+id = "in_subquery_then_and"
+data = "null_edges.csv"
+sql = "SELECT id FROM null_edges WHERE score IN (SELECT score FROM null_edges WHERE id < 5) AND team = 'alpha' ORDER BY id"
+expect = "GAP"
+# P29, the subquery form — pinned separately because the IN-list and IN-subquery
+# paths are built differently (see P11) and a fix to one need not reach the other.
+
+[[case]]
+id = "and_then_in_list"
+data = "null_edges.csv"
+sql = "SELECT id, team, score FROM null_edges WHERE team = 'alpha' AND score IN (50, 70) ORDER BY id"
+expect = "DIFFER"
+# P30, and the more alarming of the pair: with the operands the other way round
+# this PARSES and returns ZERO rows where the answer is 2 (ids 1 and 2, both
+# score 50). Still live after P13 stage 1 — it is an evaluation bug, not a parse
+# one. `where_in_with_null_col` (IN with no other condition) AGREEs, so IN alone
+# is fine; it is the combination that fails.
