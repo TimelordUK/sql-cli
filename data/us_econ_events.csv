@@ -1,0 +1,61 @@
+observation_date,event,event_category
+1966-01-01,"US troop levels in Vietnam pass 200,000",War
+1968-04-01,Revenue & Expenditure Control Act: 10% Vietnam surtax,Fiscal
+1969-10-01,Recession begins (Dec 1969),Recession
+1971-07-01,Nixon closes the gold window - Bretton Woods ends,Monetary
+1973-01-01,Paris Peace Accords end US combat in Vietnam,War
+1973-10-01,OPEC oil embargo; recession begins (Nov 1973),Crisis
+1974-07-01,Nixon resigns over Watergate (Aug 1974),Political
+1975-04-01,Fall of Saigon - Vietnam War ends,War
+1979-01-01,Iranian Revolution triggers the second oil shock,Crisis
+1979-07-01,Volcker takes over the Fed and attacks inflation,Monetary
+1980-01-01,Fed funds rate peaks near 20%,Monetary
+1981-07-01,Reagan's ERTA tax cuts; double-dip recession begins,Fiscal
+1981-10-01,Debt crosses $1tn,Milestone
+1982-07-01,TEFRA tax rise; Mexico default opens LatAm debt crisis,Crisis
+1983-04-01,Social Security Amendments of 1983,Fiscal
+1985-10-01,Gramm-Rudman-Hollings Balanced Budget Act,Fiscal
+1987-10-01,Black Monday - Dow falls 22.6% in a day,Crisis
+1989-07-01,FIRREA: the savings & loan bailout,Crisis
+1990-07-01,Iraq invades Kuwait; recession begins (Jul 1990),War
+1990-10-01,OBRA-90 - Bush breaks the 'read my lips' pledge,Fiscal
+1991-01-01,Operation Desert Storm,War
+1993-07-01,OBRA-93 raises top rates; deficit reduction begins,Fiscal
+1995-10-01,Gingrich-Clinton government shutdowns,Political
+1996-01-01,Debt crosses $5tn,Milestone
+1997-07-01,Balanced Budget Act of 1997; Asian financial crisis,Fiscal
+1998-07-01,Russian default and the LTCM collapse,Crisis
+1998-10-01,First federal budget surplus since 1969 (FY1998),Milestone
+2000-01-01,Dot-com bubble peaks (Mar 2000),Crisis
+2001-04-01,EGTRRA - the first Bush tax cuts,Fiscal
+2001-07-01,9/11 attacks; war in Afghanistan begins,War
+2003-01-01,Iraq War begins; JGTRRA accelerates the tax cuts,War
+2005-07-01,Hurricane Katrina and emergency relief spending,Crisis
+2007-07-01,Subprime crisis erupts - BNP freezes its funds,Crisis
+2008-07-01,Lehman collapses; $700bn TARP bailout,Crisis
+2008-07-01,Debt crosses $10tn,Milestone
+2009-01-01,ARRA - $787bn stimulus; Fed begins QE1,Fiscal
+2010-01-01,Eurozone sovereign debt crisis (Greece),Crisis
+2011-07-01,Debt ceiling crisis; S&P strips the US of its AAA,Political
+2011-10-01,Debt crosses $15tn,Milestone
+2013-01-01,"Fiscal cliff deal, then sequestration cuts",Fiscal
+2013-10-01,16-day government shutdown,Political
+2017-07-01,Debt crosses $20tn,Milestone
+2017-10-01,Tax Cuts and Jobs Act (Dec 2017),Fiscal
+2018-10-01,35-day shutdown - the longest to that point,Political
+2020-01-01,COVID-19 pandemic; $2.2tn CARES Act,Crisis
+2020-04-01,Debt crosses $25tn,Milestone
+2020-10-01,$900bn December relief package,Fiscal
+2021-01-01,American Rescue Plan - $1.9tn,Fiscal
+2021-07-01,US withdraws from Afghanistan (Aug 2021),War
+2021-10-01,Infrastructure Investment and Jobs Act,Fiscal
+2022-01-01,Russia invades Ukraine; Fed starts hiking (Mar 2022),War
+2022-01-01,Debt crosses $30tn,Milestone
+2022-07-01,CPI peaks at 9.1%; Inflation Reduction Act,Fiscal
+2023-01-01,Debt ceiling standoff; Silicon Valley Bank fails,Crisis
+2023-04-01,Fiscal Responsibility Act suspends the debt ceiling,Political
+2023-07-01,Fitch downgrades the US from AAA to AA+,Political
+2024-07-01,Debt crosses $35tn,Milestone
+2025-04-01,Sweeping US tariffs announced; Moody's downgrade,Policy
+2025-07-01,One Big Beautiful Bill Act,Fiscal
+2025-10-01,Longest government shutdown in US history,Political
