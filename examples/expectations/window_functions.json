@@ -86,7 +86,7 @@
     },
     {
       "month": "2024-03",
-      "next_sales": 12000,
+      "next_sales": null,
       "sales_amount": 22000,
       "salesperson": "Alice"
     }
@@ -391,7 +391,7 @@
       "salesperson": "Alice"
     },
     {
-      "rank": 3,
+      "rank": 2,
       "region": "North",
       "sales_amount": 16000,
       "salesperson": "Bob"
@@ -415,7 +415,7 @@
       "salesperson": "Eve"
     },
     {
-      "rank": 3,
+      "rank": 2,
       "region": "East",
       "sales_amount": 14000,
       "salesperson": "Frank"
@@ -427,7 +427,7 @@
       "salesperson": "Grace"
     },
     {
-      "rank": 4,
+      "rank": 2,
       "region": "West",
       "sales_amount": 20000,
       "salesperson": "Henry"
@@ -1217,7 +1217,7 @@
     },
     {
       "product": "Widget",
-      "rank": 3,
+      "rank": 2,
       "region": "North",
       "sales_amount": 16000,
       "salesperson": "Bob"
@@ -1245,7 +1245,7 @@
     },
     {
       "product": "Gadget",
-      "rank": 3,
+      "rank": 2,
       "region": "East",
       "sales_amount": 14000,
       "salesperson": "Frank"
@@ -1259,7 +1259,7 @@
     },
     {
       "product": "Gadget",
-      "rank": 4,
+      "rank": 2,
       "region": "West",
       "sales_amount": 20000,
       "salesperson": "Henry"
@@ -1529,44 +1529,44 @@
   ],
   [
     {
-      "global_rank": 6,
+      "global_rank": 4,
       "region": "North",
       "regional_rank": 1,
       "sales_amount": 22000,
       "salesperson": "Alice"
     },
     {
-      "global_rank": 15,
+      "global_rank": 7,
       "region": "North",
-      "regional_rank": 3,
+      "regional_rank": 2,
       "sales_amount": 16000,
       "salesperson": "Bob"
     },
     {
-      "global_rank": 3,
+      "global_rank": 2,
       "region": "South",
       "regional_rank": 1,
       "sales_amount": 25000,
       "salesperson": "Charlie"
     },
     {
-      "global_rank": 5,
+      "global_rank": 3,
       "region": "South",
       "regional_rank": 2,
       "sales_amount": 23000,
       "salesperson": "Diana"
     },
     {
-      "global_rank": 11,
+      "global_rank": 6,
       "region": "East",
       "regional_rank": 1,
       "sales_amount": 19000,
       "salesperson": "Eve"
     },
     {
-      "global_rank": 20,
+      "global_rank": 8,
       "region": "East",
-      "regional_rank": 3,
+      "regional_rank": 2,
       "sales_amount": 14000,
       "salesperson": "Frank"
     },
@@ -1578,9 +1578,9 @@
       "salesperson": "Grace"
     },
     {
-      "global_rank": 9,
+      "global_rank": 5,
       "region": "West",
-      "regional_rank": 4,
+      "regional_rank": 2,
       "sales_amount": 20000,
       "salesperson": "Henry"
     }

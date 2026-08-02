@@ -675,6 +675,22 @@ annotation be removed.
   plain `cargo test` (the corpus needs DuckDB and only runs in the Parity job).
   Verified to fail without the fix: the three bug-catching tests fail, while the
   two controls — the unfiltered case and the `SUM` near-miss — pass either way.
+- **The bug was live in four shipped examples, and their expectations had
+  captured it.** Fixing P21 broke `boe_rate_history`, `generators`,
+  `window_functions` and `window_functions_formal` — every difference in a
+  window column under a `WHERE`. Each was checked against DuckDB before
+  re-capturing rather than re-captured on faith. The clearest proof:
+  `window_functions` had `ROW_NUMBER` values of **3 and 4 in a two-row
+  partition** (`WHERE month = '2024-03'` leaves exactly two rows per region), an
+  arithmetically impossible result that had been sitting in an expectation file.
+  `boe_rate_history` had `LAG(rate)` returning the rate from *before* the
+  filtered era on that era's first row, where the correct answer is NULL.
+- **Worth remembering about the examples suite:** FORMAL expectations are
+  captured from our own output, so they lock in whatever the engine did that
+  day — bugs included. They detect *change*, they do not establish
+  *correctness*; the parity corpus is what does that. When capturing an
+  expectation for anything involving window functions, NULLs or ordering, spot-
+  check it against the reference engine first.
 
 ### P22 — Unimplemented window functions return NULL instead of erroring
 - **Status:** 🔴 OPEN — **scope corrected 2026-08-02, now four functions not five**
