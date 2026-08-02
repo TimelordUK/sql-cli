@@ -196,6 +196,9 @@ mod test_where_arithmetic;
 #[path = "test_window_context.rs"]
 mod test_window_context;
 
+#[path = "window_after_where_tests.rs"]
+mod window_after_where_tests;
+
 #[path = "test_yanked_query.rs"]
 mod test_yanked_query;
 

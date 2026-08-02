@@ -104,40 +104,59 @@ sql = "SELECT id, score, LAG(score) OVER (ORDER BY id) AS v FROM null_edges ORDE
 id = "win_count_over_filtered"
 data = "null_edges.csv"
 sql = "SELECT id, team, COUNT(*) OVER (PARTITION BY team) AS v FROM null_edges WHERE score IS NOT NULL ORDER BY id"
-expect = "DIFFER"
-# P21. We report the UNFILTERED partition sizes (alpha=3, gamma=2); the filtered
-# sizes are alpha=2, gamma=1. `win_partition_null_key` above is the same query
-# without the WHERE and AGREEs exactly, which is what proves the partitioning
-# itself is right and the defect is the evaluation ORDER.
+# Was P21: reported the UNFILTERED partition sizes (alpha=3, gamma=2) where the
+# filtered sizes are alpha=2, gamma=1. `win_partition_null_key` above is the
+# same query without the WHERE and AGREEd throughout, which is what proved the
+# partitioning was right and the defect was evaluation ORDER.
+# Fixed 2026-08-02.
 #
-# NB `win_sum_partition_ordered` AGREEs despite the same WHERE — purely because
-# the filtered-out rows have NULL scores that SUM ignores anyway. COUNT(*) is
-# the discriminating probe; a SUM-only tier would have missed this entirely.
+# NB `win_sum_partition_ordered` AGREEd even while this was broken — purely
+# because the filtered-out rows have NULL scores that SUM ignores anyway.
+# COUNT(*) is the discriminating probe; a SUM-only tier would have missed it.
 
 [[case]]
 id = "win_row_number_filtered"
 data = "null_edges.csv"
 sql = "SELECT id, team, ROW_NUMBER() OVER (PARTITION BY team ORDER BY score DESC, id) AS v FROM null_edges WHERE score IS NOT NULL ORDER BY id"
-expect = "DIFFER"
-# P21 seen through ranking: id 1 gets rank 2 because the filtered-out id 3 still
-# occupies a slot in its partition.
+# Was P21 seen through ranking: id 1 got rank 2 because the filtered-out id 3
+# still occupied a slot in its partition. Fixed 2026-08-02.
 
 [[case]]
 id = "win_in_derived_table_filtered"
 data = "null_edges.csv"
 sql = "SELECT id, v FROM (SELECT id, ROW_NUMBER() OVER (ORDER BY score DESC, id) AS v FROM null_edges WHERE score IS NOT NULL) x ORDER BY id"
-expect = "DIFFER"
-# P21 again, through a derived table — pinned because a fix applied only to the
-# top-level SELECT would leave this one wrong.
-
-# --- P22: unimplemented window functions return NULL instead of erroring ---
+# Was P21 through a derived table — pinned separately so a fix applied only to
+# the top-level SELECT could not look complete. Fixed 2026-08-02 by the same
+# change, confirming the defect was in the shared evaluator rather than per-site.
 
 [[case]]
 id = "win_first_value"
 data = "null_edges.csv"
 sql = "SELECT id, team, FIRST_VALUE(score) OVER (PARTITION BY team ORDER BY score DESC, id) AS v FROM null_edges WHERE score IS NOT NULL ORDER BY id"
+# NOT a P22 case, though it was originally filed as one. FIRST_VALUE is fully
+# implemented; it returned NULL because the unfiltered partition (P21) still
+# contained the NULL-score row, and the window's internal ORDER BY sorted that
+# NULL to the front. Fixing P21 fixed this too. See `win_first_value_unfiltered`
+# below for what remains.
+
+# --- P17 (second site): the window's ORDER BY places NULLs differently
+# --- from the outer ORDER BY ---
+
+[[case]]
+id = "win_first_value_unfiltered"
+data = "null_edges.csv"
+sql = "SELECT id, team, FIRST_VALUE(score) OVER (PARTITION BY team ORDER BY score DESC, id) AS v FROM null_edges ORDER BY id"
 expect = "DIFFER"
-# P22: NULL for every row.
+# P17, in `window_context.rs::sort_rows` rather than the main ORDER BY path.
+# Partition 'alpha' is (50, 50, NULL). Sorted DESC the NULL must go LAST, so
+# FIRST_VALUE is 50; we sort it FIRST and return NULL.
+#
+# Note this is the OPPOSITE of the outer ORDER BY's behaviour, which puts NULLs
+# last on DESC (`08_ordering.toml :: order_by_null_default_desc` AGREEs). So the
+# two sorts in the engine disagree with each other as well as with the
+# reference. The P17 fix has to reach both.
+
+# --- P22: unimplemented window functions return NULL instead of erroring ---
 
 [[case]]
 id = "win_nth_value"

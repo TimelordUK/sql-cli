@@ -2303,9 +2303,15 @@ impl QueryEngine {
             None
         };
 
-        // Calculate values for each row
+        // Calculate values for each row.
+        //
+        // The evaluator is handed the view's visible rows so that window functions
+        // partition over the FILTERED set. Without this the evaluator sees the whole
+        // source table and a WHERE clause has no effect on any window (P21): partition
+        // counts, rank slots and frames all include rows the query excluded.
         let mut evaluator =
-            ArithmeticEvaluator::with_date_notation(source_table, self.date_notation.clone());
+            ArithmeticEvaluator::with_date_notation(source_table, self.date_notation.clone())
+                .with_visible_rows(view.visible_row_indices().to_vec());
 
         // Populate table aliases from exec_context if available
         if let Some(exec_ctx) = exec_context {

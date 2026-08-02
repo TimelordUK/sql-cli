@@ -925,13 +925,16 @@ impl<'a> ArithmeticEvaluator<'a> {
         info!("WindowContext cache miss - creating new context");
         let dataview_start = Instant::now();
 
-        // Create a DataView from the table (with visible rows if filtered)
-        let data_view = if let Some(ref _visible_rows) = self.visible_rows {
-            // Create a filtered view
-            let view = DataView::new(Arc::new(self.table.clone()));
-            // Apply filtering based on visible rows
-            // Note: This is a simplified approach - in production we'd need proper filtering
-            view
+        // Create a DataView from the table, restricted to the visible rows when the
+        // query filtered. Window functions must partition over the post-WHERE row set:
+        // SQL evaluates them after FROM/WHERE/GROUP BY/HAVING, so a filtered-out row
+        // must not appear in a partition, occupy a ROW_NUMBER slot, or be counted.
+        //
+        // The indices here are source-table indices, which is what DataView::with_rows
+        // expects and what WindowContext reads back via get_visible_rows() - so the
+        // whole path stays in one index space.
+        let data_view = if let Some(ref visible_rows) = self.visible_rows {
+            DataView::new(Arc::new(self.table.clone())).with_rows(visible_rows.clone())
         } else {
             DataView::new(Arc::new(self.table.clone()))
         };

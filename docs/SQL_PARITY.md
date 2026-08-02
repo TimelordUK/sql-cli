@@ -75,7 +75,7 @@ Suggested fix order, by silent blast radius:
 
 | | Finding | Why first |
 |---|---|---|
-| 1 | [P21](#p21) windows evaluated before `WHERE` | Silent, and wrong for essentially every window query that filters |
+| ~~1~~ | ~~[P21](#p21) windows evaluated before `WHERE`~~ | ✅ **Fixed 2026-08-02** |
 | 2 | [P13](#p13) trailing tokens discarded | Silent, unbounded scope — any typo becomes a different working query |
 | 3 | [P18](#p18)/[P19](#p19) three-valued logic | Silent, and P18 produces *extra* rows |
 | 4 | [P24](#p24) `RANGE` treated as `ROWS` | Silent, hits the common `SUM(x) OVER (ORDER BY y)` running-total form |
@@ -527,7 +527,15 @@ annotation be removed.
   stage 2.** Implementation pending.
 - **Corpus:** `08_ordering.toml :: order_by_null_default_asc_numeric`,
   `order_by_null_default_asc_string` (DIFFER); `order_by_null_default_desc`
-  (AGREE).
+  (AGREE). Second site: `09_window.toml :: win_first_value_unfiltered` (DIFFER).
+- **Two sites, and they disagree with each other.** Added 2026-08-02 while
+  fixing P21. Besides the main `ORDER BY` path, a window's *internal* `ORDER BY`
+  sorts in `window_context.rs::sort_rows` — and it places NULLs **first on
+  DESC**, the opposite of the outer `ORDER BY`, which places them last
+  (`order_by_null_default_desc` AGREEs). So `FIRST_VALUE(score) OVER (ORDER BY
+  score DESC)` over a partition of `(50, 50, NULL)` returns NULL where DuckDB
+  returns 50. The fix has to reach both comparators, and the internal
+  inconsistency is worth closing regardless of which rule wins.
 - **Observed:** the two engines follow different rules, which happen to coincide
   on `DESC` and diverge on `ASC`:
 
@@ -620,10 +628,10 @@ annotation be removed.
   returning NULL rather than a partial string. Changelog it when it lands.
 
 ### P21 — Window functions are evaluated *before* the `WHERE` clause
-- **Status:** 🔴 OPEN — **the most consequential window finding**
+- **Status:** 🟢 FIXED (2026-08-02)
 - **Corpus:** `09_window.toml :: win_count_over_filtered`,
-  `win_row_number_filtered`, `win_in_derived_table_filtered` (all DIFFER).
-  Control: `win_partition_null_key` (AGREE).
+  `win_row_number_filtered`, `win_in_derived_table_filtered` (all now AGREE;
+  `expect` dropped). Control: `win_partition_null_key` (AGREE throughout).
 - **Observed:** with a `WHERE` clause present, window functions see the
   **unfiltered** row set. `COUNT(*) OVER (PARTITION BY team)` under
   `WHERE score IS NOT NULL` reports partition sizes alpha=3, gamma=2; the
@@ -642,19 +650,55 @@ annotation be removed.
   same `WHERE`, purely because the filtered-out rows carry NULL scores that `SUM`
   ignores anyway. `COUNT(*)` is what makes this visible. A tier built only from
   `SUM` windows would have concluded windows were fine.
-- **Decision:** **Fix.** Move window evaluation after filtering in
-  `query_engine.rs`. The derived-table case is pinned separately so a fix applied
-  only to the top-level SELECT does not look complete.
+- **Root cause — the filter was plumbed but discarded.** Two halves, both needed:
+  1. `arithmetic_evaluator.rs::get_or_create_window_context` matched on
+     `self.visible_rows` and then **threw the result away** — both arms of the
+     `if let` built the same unfiltered `DataView`, with a comment conceding
+     "in production we'd need proper filtering". The binding was even named
+     `_visible_rows`, so nothing warned.
+  2. `query_engine.rs::apply_select_items` — the path where windows are actually
+     evaluated — never called `.with_visible_rows(...)` at all, so
+     `self.visible_rows` was `None` and even the dead branch was unreachable.
+
+  The neighbouring aggregate paths in the same file *do* honour `visible_rows`
+  (four call sites), which is why filtered aggregates were correct all along and
+  only windows were wrong.
+- **Fix:** pass the view's visible rows into the evaluator on the select-items
+  path, and build the window `DataView` with `DataView::with_rows(...)`. The
+  indices are source-table indices at every step — what `with_rows` expects and
+  what `WindowContext::get_visible_rows()` reads back — so the whole path stays
+  in one index space and no translation was needed.
+- **One fix covered both code paths.** The batch and non-batch window evaluators
+  share `get_or_create_window_context`, which is also why the batch-vs-fallback
+  check had found them consistent: they were equally wrong.
+- **Regression test:** `tests/window_after_where_tests.rs` — env-free, runs in
+  plain `cargo test` (the corpus needs DuckDB and only runs in the Parity job).
+  Verified to fail without the fix: the three bug-catching tests fail, while the
+  two controls — the unfiltered case and the `SUM` near-miss — pass either way.
 
 ### P22 — Unimplemented window functions return NULL instead of erroring
-- **Status:** 🔴 OPEN
-- **Corpus:** `09_window.toml :: win_first_value`, `win_nth_value`, `win_ntile`,
-  `win_percent_rank`, `win_cume_dist` (all DIFFER).
-- **Observed:** `FIRST_VALUE`, `NTH_VALUE`, `NTILE`, `PERCENT_RANK` and
-  `CUME_DIST` return **NULL for every row**. No error, no warning.
-- **Not a whole missing family:** `LAST_VALUE`, `LAG`, `LEAD`, `ROW_NUMBER`,
-  `RANK`, `DENSE_RANK` and the aggregate-OVER forms all work and are pinned as
-  baselines. `FIRST_VALUE` being absent while `LAST_VALUE` works is the odd part.
+- **Status:** 🔴 OPEN — **scope corrected 2026-08-02, now four functions not five**
+- **Corpus:** `09_window.toml :: win_nth_value`, `win_ntile`, `win_percent_rank`,
+  `win_cume_dist` (all DIFFER).
+- **Observed:** `NTH_VALUE`, `NTILE`, `PERCENT_RANK` and `CUME_DIST` return
+  **NULL for every row**, including over partitions containing no NULLs at all.
+  No error, no warning.
+- **Correction — `FIRST_VALUE` was never part of this.** It was originally filed
+  here on the evidence that it returned NULL for every row. That was a
+  misdiagnosis: FIRST_VALUE is fully implemented, and the NULLs were **P21**.
+  The unfiltered partition still contained the NULL-score row, and the window's
+  internal ORDER BY sorted that NULL to the front, so FIRST_VALUE faithfully
+  returned it. Fixing P21 fixed the case with no work on FIRST_VALUE at all, and
+  it now returns `90` over a NULL-free ordering. `win_first_value` is retained
+  as an AGREE baseline. The residue is a genuinely separate defect, now filed
+  under P17 as a second site — see `win_first_value_unfiltered`.
+- **Lesson:** "returns NULL for everything" is not by itself evidence that a
+  function is unimplemented. The distinguishing probe is whether it also returns
+  NULL over data containing no NULLs, which is what separated the four real ones
+  from the false positive.
+- **Not a whole missing family:** `FIRST_VALUE`, `LAST_VALUE`, `LAG`, `LEAD`,
+  `ROW_NUMBER`, `RANK`, `DENSE_RANK` and the aggregate-OVER forms all work and
+  are pinned as baselines.
 - **Decision:** **Fix in two steps, and do the second first if the first is
   slow.** (1) Implement the five functions. (2) Independently, make an
   unrecognised window function a **hard error** rather than a NULL column — the
