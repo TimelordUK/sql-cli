@@ -218,16 +218,20 @@ jobs:
       run: cargo build --release
 
     - name: Install Python dependencies
-      run: |
-        # Only create .venv if the cache step didn't restore one.
-        [ -d .venv ] || uv venv
-        uv pip install duckdb
+      # Resolves the pinned DuckDB from pyproject.toml [dependency-groups].test
+      # rather than installing whatever is latest. The corpus contains cases
+      # where the SQL standard leaves behaviour implementation-defined and we
+      # follow the reference engine by policy, so those cases encode DuckDB's
+      # current choices. An unpinned bump could redden this gate for reasons
+      # unrelated to our engine — and point at the wrong place when it did.
+      # Bump the pin in pyproject.toml deliberately and review any drift.
+      run: uv sync --group test
 
     - name: Run parity check (sql-cli vs DuckDB)
       # Fails if any case drifts from its expected bucket: a regressed AGREE, a
       # silently-closed gap, or a new un-annotated non-AGREE case. See
       # docs/SQL_PARITY.md for the contract.
-      run: uv run python tests/comparison/runner.py --check
+      run: uv run --group test python tests/comparison/runner.py --check
 
     - name: Upload parity report
       if: always()

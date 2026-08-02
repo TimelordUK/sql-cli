@@ -39,13 +39,51 @@ SQL standard leaves implementation-defined and where the major engines genuinely
 disagree. Rather than judge each one on its merits, the default answer is
 **match DuckDB** — that is what having a reference engine is *for*, and it keeps
 "broad-brush parity" a single rule instead of a growing pile of one-off
-rationales. Diverging remains available, but it now has to be argued for on
-design grounds and recorded in *Deferred / won't fix* below.
+rationales. Diverging remains available, but it has to be argued for on design
+grounds and recorded in *Deferred / won't fix* below.
+
+**DuckDB is a reference point, not a specification.** The goal is to be brought
+*in line* — to stop being accidentally different — not to reproduce DuckDB
+exactly. Where a difference is a genuine DuckDB idiosyncrasy rather than
+standard or widely-shared behaviour, we are under no obligation to follow it;
+mark it ⚪ WON'T FIX with the reasoning and move on. The rule above is a default
+that saves us re-litigating the ambiguous cases, not a commitment to chase
+quirks.
 
 One consequence worth naming: this makes the reference engine's *version* part
 of our contract, not just its behaviour. Implementation-defined cases pin
-whatever DuckDB currently chooses, so the pinned DuckDB version should be
-bumped deliberately rather than floating.
+whatever DuckDB currently chooses, so the DuckDB version is pinned in
+`pyproject.toml` (`[dependency-groups].test`) and used by CI — bump it
+deliberately and review the drift, rather than letting it float.
+
+## Where this effort is up to
+
+**Phase: fixing.** 2026-08-01/02 was a deliberate discovery push — the corpus
+went from 83 to 150 cases and the open findings from one (P3) to fifteen. That
+is enough surfaced work to be going on with, and several of these will take a
+session apiece to fix properly, so **discovery is paused and the effort moves to
+picking them off**. Widen the corpus again when the open list is short, or
+opportunistically when a fix needs a case that doesn't exist yet.
+
+Corpus coverage today: tiers 01–10. **Tier 10 (aggregate & NULL edges) is
+deliberately partial** — it holds the P14 and P18–P20 cases and their baselines,
+but was never built out the way tiers 08 and 09 were. Finish it during a lull;
+the aggregate-function surface (`STDDEV`, `DISTINCT` aggregates, `FILTER`,
+empty-vs-all-NULL distinctions) is largely unexamined.
+
+Suggested fix order, by silent blast radius:
+
+| | Finding | Why first |
+|---|---|---|
+| 1 | [P21](#p21) windows evaluated before `WHERE` | Silent, and wrong for essentially every window query that filters |
+| 2 | [P13](#p13) trailing tokens discarded | Silent, unbounded scope — any typo becomes a different working query |
+| 3 | [P18](#p18)/[P19](#p19) three-valued logic | Silent, and P18 produces *extra* rows |
+| 4 | [P24](#p24) `RANGE` treated as `ROWS` | Silent, hits the common `SUM(x) OVER (ORDER BY y)` running-total form |
+| 5 | [P14](#p14), [P16](#p16), [P17](#p17), [P20](#p20), [P23](#p23) | Smaller, self-contained, decisions already taken |
+| 6 | [P22](#p22), [P25](#p25), [P26](#p26), [P15](#p15) | Hard errors — visible, so less urgent than any of the above |
+
+P3 (correlated subqueries) stays gated on the R7/R6 structural work in
+[`ENGINE_REFACTORING.md`](ENGINE_REFACTORING.md) and is not part of this queue.
 
 ## Status legend
 
