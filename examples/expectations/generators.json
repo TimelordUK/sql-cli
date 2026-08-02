@@ -558,8 +558,8 @@
       "prime": 31
     },
     {
-      "gap": 4,
-      "next_prime": 41,
+      "gap": null,
+      "next_prime": null,
       "prime": 37
     }
   ],

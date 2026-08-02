@@ -895,7 +895,7 @@
     {
       "change_bps": 15,
       "date": "2021-12-16",
-      "lag_rate": 0.1,
+      "lag_rate": null,
       "prev_rate": 0.1,
       "rate": 0.25
     },
