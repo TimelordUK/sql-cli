@@ -469,7 +469,9 @@ annotation be removed.
   evidence of correct ordering.
 
 ### P17 — Default NULL placement differs on `ASC`
-- **Status:** 🔴 OPEN — **decision needed, not a reflex fix**
+- **Status:** 🔴 OPEN — **decision made 2026-08-02: follow the reference engine
+  (NULLS LAST in both directions), plus explicit `NULLS FIRST`/`LAST` from P13
+  stage 2.** Implementation pending.
 - **Corpus:** `08_ordering.toml :: order_by_null_default_asc_numeric`,
   `order_by_null_default_asc_string` (DIFFER); `order_by_null_default_desc`
   (AGREE).
@@ -493,11 +495,19 @@ annotation be removed.
   3. Either of the above **plus** implementing `NULLS FIRST` / `NULLS LAST`
      (see P13 stage 2), after which the default matters much less because users
      can be explicit.
-- **Recommendation:** option 3 with option 1 as the default — but the default is
-  a behaviour change for existing users, so it wants a deliberate call.
+- **Decision (2026-08-02): option 3, with option 1 as the default.** Where the
+  standard leaves a choice open, we follow the reference engine — that is the
+  whole point of having one, and it keeps "broad-brush parity" a single rule
+  rather than a series of case-by-case judgements. Concretely:
+  1. Change the default comparator so NULLs sort **last in both directions**.
+  2. Implement explicit `NULLS FIRST` / `NULLS LAST` (P13 stage 2), after which
+     the default matters much less because users can override it.
+  This is a user-visible behaviour change on `ORDER BY <col>` over NULL-bearing
+  data; call it out in the changelog when it lands.
 - **Note:** `order_by_null_default_desc` AGREEs *for the wrong reason* — the two
   different rules coincide there. It is kept as a case precisely to document
-  that, and it will start failing the day the rule changes, which is the point.
+  that. Under the decision above it will keep AGREEing, now for the right reason;
+  the two ASC cases flip DIFFER → AGREE and their `expect` should be dropped.
 
 ### P18 — `= NULL` matches NULL rows instead of yielding UNKNOWN
 - **Status:** 🔴 OPEN
