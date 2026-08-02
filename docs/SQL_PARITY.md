@@ -581,6 +581,109 @@ annotation be removed.
 - **User-visible change:** any query concatenating a nullable column starts
   returning NULL rather than a partial string. Changelog it when it lands.
 
+### P21 — Window functions are evaluated *before* the `WHERE` clause
+- **Status:** 🔴 OPEN — **the most consequential window finding**
+- **Corpus:** `09_window.toml :: win_count_over_filtered`,
+  `win_row_number_filtered`, `win_in_derived_table_filtered` (all DIFFER).
+  Control: `win_partition_null_key` (AGREE).
+- **Observed:** with a `WHERE` clause present, window functions see the
+  **unfiltered** row set. `COUNT(*) OVER (PARTITION BY team)` under
+  `WHERE score IS NOT NULL` reports partition sizes alpha=3, gamma=2; the
+  filtered sizes are alpha=2, gamma=1. `ROW_NUMBER` shows the same thing as
+  rank slots consumed by rows that were filtered out.
+- **Proved by the control:** the *identical* query without the `WHERE` AGREEs
+  exactly with DuckDB, including the NULL partition. So partitioning, ordering
+  and the functions themselves are correct — the defect is purely the position
+  of window evaluation in the pipeline.
+- **Correct semantics:** SQL evaluates window functions **after** `FROM`/`WHERE`/
+  `GROUP BY`/`HAVING` and before `SELECT`-list projection, `ORDER BY` and
+  `LIMIT`. Filtering must therefore happen first.
+- **Scope:** affects *every* window query that also filters — which is most real
+  ones. Silent in all cases.
+- **A near miss worth recording:** `win_sum_partition_ordered` AGREEs under the
+  same `WHERE`, purely because the filtered-out rows carry NULL scores that `SUM`
+  ignores anyway. `COUNT(*)` is what makes this visible. A tier built only from
+  `SUM` windows would have concluded windows were fine.
+- **Decision:** **Fix.** Move window evaluation after filtering in
+  `query_engine.rs`. The derived-table case is pinned separately so a fix applied
+  only to the top-level SELECT does not look complete.
+
+### P22 — Unimplemented window functions return NULL instead of erroring
+- **Status:** 🔴 OPEN
+- **Corpus:** `09_window.toml :: win_first_value`, `win_nth_value`, `win_ntile`,
+  `win_percent_rank`, `win_cume_dist` (all DIFFER).
+- **Observed:** `FIRST_VALUE`, `NTH_VALUE`, `NTILE`, `PERCENT_RANK` and
+  `CUME_DIST` return **NULL for every row**. No error, no warning.
+- **Not a whole missing family:** `LAST_VALUE`, `LAG`, `LEAD`, `ROW_NUMBER`,
+  `RANK`, `DENSE_RANK` and the aggregate-OVER forms all work and are pinned as
+  baselines. `FIRST_VALUE` being absent while `LAST_VALUE` works is the odd part.
+- **Decision:** **Fix in two steps, and do the second first if the first is
+  slow.** (1) Implement the five functions. (2) Independently, make an
+  unrecognised window function a **hard error** rather than a NULL column — the
+  silence is worse than the absence, because a NULL column reads as "no data"
+  rather than "unsupported".
+- **Related:** same class as P13 — unsupported input degrading into a plausible
+  wrong answer instead of a refusal.
+
+### P23 — `LAG`/`LEAD` ignore the third (default) argument
+- **Status:** 🔴 OPEN
+- **Corpus:** `09_window.toml :: win_lag_offset_default` (DIFFER).
+  Baselines: `win_lag`, `win_lead` (AGREE).
+- **Observed:** `LAG(score, 2, -1)` honours the offset — the 1-arg form is
+  already correct — but drops the default, so rows past the partition edge come
+  back NULL instead of `-1`.
+- **Decision:** **Fix.** Small and self-contained: thread the third argument
+  through as the out-of-range fallback.
+
+### P24 — A `RANGE` frame is treated as `ROWS`
+- **Status:** 🔴 OPEN
+- **Corpus:** `09_window.toml :: win_range_frame_with_ties`,
+  `win_default_frame_ordered` (both DIFFER). Baselines: the three explicit
+  `ROWS` frame cases (all AGREE).
+- **Observed:** with ties in the ORDER BY key, `RANGE BETWEEN UNBOUNDED
+  PRECEDING AND CURRENT ROW` must include **all peer rows** at the current
+  value. At `score = 50` (two peers) DuckDB returns 160; we return 110 — one
+  peer only, i.e. ROWS behaviour.
+- **The damaging half is the default frame.** With an `ORDER BY` in the window
+  and no explicit frame, the SQL default is `RANGE UNBOUNDED PRECEDING AND
+  CURRENT ROW`. `SUM(x) OVER (ORDER BY y)` is a far more common way to write a
+  running total than any explicit frame, and it is silently wrong wherever `y`
+  has duplicates. Explicit `ROWS` frames are unaffected and already correct.
+- **Only detectable because the fixture has ties** — on distinct keys ROWS and
+  RANGE coincide, which is why this survived until `null_edges.csv` existed.
+- **Decision:** **Fix.** Implement peer-group semantics for `RANGE`, and make
+  the no-frame-with-ORDER-BY default resolve to `RANGE` rather than `ROWS`.
+
+### P25 — A window's `ORDER BY` accepts only a plain column
+- **Status:** 🔴 OPEN
+- **Corpus:** `09_window.toml :: win_order_by_expression` (GAP).
+- **Observed:** `RANK() OVER (ORDER BY score * -1)` → "Window function ORDER BY
+  ...". An expression inside the window's `ORDER BY` is rejected, though the
+  *outer* `ORDER BY` handles expressions fine (`08_ordering.toml ::
+  order_by_expression` AGREEs).
+- **Decision:** **Fix** — a hard error, so no silent-wrong-answer urgency, but
+  it is an arbitrary restriction that the outer clause does not share.
+- **Note:** [R2](ENGINE_REFACTORING.md) records that `WindowSpec::order_by` is
+  now descended into by the walk helpers, so the AST side is already reachable;
+  this looks like an evaluator restriction rather than a traversal gap.
+
+### P26 — A window function over an aggregate is rejected under `GROUP BY`
+- **Status:** 🔴 OPEN
+- **Corpus:** `09_window.toml :: win_over_aggregate_with_group_by` (GAP).
+- **Observed:** `SELECT team, SUM(score) AS s, RANK() OVER (ORDER BY SUM(score)
+  DESC) FROM ... GROUP BY team` → "Expression 'v' must appear in GROUP BY
+  clause". The window alias is being subjected to the GROUP BY validity check,
+  although window functions are evaluated *after* grouping and are not
+  themselves grouped expressions.
+- **Why it matters:** ranking groups by an aggregate is the standard "top N per
+  group" shape. `CLAUDE.md` already documents a CTE workaround ("Window
+  functions can't handle expressions directly. Use CTEs to pre-calculate"), so
+  this restriction is known in practice but was never written down as a gap.
+- **Decision:** **Fix.** Exclude window-function outputs from the GROUP BY
+  validity check; they belong to the post-aggregation stage. Note this is the
+  same pipeline-position confusion as P21, approached from the other end — both
+  come down to *when* windows are evaluated relative to the rest of the query.
+
 ---
 
 ## Deferred / won't fix (intentional)
