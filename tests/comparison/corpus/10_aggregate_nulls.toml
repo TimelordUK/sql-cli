@@ -1,0 +1,44 @@
+# Tier 10 — aggregate and NULL edge semantics.
+#
+# Added 2026-08-02, seeded with P14. Tier 7 covers GROUP BY / HAVING over
+# non-empty groups; what it never asked is what an aggregate does when there is
+# nothing to aggregate. See SQL_PARITY.md.
+
+# --- The baselines that work, so P14 is isolated to the empty ungrouped case ---
+
+[[case]]
+id = "count_nonempty"
+data = "international_sales.csv"
+sql = "SELECT COUNT(*) AS n FROM international_sales WHERE region = 'Europe'"
+
+[[case]]
+id = "grouped_aggregate_empty"
+data = "international_sales.csv"
+sql = "SELECT region, COUNT(*) AS n FROM international_sales WHERE region = 'Nowhere' GROUP BY region"
+# AGREEs on zero rows, correctly: a GROUPED aggregate over no rows has no groups
+# to report. This is what makes P14 specifically about the UNGROUPED form.
+
+# --- P14: an ungrouped aggregate over an empty set returns no row at all ---
+
+[[case]]
+id = "count_star_empty"
+data = "international_sales.csv"
+sql = "SELECT COUNT(*) AS n FROM international_sales WHERE region = 'Nowhere'"
+expect = "DIFFER"
+# P14. Returns 0 rows; standard SQL returns exactly one row containing 0.
+
+[[case]]
+id = "sum_empty"
+data = "international_sales.csv"
+sql = "SELECT SUM(amount) AS total FROM international_sales WHERE region = 'Nowhere'"
+expect = "DIFFER"
+# P14, the NULL-returning half: one row containing NULL, not zero rows. COUNT
+# and SUM differ in the value they must produce, so both are pinned.
+
+[[case]]
+id = "min_max_empty"
+data = "international_sales.csv"
+sql = "SELECT MIN(amount) AS lo, MAX(amount) AS hi FROM international_sales WHERE region = 'Nowhere'"
+expect = "DIFFER"
+# P14, multi-aggregate form — the single output row must carry a NULL per
+# aggregate, so a fix that emits one row must fill every column.

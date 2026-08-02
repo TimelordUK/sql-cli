@@ -85,7 +85,7 @@ feature work**, and so we can tell the difference between "this is awkward" and
 
 ### R2 — Branch logic over `SqlExpression` is copy-pasted everywhere
 - **Status:** 🟡 IN PROGRESS — helpers landed (#31), crossing forms made primitive
-  (#35), 4 of 11 transformers migrated; 7 outstanding
+  (#35), 5 of 11 transformers migrated; 6 outstanding
 - **Where:** `src/query_plan/*.rs`, `src/data/*.rs`, `src/analysis/*.rs`
 - **Observed:** No traversal abstraction existed. **446
   `SqlExpression::<Variant>` patterns across 40 files**, every consumer
@@ -129,13 +129,13 @@ feature work**, and so we can tell the difference between "this is awkward" and
   | Transformer | Patterns | Note |
   |---|---|---|
   | ~~`having_alias_transformer`~~ | ~~30~~ | ✅ Done 2026-07-19 — closed [P9](SQL_PARITY.md). |
-  | `where_alias_expander` | 60 | Largest. Outer-alias scoping is correct only *by omission* — the opaque `map_children` is load-bearing here. |
-  | `group_by_alias_expander` | 34 | Same scoping caveat. |
-  | `order_by_alias_transformer` | 18 | Same scoping caveat. |
-  | `expression_lifter` | 35 | |
+  | ~~`where_alias_expander`~~ | ~~60~~ | ✅ Done 2026-07-25 — closed [P11](SQL_PARITY.md); ~230 hand-rolled lines retired. |
+  | `expression_lifter` | 35 | **Now has a parity case behind it: [P15](SQL_PARITY.md).** It lifts window functions from the SELECT list only, so an inline window fn in `QUALIFY` is never hoisted and dies in the WHERE evaluator. Migrate *and* extend it to the QUALIFY clause. |
+  | `group_by_alias_expander` | 34 | Same scoping caveat as the two done. |
   | `in_operator_lifter` | 21 | Related to [P11](SQL_PARITY.md). |
+  | `order_by_alias_transformer` | 18 | Same scoping caveat. Tier 08 now exercises it. |
   | `correlated_subquery_analyzer` | 12 | Touches P3; likely wants the crossing form. |
-  | `pivot_expander` / `qualify_to_where_transformer` | 10 / 9 | Smallest; good warm-ups. |
+  | `pivot_expander` / `qualify_to_where_transformer` | 10 / 9 | Smallest; good warm-ups. Note P15 is *not* fixed here despite the name — see `expression_lifter`. |
 
   One commit each. **`WindowSpec::order_by` is now descended into**, so every
   migration needs a per-transformer behaviour check — a blanket "pure refactor"
@@ -167,6 +167,7 @@ feature work**, and so we can tell the difference between "this is awkward" and
   |---|---|---|
   | [P9](SQL_PARITY.md) | `HAVING` with an aggregate inside `BETWEEN` / `IN` / `CASE` returns wrong rows, **silently, in both directions** | **wrong results, no error** |
   | [P11](SQL_PARITY.md) | A `SELECT` alias on the LHS of an `IN` subquery → `Column not found` | hard error |
+  | [P15](SQL_PARITY.md) | An inline window function in `QUALIFY` is never lifted (the lifter walks the SELECT list only) → `Expected column name, got: WindowFunction` | hard error |
   | *(fixed, PR #33)* | `ILIKE` inside `OVER (ORDER BY ...)` left unrewritten, reaching the executor as an unknown operator | hard error |
   | *(fixed, PR #33)* | `INTO` inside `(a, b) IN (SELECT ...)` never removed | reaches executor |
 
@@ -281,3 +282,5 @@ R5 dead code ─────── opportunistic
 | 2026-07-18 | R3 evidence: P9–P12 filed after probing the engine; corpus gains tier 07 (grouping) | — |
 | 2026-07-18 | R2: `*_crossing` helpers become the primitives; the three crossing transformers stop hand-listing subquery variants | #35 |
 | 2026-07-19 | R2: `having_alias_transformer` migrated — closes P9, three corpus cases DIFFER → AGREE | — |
+| 2026-07-25 | R2: `where_alias_expander` migrated — closes P11; the four subquery-LHS variants came for free | — |
+| 2026-08-02 | Corpus tiers 08 (ordering), 09 (window/QUALIFY), 10 (aggregate/NULL) added; P13–P15 filed. 83 → 96 cases | — |

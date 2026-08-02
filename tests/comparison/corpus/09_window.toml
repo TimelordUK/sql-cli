@@ -1,0 +1,41 @@
+# Tier 9 — window functions and QUALIFY.
+#
+# Added 2026-08-02, seeded with P15. Window functions are a large, working, and
+# until now completely untested surface: the corpus had no OVER clause anywhere.
+# This file starts with the QUALIFY gap and its control; the ranking, frame and
+# navigation cases follow.
+#
+# NB window evaluation has TWO code paths — `query_engine.rs` batch-evaluates by
+# default, with SQL_CLI_BATCH_WINDOW=0 as the opt-out — and they have never been
+# compared against each other. Worth running this tier both ways.
+
+# --- The baseline that works, so P15 is isolated to QUALIFY ---
+
+[[case]]
+id = "window_row_number"
+data = "international_sales.csv"
+sql = "SELECT region, amount, ROW_NUMBER() OVER (PARTITION BY region ORDER BY amount DESC) AS rn FROM international_sales ORDER BY region, amount DESC"
+# AGREEs. The same window expression P15 rejects in a QUALIFY clause evaluates
+# correctly in the select list, so the gap below is in QUALIFY, not the window.
+
+[[case]]
+id = "qualify_select_list_alias"
+data = "international_sales.csv"
+sql = "SELECT region, amount, ROW_NUMBER() OVER (PARTITION BY region ORDER BY amount DESC) AS rn FROM international_sales QUALIFY rn = 1 ORDER BY region"
+# AGREEs. QUALIFY itself works — but only against an alias the ExpressionLifter
+# has already hoisted out of the SELECT list. This is the control that locates
+# P15 in the lifter rather than in QUALIFY.
+
+# --- P15: QUALIFY does not accept an INLINE window function ---
+
+[[case]]
+id = "qualify_row_number"
+data = "international_sales.csv"
+sql = "SELECT region, amount FROM international_sales QUALIFY ROW_NUMBER() OVER (PARTITION BY region ORDER BY amount DESC) = 1 ORDER BY region"
+expect = "GAP"
+# P15: "Expected column name, got: WindowFunction { ... }" from
+# `recursive_where_evaluator.rs`. The design is ExpressionLifter-first — window
+# functions are hoisted to a CTE column, then QUALIFY becomes a WHERE on that
+# column. But the lifter only walks the SELECT list, so a window function
+# written inline in QUALIFY is never lifted and arrives at the WHERE evaluator
+# as a raw WindowFunction. Fix site is `expression_lifter`, not QUALIFY.

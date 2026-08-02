@@ -356,6 +356,97 @@ annotation be removed.
   (expression-position CTE hoisting never had an input); they now receive real
   input.
 
+### P13 — Unparsed trailing tokens are silently discarded, taking later clauses with them
+- **Status:** 🔴 OPEN
+- **Corpus:** `08_ordering.toml :: trailing_garbage_token` (OURS_ONLY — the root
+  cause, pinned directly), `order_by_nulls_last_limit` and
+  `order_by_nulls_first_limit` (DIFFER — the instance users actually hit).
+  Controls: `order_by_limit`, `order_by_nulls_last_no_limit` (both AGREE).
+- **Observed:** `ORDER BY amount DESC NULLS LAST LIMIT 3` returns **all 20 rows**
+  instead of 3. No error. The `LIMIT` is simply gone.
+- **Root cause — broader than it first looks.** `NULLS` is not the issue; there
+  is **no `NULLS` handling anywhere in `src/sql/`**. The parser stops at the
+  first token it cannot place and **silently ignores the entire remainder of the
+  statement**, including every clause after it. Verified with a nonsense token:
+
+  | Query | Result |
+  |---|---|
+  | `... ORDER BY amount DESC FROBNICATE LIMIT 3` | 20 rows, no error (LIMIT dropped) |
+  | `... GROUP BY country FROBNICATE LIMIT 2` | 13 rows, no error (LIMIT dropped) |
+  | `SELECT country FROM international_sales FROBNICATE` | 20 rows, no error |
+
+  So *any* typo, or any clause we don't support, degrades into a **different
+  query that runs successfully**. This is the same silent-wrong-answer class as
+  P9, but at the parser level and therefore unbounded in scope — it is not
+  confined to one clause or one transformer.
+- **Decision:** **Fix**, in two stages, and keep them separate:
+  1. **Reject trailing input.** After parsing a statement, require EOF (or a
+     statement separator) and error otherwise. This converts an unbounded class
+     of silent wrong answers into loud parse errors.
+  2. **Implement `NULLS FIRST` / `NULLS LAST`** as a real `OrderByItem` option.
+     DuckDB defaults to NULLS LAST for ASC and NULLS FIRST for DESC; our current
+     NULL ordering is untested (see note below).
+- **Expected corpus churn — plan for it.** Stage 1 alone moves the two NULLS
+  cases **DIFFER → GAP**, not to AGREE, and moves `trailing_garbage_token` to
+  BOTH_ERR. That is the correct intermediate state: a hard error is strictly
+  better than a silently different answer. Only stage 2 flips the NULLS cases to
+  AGREE.
+- **Note on fixtures:** every corpus data file is NULL-free, so these cases pin
+  the *lost LIMIT* only — the actual NULL ordering semantics remain untested.
+  Tier 08 needs a fixture containing NULLs before that can be asserted either
+  way.
+
+### P14 — An ungrouped aggregate over an empty set returns no row
+- **Status:** 🔴 OPEN
+- **Corpus:** `10_aggregate_nulls.toml :: count_star_empty`, `sum_empty`,
+  `min_max_empty` (all DIFFER). Controls: `count_nonempty`,
+  `grouped_aggregate_empty` (both AGREE).
+- **Observed:** When the WHERE clause matches nothing, an aggregate with no
+  `GROUP BY` returns **zero rows**; standard SQL (and DuckDB) returns **exactly
+  one row**:
+
+  | Query | DuckDB | sql-cli |
+  |---|---|---|
+  | `SELECT COUNT(*) FROM t WHERE <no match>` | 1 row: `0` | **0 rows** |
+  | `SELECT SUM(amount) FROM t WHERE <no match>` | 1 row: `NULL` | **0 rows** |
+  | `SELECT MIN(a), MAX(a) FROM t WHERE <no match>` | 1 row: `NULL, NULL` | **0 rows** |
+
+- **Scope — deliberately narrow.** The *grouped* form is already correct:
+  `... WHERE <no match> GROUP BY region` returns zero rows in both engines,
+  which is right — no rows means no groups. The defect is confined to the
+  ungrouped case, where the aggregate is over the whole (empty) input and must
+  still produce its one row.
+- **Decision:** **Fix.** An ungrouped aggregate query has exactly one output row
+  by definition, independent of input cardinality. The fix must fill *every*
+  output column (hence the multi-aggregate corpus case): `COUNT` → `0`, every
+  other aggregate → `NULL`.
+- **Why it matters:** this is the shape a dashboard or summary query takes.
+  Returning no row where the caller expects one number is a wrong answer that
+  reads as "no data" rather than "zero".
+
+### P15 — `QUALIFY` rejects an inline window function
+- **Status:** 🔴 OPEN
+- **Corpus:** `09_window.toml :: qualify_row_number` (GAP). Controls:
+  `window_row_number`, `qualify_select_list_alias` (both AGREE).
+- **Observed:** `QUALIFY ROW_NUMBER() OVER (PARTITION BY region ORDER BY amount
+  DESC) = 1` → `Expected column name, got: WindowFunction { ... }`
+  (`recursive_where_evaluator.rs:987`).
+- **Precisely located by the controls.** QUALIFY is **not** broken in general:
+  `QUALIFY rn = 1`, referencing an alias defined in the SELECT list, AGREEs. And
+  the same window expression evaluates correctly in the SELECT list. It is only
+  the **inline** form that fails.
+- **Root cause:** the design is lifter-first — `ExpressionLifter` hoists window
+  functions into a CTE column, then `QualifyToWhereTransformer` rewrites QUALIFY
+  into a WHERE against that column. But the lifter only walks the **SELECT
+  list**, so a window function written inline in QUALIFY is never hoisted and
+  reaches the WHERE evaluator as a raw `WindowFunction`. The fix site is
+  `expression_lifter`, not `qualify_to_where_transformer`.
+- **Decision:** **Fix** via the [R2](ENGINE_REFACTORING.md) migration of
+  `expression_lifter` (35 patterns, currently hand-rolled with a catch-all) —
+  extending it to lift from the QUALIFY clause as well as the SELECT list. This
+  is the R3 pattern again: the clause the transformer doesn't visit fails
+  silently or loudly depending only on luck.
+
 ---
 
 ## Deferred / won't fix (intentional)
