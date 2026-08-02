@@ -1,0 +1,236 @@
+# Tier 9 — window functions and QUALIFY.
+#
+# Added 2026-08-02. Window functions were a large, working and completely
+# untested surface: the corpus had no OVER clause anywhere. Six findings came
+# out of the first pass (P15, P21-P25), four of them silent.
+#
+# Fixture: null_edges.csv — see the notes in 08_ordering.toml. The ties (50,50
+# and 70,70) are load-bearing here: they are what separates RANK from
+# DENSE_RANK, and ROWS from RANGE.
+#
+# Every case ends in a TOTAL ordering (", id"). `normalize.py::has_order_by` is
+# a substring check, so `OVER (ORDER BY ...)` alone already forces ordered
+# comparison — without a total order these would flap on the ties above.
+#
+# CHECKED 2026-08-02: window evaluation has two code paths (`query_engine.rs`
+# batch-evaluates by default, SQL_CLI_BATCH_WINDOW=0 opts out). Ran 12 window
+# queries through both and they agree on all of them, so the batch optimisation
+# is consistent with its fallback and these cases test one behaviour, not two.
+
+# --- Baselines: the window machinery that is correct ---
+
+[[case]]
+id = "window_row_number"
+data = "international_sales.csv"
+sql = "SELECT region, amount, ROW_NUMBER() OVER (PARTITION BY region ORDER BY amount DESC) AS rn FROM international_sales ORDER BY region, amount DESC"
+
+[[case]]
+id = "win_rank"
+data = "null_edges.csv"
+sql = "SELECT id, team, RANK() OVER (PARTITION BY team ORDER BY score DESC) AS v FROM null_edges WHERE score IS NOT NULL ORDER BY id"
+
+[[case]]
+id = "win_dense_rank"
+data = "null_edges.csv"
+sql = "SELECT id, team, DENSE_RANK() OVER (PARTITION BY team ORDER BY score DESC) AS v FROM null_edges WHERE score IS NOT NULL ORDER BY id"
+
+[[case]]
+id = "win_lag"
+data = "null_edges.csv"
+sql = "SELECT id, LAG(score) OVER (ORDER BY score, id) AS v FROM null_edges WHERE score IS NOT NULL ORDER BY id"
+
+[[case]]
+id = "win_lead"
+data = "null_edges.csv"
+sql = "SELECT id, LEAD(score) OVER (ORDER BY score, id) AS v FROM null_edges WHERE score IS NOT NULL ORDER BY id"
+
+[[case]]
+id = "win_last_value"
+data = "null_edges.csv"
+sql = "SELECT id, team, LAST_VALUE(score) OVER (PARTITION BY team ORDER BY score DESC, id) AS v FROM null_edges WHERE score IS NOT NULL ORDER BY id"
+# LAST_VALUE works, which is what makes FIRST_VALUE's silence (P22) a gap rather
+# than a whole missing family.
+
+[[case]]
+id = "win_sum_partition_ordered"
+data = "null_edges.csv"
+sql = "SELECT id, team, SUM(score) OVER (PARTITION BY team ORDER BY score DESC, id) AS v FROM null_edges WHERE score IS NOT NULL ORDER BY id"
+
+[[case]]
+id = "win_avg_over_empty_spec"
+data = "null_edges.csv"
+sql = "SELECT id, AVG(score) OVER () AS v FROM null_edges WHERE score IS NOT NULL ORDER BY id"
+
+[[case]]
+id = "win_minmax_over"
+data = "null_edges.csv"
+sql = "SELECT id, MIN(score) OVER (PARTITION BY team) AS lo, MAX(score) OVER (PARTITION BY team) AS hi FROM null_edges WHERE score IS NOT NULL ORDER BY id"
+
+[[case]]
+id = "win_rows_1_preceding"
+data = "null_edges.csv"
+sql = "SELECT id, SUM(score) OVER (ORDER BY score, id ROWS BETWEEN 1 PRECEDING AND CURRENT ROW) AS v FROM null_edges WHERE score IS NOT NULL ORDER BY id"
+
+[[case]]
+id = "win_rows_unbounded_preceding"
+data = "null_edges.csv"
+sql = "SELECT id, SUM(score) OVER (ORDER BY score, id ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS v FROM null_edges WHERE score IS NOT NULL ORDER BY id"
+
+[[case]]
+id = "win_rows_unbounded_following"
+data = "null_edges.csv"
+sql = "SELECT id, SUM(score) OVER (ORDER BY score, id ROWS BETWEEN CURRENT ROW AND UNBOUNDED FOLLOWING) AS v FROM null_edges WHERE score IS NOT NULL ORDER BY id"
+
+[[case]]
+id = "win_partition_null_key"
+data = "null_edges.csv"
+sql = "SELECT id, team, COUNT(*) OVER (PARTITION BY team) AS v FROM null_edges ORDER BY id"
+# NULL forms its own partition, correctly. Also the P21 control — see below.
+
+[[case]]
+id = "win_multi_partition_key"
+data = "null_edges.csv"
+sql = "SELECT id, COUNT(*) OVER (PARTITION BY team, score) AS v FROM null_edges WHERE score IS NOT NULL ORDER BY id"
+
+[[case]]
+id = "win_over_nulls"
+data = "null_edges.csv"
+sql = "SELECT id, score, LAG(score) OVER (ORDER BY id) AS v FROM null_edges ORDER BY id"
+# LAG across NULL values returns the NULL, rather than skipping to a non-NULL.
+
+# --- P21: window functions are evaluated BEFORE the WHERE clause ---
+
+[[case]]
+id = "win_count_over_filtered"
+data = "null_edges.csv"
+sql = "SELECT id, team, COUNT(*) OVER (PARTITION BY team) AS v FROM null_edges WHERE score IS NOT NULL ORDER BY id"
+expect = "DIFFER"
+# P21. We report the UNFILTERED partition sizes (alpha=3, gamma=2); the filtered
+# sizes are alpha=2, gamma=1. `win_partition_null_key` above is the same query
+# without the WHERE and AGREEs exactly, which is what proves the partitioning
+# itself is right and the defect is the evaluation ORDER.
+#
+# NB `win_sum_partition_ordered` AGREEs despite the same WHERE — purely because
+# the filtered-out rows have NULL scores that SUM ignores anyway. COUNT(*) is
+# the discriminating probe; a SUM-only tier would have missed this entirely.
+
+[[case]]
+id = "win_row_number_filtered"
+data = "null_edges.csv"
+sql = "SELECT id, team, ROW_NUMBER() OVER (PARTITION BY team ORDER BY score DESC, id) AS v FROM null_edges WHERE score IS NOT NULL ORDER BY id"
+expect = "DIFFER"
+# P21 seen through ranking: id 1 gets rank 2 because the filtered-out id 3 still
+# occupies a slot in its partition.
+
+[[case]]
+id = "win_in_derived_table_filtered"
+data = "null_edges.csv"
+sql = "SELECT id, v FROM (SELECT id, ROW_NUMBER() OVER (ORDER BY score DESC, id) AS v FROM null_edges WHERE score IS NOT NULL) x ORDER BY id"
+expect = "DIFFER"
+# P21 again, through a derived table — pinned because a fix applied only to the
+# top-level SELECT would leave this one wrong.
+
+# --- P22: unimplemented window functions return NULL instead of erroring ---
+
+[[case]]
+id = "win_first_value"
+data = "null_edges.csv"
+sql = "SELECT id, team, FIRST_VALUE(score) OVER (PARTITION BY team ORDER BY score DESC, id) AS v FROM null_edges WHERE score IS NOT NULL ORDER BY id"
+expect = "DIFFER"
+# P22: NULL for every row.
+
+[[case]]
+id = "win_nth_value"
+data = "null_edges.csv"
+sql = "SELECT id, NTH_VALUE(score, 2) OVER (ORDER BY score DESC, id) AS v FROM null_edges WHERE score IS NOT NULL ORDER BY id"
+expect = "DIFFER"
+
+[[case]]
+id = "win_ntile"
+data = "null_edges.csv"
+sql = "SELECT id, NTILE(3) OVER (ORDER BY score DESC, id) AS v FROM null_edges WHERE score IS NOT NULL ORDER BY id"
+expect = "DIFFER"
+
+[[case]]
+id = "win_percent_rank"
+data = "null_edges.csv"
+sql = "SELECT id, PERCENT_RANK() OVER (ORDER BY score) AS v FROM null_edges WHERE score IS NOT NULL ORDER BY id"
+expect = "DIFFER"
+
+[[case]]
+id = "win_cume_dist"
+data = "null_edges.csv"
+sql = "SELECT id, CUME_DIST() OVER (ORDER BY score) AS v FROM null_edges WHERE score IS NOT NULL ORDER BY id"
+expect = "DIFFER"
+
+# --- P23: LAG/LEAD ignore the third (default) argument ---
+
+[[case]]
+id = "win_lag_offset_default"
+data = "null_edges.csv"
+sql = "SELECT id, LAG(score, 2, -1) OVER (ORDER BY score, id) AS v FROM null_edges WHERE score IS NOT NULL ORDER BY id"
+expect = "DIFFER"
+# P23. The offset (2) is honoured — `win_lag` proves the 1-arg form works — but
+# the default is dropped, so rows past the partition edge come back NULL
+# instead of -1.
+
+# --- P24: a RANGE frame is treated as ROWS ---
+
+[[case]]
+id = "win_range_frame_with_ties"
+data = "null_edges.csv"
+sql = "SELECT id, score, SUM(score) OVER (ORDER BY score RANGE BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS v FROM null_edges WHERE score IS NOT NULL ORDER BY id"
+expect = "DIFFER"
+# P24. At score 50 (a tie) RANGE must include BOTH peer rows -> 160; we return
+# 110, i.e. only one of them, which is ROWS behaviour. The ties in the fixture
+# are the entire reason this is detectable.
+
+[[case]]
+id = "win_default_frame_ordered"
+data = "null_edges.csv"
+sql = "SELECT id, score, SUM(score) OVER (ORDER BY score) AS v FROM null_edges WHERE score IS NOT NULL ORDER BY id"
+expect = "DIFFER"
+# P24, and the more damaging half: with an ORDER BY and no explicit frame the
+# default is RANGE UNBOUNDED PRECEDING TO CURRENT ROW. Users write this form far
+# more often than an explicit RANGE, and it is silently wrong on ties.
+
+# --- P25 / P26: window placements we reject ---
+
+[[case]]
+id = "win_order_by_expression"
+data = "null_edges.csv"
+sql = "SELECT id, RANK() OVER (ORDER BY score * -1) AS v FROM null_edges WHERE score IS NOT NULL ORDER BY id"
+expect = "GAP"
+# P25: "Window function ORDER BY ...". A window's ORDER BY accepts only a plain
+# column. Note the outer ORDER BY handles expressions fine (tier 08).
+
+[[case]]
+id = "win_over_aggregate_with_group_by"
+data = "null_edges.csv"
+sql = "SELECT team, SUM(score) AS s, RANK() OVER (ORDER BY SUM(score) DESC) AS v FROM null_edges WHERE score IS NOT NULL GROUP BY team ORDER BY team"
+expect = "GAP"
+# P26: "Expression 'v' must appear in GROUP BY clause". Ranking groups by an
+# aggregate is the standard "top N per group" shape, and the CTE workaround in
+# CLAUDE.md exists precisely because of this.
+
+# --- P15: QUALIFY does not accept an INLINE window function ---
+
+[[case]]
+id = "qualify_select_list_alias"
+data = "international_sales.csv"
+sql = "SELECT region, amount, ROW_NUMBER() OVER (PARTITION BY region ORDER BY amount DESC) AS rn FROM international_sales QUALIFY rn = 1 ORDER BY region"
+# AGREEs. QUALIFY itself works — but only against an alias the ExpressionLifter
+# has already hoisted out of the SELECT list. This is the control that locates
+# P15 in the lifter rather than in QUALIFY.
+
+[[case]]
+id = "qualify_row_number"
+data = "international_sales.csv"
+sql = "SELECT region, amount FROM international_sales QUALIFY ROW_NUMBER() OVER (PARTITION BY region ORDER BY amount DESC) = 1 ORDER BY region"
+expect = "GAP"
+# P15: "Expected column name, got: WindowFunction { ... }" from
+# `recursive_where_evaluator.rs`. The design is ExpressionLifter-first — window
+# functions are hoisted to a CTE column, then QUALIFY becomes a WHERE on that
+# column. But the lifter only walks the SELECT list, so a window function
+# written inline in QUALIFY is never lifted and arrives at the WHERE evaluator
+# as a raw WindowFunction. Fix site is `expression_lifter`, not QUALIFY.

@@ -30,5 +30,12 @@ build-backend = "hatchling.build"
 
 [dependency-groups]
 test = [
-    "duckdb>=1.5.4",
+    # Pinned, not floating. The parity corpus contains cases where the SQL
+    # standard leaves behaviour implementation-defined (see "Where the standard
+    # leaves a choice open" in docs/SQL_PARITY.md) — P17 NULL ordering and P24
+    # frame defaults among them. Those cases encode whatever DuckDB currently
+    # chooses, so an unpinned bump can redden the gate for reasons that have
+    # nothing to do with our engine, and point at the wrong place when it does.
+    # Bump deliberately: raise this, run the harness, review any drift.
+    "duckdb==1.5.5",
 ]

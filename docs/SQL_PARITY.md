@@ -32,6 +32,59 @@ semantics where reasonable, and consciously diverge where our design
 ([heterogeneous one-shop querying, coercion-first](FEATURE_ROADMAP_2026_Q2.md))
 makes a different choice better.
 
+### Where the standard leaves a choice open, follow the reference engine
+
+Established 2026-08-02 while deciding P17 and P20, both of which are cases the
+SQL standard leaves implementation-defined and where the major engines genuinely
+disagree. Rather than judge each one on its merits, the default answer is
+**match DuckDB** — that is what having a reference engine is *for*, and it keeps
+"broad-brush parity" a single rule instead of a growing pile of one-off
+rationales. Diverging remains available, but it has to be argued for on design
+grounds and recorded in *Deferred / won't fix* below.
+
+**DuckDB is a reference point, not a specification.** The goal is to be brought
+*in line* — to stop being accidentally different — not to reproduce DuckDB
+exactly. Where a difference is a genuine DuckDB idiosyncrasy rather than
+standard or widely-shared behaviour, we are under no obligation to follow it;
+mark it ⚪ WON'T FIX with the reasoning and move on. The rule above is a default
+that saves us re-litigating the ambiguous cases, not a commitment to chase
+quirks.
+
+One consequence worth naming: this makes the reference engine's *version* part
+of our contract, not just its behaviour. Implementation-defined cases pin
+whatever DuckDB currently chooses, so the DuckDB version is pinned in
+`pyproject.toml` (`[dependency-groups].test`) and used by CI — bump it
+deliberately and review the drift, rather than letting it float.
+
+## Where this effort is up to
+
+**Phase: fixing.** 2026-08-01/02 was a deliberate discovery push — the corpus
+went from 83 to 150 cases and the open findings from one (P3) to fifteen. That
+is enough surfaced work to be going on with, and several of these will take a
+session apiece to fix properly, so **discovery is paused and the effort moves to
+picking them off**. Widen the corpus again when the open list is short, or
+opportunistically when a fix needs a case that doesn't exist yet.
+
+Corpus coverage today: tiers 01–10. **Tier 10 (aggregate & NULL edges) is
+deliberately partial** — it holds the P14 and P18–P20 cases and their baselines,
+but was never built out the way tiers 08 and 09 were. Finish it during a lull;
+the aggregate-function surface (`STDDEV`, `DISTINCT` aggregates, `FILTER`,
+empty-vs-all-NULL distinctions) is largely unexamined.
+
+Suggested fix order, by silent blast radius:
+
+| | Finding | Why first |
+|---|---|---|
+| 1 | [P21](#p21) windows evaluated before `WHERE` | Silent, and wrong for essentially every window query that filters |
+| 2 | [P13](#p13) trailing tokens discarded | Silent, unbounded scope — any typo becomes a different working query |
+| 3 | [P18](#p18)/[P19](#p19) three-valued logic | Silent, and P18 produces *extra* rows |
+| 4 | [P24](#p24) `RANGE` treated as `ROWS` | Silent, hits the common `SUM(x) OVER (ORDER BY y)` running-total form |
+| 5 | [P14](#p14), [P16](#p16), [P17](#p17), [P20](#p20), [P23](#p23) | Smaller, self-contained, decisions already taken |
+| 6 | [P22](#p22), [P25](#p25), [P26](#p26), [P15](#p15) | Hard errors — visible, so less urgent than any of the above |
+
+P3 (correlated subqueries) stays gated on the R7/R6 structural work in
+[`ENGINE_REFACTORING.md`](ENGINE_REFACTORING.md) and is not part of this queue.
+
 ## Status legend
 
 | Status | Meaning |
@@ -355,6 +408,319 @@ annotation be removed.
   `CTEHoister::hoist_from_expression` were previously **unreachable dead code**
   (expression-position CTE hoisting never had an input); they now receive real
   input.
+
+### P13 — Unparsed trailing tokens are silently discarded, taking later clauses with them
+- **Status:** 🔴 OPEN
+- **Corpus:** `08_ordering.toml :: trailing_garbage_token` (OURS_ONLY — the root
+  cause, pinned directly), `order_by_nulls_last_limit` and
+  `order_by_nulls_first_limit` (DIFFER — the instance users actually hit).
+  Controls: `order_by_limit`, `order_by_nulls_last_no_limit` (both AGREE).
+- **Observed:** `ORDER BY amount DESC NULLS LAST LIMIT 3` returns **all 20 rows**
+  instead of 3. No error. The `LIMIT` is simply gone.
+- **Root cause — broader than it first looks.** `NULLS` is not the issue; there
+  is **no `NULLS` handling anywhere in `src/sql/`**. The parser stops at the
+  first token it cannot place and **silently ignores the entire remainder of the
+  statement**, including every clause after it. Verified with a nonsense token:
+
+  | Query | Result |
+  |---|---|
+  | `... ORDER BY amount DESC FROBNICATE LIMIT 3` | 20 rows, no error (LIMIT dropped) |
+  | `... GROUP BY country FROBNICATE LIMIT 2` | 13 rows, no error (LIMIT dropped) |
+  | `SELECT country FROM international_sales FROBNICATE` | 20 rows, no error |
+
+  So *any* typo, or any clause we don't support, degrades into a **different
+  query that runs successfully**. This is the same silent-wrong-answer class as
+  P9, but at the parser level and therefore unbounded in scope — it is not
+  confined to one clause or one transformer.
+- **Decision:** **Fix**, in two stages, and keep them separate:
+  1. **Reject trailing input.** After parsing a statement, require EOF (or a
+     statement separator) and error otherwise. This converts an unbounded class
+     of silent wrong answers into loud parse errors.
+  2. **Implement `NULLS FIRST` / `NULLS LAST`** as a real `OrderByItem` option.
+     DuckDB defaults to NULLS LAST for ASC and NULLS FIRST for DESC; our current
+     NULL ordering is untested (see note below).
+- **Expected corpus churn — plan for it.** Stage 1 alone moves the two NULLS
+  cases **DIFFER → GAP**, not to AGREE, and moves `trailing_garbage_token` to
+  BOTH_ERR. That is the correct intermediate state: a hard error is strictly
+  better than a silently different answer. Only stage 2 flips the NULLS cases to
+  AGREE.
+- **Note on fixtures:** every corpus data file is NULL-free, so these cases pin
+  the *lost LIMIT* only — the actual NULL ordering semantics remain untested.
+  Tier 08 needs a fixture containing NULLs before that can be asserted either
+  way.
+
+### P14 — An ungrouped aggregate over an empty set returns no row
+- **Status:** 🔴 OPEN
+- **Corpus:** `10_aggregate_nulls.toml :: count_star_empty`, `sum_empty`,
+  `min_max_empty` (all DIFFER). Controls: `count_nonempty`,
+  `grouped_aggregate_empty` (both AGREE).
+- **Observed:** When the WHERE clause matches nothing, an aggregate with no
+  `GROUP BY` returns **zero rows**; standard SQL (and DuckDB) returns **exactly
+  one row**:
+
+  | Query | DuckDB | sql-cli |
+  |---|---|---|
+  | `SELECT COUNT(*) FROM t WHERE <no match>` | 1 row: `0` | **0 rows** |
+  | `SELECT SUM(amount) FROM t WHERE <no match>` | 1 row: `NULL` | **0 rows** |
+  | `SELECT MIN(a), MAX(a) FROM t WHERE <no match>` | 1 row: `NULL, NULL` | **0 rows** |
+
+- **Scope — deliberately narrow.** The *grouped* form is already correct:
+  `... WHERE <no match> GROUP BY region` returns zero rows in both engines,
+  which is right — no rows means no groups. The defect is confined to the
+  ungrouped case, where the aggregate is over the whole (empty) input and must
+  still produce its one row.
+- **Decision:** **Fix.** An ungrouped aggregate query has exactly one output row
+  by definition, independent of input cardinality. The fix must fill *every*
+  output column (hence the multi-aggregate corpus case): `COUNT` → `0`, every
+  other aggregate → `NULL`.
+- **Why it matters:** this is the shape a dashboard or summary query takes.
+  Returning no row where the caller expects one number is a wrong answer that
+  reads as "no data" rather than "zero".
+
+### P15 — `QUALIFY` rejects an inline window function
+- **Status:** 🔴 OPEN
+- **Corpus:** `09_window.toml :: qualify_row_number` (GAP). Controls:
+  `window_row_number`, `qualify_select_list_alias` (both AGREE).
+- **Observed:** `QUALIFY ROW_NUMBER() OVER (PARTITION BY region ORDER BY amount
+  DESC) = 1` → `Expected column name, got: WindowFunction { ... }`
+  (`recursive_where_evaluator.rs:987`).
+- **Precisely located by the controls.** QUALIFY is **not** broken in general:
+  `QUALIFY rn = 1`, referencing an alias defined in the SELECT list, AGREEs. And
+  the same window expression evaluates correctly in the SELECT list. It is only
+  the **inline** form that fails.
+- **Root cause:** the design is lifter-first — `ExpressionLifter` hoists window
+  functions into a CTE column, then `QualifyToWhereTransformer` rewrites QUALIFY
+  into a WHERE against that column. But the lifter only walks the **SELECT
+  list**, so a window function written inline in QUALIFY is never hoisted and
+  reaches the WHERE evaluator as a raw `WindowFunction`. The fix site is
+  `expression_lifter`, not `qualify_to_where_transformer`.
+- **Decision:** **Fix** via the [R2](ENGINE_REFACTORING.md) migration of
+  `expression_lifter` (35 patterns, currently hand-rolled with a catch-all) —
+  extending it to lift from the QUALIFY clause as well as the SELECT list. This
+  is the R3 pattern again: the clause the transformer doesn't visit fails
+  silently or loudly depending only on luck.
+
+### P16 — `ORDER BY <ordinal>` is silently ignored
+- **Status:** 🔴 OPEN
+- **Corpus:** `08_ordering.toml :: order_by_ordinal`, `order_by_ordinal_desc`
+  (both DIFFER).
+- **Observed:** `ORDER BY 2` and `ORDER BY 2 DESC` return rows in **natural
+  insertion order** — no sorting is applied at all, and no error is raised. The
+  integer is evaluated as a constant expression, so every row compares equal.
+- **Distinct from P13.** Nothing is dropped here; `ORDER BY 2` parses fine. The
+  defect is that a positional reference is treated as a literal instead of being
+  resolved to the 2nd select-list item.
+- **Not implementation-defined.** Unlike P17 below, ordinals are standard SQL and
+  every major engine resolves them. This is unambiguously a bug.
+- **Decision:** **Fix.** Resolve an integer literal in `ORDER BY` to the
+  corresponding select-list item (1-based), and error on out-of-range. Both
+  corpus cases are needed: a fix that resolves the ordinal but drops `ASC`/`DESC`
+  would still pass the first one.
+- **Note:** this also silently corrupted an earlier probe of mine —
+  `ORDER BY 2 DESC LIMIT 3` returned three rows, so it *looked* fine, but they
+  were the first three in file order rather than the top three. Row count is not
+  evidence of correct ordering.
+
+### P17 — Default NULL placement differs on `ASC`
+- **Status:** 🔴 OPEN — **decision made 2026-08-02: follow the reference engine
+  (NULLS LAST in both directions), plus explicit `NULLS FIRST`/`LAST` from P13
+  stage 2.** Implementation pending.
+- **Corpus:** `08_ordering.toml :: order_by_null_default_asc_numeric`,
+  `order_by_null_default_asc_string` (DIFFER); `order_by_null_default_desc`
+  (AGREE).
+- **Observed:** the two engines follow different rules, which happen to coincide
+  on `DESC` and diverge on `ASC`:
+
+  | | sql-cli | DuckDB |
+  |---|---|---|
+  | rule | NULL sorts as the **minimum value** | **NULLS LAST**, always |
+  | `ORDER BY score` (ASC) | NULLs **first** | NULLs **last** |
+  | `ORDER BY score DESC` | NULLs last | NULLs last |
+
+- **Standard SQL leaves this implementation-defined**, and the major engines
+  genuinely disagree: SQLite and MySQL treat NULL as smallest (our behaviour),
+  PostgreSQL treats it as largest, DuckDB pins NULLS LAST in both directions.
+  So this is a **choice to record**, not a defect to correct.
+- **Options:**
+  1. **Match DuckDB** (NULLS LAST always) — consistent with our reference engine
+     and the least surprising to explain, but changes existing behaviour.
+  2. **Keep NULL-as-minimum** and record as ⚪ WON'T FIX with this rationale.
+  3. Either of the above **plus** implementing `NULLS FIRST` / `NULLS LAST`
+     (see P13 stage 2), after which the default matters much less because users
+     can be explicit.
+- **Decision (2026-08-02): option 3, with option 1 as the default.** Where the
+  standard leaves a choice open, we follow the reference engine — that is the
+  whole point of having one, and it keeps "broad-brush parity" a single rule
+  rather than a series of case-by-case judgements. Concretely:
+  1. Change the default comparator so NULLs sort **last in both directions**.
+  2. Implement explicit `NULLS FIRST` / `NULLS LAST` (P13 stage 2), after which
+     the default matters much less because users can override it.
+  This is a user-visible behaviour change on `ORDER BY <col>` over NULL-bearing
+  data; call it out in the changelog when it lands.
+- **Note:** `order_by_null_default_desc` AGREEs *for the wrong reason* — the two
+  different rules coincide there. It is kept as a case precisely to document
+  that. Under the decision above it will keep AGREEing, now for the right reason;
+  the two ASC cases flip DIFFER → AGREE and their `expect` should be dropped.
+
+### P18 — `= NULL` matches NULL rows instead of yielding UNKNOWN
+- **Status:** 🔴 OPEN
+- **Corpus:** `10_aggregate_nulls.toml :: where_equals_null` (DIFFER).
+  Baseline: `where_is_null` (AGREE).
+- **Observed:** `WHERE score = NULL` returns the four NULL-score rows. It is
+  being treated as `IS NULL`. Under SQL three-valued logic `x = NULL` evaluates
+  to UNKNOWN for **every** row — including rows where `x` is itself NULL — so
+  the correct result is **zero rows**.
+- **Decision:** **Fix.** `IS NULL` already works and is the only correct way to
+  match a NULL, so no capability is lost by making `= NULL` never match.
+- **Why it matters:** this is the direction that produces *extra* rows. A
+  `WHERE col = <parameter>` that receives a NULL parameter silently returns the
+  NULL rows instead of nothing — a wrong answer in the more dangerous direction.
+
+### P19 — `NOT IN` does not exclude NULLs
+- **Status:** 🔴 OPEN — same family as P18
+- **Corpus:** `10_aggregate_nulls.toml :: where_not_in_excludes_null` (DIFFER).
+  Baselines: `where_not_equal_excludes_null`, `where_in_with_null_col` (AGREE).
+- **Observed:** `WHERE score NOT IN (50, 70)` returns 8 rows including the
+  NULL-score rows; DuckDB returns 4. `NULL NOT IN (50, 70)` is UNKNOWN, not
+  TRUE, so those rows must not pass.
+- **Internally inconsistent, which is what makes it a bug.** The equivalent
+  `WHERE score <> 50` already excludes NULLs correctly (pinned as a baseline).
+  So we are not applying a considered "NULLs are comparable" rule — one operator
+  propagates NULL and another does not.
+- **Decision:** **Fix**, alongside P18 — both are the same missing
+  three-valued-logic propagation, reached through different operators. Worth
+  auditing `IN`, `NOT IN`, `BETWEEN`, `NOT BETWEEN` and `LIKE` together rather
+  than patching the one operator the corpus happened to catch.
+
+### P20 — `||` treats NULL as an empty string
+- **Status:** 🔴 OPEN — **decision made 2026-08-02: propagate NULL through `||`,
+  matching the reference engine.** Implementation pending.
+- **Corpus:** `10_aggregate_nulls.toml :: null_concat` (DIFFER).
+  Baseline: `null_arithmetic` (AGREE).
+- **Observed:** `team || '-' || label` on a row where `label` is NULL gives
+  `'alpha-'`; DuckDB gives `NULL`. Standard SQL propagates NULL through
+  concatenation.
+- **Arguably deliberate.** Oracle takes our view (NULL concatenates as empty),
+  and "coercion-first" is an explicit design stance
+  ([FEATURE_ROADMAP_2026_Q2.md](FEATURE_ROADMAP_2026_Q2.md)), so treating a
+  missing string as empty is defensible for a data-exploration tool.
+- **But note the inconsistency:** `score + 1` correctly yields NULL
+  (`null_arithmetic` AGREEs). So arithmetic propagates NULL and concatenation
+  does not. Whichever way this is decided, the two should agree on a principle.
+- **Decision (2026-08-02): propagate NULL through `||`.** Follows the rule above
+  — the standard is clear here and the reference engine agrees with it — and it
+  removes the internal inconsistency, which was the harder thing to defend: a
+  user cannot reasonably be told that `+` propagates NULL but `||` does not.
+- **Watch for the coercion-first tension.** Empty-string coercion is presumably
+  *convenient* when eyeballing concatenated columns over messy data, which is
+  our core use case. If that turns out to matter in practice, the right answer
+  is a `CONCAT()` function with the coercing behaviour — an explicit opt-in —
+  rather than overloading `||`. Not needed until someone asks.
+- **User-visible change:** any query concatenating a nullable column starts
+  returning NULL rather than a partial string. Changelog it when it lands.
+
+### P21 — Window functions are evaluated *before* the `WHERE` clause
+- **Status:** 🔴 OPEN — **the most consequential window finding**
+- **Corpus:** `09_window.toml :: win_count_over_filtered`,
+  `win_row_number_filtered`, `win_in_derived_table_filtered` (all DIFFER).
+  Control: `win_partition_null_key` (AGREE).
+- **Observed:** with a `WHERE` clause present, window functions see the
+  **unfiltered** row set. `COUNT(*) OVER (PARTITION BY team)` under
+  `WHERE score IS NOT NULL` reports partition sizes alpha=3, gamma=2; the
+  filtered sizes are alpha=2, gamma=1. `ROW_NUMBER` shows the same thing as
+  rank slots consumed by rows that were filtered out.
+- **Proved by the control:** the *identical* query without the `WHERE` AGREEs
+  exactly with DuckDB, including the NULL partition. So partitioning, ordering
+  and the functions themselves are correct — the defect is purely the position
+  of window evaluation in the pipeline.
+- **Correct semantics:** SQL evaluates window functions **after** `FROM`/`WHERE`/
+  `GROUP BY`/`HAVING` and before `SELECT`-list projection, `ORDER BY` and
+  `LIMIT`. Filtering must therefore happen first.
+- **Scope:** affects *every* window query that also filters — which is most real
+  ones. Silent in all cases.
+- **A near miss worth recording:** `win_sum_partition_ordered` AGREEs under the
+  same `WHERE`, purely because the filtered-out rows carry NULL scores that `SUM`
+  ignores anyway. `COUNT(*)` is what makes this visible. A tier built only from
+  `SUM` windows would have concluded windows were fine.
+- **Decision:** **Fix.** Move window evaluation after filtering in
+  `query_engine.rs`. The derived-table case is pinned separately so a fix applied
+  only to the top-level SELECT does not look complete.
+
+### P22 — Unimplemented window functions return NULL instead of erroring
+- **Status:** 🔴 OPEN
+- **Corpus:** `09_window.toml :: win_first_value`, `win_nth_value`, `win_ntile`,
+  `win_percent_rank`, `win_cume_dist` (all DIFFER).
+- **Observed:** `FIRST_VALUE`, `NTH_VALUE`, `NTILE`, `PERCENT_RANK` and
+  `CUME_DIST` return **NULL for every row**. No error, no warning.
+- **Not a whole missing family:** `LAST_VALUE`, `LAG`, `LEAD`, `ROW_NUMBER`,
+  `RANK`, `DENSE_RANK` and the aggregate-OVER forms all work and are pinned as
+  baselines. `FIRST_VALUE` being absent while `LAST_VALUE` works is the odd part.
+- **Decision:** **Fix in two steps, and do the second first if the first is
+  slow.** (1) Implement the five functions. (2) Independently, make an
+  unrecognised window function a **hard error** rather than a NULL column — the
+  silence is worse than the absence, because a NULL column reads as "no data"
+  rather than "unsupported".
+- **Related:** same class as P13 — unsupported input degrading into a plausible
+  wrong answer instead of a refusal.
+
+### P23 — `LAG`/`LEAD` ignore the third (default) argument
+- **Status:** 🔴 OPEN
+- **Corpus:** `09_window.toml :: win_lag_offset_default` (DIFFER).
+  Baselines: `win_lag`, `win_lead` (AGREE).
+- **Observed:** `LAG(score, 2, -1)` honours the offset — the 1-arg form is
+  already correct — but drops the default, so rows past the partition edge come
+  back NULL instead of `-1`.
+- **Decision:** **Fix.** Small and self-contained: thread the third argument
+  through as the out-of-range fallback.
+
+### P24 — A `RANGE` frame is treated as `ROWS`
+- **Status:** 🔴 OPEN
+- **Corpus:** `09_window.toml :: win_range_frame_with_ties`,
+  `win_default_frame_ordered` (both DIFFER). Baselines: the three explicit
+  `ROWS` frame cases (all AGREE).
+- **Observed:** with ties in the ORDER BY key, `RANGE BETWEEN UNBOUNDED
+  PRECEDING AND CURRENT ROW` must include **all peer rows** at the current
+  value. At `score = 50` (two peers) DuckDB returns 160; we return 110 — one
+  peer only, i.e. ROWS behaviour.
+- **The damaging half is the default frame.** With an `ORDER BY` in the window
+  and no explicit frame, the SQL default is `RANGE UNBOUNDED PRECEDING AND
+  CURRENT ROW`. `SUM(x) OVER (ORDER BY y)` is a far more common way to write a
+  running total than any explicit frame, and it is silently wrong wherever `y`
+  has duplicates. Explicit `ROWS` frames are unaffected and already correct.
+- **Only detectable because the fixture has ties** — on distinct keys ROWS and
+  RANGE coincide, which is why this survived until `null_edges.csv` existed.
+- **Decision:** **Fix.** Implement peer-group semantics for `RANGE`, and make
+  the no-frame-with-ORDER-BY default resolve to `RANGE` rather than `ROWS`.
+
+### P25 — A window's `ORDER BY` accepts only a plain column
+- **Status:** 🔴 OPEN
+- **Corpus:** `09_window.toml :: win_order_by_expression` (GAP).
+- **Observed:** `RANK() OVER (ORDER BY score * -1)` → "Window function ORDER BY
+  ...". An expression inside the window's `ORDER BY` is rejected, though the
+  *outer* `ORDER BY` handles expressions fine (`08_ordering.toml ::
+  order_by_expression` AGREEs).
+- **Decision:** **Fix** — a hard error, so no silent-wrong-answer urgency, but
+  it is an arbitrary restriction that the outer clause does not share.
+- **Note:** [R2](ENGINE_REFACTORING.md) records that `WindowSpec::order_by` is
+  now descended into by the walk helpers, so the AST side is already reachable;
+  this looks like an evaluator restriction rather than a traversal gap.
+
+### P26 — A window function over an aggregate is rejected under `GROUP BY`
+- **Status:** 🔴 OPEN
+- **Corpus:** `09_window.toml :: win_over_aggregate_with_group_by` (GAP).
+- **Observed:** `SELECT team, SUM(score) AS s, RANK() OVER (ORDER BY SUM(score)
+  DESC) FROM ... GROUP BY team` → "Expression 'v' must appear in GROUP BY
+  clause". The window alias is being subjected to the GROUP BY validity check,
+  although window functions are evaluated *after* grouping and are not
+  themselves grouped expressions.
+- **Why it matters:** ranking groups by an aggregate is the standard "top N per
+  group" shape. `CLAUDE.md` already documents a CTE workaround ("Window
+  functions can't handle expressions directly. Use CTEs to pre-calculate"), so
+  this restriction is known in practice but was never written down as a gap.
+- **Decision:** **Fix.** Exclude window-function outputs from the GROUP BY
+  validity check; they belong to the post-aggregation stage. Note this is the
+  same pipeline-position confusion as P21, approached from the other end — both
+  come down to *when* windows are evaluated relative to the rest of the query.
 
 ---
 

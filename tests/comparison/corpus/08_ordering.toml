@@ -1,0 +1,170 @@
+# Tier 8 — ORDER BY and LIMIT/OFFSET.
+#
+# Added 2026-08-02. The corpus had no tier for ordering or row-limiting: ORDER BY
+# appeared only incidentally, as a determinism aid on other tiers' cases, and was
+# never itself the thing under test. P13, P16 and P17 are the consequence.
+#
+# ---------------------------------------------------------------------------
+# Fixture: null_edges.csv (12 rows) — purpose-built, because every other corpus
+# CSV is NULL-free and NULL behaviour was therefore unassertable.
+#
+#   id          1..12, unique, NEVER NULL -> the total-order tiebreak
+#   team        partition/group key WITH NULLs (2) and an all-NULL-score group
+#   score       sort key / aggregate input, WITH NULLs (4) and ties (50,50 70,70)
+#   label       string sort key WITH NULLs (5)
+#   bonus       entirely NULL
+#   partner_id  self-join key WITH NULLs (5)
+#
+# Verified before use: both engines see the SAME NULLs in all five columns, so
+# these cases test SQL semantics and not the CSV reader.
+#
+# Two harness properties drive the design here:
+#  1. `normalize.py` canonicalises "" to NULL, so '' vs NULL is INVISIBLE to the
+#     comparison. Do not try to test that distinction with a corpus case.
+#  2. `has_order_by()` is a substring check, so an `OVER (ORDER BY ...)` alone
+#     puts the comparison in ORDERED mode. Every case must therefore end in a
+#     TOTAL ordering — in practice ", id" — or it will flap on ties.
+#
+# `bonus` is deliberately not summed anywhere: DuckDB's CSV sniffer types an
+# all-NULL column as VARCHAR, so SUM(bonus) is a binder error there while we
+# return NULL. That is a reference-engine inference quirk, not a semantic
+# divergence, and pinning it would lock CI to DuckDB's sniffer.
+# ---------------------------------------------------------------------------
+
+# --- Baselines: ordering machinery that works, NULLs kept OUT of the sort key
+# --- so each case tests one variable and cannot be confused with P17.
+
+[[case]]
+id = "order_by_limit"
+data = "international_sales.csv"
+sql = "SELECT country, amount FROM international_sales ORDER BY amount DESC LIMIT 3"
+# NB ordered by `amount`, whose 20 values are all distinct. Ordering by a column
+# with ties makes LIMIT non-deterministic across engines and the case would
+# flap; keep the sort key total.
+
+[[case]]
+id = "order_by_multi_key"
+data = "null_edges.csv"
+sql = "SELECT id, team, score FROM null_edges WHERE team IS NOT NULL ORDER BY team, score DESC, id"
+
+[[case]]
+id = "order_by_two_directions"
+data = "null_edges.csv"
+sql = "SELECT id, team, score FROM null_edges WHERE team IS NOT NULL AND score IS NOT NULL ORDER BY team ASC, score DESC, id"
+
+[[case]]
+id = "order_by_alias"
+data = "null_edges.csv"
+sql = "SELECT id, score * 2 AS dbl FROM null_edges WHERE score IS NOT NULL ORDER BY dbl, id"
+
+[[case]]
+id = "order_by_expression"
+data = "null_edges.csv"
+sql = "SELECT id, score FROM null_edges WHERE score IS NOT NULL ORDER BY score * -1, id"
+
+[[case]]
+id = "order_by_desc_ties"
+data = "null_edges.csv"
+sql = "SELECT id, team, score FROM null_edges ORDER BY score DESC, id"
+# Ties on 50 and 70 are the point; `, id` keeps the output deterministic anyway.
+
+[[case]]
+id = "limit_offset"
+data = "null_edges.csv"
+sql = "SELECT id, score FROM null_edges ORDER BY id LIMIT 4 OFFSET 3"
+
+[[case]]
+id = "limit_zero"
+data = "null_edges.csv"
+sql = "SELECT id FROM null_edges ORDER BY id LIMIT 0"
+
+[[case]]
+id = "limit_beyond_end"
+data = "null_edges.csv"
+sql = "SELECT id FROM null_edges ORDER BY id LIMIT 100"
+
+# --- P13: a NULLS FIRST/LAST clause silently discards the LIMIT ---
+
+[[case]]
+id = "order_by_nulls_last_no_limit"
+data = "international_sales.csv"
+sql = "SELECT country, amount FROM international_sales ORDER BY amount DESC NULLS LAST"
+# AGREEs, and this is the control that pins P13 down: with no LIMIT to lose,
+# the statement survives. NB it also agrees for a second, accidental reason —
+# see the P17 cases below — but on a NULL-free fixture only the first applies.
+
+[[case]]
+id = "order_by_nulls_last_limit"
+data = "international_sales.csv"
+sql = "SELECT country, amount FROM international_sales ORDER BY amount DESC NULLS LAST LIMIT 3"
+expect = "DIFFER"
+# P13. Returns all 20 rows instead of 3, with no error. Identical to
+# `order_by_limit` above but for the NULLS LAST clause.
+
+[[case]]
+id = "order_by_nulls_first_limit"
+data = "international_sales.csv"
+sql = "SELECT country, amount FROM international_sales ORDER BY amount NULLS FIRST LIMIT 3"
+expect = "DIFFER"
+# P13, the FIRST/ASC form — same defect, so the fix must clear both.
+
+[[case]]
+id = "trailing_garbage_token"
+data = "international_sales.csv"
+sql = "SELECT country, amount FROM international_sales ORDER BY amount DESC FROBNICATE LIMIT 3"
+expect = "OURS_ONLY"
+# P13's ACTUAL root cause, pinned directly: `FROBNICATE` is not SQL by any
+# reading, yet we accept the statement and silently drop the LIMIT after it.
+# The reference engine rejects it, which is the correct behaviour and why this
+# sits in OURS_ONLY rather than DIFFER. NULLS LAST above is merely the instance
+# a user is likely to hit; this case is the defect.
+#
+# When P13 is fixed this becomes a parse error and moves to BOTH_ERR, and the
+# two NULLS cases above move DIFFER -> GAP (not AGREE) until NULLS ordering is
+# actually implemented. Expect that churn; it is progress, not regression.
+
+# --- P16: ORDER BY <ordinal> is silently ignored ---
+
+[[case]]
+id = "order_by_ordinal"
+data = "null_edges.csv"
+sql = "SELECT id, score FROM null_edges WHERE score IS NOT NULL ORDER BY 2, 1"
+expect = "DIFFER"
+# P16. Rows come back in natural (insertion) order — the ordinal is evaluated as
+# a constant, so every row compares equal and nothing sorts. No error is raised.
+# NULLs are filtered out so this cannot be confused with P17.
+
+[[case]]
+id = "order_by_ordinal_desc"
+data = "null_edges.csv"
+sql = "SELECT id, score FROM null_edges WHERE score IS NOT NULL ORDER BY 2 DESC, 1"
+expect = "DIFFER"
+# P16 with a direction, which is also ignored. Worth pinning separately: a fix
+# that resolves the ordinal but drops ASC/DESC would still pass the case above.
+
+# --- P17: default NULL placement differs on ASC ---
+
+[[case]]
+id = "order_by_null_default_desc"
+data = "null_edges.csv"
+sql = "SELECT id, score FROM null_edges ORDER BY score DESC, id"
+# AGREEs — both engines put NULLs last on DESC, but for DIFFERENT reasons (we
+# sort NULL as the minimum value; DuckDB always sorts NULLS LAST). The two
+# rules coincide here and diverge on ASC below.
+
+[[case]]
+id = "order_by_null_default_asc_numeric"
+data = "null_edges.csv"
+sql = "SELECT id, score FROM null_edges ORDER BY score, id"
+expect = "DIFFER"
+# P17. We sort NULL as the smallest value (SQLite/MySQL convention) so NULLs
+# come FIRST; DuckDB sorts NULLS LAST regardless of direction. Standard SQL
+# leaves this implementation-defined, so this needs a decision, not a reflex fix.
+
+[[case]]
+id = "order_by_null_default_asc_string"
+data = "null_edges.csv"
+sql = "SELECT id, label FROM null_edges ORDER BY label, id"
+expect = "DIFFER"
+# P17 on a string column — pinned separately to prove the rule is type-independent
+# and that a fix has to cover both comparators.
