@@ -447,6 +447,109 @@ annotation be removed.
   is the R3 pattern again: the clause the transformer doesn't visit fails
   silently or loudly depending only on luck.
 
+### P16 — `ORDER BY <ordinal>` is silently ignored
+- **Status:** 🔴 OPEN
+- **Corpus:** `08_ordering.toml :: order_by_ordinal`, `order_by_ordinal_desc`
+  (both DIFFER).
+- **Observed:** `ORDER BY 2` and `ORDER BY 2 DESC` return rows in **natural
+  insertion order** — no sorting is applied at all, and no error is raised. The
+  integer is evaluated as a constant expression, so every row compares equal.
+- **Distinct from P13.** Nothing is dropped here; `ORDER BY 2` parses fine. The
+  defect is that a positional reference is treated as a literal instead of being
+  resolved to the 2nd select-list item.
+- **Not implementation-defined.** Unlike P17 below, ordinals are standard SQL and
+  every major engine resolves them. This is unambiguously a bug.
+- **Decision:** **Fix.** Resolve an integer literal in `ORDER BY` to the
+  corresponding select-list item (1-based), and error on out-of-range. Both
+  corpus cases are needed: a fix that resolves the ordinal but drops `ASC`/`DESC`
+  would still pass the first one.
+- **Note:** this also silently corrupted an earlier probe of mine —
+  `ORDER BY 2 DESC LIMIT 3` returned three rows, so it *looked* fine, but they
+  were the first three in file order rather than the top three. Row count is not
+  evidence of correct ordering.
+
+### P17 — Default NULL placement differs on `ASC`
+- **Status:** 🔴 OPEN — **decision needed, not a reflex fix**
+- **Corpus:** `08_ordering.toml :: order_by_null_default_asc_numeric`,
+  `order_by_null_default_asc_string` (DIFFER); `order_by_null_default_desc`
+  (AGREE).
+- **Observed:** the two engines follow different rules, which happen to coincide
+  on `DESC` and diverge on `ASC`:
+
+  | | sql-cli | DuckDB |
+  |---|---|---|
+  | rule | NULL sorts as the **minimum value** | **NULLS LAST**, always |
+  | `ORDER BY score` (ASC) | NULLs **first** | NULLs **last** |
+  | `ORDER BY score DESC` | NULLs last | NULLs last |
+
+- **Standard SQL leaves this implementation-defined**, and the major engines
+  genuinely disagree: SQLite and MySQL treat NULL as smallest (our behaviour),
+  PostgreSQL treats it as largest, DuckDB pins NULLS LAST in both directions.
+  So this is a **choice to record**, not a defect to correct.
+- **Options:**
+  1. **Match DuckDB** (NULLS LAST always) — consistent with our reference engine
+     and the least surprising to explain, but changes existing behaviour.
+  2. **Keep NULL-as-minimum** and record as ⚪ WON'T FIX with this rationale.
+  3. Either of the above **plus** implementing `NULLS FIRST` / `NULLS LAST`
+     (see P13 stage 2), after which the default matters much less because users
+     can be explicit.
+- **Recommendation:** option 3 with option 1 as the default — but the default is
+  a behaviour change for existing users, so it wants a deliberate call.
+- **Note:** `order_by_null_default_desc` AGREEs *for the wrong reason* — the two
+  different rules coincide there. It is kept as a case precisely to document
+  that, and it will start failing the day the rule changes, which is the point.
+
+### P18 — `= NULL` matches NULL rows instead of yielding UNKNOWN
+- **Status:** 🔴 OPEN
+- **Corpus:** `10_aggregate_nulls.toml :: where_equals_null` (DIFFER).
+  Baseline: `where_is_null` (AGREE).
+- **Observed:** `WHERE score = NULL` returns the four NULL-score rows. It is
+  being treated as `IS NULL`. Under SQL three-valued logic `x = NULL` evaluates
+  to UNKNOWN for **every** row — including rows where `x` is itself NULL — so
+  the correct result is **zero rows**.
+- **Decision:** **Fix.** `IS NULL` already works and is the only correct way to
+  match a NULL, so no capability is lost by making `= NULL` never match.
+- **Why it matters:** this is the direction that produces *extra* rows. A
+  `WHERE col = <parameter>` that receives a NULL parameter silently returns the
+  NULL rows instead of nothing — a wrong answer in the more dangerous direction.
+
+### P19 — `NOT IN` does not exclude NULLs
+- **Status:** 🔴 OPEN — same family as P18
+- **Corpus:** `10_aggregate_nulls.toml :: where_not_in_excludes_null` (DIFFER).
+  Baselines: `where_not_equal_excludes_null`, `where_in_with_null_col` (AGREE).
+- **Observed:** `WHERE score NOT IN (50, 70)` returns 8 rows including the
+  NULL-score rows; DuckDB returns 4. `NULL NOT IN (50, 70)` is UNKNOWN, not
+  TRUE, so those rows must not pass.
+- **Internally inconsistent, which is what makes it a bug.** The equivalent
+  `WHERE score <> 50` already excludes NULLs correctly (pinned as a baseline).
+  So we are not applying a considered "NULLs are comparable" rule — one operator
+  propagates NULL and another does not.
+- **Decision:** **Fix**, alongside P18 — both are the same missing
+  three-valued-logic propagation, reached through different operators. Worth
+  auditing `IN`, `NOT IN`, `BETWEEN`, `NOT BETWEEN` and `LIKE` together rather
+  than patching the one operator the corpus happened to catch.
+
+### P20 — `||` treats NULL as an empty string
+- **Status:** 🔴 OPEN — **decision needed**
+- **Corpus:** `10_aggregate_nulls.toml :: null_concat` (DIFFER).
+  Baseline: `null_arithmetic` (AGREE).
+- **Observed:** `team || '-' || label` on a row where `label` is NULL gives
+  `'alpha-'`; DuckDB gives `NULL`. Standard SQL propagates NULL through
+  concatenation.
+- **Arguably deliberate.** Oracle takes our view (NULL concatenates as empty),
+  and "coercion-first" is an explicit design stance
+  ([FEATURE_ROADMAP_2026_Q2.md](FEATURE_ROADMAP_2026_Q2.md)), so treating a
+  missing string as empty is defensible for a data-exploration tool.
+- **But note the inconsistency:** `score + 1` correctly yields NULL
+  (`null_arithmetic` AGREEs). So arithmetic propagates NULL and concatenation
+  does not. Whichever way this is decided, the two should agree on a principle.
+- **Options:** (1) propagate NULL through `||` to match standard SQL and our own
+  arithmetic; (2) keep empty-string coercion and record as ⚪ WON'T FIX, noting
+  `CONCAT()`-style semantics as the rationale.
+- **Recommendation:** option 1 — the internal inconsistency with arithmetic is
+  harder to defend than either rule on its own — but this is a user-facing
+  behaviour change and wants a deliberate call.
+
 ---
 
 ## Deferred / won't fix (intentional)

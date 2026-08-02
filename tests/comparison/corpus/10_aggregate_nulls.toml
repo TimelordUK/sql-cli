@@ -42,3 +42,111 @@ sql = "SELECT MIN(amount) AS lo, MAX(amount) AS hi FROM international_sales WHER
 expect = "DIFFER"
 # P14, multi-aggregate form — the single output row must carry a NULL per
 # aggregate, so a fix that emits one row must fill every column.
+
+# ---------------------------------------------------------------------------
+# NULL semantics. Uses null_edges.csv — see the fixture notes in 08_ordering.toml.
+# ---------------------------------------------------------------------------
+
+# --- Baselines: the NULL handling that is already correct ---
+
+[[case]]
+id = "agg_ignores_nulls"
+data = "null_edges.csv"
+sql = "SELECT COUNT(*) AS rows_n, COUNT(score) AS score_n, SUM(score) AS s, AVG(score) AS a FROM null_edges"
+# COUNT(*) counts rows, COUNT(col) skips NULLs, SUM/AVG skip NULLs. All correct.
+
+[[case]]
+id = "agg_all_null_group"
+data = "null_edges.csv"
+sql = "SELECT COUNT(*) AS n, COUNT(score) AS nn, SUM(score) AS s FROM null_edges WHERE team = 'delta'"
+# Every score in team 'delta' is NULL: COUNT(*)=2, COUNT(score)=0, SUM=NULL.
+# Distinct from P14 — here there ARE rows, they just aggregate to nothing.
+
+[[case]]
+id = "group_by_null_key"
+data = "null_edges.csv"
+sql = "SELECT team, COUNT(*) AS n FROM null_edges GROUP BY team"
+# NULL forms its own group, correctly. Deliberately has NO ORDER BY so the
+# harness compares as a multiset — adding `ORDER BY team` would drag P17's NULL
+# placement in and make this case about ordering instead of grouping.
+
+[[case]]
+id = "distinct_with_nulls"
+data = "null_edges.csv"
+sql = "SELECT DISTINCT score FROM null_edges"
+
+[[case]]
+id = "count_distinct_with_nulls"
+data = "null_edges.csv"
+sql = "SELECT COUNT(DISTINCT score) AS d FROM null_edges"
+
+[[case]]
+id = "where_is_null"
+data = "null_edges.csv"
+sql = "SELECT id FROM null_edges WHERE score IS NULL ORDER BY id"
+
+[[case]]
+id = "where_not_equal_excludes_null"
+data = "null_edges.csv"
+sql = "SELECT id FROM null_edges WHERE score <> 50 ORDER BY id"
+# Correct: `<>` excludes NULL rows. Contrast with NOT IN below, which does not —
+# the inconsistency is what makes P19 a bug rather than a design choice.
+
+[[case]]
+id = "where_in_with_null_col"
+data = "null_edges.csv"
+sql = "SELECT id FROM null_edges WHERE score IN (50, 70) ORDER BY id"
+
+[[case]]
+id = "join_on_null_key"
+data = "null_edges.csv"
+sql = "SELECT a.id AS aid, b.id AS bid FROM null_edges a JOIN null_edges b ON a.partner_id = b.id ORDER BY a.id"
+# NULL never equals NULL in a join key, so the 5 NULL partner_id rows drop out.
+
+[[case]]
+id = "null_arithmetic"
+data = "null_edges.csv"
+sql = "SELECT id, score + 1 AS plus FROM null_edges ORDER BY id"
+# NULL + 1 = NULL. Correct — which makes P20 below the odd one out.
+
+[[case]]
+id = "coalesce_null"
+data = "null_edges.csv"
+sql = "SELECT id, COALESCE(score, -1) AS c FROM null_edges ORDER BY id"
+
+# --- P18: `= NULL` matches instead of yielding UNKNOWN ---
+
+[[case]]
+id = "where_equals_null"
+data = "null_edges.csv"
+sql = "SELECT id FROM null_edges WHERE score = NULL"
+expect = "DIFFER"
+# P18. We return the four NULL-score rows — `= NULL` is being treated as
+# `IS NULL`. Under SQL three-valued logic `x = NULL` is UNKNOWN for every row
+# including NULL ones, so the correct answer is zero rows. `IS NULL` (above)
+# is the only way to match a NULL and it already works.
+
+# --- P19: NOT IN does not exclude NULLs ---
+
+[[case]]
+id = "where_not_in_excludes_null"
+data = "null_edges.csv"
+sql = "SELECT id FROM null_edges WHERE score NOT IN (50, 70) ORDER BY id"
+expect = "DIFFER"
+# P19. We return 8 rows, including the NULL-score rows; DuckDB returns 4.
+# `NULL NOT IN (50, 70)` is UNKNOWN, not TRUE, so those rows must not pass.
+# Note `where_not_equal_excludes_null` above gets the equivalent case right,
+# so this is an inconsistency inside our own NULL handling.
+
+# --- P20: `||` treats NULL as an empty string ---
+
+[[case]]
+id = "null_concat"
+data = "null_edges.csv"
+sql = "SELECT id, team || '-' || label AS c FROM null_edges ORDER BY id"
+expect = "DIFFER"
+# P20. Row 2 (label IS NULL) gives us 'alpha-' where DuckDB gives NULL.
+# Concatenating NULL yields NULL in standard SQL. Oracle takes our view, so
+# this one is arguably a coercion-first design choice rather than a bug — it
+# needs a decision recorded, not an automatic fix.
+
