@@ -32,6 +32,21 @@ semantics where reasonable, and consciously diverge where our design
 ([heterogeneous one-shop querying, coercion-first](FEATURE_ROADMAP_2026_Q2.md))
 makes a different choice better.
 
+### Where the standard leaves a choice open, follow the reference engine
+
+Established 2026-08-02 while deciding P17 and P20, both of which are cases the
+SQL standard leaves implementation-defined and where the major engines genuinely
+disagree. Rather than judge each one on its merits, the default answer is
+**match DuckDB** — that is what having a reference engine is *for*, and it keeps
+"broad-brush parity" a single rule instead of a growing pile of one-off
+rationales. Diverging remains available, but it now has to be argued for on
+design grounds and recorded in *Deferred / won't fix* below.
+
+One consequence worth naming: this makes the reference engine's *version* part
+of our contract, not just its behaviour. Implementation-defined cases pin
+whatever DuckDB currently chooses, so the pinned DuckDB version should be
+bumped deliberately rather than floating.
+
 ## Status legend
 
 | Status | Meaning |
@@ -540,7 +555,8 @@ annotation be removed.
   than patching the one operator the corpus happened to catch.
 
 ### P20 — `||` treats NULL as an empty string
-- **Status:** 🔴 OPEN — **decision needed**
+- **Status:** 🔴 OPEN — **decision made 2026-08-02: propagate NULL through `||`,
+  matching the reference engine.** Implementation pending.
 - **Corpus:** `10_aggregate_nulls.toml :: null_concat` (DIFFER).
   Baseline: `null_arithmetic` (AGREE).
 - **Observed:** `team || '-' || label` on a row where `label` is NULL gives
@@ -553,12 +569,17 @@ annotation be removed.
 - **But note the inconsistency:** `score + 1` correctly yields NULL
   (`null_arithmetic` AGREEs). So arithmetic propagates NULL and concatenation
   does not. Whichever way this is decided, the two should agree on a principle.
-- **Options:** (1) propagate NULL through `||` to match standard SQL and our own
-  arithmetic; (2) keep empty-string coercion and record as ⚪ WON'T FIX, noting
-  `CONCAT()`-style semantics as the rationale.
-- **Recommendation:** option 1 — the internal inconsistency with arithmetic is
-  harder to defend than either rule on its own — but this is a user-facing
-  behaviour change and wants a deliberate call.
+- **Decision (2026-08-02): propagate NULL through `||`.** Follows the rule above
+  — the standard is clear here and the reference engine agrees with it — and it
+  removes the internal inconsistency, which was the harder thing to defend: a
+  user cannot reasonably be told that `+` propagates NULL but `||` does not.
+- **Watch for the coercion-first tension.** Empty-string coercion is presumably
+  *convenient* when eyeballing concatenated columns over messy data, which is
+  our core use case. If that turns out to matter in practice, the right answer
+  is a `CONCAT()` function with the coercing behaviour — an explicit opt-in —
+  rather than overloading `||`. Not needed until someone asks.
+- **User-visible change:** any query concatenating a nullable column starts
+  returning NULL rather than a partial string. Changelog it when it lands.
 
 ---
 
