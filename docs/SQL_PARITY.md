@@ -77,14 +77,14 @@ Suggested fix order, by silent blast radius:
 |---|---|---|
 | ~~1~~ | ~~[P21](#p21) windows evaluated before `WHERE`~~ | ✅ **Fixed 2026-08-02** |
 | ~~2~~ | ~~[P13](#p13) trailing tokens discarded~~ | ✅ **Stage 1 done 2026-08-02**; stage 2 (`NULLS FIRST`/`LAST`) is item 6 below |
-| **3** | **[P30](#p30) `cond AND col IN (list)` returns 0 rows** | Silent, *still live*, and plain everyday SQL — returns nothing, which reads as "no data" rather than as a bug |
+| ~~3~~ | ~~[P30](#p30) `cond AND col IN (list)` returns 0 rows~~ | ✅ **Fixed 2026-08-08** |
+| ~~5~~ | ~~[P29](#p29) boolean operator after `IN (...)`~~ | ✅ **Fixed 2026-08-08** — same bug as P30, one change closed both |
 | **4** | **[P28](#p28) `INTO #tmp` stages unfiltered rows** | Silent, and it *corrupts staged data* — the stage-then-combine workflow quietly carries rows the user filtered out |
-| **5** | **[P29](#p29) boolean operator after `IN (...)`** | Was silently dropping the rest of the `WHERE`; same area as P30, fix together |
-| **6** | **[P27](#p27) `OR` in `JOIN ... ON`** | Was a silent wrong answer until P13 stage 1 turned it into an error; shipped examples were affected |
-| 7 | [P18](#p18)/[P19](#p19) three-valued logic | Silent, and P18 produces *extra* rows |
+| **7** | **[P18](#p18)/[P19](#p19) three-valued logic** | Promoted: silent, P18 produces *extra* rows, and it now blocks two more corpus cases that the P29 fix uncovered |
 | 8 | [P24](#p24) `RANGE` treated as `ROWS` | Silent, hits the common `SUM(x) OVER (ORDER BY y)` running-total form |
 | 9 | [P14](#p14), [P16](#p16), [P17](#p17), [P20](#p20), [P23](#p23), P13 stage 2 | Smaller, self-contained, decisions already taken |
 | 10 | [P22](#p22), [P25](#p25), [P26](#p26), [P15](#p15) | Hard errors — visible, so less urgent than any of the above |
+| — | [P27](#p27) `OR` in `JOIN ... ON` | **Reclassified 2026-08-08 — not a quick win.** `JoinCondition` is a `Vec<SingleJoinCondition>` implicitly AND-ed, so there is nowhere in the AST to put an `OR`; it needs join conditions to become an expression, which reaches the join execution code. Sequence it with the R-log, not here |
 
 P27–P30 jump the queue because all four were found *by* fixing something else,
 and all four are the dangerous shape: wrong data that looks plausible. Two of
@@ -95,6 +95,21 @@ reads as "no matching data" rather than as a defect.
 That four serious silent bugs fell out of fixing one parser check is the
 strongest argument yet for the corpus approach: none of them had a failing unit
 test, and two had *passing* ones asserting the broken behaviour.
+
+**Two lessons from closing P29/P30 (2026-08-08), both worth generalising:**
+
+1. **Two findings filed as different classes were one bug.** P29 was "a parse
+   gap", P30 "an evaluation bug", and they were the same misplaced precedence
+   seen from two operand orders. Before fixing findings that sit in the same
+   area, check `--query-plan` on each — a mis-parse can yield a well-formed AST
+   that simply means something else, which is indistinguishable from an
+   evaluation fault by result alone.
+2. **Closing a parse error can expose a second, unrelated divergence beneath
+   it.** `in_subquery_then_and` went GAP → DIFFER, not GAP → AGREE, because the
+   parse error had been masking P18. That is progress and the case stays pinned,
+   now against P18. Expect this whenever a fix makes previously-unrunnable
+   queries run: budget for the finding underneath rather than assuming the
+   bucket goes straight to AGREE.
 
 P3 (correlated subqueries) stays gated on the R7/R6 structural work in
 [`ENGINE_REFACTORING.md`](ENGINE_REFACTORING.md) and is not part of this queue.
@@ -655,9 +670,10 @@ annotation be removed.
   the two ASC cases flip DIFFER → AGREE and their `expect` should be dropped.
 
 ### P18 — `= NULL` matches NULL rows instead of yielding UNKNOWN
-- **Status:** 🔴 OPEN
+- **Status:** 🔴 OPEN — **second site found 2026-08-08, see below**
 - **Corpus:** `10_aggregate_nulls.toml :: where_equals_null` (DIFFER).
   Baseline: `where_is_null` (AGREE).
+  Also `02_where.toml :: in_list_with_null_literal`, `in_subquery_then_and` (DIFFER).
 - **Observed:** `WHERE score = NULL` returns the four NULL-score rows. It is
   being treated as `IS NULL`. Under SQL three-valued logic `x = NULL` evaluates
   to UNKNOWN for **every** row — including rows where `x` is itself NULL — so
@@ -667,6 +683,19 @@ annotation be removed.
 - **Why it matters:** this is the direction that produces *extra* rows. A
   `WHERE col = <parameter>` that receives a NULL parameter silently returns the
   NULL rows instead of nothing — a wrong answer in the more dangerous direction.
+- **It also reaches `IN`, found 2026-08-08 while fixing P29/P30.** `IN` is built
+  on the same equality, so a NULL *in the list* matches every NULL row:
+  `score IN (50, NULL)` returns ids 1,2,3,10,11,12 where DuckDB returns 1,2.
+  This bites hardest in the subquery form, where the NULL is not visible in the
+  query text at all — `in_subquery_then_and`'s subquery yields a NULL among its
+  scores and the case DIFFERs by exactly that one row. The parse error fixed in
+  P29 had been hiding it.
+  The discriminating pair is `where_in_with_null_col` (AGREE): a NULL *column*
+  value against a list with no NULL in it is excluded correctly. The variable
+  that matters is a NULL in the list, not a NULL in the column.
+- **Scope note for the fix:** P19 already says to audit `IN`/`NOT IN`/`BETWEEN`/
+  `LIKE` together rather than patching one operator. This confirms it — the same
+  root equality is reached through at least three surfaces.
 
 ### P19 — `NOT IN` does not exclude NULLs
 - **Status:** 🔴 OPEN — same family as P18
@@ -867,8 +896,9 @@ annotation be removed.
   come down to *when* windows are evaluated relative to the rest of the query.
 
 ### P29 — A boolean operator after `IN (...)` is not parsed
-- **Status:** 🔴 OPEN — **high priority: was a silent wrong answer until P13**
-- **Corpus:** `02_where.toml :: in_list_then_and`, `in_subquery_then_and` (GAP).
+- **Status:** 🟢 FIXED 2026-08-08 — with [P30](#p30); they were one bug
+- **Corpus:** `02_where.toml :: in_list_then_and` (AGREE), `in_subquery_then_and`
+  (now DIFFER on [P18](#p18), see there).
 - **Observed:** `WHERE score IN (50, 70) AND team = 'alpha'` does not parse the
   `AND ...`. Until P13 stage 1 the remainder was **silently discarded**, so the
   query returned 4 rows (the `IN` alone) instead of 2, with no error. Same for
@@ -883,10 +913,17 @@ annotation be removed.
   asserted only `count >= 0`, which is true whether or not the `AND` applies.
 - **Decision:** **Fix**, with [P30](#p30) — the two are the same area and a fix
   should address both operand orders together.
+- **Fixed 2026-08-08**, branch `fix/p29-p30-in-precedence`. See P30 below for the
+  root cause; the "specific to `IN`" observation above was the clue that led to
+  it, since `NOT IN` was already handled at the correct precedence level.
 
 ### P30 — `<cond> AND <col> IN (list)` returns zero rows
-- **Status:** 🔴 OPEN — **high priority: silent, and still live after P13**
-- **Corpus:** `02_where.toml :: and_then_in_list` (DIFFER).
+- **Status:** 🟢 FIXED 2026-08-08 — same root cause as [P29](#p29)
+- **Corpus:** `02_where.toml :: and_then_in_list` (AGREE). Added with the fix:
+  `in_list_then_or`, `or_then_in_list`, `in_list_between_two_conditions` (AGREE).
+- **Regression test:** `tests/in_predicate_precedence_tests.rs` — six cases,
+  four of which fail against the unfixed parser (verified by stashing the fix);
+  the other two are controls that must pass either way.
 - **Observed:** with the operands the other way round from P29 the query
   *parses* — and returns nothing:
 
@@ -895,13 +932,32 @@ annotation be removed.
   --  ours: 0 rows        DuckDB: (1, alpha, 50), (2, alpha, 50)
   ```
 
-- **Distinct from P29.** That one is a parse gap and is now a hard error; this is
-  an *evaluation* bug that survives P13 stage 1 untouched. `where_in_with_null_col`
-  (an `IN` with no other condition) AGREEs, so `IN` alone is correct — it is the
-  combination that fails, and it fails **silently in the direction of returning
-  nothing**, which reads as "no matching data" rather than as a bug.
+- ~~**Distinct from P29.** That one is a parse gap; this is an *evaluation* bug.~~
+  **Wrong — they are the same bug.** Recorded because the misdiagnosis is
+  instructive: "it parses and returns wrong rows" was read as an evaluation
+  fault, but a mis-parse can produce a perfectly well-formed AST that *means*
+  something else. `--query-plan` settled it in one look and should have been the
+  first move.
+- **Root cause.** `IN` was applied at the top of `parse_expression`, *after* the
+  whole OR/AND hierarchy had been parsed:
+
+  ```rust
+  let mut left = self.parse_logical_or()?;
+  left = parse_in_operator(self, left)?;   // outside the hierarchy
+  ```
+
+  So `WHERE team = 'alpha' AND score IN (50, 70)` parsed as
+  `InList { expr: (team = 'alpha' AND score), values: [50, 70] }` — "is this
+  boolean one of 50 or 70?" — false for every row, hence zero rows. Reverse the
+  operands and the same misplacement instead leaves `AND team = 'alpha'`
+  unconsumed, which is P29. The operand order only decided whether the mis-parse
+  surfaced as a wrong answer or as leftover tokens.
+- **Fix.** Move the `IN` branch into `parse_comparison`, next to the `NOT IN`
+  branch that was already there and already correct, and drop the top-level call.
+  That `NOT IN` composed properly while `IN` did not was the diagnostic tell, and
+  it meant the correct implementation was sitting forty lines above the defect.
 - **Confirmed pre-existing**, reproduced from a clean build of `main`.
-- **Decision:** **Fix**, with P29.
+- **Decision:** **Fix**, with P29. Done.
 
 ---
 

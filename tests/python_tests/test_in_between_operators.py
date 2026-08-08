@@ -12,7 +12,11 @@ import pytest
 def run_query(query, data_file=None):
     """Execute a query and return the results."""
     base_dir = Path(__file__).parent.parent.parent
-    sql_cli = base_dir / "target" / "release" / "sql-cli"
+    # Windows needs the .exe suffix — without it every test in this file raised
+    # FileNotFoundError and silently never ran on a Windows box, while passing
+    # in CI. Same fix as tests/comparison/engines.py already carries.
+    suffix = ".exe" if sys.platform == "win32" else ""
+    sql_cli = base_dir / "target" / "release" / f"sql-cli{suffix}"
 
     if not sql_cli.exists():
         raise FileNotFoundError(f"sql-cli not found at {sql_cli}")

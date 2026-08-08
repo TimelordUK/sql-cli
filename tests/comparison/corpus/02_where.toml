@@ -88,28 +88,75 @@ sql = "SELECT symbol, price * 2 AS dbl FROM trades WHERE dbl IN (SELECT price * 
 id = "in_list_then_and"
 data = "null_edges.csv"
 sql = "SELECT id FROM null_edges WHERE score IN (50, 70) AND team = 'alpha' ORDER BY id"
-expect = "GAP"
-# P29. A boolean operator FOLLOWING an `IN (...)` predicate is not parsed. Until
-# P13 stage 1 the remainder was silently discarded — this query returned 4 rows
-# (the `IN` alone) instead of 2, with no error. Now a parse error, which is why
-# it sits in GAP. `AND` works fine everywhere else, including after LIKE and
-# BETWEEN, so this is specific to IN.
+# P29, FIXED 2026-08-08. A boolean operator FOLLOWING an `IN (...)` predicate was
+# not parsed: until P13 stage 1 the remainder was silently discarded (4 rows
+# instead of 2), after it the query was a hard error. Root cause was IN being
+# applied outside the OR/AND hierarchy — see P30 below, same bug.
 
 [[case]]
 id = "in_subquery_then_and"
 data = "null_edges.csv"
 sql = "SELECT id FROM null_edges WHERE score IN (SELECT score FROM null_edges WHERE id < 5) AND team = 'alpha' ORDER BY id"
-expect = "GAP"
+expect = "DIFFER"
 # P29, the subquery form — pinned separately because the IN-list and IN-subquery
 # paths are built differently (see P11) and a fix to one need not reach the other.
+# In the event the P29/P30 precedence fix covered both, since they share
+# `parse_in_operator`. Keep it: it is the control that proves that.
+#
+# It now DIFFERs on a *different* finding, which the parse error had been hiding:
+# the subquery yields the scores of ids 1-4, which include id 3's NULL, and
+# `NULL IN (.., NULL, ..)` matches for us where DuckDB gives UNKNOWN. 3 rows vs 2.
+# That is P18 (`= NULL` matches instead of yielding UNKNOWN) reaching IN through
+# the shared equality — see in_list_with_null_literal below, which isolates it
+# without a subquery. Re-pin to AGREE when P18 is fixed.
 
 [[case]]
 id = "and_then_in_list"
 data = "null_edges.csv"
 sql = "SELECT id, team, score FROM null_edges WHERE team = 'alpha' AND score IN (50, 70) ORDER BY id"
+# P30, FIXED 2026-08-08, and it was the more alarming of the pair: with the
+# operands this way round the query PARSED and returned ZERO rows where the
+# answer is 2 (ids 1 and 2, both score 50).
+#
+# Filed as an evaluation bug; it was not. IN was applied at the top of
+# parse_expression, outside the OR/AND hierarchy, so this parsed as
+#   InList { expr: (team = 'alpha' AND score), values: [50, 70] }
+# — "is this boolean one of 50 or 70?" — false for every row. Same root cause as
+# P29 above; the operand order only decided whether the mis-parse produced a
+# wrong answer or leftover tokens.
+
+[[case]]
+id = "in_list_then_or"
+data = "null_edges.csv"
+sql = "SELECT id, team, score FROM null_edges WHERE score IN (50) OR team = 'beta' ORDER BY id"
+# Added with the P29/P30 fix. The defect was in how IN bound relative to the
+# whole OR/AND hierarchy, so OR needs pinning in both operand orders too — AND
+# alone would not have caught a fix that only reached parse_logical_and.
+
+[[case]]
+id = "or_then_in_list"
+data = "null_edges.csv"
+sql = "SELECT id, team, score FROM null_edges WHERE team = 'beta' OR score IN (50) ORDER BY id"
+# Added with the P29/P30 fix; the OR mirror of and_then_in_list.
+
+[[case]]
+id = "in_list_with_null_literal"
+data = "null_edges.csv"
+sql = "SELECT id FROM null_edges WHERE score IN (50, NULL) ORDER BY id"
 expect = "DIFFER"
-# P30, and the more alarming of the pair: with the operands the other way round
-# this PARSES and returns ZERO rows where the answer is 2 (ids 1 and 2, both
-# score 50). Still live after P13 stage 1 — it is an evaluation bug, not a parse
-# one. `where_in_with_null_col` (IN with no other condition) AGREEs, so IN alone
-# is fine; it is the combination that fails.
+# P18, found 2026-08-08 while fixing P29/P30 — the literal-list form that
+# isolates what in_subquery_then_and trips over, with no subquery involved.
+# A NULL in the list matches every NULL-scored row: we return ids 1,2,3,10,11,12
+# where DuckDB returns 1,2. IN is built on the same equality as `= NULL`.
+#
+# Discriminating pair: where_in_with_null_col (tier 10) AGREEs — a NULL column
+# value against a list with NO NULL in it is excluded correctly. The variable
+# that matters is a NULL *in the list*, not a NULL in the column.
+
+[[case]]
+id = "in_list_between_two_conditions"
+data = "null_edges.csv"
+sql = "SELECT id, team, score FROM null_edges WHERE team = 'alpha' AND score IN (50, 70) AND id < 3 ORDER BY id"
+# Added with the P29/P30 fix. IN in the MIDDLE of a chain — the case that needs
+# parse_comparison to both consume the IN and hand control back to the AND loop.
+# The old top-level placement could not express this at all.

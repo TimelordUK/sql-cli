@@ -199,6 +199,9 @@ mod test_window_context;
 #[path = "window_after_where_tests.rs"]
 mod window_after_where_tests;
 
+#[path = "in_predicate_precedence_tests.rs"]
+mod in_predicate_precedence_tests;
+
 #[path = "test_yanked_query.rs"]
 mod test_yanked_query;
 
