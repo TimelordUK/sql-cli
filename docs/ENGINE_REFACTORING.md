@@ -250,6 +250,46 @@ feature work**, and so we can tell the difference between "this is awkward" and
   subqueries (three corpus cases pass *because* of it) and fork correlated nodes
   to per-row evaluation — not a replacement.
 
+### R8 — A second, older WHERE stack survives alongside the engine
+- **Status:** 🟡 IN PROGRESS — stage 1 done 2026-08-08; stage 2 outstanding
+- **Where:** `src/sql/where_parser.rs`, `src/sql/where_ast.rs`, and (deleted)
+  `src/data/where_evaluator.rs`, `src/data/where_clause_converter.rs`,
+  `src/data/simple_where.rs`
+- **Observed:** From when `WHERE` was not yet fully recursive, a complete
+  parallel stack remained in the tree: its own AST (`WhereExpr` / `WhereValue` /
+  `ComparisonOp`), its own parser, and its own evaluator with its own equality
+  rules (the deleted `where_evaluator.rs:417` compared floats via
+  `f64::EPSILON`). None of it shares `value_comparisons::compare_with_op`, which
+  the real engine centralises on — so it is a second set of SQL semantics.
+- **Impact:** Not a live wrong answer — no product path reaches it — but it is a
+  standing source of false confidence, and it inflates every audit of "how many
+  places implement `IN`/comparison". `CsvDataSource::query_with_options` is the
+  worst of it: it parses with the *real* parser, discards that for the WHERE, and
+  re-extracts the clause with `sql_lower.find(" where ")` before handing the
+  substring to the legacy parser.
+- **Stage 1 (done, 2026-08-08).** Deleted the three components with **zero
+  callers anywhere**: `where_clause_converter.rs` (194), `where_evaluator.rs`
+  (443), `simple_where.rs` (193) — 830 lines. Also removed
+  `DebugWidget::generate_debug`'s WHERE-AST section and
+  `parse_where_clause_ast`, the only product-side reference to the legacy
+  parser. **That method is itself never called** (the live F5 view is served by
+  `src/ui/debug/context.rs` via `set_content`), so this was dead code rather
+  than a misleading debug view — worth recording, because it was initially
+  assessed the other way round. Pure deletion: parity stayed at exactly 125
+  AGREE / 159 cases, all FORMAL examples passed, `cargo test` unchanged.
+- **Stage 2 (outstanding).** `where_parser.rs` (717) + `where_ast.rs` (748)
+  remain, reachable only from tests: 12 tests in
+  `tests/parser_regression_tests.rs` ride `CsvApiClient::query_csv` into the
+  legacy path, and `tests/test_numeric_columns.rs` tests the legacy AST outright.
+  Repoint those onto the real engine, then delete both files and
+  `CsvDataSource`'s query path.
+  **Guard rail:** those 12 tests assert expected rows produced by the *legacy*
+  engine. Any query that behaves differently through the real one gets pinned as
+  a P-finding plus a corpus case, not fixed in the same change — the same trap as
+  the FORMAL expectations that had captured [P21](SQL_PARITY.md).
+- **Decision:** Delete, don't migrate. Related to [R5](#r5) but logged separately
+  because it is a coherent subsystem rather than scattered dead files.
+
 ---
 
 ## Sequencing
@@ -270,7 +310,20 @@ R2 walkers ──┬─→ R3 catch-alls retired
 R1 FROM migration ── independent; deferred (larger than P3)
 R4 fixtures ──────── adopt opportunistically, per transformer touched
 R5 dead code ─────── opportunistic
+R8 legacy WHERE ──── independent; stage 2 is self-contained, do it in a lull
 ```
+
+**A note on ordering, from the P18/P19 work being next.** The WHERE evaluator
+returns `Result<bool>`, so there is no UNKNOWN in the type: `NOT IN` is
+implemented as `Ok(!in_result)` and `NOT` as `Ok(!inner)`
+(`recursive_where_evaluator.rs`). Three-valued logic cannot be *stated* until
+that result type carries UNKNOWN, so P18/P19 is a type change first and a
+semantics change second — not a per-operator patch. The seam is narrow: 9
+signatures and 14 match arms in one file, two construction sites, and exactly
+one semantic boundary (`if result` in `query_engine.rs`, the row filter). Doing
+the type conversion while collapsing `Unknown → false` at that boundary is a
+provable no-op — the acceptance test is that parity stays at exactly its current
+AGREE count — which makes it safe to land well before the semantics change.
 
 ## Log
 
@@ -284,3 +337,4 @@ R5 dead code ─────── opportunistic
 | 2026-07-19 | R2: `having_alias_transformer` migrated — closes P9, three corpus cases DIFFER → AGREE | — |
 | 2026-07-25 | R2: `where_alias_expander` migrated — closes P11; the four subquery-LHS variants came for free | — |
 | 2026-08-02 | Corpus tiers 08 (ordering), 09 (window/QUALIFY), 10 (aggregate/NULL) added; P13–P15 filed. 83 → 96 cases | — |
+| 2026-08-08 | R8 filed and stage 1 done: 830 lines of zero-caller legacy WHERE deleted (`where_clause_converter`, `where_evaluator`, `simple_where`) plus `DebugWidget`'s dead WHERE-AST code. No behaviour change | #47 |
