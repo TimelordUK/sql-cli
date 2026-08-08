@@ -42,13 +42,10 @@ pub mod query_engine;
 pub mod query_executor;
 pub mod recursive_where_evaluator;
 pub mod row_expanders; // Row expansion system (UNNEST, etc.)
-pub mod simple_where;
 pub mod subquery_executor;
 pub mod temp_table_registry; // Temporary tables for script execution
 pub mod unit_converter;
 pub mod virtual_table_generator;
-pub mod where_clause_converter;
-pub mod where_evaluator;
 
 // Filesystem
 pub mod file_walker;

@@ -1,7 +1,6 @@
 use crate::buffer::{AppMode, BufferAPI, SortState};
 use crate::debug_info::DebugInfo;
 use crate::hybrid_parser::HybridParser;
-use crate::where_parser;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use ratatui::{
     layout::Rect,
@@ -46,7 +45,7 @@ impl DebugWidget {
         api_url: &str,
     ) {
         // Generate full debug info
-        let mut debug_info = DebugInfo::generate_full_debug_simple(
+        let debug_info = DebugInfo::generate_full_debug_simple(
             buffer,
             buffer_count,
             buffer_index,
@@ -58,17 +57,6 @@ impl DebugWidget {
             visual_cursor,
             api_url,
         );
-
-        // Add WHERE clause AST if query contains WHERE
-        if input_text.to_lowercase().contains(" where ") {
-            let where_ast_info = match Self::parse_where_clause_ast(input_text) {
-                Ok(ast_str) => ast_str,
-                Err(e) => format!(
-                    "\n========== WHERE CLAUSE AST ==========\nError parsing WHERE clause: {e}\n"
-                ),
-            };
-            debug_info.push_str(&where_ast_info);
-        }
 
         self.content = debug_info;
         self.scroll_offset = 0;
@@ -234,42 +222,6 @@ impl DebugWidget {
         self.content = content;
         self.scroll_offset = 0;
         self.update_max_scroll();
-    }
-
-    /// Parse WHERE clause and return AST representation
-    fn parse_where_clause_ast(query: &str) -> Result<String, String> {
-        // Find WHERE clause in the query
-        let lower_query = query.to_lowercase();
-        let where_pos = lower_query.find(" where ");
-
-        if let Some(pos) = where_pos {
-            let where_start = pos + 7; // Skip " where "
-            let where_clause = &query[where_start..];
-
-            // Find the end of WHERE clause (before ORDER BY, GROUP BY, LIMIT, etc.)
-            let end_keywords = ["order by", "group by", "limit", "offset", ";"];
-            let mut where_end = where_clause.len();
-
-            for keyword in &end_keywords {
-                if let Some(keyword_pos) = where_clause.to_lowercase().find(keyword) {
-                    where_end = where_end.min(keyword_pos);
-                }
-            }
-
-            let where_only = where_clause[..where_end].trim();
-
-            match where_parser::WhereParser::parse(where_only) {
-                Ok(ast) => {
-                    let mut result = String::from("\n========== WHERE CLAUSE AST ==========\n");
-                    result.push_str(&format!("Input: {where_only}\n"));
-                    result.push_str(&format!("Parsed AST:\n{ast:#?}\n"));
-                    Ok(result)
-                }
-                Err(e) => Err(format!("Failed to parse WHERE clause: {e}")),
-            }
-        } else {
-            Err("No WHERE clause found in query".to_string())
-        }
     }
 }
 
