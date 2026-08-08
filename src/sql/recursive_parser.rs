@@ -25,7 +25,7 @@ use super::parser::expressions::arithmetic::{
 };
 use super::parser::expressions::case::{parse_case_expression as parse_case_expr, ParseCase};
 use super::parser::expressions::comparison::{
-    parse_comparison as parse_comparison_expr, parse_in_operator, ParseComparison,
+    parse_comparison as parse_comparison_expr, ParseComparison,
 };
 use super::parser::expressions::logical::{
     parse_logical_and as parse_logical_and_expr, parse_logical_or as parse_logical_or_expr,
@@ -1702,11 +1702,9 @@ impl Parser {
         self.trace_enter("parse_expression");
         // Start with logical OR as the lowest precedence operator
         // The hierarchy is: OR -> AND -> comparison -> additive -> multiplicative -> primary
-        let mut left = self.parse_logical_or()?;
-
-        // Handle IN operator (not preceded by NOT)
-        // This uses the modular comparison module
-        left = parse_in_operator(self, left)?;
+        // IN is handled down in parse_comparison, alongside NOT IN — applying it
+        // here (outside the OR/AND hierarchy) was P29/P30.
+        let left = self.parse_logical_or()?;
 
         let result = Ok(left);
         self.trace_exit("parse_expression", &result);

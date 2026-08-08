@@ -85,6 +85,19 @@ where
         }
     }
 
+    // Handle IN operator (P29/P30).
+    //
+    // IN binds at the comparison level, exactly like the NOT IN form above.
+    // It used to be applied at the top of `parse_expression`, *outside* the
+    // OR/AND hierarchy, which mis-parsed both operand orders:
+    //   `a = 1 AND b IN (..)` became InList{ expr: (a = 1 AND b), .. } -> 0 rows
+    //   `b IN (..) AND a = 1` left `AND a = 1` unconsumed -> parse error
+    if matches!(parser.current_token(), Token::In) {
+        let result = parse_in_operator(parser, left);
+        trace_parse_exit("parse_comparison", &result);
+        return result;
+    }
+
     // Handle IS NULL / IS NOT NULL
     if matches!(parser.current_token(), Token::Is) {
         parser.advance(); // consume IS

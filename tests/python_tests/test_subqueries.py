@@ -7,8 +7,6 @@ import sys
 import tempfile
 import csv
 
-import pytest
-
 # Add parent directory to path to import test utilities
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -83,28 +81,43 @@ class TestInSubqueries:
         assert len(results) == 1, "Expected one result"
         assert results[0]['noble_gases'] == '7', "Should have 7 noble gases"
     
-    @pytest.mark.skip(
-        reason="P29: a boolean operator after IN (...) is not parsed. This test "
-        "passed for years while the AND clause was SILENTLY DISCARDED - it "
-        "asserted only that the count was >= 0, which held either way. P13 "
-        "stage 1 turned the silent drop into a parse error, which is what "
-        "surfaced it. Re-enable when P29 is fixed; see docs/SQL_PARITY.md."
-    )
     def test_in_subquery_with_filter(self):
-        """Test IN subquery with additional WHERE conditions."""
+        """Test IN subquery with additional WHERE conditions.
+
+        Re-enabled 2026-08-08 with the P29/P30 fix. This test passed for years
+        while the AND clause was SILENTLY DISCARDED, because it asserted only
+        that the count was >= 0 — true whether or not the filter applied. The
+        exact count below (verified against DuckDB) is what makes it a test.
+        """
         query = """
-        SELECT COUNT(*) as modern_radioactive 
-        FROM periodic_table 
+        SELECT COUNT(*) as modern_radioactive
+        FROM periodic_table
         WHERE Element IN (
             SELECT Element FROM periodic_table WHERE Year > 2000
         ) AND Radioactive = 'yes'
         """
         stdout, stderr, code = run_query(query)
         assert code == 0, f"Query failed: {stderr}"
-        
+
         results = parse_csv_output(stdout)
         assert len(results) == 1, "Expected one result"
-        assert int(results[0]['modern_radioactive']) >= 0, "Should have a valid count"
+        assert int(results[0]['modern_radioactive']) == 4, "Expected 4 (DuckDB agrees)"
+
+        # Every post-2000 element happens to be radioactive, so the count above
+        # is 4 with or without the AND — it cannot detect a dropped conjunct on
+        # its own. Flipping the value to 'no' must yield nothing. Selecting rows
+        # rather than COUNT(*) deliberately: an ungrouped aggregate over an empty
+        # set returns no row at all for us, which is P14 and a separate matter.
+        stdout, stderr, code = run_query("""
+        SELECT Element
+        FROM periodic_table
+        WHERE Element IN (
+            SELECT Element FROM periodic_table WHERE Year > 2000
+        ) AND Radioactive = 'no'
+        """)
+        assert code == 0, f"Query failed: {stderr}"
+        assert parse_csv_output(stdout) == [], \
+            "Rows here mean the AND was dropped and only the IN subquery applied"
     
     def test_in_subquery_multiple_values(self):
         """Test IN subquery that returns multiple values."""
@@ -191,14 +204,13 @@ class TestComplexSubqueries:
             periods = [r['Period'] for r in results]
             assert len(periods) == len(set(periods)), "Each period should appear once"
     
-    @pytest.mark.skip(
-        reason="P29: a boolean operator after IN (...) is not parsed. The AND "
-        "joining the two IN conditions was silently discarded, so this only "
-        "ever tested the first one. Re-enable when P29 is fixed; see "
-        "docs/SQL_PARITY.md."
-    )
     def test_nested_in_conditions(self):
-        """Test multiple IN/NOT IN conditions."""
+        """Test multiple IN/NOT IN conditions.
+
+        Re-enabled 2026-08-08 with the P29/P30 fix. The AND joining the two
+        subquery conditions was silently discarded, so this only ever tested the
+        first one — and `count > 0` held either way.
+        """
         query = """
         SELECT COUNT(*) as filtered
         FROM periodic_table
@@ -207,11 +219,13 @@ class TestComplexSubqueries:
         """
         stdout, stderr, code = run_query(query)
         assert code == 0, f"Query failed: {stderr}"
-        
+
         results = parse_csv_output(stdout)
         assert len(results) == 1, "Expected one result"
-        count = int(results[0]['filtered'])
-        assert count > 0, "Should have stable metals"
+        # 59 stable metals, verified against DuckDB. The first condition alone
+        # gives 92, so this number does detect a dropped conjunct.
+        assert int(results[0]['filtered']) == 59, \
+            "92 here means the NOT IN was dropped and only the metals filter applied"
 
 def run_tests():
     """Run all subquery tests."""
