@@ -1,36 +1,23 @@
-# SQL CLI v1.82.3
+# SQL CLI v1.82.4
 
-**Release Date:** August 08, 2026
+**Release Date:** August 16, 2026
 
 ## 📊 Release Overview
-- **Commits in this release:** 6
-- **Files updated:** 19
+- **Commits in this release:** 2
+- **Files updated:** 8
 
 ## ✨ Highlights
 
-### 🔍 Enhanced Debugging
-- **Better Diagnostics**: Improved error messages and state dumps
-
 ## 📝 Changes by Category
 
-### 🚀 New Features
-- add annotated US national debt dataset and example
-
 ### 🐛 Bug Fixes
-- bind IN at the comparison level (P29, P30)
-
-### 🔧 Refactoring
-- delete the zero-caller legacy WHERE code (R8 stage 1)
+- materialize the view, not its source table (P28, P31)
 
 <details>
 <summary>📋 View all commits</summary>
 
-- Merge pull request #47 from TimelordUK/refactor/r-drop-legacy-where-2a (TimelordUK)
-- refactor(where): delete the zero-caller legacy WHERE code (R8 stage 1) (TimelordUK)
-- Merge pull request #46 from TimelordUK/fix/p29-p30-in-precedence (TimelordUK)
-- fix(parser): bind IN at the comparison level (P29, P30) (TimelordUK)
-- Merge pull request #45 from TimelordUK/feat/national-debt-annotated-dataset (TimelordUK)
-- feat(data): add annotated US national debt dataset and example (TimelordUK)
+- Merge pull request #48 from TimelordUK/fix/p28-p31-view-materialization (TimelordUK)
+- fix(engine): materialize the view, not its source table (P28, P31) (TimelordUK)
 
 </details>
 
