@@ -290,6 +290,34 @@ feature work**, and so we can tell the difference between "this is awkward" and
 - **Decision:** Delete, don't migrate. Related to [R5](#r5) but logged separately
   because it is a coherent subsystem rather than scattered dead files.
 
+### R9 — Turning a `DataView` back into a `DataTable` was open-coded per caller
+- **Status:** 🟢 DONE (2026-08-16), alongside parity P28/P31
+- **Where:** `query_engine::materialize_view`, `non_interactive::limit_results`,
+  the `INTO` branch in `non_interactive::execute_script`
+- **Observed:** A `DataView` holds three pieces of state the source table does
+  not — the row filter, the column projection, and the LIMIT/OFFSET window — and
+  four places needed to collapse one back into a table. There was one correct
+  helper and **two hand-rolled copies that each dropped a different part of it**:
+  the `INTO` branch took `source_arc()` (dropping all three), `limit_results`
+  copied source *columns* with projected *row values* (dropping the projection,
+  and then silently discarding every mismatched row because `add_row`'s `Result`
+  went to `let _ =`). The one correct helper still missed LIMIT, because the
+  accessor it used, `visible_row_indices()`, is documented as the *pre*-limit set
+  — a name that reads like the answer and isn't.
+- **Impact:** Two live silent wrong answers ([P28](SQL_PARITY.md#p28),
+  [P31](SQL_PARITY.md#p31)) from one shape. Neither was a hard error: both
+  returned a well-formed result of the wrong size.
+- **Done:** `DataView` gained `windowed_row_indices()` (the post-limit set that
+  `row_count()` actually counts) and `with_max_rows()` (tighten the window,
+  keeping the tighter of two limits and preserving the offset).
+  `materialize_view` is now the only implementation, and all callers go through
+  it. The pre-limit accessor stays for callers that mean it, with its trap named
+  in the doc comment.
+- **Worth generalising:** an accessor whose name states the common case and whose
+  doc states the exception will be misused. `visible_row_indices()` was the
+  obvious-looking call at all four sites and the wrong one at three of them —
+  the same failure mode as [R3](#r3)'s catch-all arms, one layer down.
+
 ---
 
 ## Sequencing
@@ -338,3 +366,4 @@ AGREE count — which makes it safe to land well before the semantics change.
 | 2026-07-25 | R2: `where_alias_expander` migrated — closes P11; the four subquery-LHS variants came for free | — |
 | 2026-08-02 | Corpus tiers 08 (ordering), 09 (window/QUALIFY), 10 (aggregate/NULL) added; P13–P15 filed. 83 → 96 cases | — |
 | 2026-08-08 | R8 filed and stage 1 done: 830 lines of zero-caller legacy WHERE deleted (`where_clause_converter`, `where_evaluator`, `simple_where`) plus `DebugWidget`'s dead WHERE-AST code. No behaviour change | #47 |
+| 2026-08-16 | R9 filed and done: view→table materialization consolidated on `materialize_view`; `DataView` gains `windowed_row_indices`/`with_max_rows`. Closes parity P28 and P31 | — |
