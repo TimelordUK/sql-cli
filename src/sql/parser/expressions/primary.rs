@@ -403,7 +403,26 @@ where
     result
 }
 
-/// Parse DateTime constructor
+/// Parse `DATETIME(...)`.
+///
+/// `DATETIME` is lexed as a keyword rather than an identifier, because
+/// `CAST(x AS DATETIME)` needs that type spelling reserved. The cost is that it
+/// never reaches the generic function-call arm of `parse_primary`, so it used to
+/// be assembled here out of `NumberLiteral` tokens straight into a
+/// `DateTimeConstructor` node. That made the components *parse-time constants*:
+/// `DATETIME(2024, 1, 15)` worked, but `DATETIME(Year, Month, Day)` failed with
+/// "Expected year in DateTime constructor" before evaluation ever began, and no
+/// amount of casting helped.
+///
+/// The registry already carries a `DATETIME` function taking runtime values
+/// (`functions::date_time::DateTimeConstructor`, 3-7 args, NULL-propagating), so
+/// the fix is simply to stop intercepting: parse an ordinary argument list and
+/// let the registry evaluate it. Both paths format as `%Y-%m-%d %H:%M:%S%.3f`,
+/// so literal calls are unaffected.
+///
+/// The no-argument `DATETIME()` (today at midnight) keeps its own node — the
+/// registry signature requires at least three arguments, so there is nothing to
+/// delegate to.
 fn parse_datetime_constructor<P>(parser: &mut P) -> Result<SqlExpression, String>
 where
     P: ParsePrimary + ExpressionParser + ?Sized,
@@ -411,7 +430,7 @@ where
     ExpressionParser::advance(parser); // consume DateTime
     ExpressionParser::consume(parser, Token::LeftParen)?;
 
-    // Check if empty parentheses for DateTime() - today's date
+    // DATETIME() with no arguments is today's date
     if matches!(ExpressionParser::current_token(parser), Token::RightParen) {
         ExpressionParser::advance(parser); // consume )
         debug!("DateTime() - today's date");
@@ -422,78 +441,18 @@ where
         });
     }
 
-    // Parse year
-    let year = if let Token::NumberLiteral(n) = ExpressionParser::current_token(parser) {
-        n.parse::<i32>().map_err(|_| "Invalid year")?
-    } else {
-        return Err("Expected year in DateTime constructor".to_string());
-    };
-    ExpressionParser::advance(parser);
-    ExpressionParser::consume(parser, Token::Comma)?;
-
-    // Parse month
-    let month = if let Token::NumberLiteral(n) = ExpressionParser::current_token(parser) {
-        n.parse::<u32>().map_err(|_| "Invalid month")?
-    } else {
-        return Err("Expected month in DateTime constructor".to_string());
-    };
-    ExpressionParser::advance(parser);
-    ExpressionParser::consume(parser, Token::Comma)?;
-
-    // Parse day
-    let day = if let Token::NumberLiteral(n) = ExpressionParser::current_token(parser) {
-        n.parse::<u32>().map_err(|_| "Invalid day")?
-    } else {
-        return Err("Expected day in DateTime constructor".to_string());
-    };
-    ExpressionParser::advance(parser);
-
-    // Check for optional time components
-    let mut hour = None;
-    let mut minute = None;
-    let mut second = None;
-
-    if matches!(ExpressionParser::current_token(parser), Token::Comma) {
-        ExpressionParser::advance(parser); // consume comma
-
-        // Parse hour
-        if let Token::NumberLiteral(n) = ExpressionParser::current_token(parser) {
-            hour = Some(n.parse::<u32>().map_err(|_| "Invalid hour")?);
-            ExpressionParser::advance(parser);
-
-            // Check for minute
-            if matches!(ExpressionParser::current_token(parser), Token::Comma) {
-                ExpressionParser::advance(parser); // consume comma
-
-                if let Token::NumberLiteral(n) = ExpressionParser::current_token(parser) {
-                    minute = Some(n.parse::<u32>().map_err(|_| "Invalid minute")?);
-                    ExpressionParser::advance(parser);
-
-                    // Check for second
-                    if matches!(ExpressionParser::current_token(parser), Token::Comma) {
-                        ExpressionParser::advance(parser); // consume comma
-
-                        if let Token::NumberLiteral(n) = ExpressionParser::current_token(parser) {
-                            second = Some(n.parse::<u32>().map_err(|_| "Invalid second")?);
-                            ExpressionParser::advance(parser);
-                        }
-                    }
-                }
-            }
-        }
-    }
-
+    let (args, _distinct) = parser.parse_function_args()?;
     ExpressionParser::consume(parser, Token::RightParen)?;
 
-    debug!(year = year, month = month, day = day, hour = ?hour, minute = ?minute, second = ?second, "DateTime constructor parsed");
+    debug!(
+        arg_count = args.len(),
+        "DATETIME parsed as registry function call"
+    );
 
-    Ok(SqlExpression::DateTimeConstructor {
-        year,
-        month,
-        day,
-        hour,
-        minute,
-        second,
+    Ok(SqlExpression::FunctionCall {
+        name: "DATETIME".to_string(),
+        args,
+        distinct: false,
     })
 }
 

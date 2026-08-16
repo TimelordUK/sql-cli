@@ -450,6 +450,127 @@
   ],
   [
     {
+      "BirthDate": "1908-08-27 00:00:00.000",
+      "BornOn": "Thursday",
+      "LeapYear": true,
+      "Name": "Lyndon B. Johnson",
+      "Qtr": 3
+    },
+    {
+      "BirthDate": "1911-02-06 00:00:00.000",
+      "BornOn": "Monday",
+      "LeapYear": false,
+      "Name": "Ronald Reagan",
+      "Qtr": 1
+    },
+    {
+      "BirthDate": "1913-01-09 00:00:00.000",
+      "BornOn": "Thursday",
+      "LeapYear": false,
+      "Name": "Richard M. Nixon",
+      "Qtr": 1
+    },
+    {
+      "BirthDate": "1913-07-14 00:00:00.000",
+      "BornOn": "Monday",
+      "LeapYear": false,
+      "Name": "Gerald R. Ford",
+      "Qtr": 3
+    },
+    {
+      "BirthDate": "1917-05-29 00:00:00.000",
+      "BornOn": "Tuesday",
+      "LeapYear": false,
+      "Name": "John Kennedy",
+      "Qtr": 2
+    },
+    {
+      "BirthDate": "1924-06-12 00:00:00.000",
+      "BornOn": "Thursday",
+      "LeapYear": true,
+      "Name": "George H. W. Bush",
+      "Qtr": 2
+    },
+    {
+      "BirthDate": "1924-10-01 00:00:00.000",
+      "BornOn": "Wednesday",
+      "LeapYear": true,
+      "Name": "Jimmy Carter",
+      "Qtr": 4
+    },
+    {
+      "BirthDate": "1946-06-06 00:00:00.000",
+      "BornOn": "Thursday",
+      "LeapYear": false,
+      "Name": "George W. Bush",
+      "Qtr": 2
+    },
+    {
+      "BirthDate": "1946-06-14 00:00:00.000",
+      "BornOn": "Friday",
+      "LeapYear": false,
+      "Name": "Donald Trump",
+      "Qtr": 2
+    },
+    {
+      "BirthDate": "1946-08-19 00:00:00.000",
+      "BornOn": "Monday",
+      "LeapYear": false,
+      "Name": "William J. Clinton",
+      "Qtr": 3
+    },
+    {
+      "BirthDate": "1961-08-04 00:00:00.000",
+      "BornOn": "Friday",
+      "LeapYear": false,
+      "Name": "Barack Hussein Obama",
+      "Qtr": 3
+    }
+  ],
+  [
+    {
+      "BirthDate": "1856-12-28 00:00:00.000",
+      "Height": 71,
+      "Name": "Woodrow Wilson"
+    },
+    {
+      "BirthDate": "1858-10-27 00:00:00.000",
+      "Height": 70,
+      "Name": "Theodore Roosevelt"
+    },
+    {
+      "BirthDate": "1872-07-04 00:00:00.000",
+      "Height": 70,
+      "Name": "Calvin Coolidge"
+    },
+    {
+      "BirthDate": "1874-08-10 00:00:00.000",
+      "Height": 71,
+      "Name": "Herbert Hoover"
+    },
+    {
+      "BirthDate": "1911-02-06 00:00:00.000",
+      "Height": 74,
+      "Name": "Ronald Reagan"
+    },
+    {
+      "BirthDate": "1917-05-29 00:00:00.000",
+      "Height": 72,
+      "Name": "John Kennedy"
+    },
+    {
+      "BirthDate": "1924-10-01 00:00:00.000",
+      "Height": 69,
+      "Name": "Jimmy Carter"
+    },
+    {
+      "BirthDate": "1946-06-14 00:00:00.000",
+      "Height": 75,
+      "Name": "Donald Trump"
+    }
+  ],
+  [
+    {
       "AvgHeight": 74.25,
       "Greatness": 5,
       "Presidents": 4
