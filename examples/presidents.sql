@@ -111,6 +111,38 @@ WHERE r.Greatness.Trim() <> 'NA'
 ORDER BY r.Greatness DESC, b.Name;
 GO
 
+-- === Building a real date out of three columns ===
+-- The file stores the birthday split across Day/Month/Year. DATETIME() takes
+-- expressions, so those columns compose into an actual date rather than a
+-- string, and the rest of the date functions work on the result.
+WITH
+    birthdays AS (SELECT Name, Year, Month, Day FROM read_csv('data/president_birthdays.csv'))
+SELECT
+    Name,
+    DATETIME(Year, Month, Day) AS BirthDate,
+    DAYNAME(DATETIME(Year, Month, Day)) AS BornOn,
+    QUARTER(DATETIME(Year, Month, Day)) AS Qtr,
+    ISLEAPYEAR(Year) AS LeapYear
+FROM birthdays
+WHERE Year > 1900
+ORDER BY DATETIME(Year, Month, Day);
+GO
+
+-- === Dates compare as dates ===
+-- Not as strings: the comparison below is against a constructed date literal.
+WITH
+    birthdays AS (SELECT Name, Year, Month, Day FROM read_csv('data/president_birthdays.csv')),
+    heights   AS (SELECT Name, "Height (inches)" AS Height FROM read_csv('data/president_heights.csv'))
+SELECT
+    b.Name,
+    DATETIME(b.Year, b.Month, b.Day) AS BirthDate,
+    h.Height
+FROM birthdays b
+JOIN heights h ON b.Name = h.Name
+WHERE DATETIME(b.Year, b.Month, b.Day) > DATETIME(1850, 1, 1)
+ORDER BY BirthDate;
+GO
+
 -- === Does height predict greatness? ===
 -- Average height per greatness score, over the presidents who carry both.
 WITH
