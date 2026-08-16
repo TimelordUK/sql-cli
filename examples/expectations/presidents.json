@@ -1,0 +1,483 @@
+[
+  [
+    {
+      "Height": 75,
+      "Name": "Donald Trump",
+      "State": "New York",
+      "Year": 1946
+    },
+    {
+      "Height": 75,
+      "Name": "Thomas Jefferson",
+      "State": "Virginia",
+      "Year": 1743
+    },
+    {
+      "Height": 74,
+      "Name": "Abraham Lincoln",
+      "State": "Kentucky",
+      "Year": 1809
+    },
+    {
+      "Height": 74,
+      "Name": "George Washington",
+      "State": "Virginia",
+      "Year": 1732
+    },
+    {
+      "Height": 74,
+      "Name": "Ronald Reagan",
+      "State": "Illinois",
+      "Year": 1911
+    },
+    {
+      "Height": 73,
+      "Name": "Andrew Jackson",
+      "State": "South Carolina",
+      "Year": 1767
+    },
+    {
+      "Height": 72,
+      "Name": "James Buchanan",
+      "State": "Pennsylvania",
+      "Year": 1791
+    },
+    {
+      "Height": 72,
+      "Name": "James Monroe",
+      "State": "Virginia",
+      "Year": 1758
+    },
+    {
+      "Height": 72,
+      "Name": "John Kennedy",
+      "State": "Massachusetts",
+      "Year": 1917
+    },
+    {
+      "Height": 72,
+      "Name": "John Tyler",
+      "State": "Virginia",
+      "Year": 1790
+    }
+  ],
+  [
+    {
+      "Idx": 35,
+      "Name": "John Kennedy",
+      "TermBegin": "20 January 1961",
+      "TermEnd": "22 November 1963",
+      "Year": 1917
+    },
+    {
+      "Idx": 36,
+      "Name": "Lyndon B. Johnson",
+      "TermBegin": "22 November 1963",
+      "TermEnd": "20 January 1969",
+      "Year": 1908
+    },
+    {
+      "Idx": 37,
+      "Name": "Richard M. Nixon",
+      "TermBegin": "20 January 1969",
+      "TermEnd": "9 August 1974",
+      "Year": 1913
+    },
+    {
+      "Idx": 38,
+      "Name": "Gerald R. Ford",
+      "TermBegin": "9 August 1974",
+      "TermEnd": "20 January 1977",
+      "Year": 1913
+    },
+    {
+      "Idx": 39,
+      "Name": "Jimmy Carter",
+      "TermBegin": "20 January 1977",
+      "TermEnd": "20 January 1981",
+      "Year": 1924
+    },
+    {
+      "Idx": 40,
+      "Name": "Ronald Reagan",
+      "TermBegin": "20 January 1981",
+      "TermEnd": "20 January 1989",
+      "Year": 1911
+    },
+    {
+      "Idx": 41,
+      "Name": "George H. W. Bush",
+      "TermBegin": "20 January 1989",
+      "TermEnd": "20 January 1993",
+      "Year": 1924
+    },
+    {
+      "Idx": 42,
+      "Name": "William J. Clinton",
+      "TermBegin": "20 January 1993",
+      "TermEnd": "20 January 2001",
+      "Year": 1946
+    },
+    {
+      "Idx": 43,
+      "Name": "George W. Bush",
+      "TermBegin": "20 January 2001",
+      "TermEnd": "20 January 2009",
+      "Year": 1946
+    },
+    {
+      "Idx": 44,
+      "Name": "Barack Hussein Obama",
+      "TermBegin": "20 January 2009",
+      "TermEnd": "20 January 2017",
+      "Year": 1961
+    },
+    {
+      "Idx": 45,
+      "Name": "Donald Trump",
+      "TermBegin": "20 January 2017",
+      "TermEnd": "20 January 2021",
+      "Year": 1946
+    }
+  ],
+  [
+    {
+      "MissingFromHeights": "Barack Hussein Obama"
+    },
+    {
+      "MissingFromHeights": "Chester A. Arthur"
+    },
+    {
+      "MissingFromHeights": "Dwight D. Eisenhower"
+    },
+    {
+      "MissingFromHeights": "Franklin D. Roosevelt"
+    },
+    {
+      "MissingFromHeights": "George H. W. Bush"
+    },
+    {
+      "MissingFromHeights": "George W. Bush"
+    },
+    {
+      "MissingFromHeights": "Gerald R. Ford"
+    },
+    {
+      "MissingFromHeights": "Grover Cleveland"
+    },
+    {
+      "MissingFromHeights": "Grover Cleveland"
+    },
+    {
+      "MissingFromHeights": "Harry S Truman"
+    },
+    {
+      "MissingFromHeights": "James A. Garfield"
+    },
+    {
+      "MissingFromHeights": "James K. Polk"
+    },
+    {
+      "MissingFromHeights": "Lyndon B. Johnson"
+    },
+    {
+      "MissingFromHeights": "Martin Van Buren"
+    },
+    {
+      "MissingFromHeights": "Richard M. Nixon"
+    },
+    {
+      "MissingFromHeights": "Rutherford B. Hayes"
+    },
+    {
+      "MissingFromHeights": "Ulysses S. Grant"
+    },
+    {
+      "MissingFromHeights": "Warren G. Harding"
+    },
+    {
+      "MissingFromHeights": "William Henry Harrison"
+    },
+    {
+      "MissingFromHeights": "William Howard Taft"
+    },
+    {
+      "MissingFromHeights": "William J. Clinton"
+    }
+  ],
+  [
+    {
+      "AvgHeight": 70.85714285714286,
+      "Presidents": 7,
+      "State": "Virginia",
+      "TallestHeight": 75
+    },
+    {
+      "AvgHeight": 68.66666666666667,
+      "Presidents": 3,
+      "State": "Massachusetts",
+      "TallestHeight": 72
+    },
+    {
+      "AvgHeight": 71.33333333333333,
+      "Presidents": 3,
+      "State": "New York",
+      "TallestHeight": 75
+    },
+    {
+      "AvgHeight": 66.5,
+      "Presidents": 2,
+      "State": "Ohio",
+      "TallestHeight": 67
+    },
+    {
+      "AvgHeight": 69.0,
+      "Presidents": 1,
+      "State": "Georgia",
+      "TallestHeight": 69
+    },
+    {
+      "AvgHeight": 74.0,
+      "Presidents": 1,
+      "State": "Illinois",
+      "TallestHeight": 74
+    },
+    {
+      "AvgHeight": 71.0,
+      "Presidents": 1,
+      "State": "Iowa",
+      "TallestHeight": 71
+    },
+    {
+      "AvgHeight": 74.0,
+      "Presidents": 1,
+      "State": "Kentucky",
+      "TallestHeight": 74
+    },
+    {
+      "AvgHeight": 70.0,
+      "Presidents": 1,
+      "State": "New Hampshire",
+      "TallestHeight": 70
+    },
+    {
+      "AvgHeight": 70.0,
+      "Presidents": 1,
+      "State": "North Carolina",
+      "TallestHeight": 70
+    },
+    {
+      "AvgHeight": 72.0,
+      "Presidents": 1,
+      "State": "Pennsylvania",
+      "TallestHeight": 72
+    },
+    {
+      "AvgHeight": 73.0,
+      "Presidents": 1,
+      "State": "South Carolina",
+      "TallestHeight": 73
+    },
+    {
+      "AvgHeight": 70.0,
+      "Presidents": 1,
+      "State": "Vermont",
+      "TallestHeight": 70
+    }
+  ],
+  [
+    {
+      "Greatness": 5,
+      "Height": 74,
+      "Name": "Abraham Lincoln",
+      "State": "Kentucky",
+      "Year": 1809
+    },
+    {
+      "Greatness": 5,
+      "Height": 74,
+      "Name": "George Washington",
+      "State": "Virginia",
+      "Year": 1732
+    },
+    {
+      "Greatness": 5,
+      "Height": 75,
+      "Name": "Thomas Jefferson",
+      "State": "Virginia",
+      "Year": 1743
+    },
+    {
+      "Greatness": 4,
+      "Height": 73,
+      "Name": "Andrew Jackson",
+      "State": "South Carolina",
+      "Year": 1767
+    },
+    {
+      "Greatness": 4,
+      "Height": 70,
+      "Name": "Theodore Roosevelt",
+      "State": "New York",
+      "Year": 1858
+    },
+    {
+      "Greatness": 4,
+      "Height": 71,
+      "Name": "Woodrow Wilson",
+      "State": "Virginia",
+      "Year": 1856
+    },
+    {
+      "Greatness": 3,
+      "Height": 64,
+      "Name": "James Madison",
+      "State": "Virginia",
+      "Year": 1751
+    },
+    {
+      "Greatness": 3,
+      "Height": 72,
+      "Name": "James Monroe",
+      "State": "Virginia",
+      "Year": 1758
+    },
+    {
+      "Greatness": 3,
+      "Height": 67,
+      "Name": "John Adams",
+      "State": "Massachusetts",
+      "Year": 1735
+    },
+    {
+      "Greatness": 3,
+      "Height": 72,
+      "Name": "John Kennedy",
+      "State": "Massachusetts",
+      "Year": 1917
+    },
+    {
+      "Greatness": 3,
+      "Height": 67,
+      "Name": "John Quincy Adams",
+      "State": "Massachusetts",
+      "Year": 1767
+    },
+    {
+      "Greatness": 2,
+      "Height": 66,
+      "Name": "Benjamin Harrison",
+      "State": "Ohio",
+      "Year": 1833
+    },
+    {
+      "Greatness": 2,
+      "Height": 71,
+      "Name": "Herbert Hoover",
+      "State": "Iowa",
+      "Year": 1874
+    },
+    {
+      "Greatness": 2,
+      "Height": 69,
+      "Name": "Jimmy Carter",
+      "State": "Georgia",
+      "Year": 1924
+    },
+    {
+      "Greatness": 2,
+      "Height": 67,
+      "Name": "William McKinley",
+      "State": "Ohio",
+      "Year": 1843
+    },
+    {
+      "Greatness": 1,
+      "Height": 70,
+      "Name": "Calvin Coolidge",
+      "State": "Vermont",
+      "Year": 1872
+    },
+    {
+      "Greatness": 1,
+      "Height": 70,
+      "Name": "Franklin Pierce",
+      "State": "New Hampshire",
+      "Year": 1804
+    },
+    {
+      "Greatness": 1,
+      "Height": 72,
+      "Name": "John Tyler",
+      "State": "Virginia",
+      "Year": 1790
+    },
+    {
+      "Greatness": 1,
+      "Height": 69,
+      "Name": "Millard Fillmore",
+      "State": "New York",
+      "Year": 1800
+    },
+    {
+      "Greatness": 1,
+      "Height": 74,
+      "Name": "Ronald Reagan",
+      "State": "Illinois",
+      "Year": 1911
+    },
+    {
+      "Greatness": 1,
+      "Height": 68,
+      "Name": "Zachary Taylor",
+      "State": "Virginia",
+      "Year": 1784
+    },
+    {
+      "Greatness": 0,
+      "Height": 70,
+      "Name": "Andrew Johnson",
+      "State": "North Carolina",
+      "Year": 1808
+    },
+    {
+      "Greatness": 0,
+      "Height": 72,
+      "Name": "James Buchanan",
+      "State": "Pennsylvania",
+      "Year": 1791
+    }
+  ],
+  [
+    {
+      "AvgHeight": 74.25,
+      "Greatness": 5,
+      "Presidents": 4
+    },
+    {
+      "AvgHeight": 70.75,
+      "Greatness": 4,
+      "Presidents": 4
+    },
+    {
+      "AvgHeight": 69.7,
+      "Greatness": 3,
+      "Presidents": 10
+    },
+    {
+      "AvgHeight": 69.44444444444444,
+      "Greatness": 2,
+      "Presidents": 9
+    },
+    {
+      "AvgHeight": 70.5,
+      "Greatness": 1,
+      "Presidents": 6
+    },
+    {
+      "AvgHeight": 70.8,
+      "Greatness": 0,
+      "Presidents": 5
+    }
+  ]
+]

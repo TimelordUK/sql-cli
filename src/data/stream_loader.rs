@@ -4,6 +4,7 @@
 use anyhow::{Context, Result};
 use csv::ReaderBuilder;
 use serde_json::Value as JsonValue;
+use std::borrow::Cow;
 use std::collections::{HashMap, HashSet};
 use std::io::{BufRead, BufReader, Read};
 use tracing::{debug, info};
@@ -81,6 +82,120 @@ pub fn parse_delimiter_arg(s: &str) -> anyhow::Result<u8> {
 ///   3. comma
 pub fn resolve_delimiter(path: &str, explicit: Option<u8>) -> u8 {
     explicit.unwrap_or_else(|| detect_delimiter_from_path(path))
+}
+
+/// Delete the whitespace padding that "pretty printed" CSVs put around *quoted*
+/// fields, so the parser can see they were quoted at all.
+///
+/// RFC 4180 only recognises a quote that is the *first* byte of a field, so a
+/// human-aligned file like
+///
+/// ```text
+/// "Index", "Name", "Day"
+///  1, "George Washington",  22
+/// ```
+///
+/// parses the second column's header as the literal text ` "Name"` — padding,
+/// quotes and all — which is why `SELECT Name` then fails with "column not
+/// found". Worse, a comma *inside* a padded field splits it in two, because the
+/// parser never saw the field as quoted.
+///
+/// Nobody writing a file like that intends the quotes to end up in their column
+/// names, so we delete the run of spaces/tabs in front of an opening quote (and
+/// the mirror run after the closing quote). That turns the field back into a
+/// properly quoted one and the parser handles it from there — embedded
+/// delimiters included.
+///
+/// Deliberately narrow: **unquoted fields are left exactly as they are.** In a
+/// file written by a machine, ` 22` and `22` mean the same thing, but there is
+/// no way to tell that apart from a value whose spaces are real — an unquoted
+/// `  David  ` is the only way some producers can express a padded string, and
+/// `data/test_simple_strings.csv` relies on it surviving the load. Whitespace
+/// next to a quote carries no such ambiguity: the quotes already delimit the
+/// value, so anything outside them is alignment. Numeric-looking unquoted fields
+/// get their padding handled at type-inference time instead, where trimming
+/// can't destroy a string.
+///
+/// Bytes inside a quoted field are copied verbatim, so `"  padded  "` keeps its
+/// spaces — if you quoted the whitespace, you meant it. The delimiter itself is
+/// never treated as padding, which keeps `.tsv` files intact.
+///
+/// Returns [`Cow::Borrowed`] when there was nothing to strip, so the common
+/// RFC-4180 case costs one scan and no allocation.
+pub fn strip_field_padding(input: &[u8], delimiter: u8) -> Cow<'_, [u8]> {
+    let is_pad = |b: u8| (b == b' ' || b == b'\t') && b != delimiter;
+    let ends_field =
+        |b: Option<u8>| matches!(b, None | Some(b'\n') | Some(b'\r')) || b == Some(delimiter);
+
+    let mut out: Option<Vec<u8>> = None;
+    let mut i = 0;
+    let mut at_field_start = true;
+    let mut in_quotes = false;
+    // Set when a quoted field has just closed, so the padding that follows it is
+    // known to be alignment rather than part of an unquoted value.
+    let mut after_quoted_field = false;
+
+    while i < input.len() {
+        let b = input[i];
+
+        if in_quotes {
+            // `""` is an escaped quote and stays inside the field.
+            if b == b'"' {
+                if input.get(i + 1) == Some(&b'"') {
+                    if let Some(o) = out.as_mut() {
+                        o.extend_from_slice(&input[i..i + 2]);
+                    }
+                    i += 2;
+                    continue;
+                }
+                in_quotes = false;
+                after_quoted_field = true;
+            }
+            if let Some(o) = out.as_mut() {
+                o.push(b);
+            }
+            i += 1;
+            continue;
+        }
+
+        if is_pad(b) {
+            let mut j = i;
+            while j < input.len() && is_pad(input[j]) {
+                j += 1;
+            }
+            let next = input.get(j).copied();
+            // Padding is only ours to remove when a quote sits on one side of it:
+            // before an opening quote, or after a closing one.
+            let before_open_quote = at_field_start && next == Some(b'"');
+            let after_close_quote = after_quoted_field && ends_field(next);
+            if before_open_quote || after_close_quote {
+                out.get_or_insert_with(|| input[..i].to_vec());
+                i = j;
+                continue;
+            }
+            // Anything else belongs to an unquoted value — leave it alone.
+            if let Some(o) = out.as_mut() {
+                o.extend_from_slice(&input[i..j]);
+            }
+            i = j;
+            at_field_start = false;
+            continue;
+        }
+
+        if b == b'"' && at_field_start {
+            in_quotes = true;
+        }
+        at_field_start = b == delimiter || b == b'\n' || b == b'\r';
+        if at_field_start {
+            after_quoted_field = false;
+        }
+        if let Some(o) = out.as_mut() {
+            o.push(b);
+        }
+        i += 1;
+    }
+
+    out.map_or(Cow::Borrowed(input), Cow::Owned)
 }
 
 /// Human-readable form of a delimiter byte for diagnostic metadata.
@@ -213,8 +328,12 @@ impl StreamCsvLoader {
         );
 
         // Read all data into memory
-        let mut buffer = Vec::new();
-        reader.read_to_end(&mut buffer)?;
+        let mut raw_buffer = Vec::new();
+        reader.read_to_end(&mut raw_buffer)?;
+
+        // Strip alignment padding up front so both passes below agree on where
+        // fields start and end (the NULL pass indexes into these same bytes).
+        let buffer = strip_field_padding(&raw_buffer, opts.delimiter);
 
         // First pass: Parse CSV with headers
         let mut csv_reader = ReaderBuilder::new()
@@ -651,6 +770,102 @@ fn is_null_field(raw_line: &str, field_index: usize, delimiter: char) -> bool {
 mod tests {
     use super::*;
     use std::io::Cursor;
+
+    // ---- strip_field_padding tests ----
+
+    fn stripped(input: &str, delimiter: u8) -> String {
+        String::from_utf8(strip_field_padding(input.as_bytes(), delimiter).into_owned()).unwrap()
+    }
+
+    #[test]
+    fn test_strip_padding_leaves_rfc4180_untouched() {
+        let input = "Index,Name,Day\n1,\"George Washington\",22\n";
+        // Nothing to strip => no allocation, bytes handed straight through.
+        assert!(matches!(
+            strip_field_padding(input.as_bytes(), b','),
+            Cow::Borrowed(_)
+        ));
+        assert_eq!(stripped(input, b','), input);
+    }
+
+    #[test]
+    fn test_strip_padding_unwraps_quotes_padded_after_delimiter() {
+        // The president_birthdays.csv shape: quotes preceded by a space are
+        // invisible to the parser until the padding is gone.
+        let input = "\"Index\", \"Name\", \"Day\"\n 1, \"George Washington\",\t22\n";
+        // Only the padding hugging a quote goes; ` 1` and `\t22` are unquoted and
+        // stay put (type inference sees through their padding instead).
+        assert_eq!(
+            stripped(input, b','),
+            "\"Index\",\"Name\",\"Day\"\n 1,\"George Washington\",\t22\n"
+        );
+    }
+
+    #[test]
+    fn test_strip_padding_preserves_whitespace_inside_quotes() {
+        // Quoted padding is data, not alignment.
+        let input = "a, \"  keep  \" ,b\n";
+        assert_eq!(stripped(input, b','), "a,\"  keep  \",b\n");
+    }
+
+    #[test]
+    fn test_strip_padding_leaves_unquoted_fields_alone() {
+        // `data/test_simple_strings.csv` stores `  David  ` unquoted and tests
+        // assert on those spaces, so an unquoted field is never touched here.
+        let input = "4,  David  ,x\n";
+        assert_eq!(stripped(input, b','), input);
+    }
+
+    #[test]
+    fn test_strip_padding_preserves_escaped_quotes() {
+        let input = " \"he said \"\"hi\"\"\" ,1\n";
+        assert_eq!(stripped(input, b','), "\"he said \"\"hi\"\"\",1\n");
+    }
+
+    #[test]
+    fn test_strip_padding_never_eats_a_tab_delimiter() {
+        // In a .tsv the tab is the delimiter, so only spaces can be padding.
+        let input = "a\t \"b\" \tc\n";
+        assert_eq!(stripped(input, b'\t'), "a\t\"b\"\tc\n");
+    }
+
+    #[test]
+    fn test_strip_padding_recovers_delimiter_inside_padded_quotes() {
+        // Padding hid the quoting, so this used to split into three fields.
+        let input = "1, \"Adams, John\", 2\n";
+        let out = stripped(input, b',');
+        assert_eq!(out, "1,\"Adams, John\", 2\n");
+
+        let mut rdr = ReaderBuilder::new()
+            .has_headers(false)
+            .from_reader(out.as_bytes());
+        let rec = rdr.records().next().unwrap().unwrap();
+        assert_eq!(rec.len(), 3);
+        assert_eq!(&rec[1], "Adams, John");
+    }
+
+    #[test]
+    fn test_strip_padding_handles_crlf_and_end_of_line_pad() {
+        let input = " \"a\" , \"b\" \r\n \"c\" , \"d\" \r\n";
+        assert_eq!(stripped(input, b','), "\"a\",\"b\"\r\n\"c\",\"d\"\r\n");
+    }
+
+    #[test]
+    fn test_padded_csv_loads_with_clean_headers_and_numeric_types() {
+        let csv = "\"Index\", \"Name\", \"Year\"\n 1, \"George Washington\", 1732\n 2, \"John Adams\", 1735\n";
+        let table = StreamCsvLoader::new()
+            .load_csv_from_reader(Cursor::new(csv), "pres", "test", "<test>")
+            .unwrap();
+
+        let names: Vec<&str> = table.columns.iter().map(|c| c.name.as_str()).collect();
+        assert_eq!(names, vec!["Index", "Name", "Year"]);
+        // Padding used to make every column a string; Year should now be numeric.
+        assert_eq!(table.columns[2].data_type, DataType::Integer);
+        assert_eq!(
+            table.rows[0].values[1],
+            DataValue::String("George Washington".to_string())
+        );
+    }
 
     // ---- navigate_json_path tests ----
 

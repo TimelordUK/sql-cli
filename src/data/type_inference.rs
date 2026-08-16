@@ -67,6 +67,12 @@ impl TypeInference {
             return InferredType::Null;
         }
 
+        // Column-aligned CSVs pad their fields (` 1732`, `\t22`), and a number or
+        // a boolean has no meaningful surrounding whitespace — so classify past
+        // the padding. Only the *classification* looks through it; a value that
+        // turns out to be a string still keeps its spaces verbatim.
+        let value = value.trim();
+
         // Check boolean first (fast string comparison)
         if value.eq_ignore_ascii_case("true") || value.eq_ignore_ascii_case("false") {
             return InferredType::Boolean;
