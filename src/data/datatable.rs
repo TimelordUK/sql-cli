@@ -308,25 +308,31 @@ impl DataValue {
             return DataValue::Null;
         }
 
+        // Numbers and booleans carry no meaningful surrounding whitespace, so a
+        // padded field from a column-aligned CSV (` 1732`) parses like the bare
+        // value. String columns below deliberately use `s`, not `t` — there the
+        // spaces may well be the data.
+        let t = s.trim();
+
         match data_type {
             DataType::String => DataValue::String(s.to_string()),
-            DataType::Integer => s.parse::<i64>().map_or_else(
+            DataType::Integer => t.parse::<i64>().map_or_else(
                 // The column was inferred as Integer (type inference only samples
                 // the first N rows, so a fractional value further down can be
                 // missed). Promote to Float rather than demoting to String, which
                 // would corrupt numeric sorting (String sorts after all numbers).
                 // The final infer_column_types() pass re-merges the column to Float.
                 |_| {
-                    s.parse::<f64>()
+                    t.parse::<f64>()
                         .map_or_else(|_| DataValue::String(s.to_string()), DataValue::Float)
                 },
                 DataValue::Integer,
             ),
-            DataType::Float => s
+            DataType::Float => t
                 .parse::<f64>()
                 .map_or_else(|_| DataValue::String(s.to_string()), DataValue::Float),
             DataType::Boolean => {
-                let lower = s.to_lowercase();
+                let lower = t.to_lowercase();
                 DataValue::Boolean(lower == "true" || lower == "1" || lower == "yes")
             }
             DataType::DateTime => DataValue::DateTime(s.to_string()),

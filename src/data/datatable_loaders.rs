@@ -1,4 +1,4 @@
-use crate::data::stream_loader::{detect_delimiter_from_path, CsvReadOptions};
+use crate::data::stream_loader::{detect_delimiter_from_path, strip_field_padding, CsvReadOptions};
 use crate::datatable::{DataColumn, DataRow, DataTable, DataType, DataValue};
 use anyhow::{Context, Result};
 use csv::ReaderBuilder;
@@ -86,13 +86,20 @@ pub fn load_csv_to_datatable_with_opts<P: AsRef<Path>>(
     table_name: &str,
     opts: &CsvReadOptions,
 ) -> Result<DataTable> {
-    let file = File::open(&path)
+    let mut file = File::open(&path)
         .with_context(|| format!("Failed to open CSV file: {:?}", path.as_ref()))?;
+    let mut raw_buffer = Vec::new();
+    file.read_to_end(&mut raw_buffer)
+        .with_context(|| format!("Failed to read CSV file: {:?}", path.as_ref()))?;
+
+    // Strip alignment padding up front so both passes below agree on where
+    // fields start and end (the NULL pass indexes into these same bytes).
+    let buffer = strip_field_padding(&raw_buffer, opts.delimiter);
 
     let mut reader = ReaderBuilder::new()
         .has_headers(opts.has_headers)
         .delimiter(opts.delimiter)
-        .from_reader(file);
+        .from_reader(&buffer[..]);
 
     // Get headers and create columns
     let headers = reader.headers()?.clone();
@@ -121,14 +128,8 @@ pub fn load_csv_to_datatable_with_opts<P: AsRef<Path>>(
         table.add_column(DataColumn::new(header));
     }
 
-    // Open a second file handle for raw line reading
-    let file2 = File::open(&path).with_context(|| {
-        format!(
-            "Failed to open CSV file for raw reading: {:?}",
-            path.as_ref()
-        )
-    })?;
-    let mut line_reader = BufReader::new(file2);
+    // Second view over the same (padding-stripped) bytes for raw line reading
+    let mut line_reader = BufReader::new(&buffer[..]);
     let mut raw_line = String::new();
     // Skip header line
     line_reader.read_line(&mut raw_line)?;
