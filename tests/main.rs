@@ -22,6 +22,9 @@ mod datetime_completion;
 #[path = "temp_table_qualified_join_tests.rs"]
 mod temp_table_qualified_join_tests;
 
+#[path = "view_materialization_tests.rs"]
+mod view_materialization_tests;
+
 #[path = "join_operand_order_tests.rs"]
 mod join_operand_order_tests;
 

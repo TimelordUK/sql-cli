@@ -1566,8 +1566,9 @@ impl QueryEngine {
             result_table.add_column(new_col);
         }
 
-        // Copy visible rows
-        for row_idx in view.visible_row_indices() {
+        // Copy visible rows, honouring the view's LIMIT/OFFSET window as well as
+        // its filter — `visible_row_indices()` is the *pre-limit* set (parity P28).
+        for row_idx in view.windowed_row_indices() {
             let source_row = &source.rows[*row_idx];
             let mut new_row = DataRow { values: Vec::new() };
 

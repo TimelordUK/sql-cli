@@ -1001,8 +1001,32 @@ pub fn execute_script(config: NonInteractiveConfig) -> Result<()> {
 
                 // Phase 1: Check if this is an INTO statement - store result in temp table
                 if let Some(into_table) = &into_table {
-                    // Get the source table from the DataView - this contains the query result
-                    let result_table = final_view.source_arc();
+                    // Materialize the *view*, not its backing table. The view carries the
+                    // WHERE filter and the SELECT projection; `source_arc()` handed back the
+                    // whole unfiltered, unprojected source table (parity P28).
+                    use crate::data::query_engine::QueryEngine;
+                    let engine = QueryEngine::with_case_insensitive(config.case_insensitive);
+                    let result_table = match engine.materialize_view(final_view.clone()) {
+                        Ok(table) => std::sync::Arc::new(table),
+                        Err(e) => {
+                            let msg = format!(
+                                "Query {} failed: could not materialize {}: {}",
+                                statement_num, into_table.name, e
+                            );
+                            if matches!(config.output_format, OutputFormat::Table) {
+                                output.push(msg.clone());
+                            } else {
+                                eprintln!("{}", msg);
+                            }
+                            script_result.add_failure(
+                                statement_num,
+                                statement.to_string(),
+                                msg,
+                                exec_time,
+                            );
+                            break;
+                        }
+                    };
                     let row_count = result_table.row_count();
 
                     // Phase 1: Use context.store_temp_table() instead of temp_tables.insert()
@@ -1213,22 +1237,16 @@ fn load_data_file(path: &str, delimiter_override: Option<u8>) -> Result<DataTabl
 
 /// Limit the number of rows in results
 fn limit_results(dataview: &DataView, limit: usize) -> Result<DataTable> {
-    let source = dataview.source();
-    let mut limited_table = DataTable::new(&source.name);
-
-    // Copy columns
-    for col in &source.columns {
-        limited_table.add_column(col.clone());
-    }
-
-    // Copy limited rows
-    let rows_to_copy = dataview.row_count().min(limit);
-    for i in 0..rows_to_copy {
-        if let Some(row) = dataview.get_row(i) {
-            let _ = limited_table.add_row(row.clone());
-        }
-    }
-
+    // This used to copy *all source columns* while copying *projected rows*, so
+    // any query with a SELECT list produced a column/value length mismatch and
+    // every row was silently rejected — 0 rows under the source's headers
+    // (parity P31, same family as P28). Materializing the view keeps the
+    // projection and the row values in step.
+    use crate::data::query_engine::QueryEngine;
+    let name = dataview.source().name.clone();
+    let mut limited_table =
+        QueryEngine::new().materialize_view(dataview.clone().with_max_rows(limit))?;
+    limited_table.name = name;
     Ok(limited_table)
 }
 

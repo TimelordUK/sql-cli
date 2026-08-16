@@ -79,7 +79,7 @@ Suggested fix order, by silent blast radius:
 | ~~2~~ | ~~[P13](#p13) trailing tokens discarded~~ | ✅ **Stage 1 done 2026-08-02**; stage 2 (`NULLS FIRST`/`LAST`) is item 6 below |
 | ~~3~~ | ~~[P30](#p30) `cond AND col IN (list)` returns 0 rows~~ | ✅ **Fixed 2026-08-08** |
 | ~~5~~ | ~~[P29](#p29) boolean operator after `IN (...)`~~ | ✅ **Fixed 2026-08-08** — same bug as P30, one change closed both |
-| **4** | **[P28](#p28) `INTO #tmp` stages unfiltered rows** | Silent, and it *corrupts staged data* — the stage-then-combine workflow quietly carries rows the user filtered out |
+| ~~4~~ | ~~[P28](#p28) `INTO #tmp` stages unfiltered rows~~ | ✅ **Fixed 2026-08-16** — turned out to stage the *whole source table*, and the sweep it prescribed found [P31](#p31) |
 | **7** | **[P18](#p18)/[P19](#p19) three-valued logic** | Promoted: silent, P18 produces *extra* rows, and it now blocks two more corpus cases that the P29 fix uncovered |
 | 8 | [P24](#p24) `RANGE` treated as `ROWS` | Silent, hits the common `SUM(x) OVER (ORDER BY y)` running-total form |
 | 9 | [P14](#p14), [P16](#p16), [P17](#p17), [P20](#p20), [P23](#p23), P13 stage 2 | Smaller, self-contained, decisions already taken |
@@ -95,6 +95,15 @@ reads as "no matching data" rather than as a defect.
 That four serious silent bugs fell out of fixing one parser check is the
 strongest argument yet for the corpus approach: none of them had a failing unit
 test, and two had *passing* ones asserting the broken behaviour.
+
+**A third lesson, from closing P28 (2026-08-16): a finding is written up from
+one probe, and inherits that probe's blind spot.** P28 was filed as "the WHERE is
+ignored" because it was diagnosed with `SELECT COUNT(*)`, which can only report a
+row count. The staged table was in fact the *entire source table* — every column,
+plus the ordering lost. Re-probe a finding from a different angle before scoping
+the fix; the entry describes the symptom that was looked for, not necessarily the
+defect. The same session's sweep for other consumers of the same route turned up
+[P31](#p31), a live zero-rows bug in the `--limit` flag that nobody had reported.
 
 **Two lessons from closing P29/P30 (2026-08-08), both worth generalising:**
 
@@ -522,10 +531,12 @@ annotation be removed.
   well covered — see P7/P8), so this is `OR` specifically.
 
 ### P28 — `SELECT ... INTO #tmp` stages the *unfiltered* rows
-- **Status:** 🔴 OPEN — **high priority: silent, and it corrupts staged data**
+- **Status:** 🟢 FIXED (2026-08-16)
 - **Corpus:** none possible — `INTO #tmp` is our own extension and the reference
   engine has no equivalent, so the oracle here is **our own behaviour
-  disagreeing with itself**. Needs a `cargo test` regression when fixed.
+  disagreeing with itself**. Pinned instead by
+  `tests/python_tests/test_temp_table_staging.py` (end-to-end, script path) and
+  `tests/view_materialization_tests.rs` (env-free, engine level).
 - **Observed:** the `WHERE` clause is ignored when the result is staged:
 
   ```sql
@@ -537,6 +548,10 @@ annotation be removed.
   Both `INTO` placements (before `FROM`, and after all clauses) do it.
 - **Confirmed pre-existing**, not introduced by the P13 work: reproduced from a
   clean build of `main` with all local changes stashed.
+- **Wider than filed.** The staged table was the **whole source table**, not a
+  filtered copy of the result: `SELECT id, score INTO #a` staged all six columns
+  of `null_edges`, and `ORDER BY` was lost too. The finding was written up from a
+  `COUNT(*)`, which could only ever show the row count.
 - **Why it matters more than the row count suggests.** This is the
   stage-then-combine workflow — pull several sources, stage each into a temp
   table, join them at the end. Every staged table silently contains rows the
@@ -544,9 +559,23 @@ annotation be removed.
   by which point the natural response is to add *more* filters downstream until
   the output looks right — which masks it permanently.
 - **Same family as [P21](#p21):** a filter that is applied on the direct path but
-  not on a secondary one. Worth checking, when fixing, whether any other
-  consumer of a query result takes the same unfiltered route.
-- **Decision:** **Fix**, near the top of the queue.
+  not on a secondary one.
+- **Root cause — one line, and a helper that was almost right.** A `DataView`
+  carries three things the source table does not: the `WHERE` filter, the
+  `SELECT` projection, and the `LIMIT`/`OFFSET` window. The script path
+  (`non_interactive.rs`) stored `final_view.source_arc()` — the *backing table*,
+  reached past the view entirely. `QueryEngine::materialize_view` is the shared
+  helper that does this correctly and **two other call sites already used it**;
+  the script path, which is the one that actually runs `INTO`, did not.
+- **A second defect underneath, in the shared helper.** `materialize_view`
+  iterated `visible_row_indices()`, documented as *"before limit/offset"*, so
+  `SELECT id INTO #a FROM t LIMIT 3` staged all 12 rows — through the two call
+  sites that were otherwise correct. Fixed by adding
+  `DataView::windowed_row_indices()` (the post-limit set, matching what
+  `row_count()` counts) and materializing from that. The pre-limit accessor is
+  still there for callers that mean it; its doc comment now names the trap.
+- **The sweep this entry asked for found a third site:** [P31](#p31), the
+  `--limit` flag. Recorded separately because the symptom is different.
 
 ### P14 — An ungrouped aggregate over an empty set returns no row
 - **Status:** 🔴 OPEN
@@ -958,6 +987,39 @@ annotation be removed.
   it meant the correct implementation was sitting forty lines above the defect.
 - **Confirmed pre-existing**, reproduced from a clean build of `main`.
 - **Decision:** **Fix**, with P29. Done.
+
+### P31 — `--limit` returns zero rows for any query with a `SELECT` list
+- **Status:** 🟢 FIXED (2026-08-16) — found by the [P28](#p28) sweep
+- **Corpus:** none possible — `--limit` is a CLI flag, not SQL. Pinned by
+  `tests/python_tests/test_temp_table_staging.py`.
+- **Observed:**
+
+  ```
+  sql-cli data/null_edges.csv -q "SELECT id, score FROM null_edges" --limit 3 -o csv
+  id,team,score,label,bonus,partner_id        <-- the source's columns
+                                              <-- and no rows at all
+  ```
+
+  `SELECT *` was fine, which is exactly why this survived: the flag works on the
+  shape people reach for when trying it out, and fails on every query that names
+  its columns.
+- **Root cause.** `non_interactive::limit_results` built the limited table from
+  `dataview.source().columns` — **all** source columns — but filled it with
+  `dataview.get_row(i)`, which returns only the **projected** values. Every row
+  then failed the column-count check inside `add_row`, whose `Result` was
+  discarded with `let _ =`. Hence zero rows under the wrong headers, reported as
+  a successful query.
+- **Fix.** Delete the hand-rolled copy loop and go through
+  `materialize_view` like the other three consumers, over the view narrowed by a
+  new `DataView::with_max_rows` — which takes the *tighter* of the SQL `LIMIT`
+  and the CLI flag and leaves any `OFFSET` alone, preserving the old
+  `row_count().min(limit)` intent.
+- **Same root cause as P28, different symptom.** Both are "a `DataView` was
+  turned back into a `DataTable` by reaching past the view". P28 kept the
+  source's rows; this kept the source's columns. That is the argument for one
+  materialization helper rather than a copy loop per call site — and it is what
+  the P28 entry's "check whether any other consumer takes the same route" note
+  was for. **The note worked; make that sweep routine.**
 
 ---
 

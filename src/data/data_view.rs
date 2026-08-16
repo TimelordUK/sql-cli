@@ -1391,6 +1391,30 @@ impl DataView {
         &self.visible_rows
     }
 
+    /// Tighten the row window to at most `max_rows`, preserving any existing
+    /// LIMIT/OFFSET — the tighter of the two wins, and the offset is untouched.
+    #[must_use]
+    pub fn with_max_rows(mut self, max_rows: usize) -> Self {
+        self.limit = Some(self.row_count().min(max_rows));
+        self
+    }
+
+    /// Get visible row indices *after* limit/offset — the rows a consumer
+    /// actually sees, and what `row_count()` counts.
+    ///
+    /// Prefer this over `visible_row_indices()` whenever the result is being
+    /// turned back into data (materializing a temp table, exporting); the
+    /// pre-limit set silently reintroduces rows the query excluded.
+    #[must_use]
+    pub fn windowed_row_indices(&self) -> &[usize] {
+        let start = self.offset.min(self.visible_rows.len());
+        let end = match self.limit {
+            Some(limit) => start.saturating_add(limit).min(self.visible_rows.len()),
+            None => self.visible_rows.len(),
+        };
+        &self.visible_rows[start..end]
+    }
+
     /// Optimize memory usage by shrinking vectors to fit
     pub fn shrink_to_fit(&mut self) {
         self.visible_rows.shrink_to_fit();
