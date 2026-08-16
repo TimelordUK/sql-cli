@@ -1,23 +1,26 @@
-# SQL CLI v1.82.4
+# SQL CLI v1.82.5
 
 **Release Date:** August 16, 2026
 
 ## 📊 Release Overview
-- **Commits in this release:** 2
-- **Files updated:** 8
+- **Commits in this release:** 4
+- **Files updated:** 14
 
 ## ✨ Highlights
 
 ## 📝 Changes by Category
 
 ### 🐛 Bug Fixes
-- materialize the view, not its source table (P28, P31)
+- let DATETIME() take expressions, not just literals
+- read column-aligned CSVs whose quoted fields are padded
 
 <details>
 <summary>📋 View all commits</summary>
 
-- Merge pull request #48 from TimelordUK/fix/p28-p31-view-materialization (TimelordUK)
-- fix(engine): materialize the view, not its source table (P28, P31) (TimelordUK)
+- Merge pull request #50 from TimelordUK/fix/datetime-constructor-expressions (TimelordUK)
+- fix(parser): let DATETIME() take expressions, not just literals (TimelordUK)
+- Merge pull request #49 from TimelordUK/fix/csv-padded-quoted-fields (TimelordUK)
+- fix(csv): read column-aligned CSVs whose quoted fields are padded (TimelordUK)
 
 </details>
 
