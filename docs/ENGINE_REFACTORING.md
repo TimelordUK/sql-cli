@@ -319,7 +319,8 @@ feature work**, and so we can tell the difference between "this is awkward" and
   the same failure mode as [R3](#r3)'s catch-all arms, one layer down.
 
 ### R10 — Predicate evaluation has no way to say UNKNOWN
-- **Status:** 🟡 IN PROGRESS — slice 1a done 2026-08-22; 1b/1c outstanding
+- **Status:** 🟡 IN PROGRESS — slices 1a and 1b done 2026-08-22; **1c** (the
+  semantics flip, which is what actually closes P18/P19) outstanding
 - **Where:** `src/data/recursive_where_evaluator.rs` (9 `Result<bool>`
   signatures, 14 match arms), two construction sites in
   `src/data/query_engine.rs`, and one semantic boundary — the
@@ -339,14 +340,32 @@ feature work**, and so we can tell the difference between "this is awkward" and
     (double negation, De Morgan, associativity) and the one that **fails** in
     3VL — excluded middle, `x OR NOT x` is UNKNOWN when `x` is. Nothing is
     wired; the engine does not reference it yet.
-  - **1b — outstanding.** Convert the evaluator to `Trilean` internally and
-    collapse `Unknown → false` at the single boundary. A no-op *by
-    construction*: `boolean_subset_matches_two_valued_logic` pins that `Trilean`
-    equals `bool` over TRUE/FALSE, and the acceptance test is that parity stays
-    at **exactly** its current AGREE count.
-  - **1c — outstanding.** Flip the semantics (`= NULL`, `IN` with a NULL in the
-    list, `NOT IN`, `NOT`). This one changes results and will churn FORMAL
-    example expectations; verify each diff against DuckDB before re-capturing.
+  - **1b — done 2026-08-22.** All 9 signatures return `Result<Trilean>`, the
+    combinators are the truth tables (`&&`/`||` → `and`/`or`, `!` → `negate`),
+    and `is_true()` is applied at exactly one place: the row filter. Parity
+    stayed at **exactly** 125 AGREE / 159, all 710 Rust tests green, all FORMAL
+    examples green, and clippy at the same 365 warnings as before.
+    **The no-op is structural, not observed:** `Trilean::Unknown` is
+    constructed **zero times** in the engine, so the evaluator still yields only
+    TRUE/FALSE, and `boolean_subset_matches_two_valued_logic` (1a) pins
+    `Trilean` to `bool` over that subset. The parity run confirms it; the type
+    is what guarantees it.
+    Method: change the 9 signatures first and let `rustc` enumerate the 57
+    leaves, rather than grepping for them — the compiler's list is exhaustive
+    by definition and the transform was applied from its own line/column output.
+    Three test files (`method_evaluation_test`, `test_indexof_space`,
+    `test_trim_methods`) asserted on the `bool` and moved to
+    `is_true()`/`is_false()`; `is_false()` is deliberately used for the negative
+    cases rather than `!is_true()`, so that when 1c lands, a result that turns
+    UNKNOWN fails the assertion instead of silently satisfying it.
+  - **1c — outstanding, and the only slice that changes results.** Flip the
+    semantics (`= NULL`, `IN` with a NULL in the list, `NOT IN`, `NOT`). The
+    propagation is already wired, so 1c is about *producing* UNKNOWN at the
+    leaves. The three sites are marked in the source with comments naming P18
+    and P19 (`grep -n P18 src/data/recursive_where_evaluator.rs`):
+    `compare_with_op`'s result in `evaluate_binary_op`, the equality inside
+    `evaluate_in_list`, and the NULL arms that currently answer FALSE. Expect
+    FORMAL example churn; verify each diff against DuckDB before re-capturing.
 - **Why the split is worth it:** 1b is a large mechanical diff with zero
   behaviour change, and 1c is a small diff with all of it. Landing them together
   would mean reviewing a semantic change buried in 200 lines of signature
@@ -373,7 +392,7 @@ R1 FROM migration ── independent; deferred (larger than P3)
 R4 fixtures ──────── adopt opportunistically, per transformer touched
 R5 dead code ─────── opportunistic
 R8 legacy WHERE ──── independent; stage 2 is self-contained, do it in a lull
-R10 Trilean ──────── 1a landed; 1b (no-op) then 1c (closes P18/P19)
+R10 Trilean ──────── 1a+1b landed (no-op); 1c flips semantics, closes P18/P19
 ```
 
 **A note on ordering, from the P18/P19 work being next.** The WHERE evaluator
@@ -402,4 +421,5 @@ AGREE count — which makes it safe to land well before the semantics change.
 | 2026-08-02 | Corpus tiers 08 (ordering), 09 (window/QUALIFY), 10 (aggregate/NULL) added; P13–P15 filed. 83 → 96 cases | — |
 | 2026-08-08 | R8 filed and stage 1 done: 830 lines of zero-caller legacy WHERE deleted (`where_clause_converter`, `where_evaluator`, `simple_where`) plus `DebugWidget`'s dead WHERE-AST code. No behaviour change | #47 |
 | 2026-08-16 | R9 filed and done: view→table materialization consolidated on `materialize_view`; `DataView` gains `windowed_row_indices`/`with_max_rows`. Closes parity P28 and P31 | — |
-| 2026-08-22 | R10 filed; slice 1a landed: `data::trilean` with the 3VL truth tables and 13 unit tests. Unwired — no behaviour change, parity unmoved at 125/159 | — |
+| 2026-08-22 | R10 filed; slice 1a landed: `data::trilean` with the 3VL truth tables and 13 unit tests. Unwired — no behaviour change, parity unmoved at 125/159 | #51 |
+| 2026-08-22 | R10 slice 1b: WHERE evaluator converted to `Result<Trilean>`; `is_true()` collapse at the single row-filter boundary. `Unknown` still never constructed, so no behaviour change — parity unmoved at 125/159 | — |

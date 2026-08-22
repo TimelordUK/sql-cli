@@ -1659,7 +1659,12 @@ impl QueryEngine {
                         if row_idx < 3 {
                             debug!("QueryEngine: Row {} WHERE result: {}", row_idx, result);
                         }
-                        if result {
+                        // THE semantic boundary for three-valued logic: a row
+                        // survives WHERE only if the predicate is TRUE.
+                        // UNKNOWN is dropped, exactly like FALSE. This is the
+                        // one place a Trilean may become a bool — collapsing
+                        // any earlier is what P18/P19 are made of.
+                        if result.is_true() {
                             filtered_rows.push(row_idx);
                         }
                     }
