@@ -80,7 +80,7 @@ Suggested fix order, by silent blast radius:
 | ~~3~~ | ~~[P30](#p30) `cond AND col IN (list)` returns 0 rows~~ | ✅ **Fixed 2026-08-08** |
 | ~~5~~ | ~~[P29](#p29) boolean operator after `IN (...)`~~ | ✅ **Fixed 2026-08-08** — same bug as P30, one change closed both |
 | ~~4~~ | ~~[P28](#p28) `INTO #tmp` stages unfiltered rows~~ | ✅ **Fixed 2026-08-16** — turned out to stage the *whole source table*, and the sweep it prescribed found [P31](#p31) |
-| **7** | **[P18](#p18)/[P19](#p19) three-valued logic** | Promoted: silent, P18 produces *extra* rows, and it now blocks two more corpus cases that the P29 fix uncovered |
+| **7** | **[P18](#p18)/[P19](#p19) three-valued logic** | Promoted: silent, P18 produces *extra* rows, and it now blocks two more corpus cases that the P29 fix uncovered. **Started 2026-08-22** — the `Trilean` type is in ([R10](ENGINE_REFACTORING.md#r10) slice 1a); next is wiring it as a provable no-op, then flipping the semantics |
 | 8 | [P24](#p24) `RANGE` treated as `ROWS` | Silent, hits the common `SUM(x) OVER (ORDER BY y)` running-total form |
 | 9 | [P14](#p14), [P16](#p16), [P17](#p17), [P20](#p20), [P23](#p23), P13 stage 2 | Smaller, self-contained, decisions already taken |
 | 10 | [P22](#p22), [P25](#p25), [P26](#p26), [P15](#p15) | Hard errors — visible, so less urgent than any of the above |
@@ -699,7 +699,12 @@ annotation be removed.
   the two ASC cases flip DIFFER → AGREE and their `expect` should be dropped.
 
 ### P18 — `= NULL` matches NULL rows instead of yielding UNKNOWN
-- **Status:** 🔴 OPEN — **second site found 2026-08-08, see below**
+- **Status:** 🟡 IN PROGRESS — groundwork started 2026-08-22; **second site
+  found 2026-08-08, see below**
+- **Groundwork:** the fix is gated on the evaluator being able to *represent*
+  UNKNOWN at all — see [R10](ENGINE_REFACTORING.md#r10) for the slicing.
+  `src/data/trilean.rs` (the type and its truth tables) landed 2026-08-22,
+  unwired; the semantics flip is slice 1c and closes this entry with P19.
 - **Corpus:** `10_aggregate_nulls.toml :: where_equals_null` (DIFFER).
   Baseline: `where_is_null` (AGREE).
   Also `02_where.toml :: in_list_with_null_literal`, `in_subquery_then_and` (DIFFER).
@@ -727,7 +732,8 @@ annotation be removed.
   root equality is reached through at least three surfaces.
 
 ### P19 — `NOT IN` does not exclude NULLs
-- **Status:** 🔴 OPEN — same family as P18
+- **Status:** 🟡 IN PROGRESS — same family as P18, same groundwork
+  ([R10](ENGINE_REFACTORING.md#r10) slice 1a landed 2026-08-22)
 - **Corpus:** `10_aggregate_nulls.toml :: where_not_in_excludes_null` (DIFFER).
   Baselines: `where_not_equal_excludes_null`, `where_in_with_null_col` (AGREE).
 - **Observed:** `WHERE score NOT IN (50, 70)` returns 8 rows including the

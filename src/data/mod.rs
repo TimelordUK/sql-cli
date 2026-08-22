@@ -44,6 +44,7 @@ pub mod recursive_where_evaluator;
 pub mod row_expanders; // Row expansion system (UNNEST, etc.)
 pub mod subquery_executor;
 pub mod temp_table_registry; // Temporary tables for script execution
+pub mod trilean; // Three-valued logic (TRUE/FALSE/UNKNOWN) for SQL predicates
 pub mod unit_converter;
 pub mod virtual_table_generator;
 
