@@ -62,11 +62,11 @@ fn test_trim_method() {
     let statement = parser.parse().expect("Failed to parse");
     let where_clause = statement.where_clause.expect("Expected WHERE clause");
 
-    assert!(evaluator.evaluate(&where_clause, 0).unwrap()); // "  derivatives  " -> "derivatives"
-    assert!(!evaluator.evaluate(&where_clause, 1).unwrap()); // "  equity trading" -> "equity trading"
-    assert!(!evaluator.evaluate(&where_clause, 2).unwrap()); // "FX  " -> "FX"
-    assert!(!evaluator.evaluate(&where_clause, 3).unwrap()); // "bonds" -> "bonds"
-    assert!(!evaluator.evaluate(&where_clause, 4).unwrap()); // "   " -> ""
+    assert!(evaluator.evaluate(&where_clause, 0).unwrap().is_true()); // "  derivatives  " -> "derivatives"
+    assert!(evaluator.evaluate(&where_clause, 1).unwrap().is_false()); // "  equity trading" -> "equity trading"
+    assert!(evaluator.evaluate(&where_clause, 2).unwrap().is_false()); // "FX  " -> "FX"
+    assert!(evaluator.evaluate(&where_clause, 3).unwrap().is_false()); // "bonds" -> "bonds"
+    assert!(evaluator.evaluate(&where_clause, 4).unwrap().is_false()); // "   " -> ""
 }
 
 #[test]
@@ -79,11 +79,11 @@ fn test_trimstart_method() {
     let statement = parser.parse().expect("Failed to parse");
     let where_clause = statement.where_clause.expect("Expected WHERE clause");
 
-    assert!(!evaluator.evaluate(&where_clause, 0).unwrap()); // "  derivatives  " -> "derivatives  "
-    assert!(evaluator.evaluate(&where_clause, 1).unwrap()); // "  equity trading" -> "equity trading"
-    assert!(!evaluator.evaluate(&where_clause, 2).unwrap()); // "FX  " -> "FX  "
-    assert!(!evaluator.evaluate(&where_clause, 3).unwrap()); // "bonds" -> "bonds"
-    assert!(!evaluator.evaluate(&where_clause, 4).unwrap()); // "   " -> ""
+    assert!(evaluator.evaluate(&where_clause, 0).unwrap().is_false()); // "  derivatives  " -> "derivatives  "
+    assert!(evaluator.evaluate(&where_clause, 1).unwrap().is_true()); // "  equity trading" -> "equity trading"
+    assert!(evaluator.evaluate(&where_clause, 2).unwrap().is_false()); // "FX  " -> "FX  "
+    assert!(evaluator.evaluate(&where_clause, 3).unwrap().is_false()); // "bonds" -> "bonds"
+    assert!(evaluator.evaluate(&where_clause, 4).unwrap().is_false()); // "   " -> ""
 }
 
 #[test]
@@ -96,11 +96,11 @@ fn test_trimend_method() {
     let statement = parser.parse().expect("Failed to parse");
     let where_clause = statement.where_clause.expect("Expected WHERE clause");
 
-    assert!(!evaluator.evaluate(&where_clause, 0).unwrap()); // "  derivatives  " -> "  derivatives"
-    assert!(!evaluator.evaluate(&where_clause, 1).unwrap()); // "  equity trading" -> "  equity trading"
-    assert!(evaluator.evaluate(&where_clause, 2).unwrap()); // "FX  " -> "FX"
-    assert!(!evaluator.evaluate(&where_clause, 3).unwrap()); // "bonds" -> "bonds"
-    assert!(!evaluator.evaluate(&where_clause, 4).unwrap()); // "   " -> "   " (TrimEnd leaves leading spaces)
+    assert!(evaluator.evaluate(&where_clause, 0).unwrap().is_false()); // "  derivatives  " -> "  derivatives"
+    assert!(evaluator.evaluate(&where_clause, 1).unwrap().is_false()); // "  equity trading" -> "  equity trading"
+    assert!(evaluator.evaluate(&where_clause, 2).unwrap().is_true()); // "FX  " -> "FX"
+    assert!(evaluator.evaluate(&where_clause, 3).unwrap().is_false()); // "bonds" -> "bonds"
+    assert!(evaluator.evaluate(&where_clause, 4).unwrap().is_false()); // "   " -> "   " (TrimEnd leaves leading spaces)
 }
 
 #[test]
@@ -113,11 +113,11 @@ fn test_trim_empty_string() {
     let statement = parser.parse().expect("Failed to parse");
     let where_clause = statement.where_clause.expect("Expected WHERE clause");
 
-    assert!(!evaluator.evaluate(&where_clause, 0).unwrap()); // "  derivatives  " -> "derivatives"
-    assert!(!evaluator.evaluate(&where_clause, 1).unwrap()); // "  equity trading" -> "equity trading"
-    assert!(!evaluator.evaluate(&where_clause, 2).unwrap()); // "FX  " -> "FX"
-    assert!(!evaluator.evaluate(&where_clause, 3).unwrap()); // "bonds" -> "bonds"
-    assert!(evaluator.evaluate(&where_clause, 4).unwrap()); // "   " -> ""
+    assert!(evaluator.evaluate(&where_clause, 0).unwrap().is_false()); // "  derivatives  " -> "derivatives"
+    assert!(evaluator.evaluate(&where_clause, 1).unwrap().is_false()); // "  equity trading" -> "equity trading"
+    assert!(evaluator.evaluate(&where_clause, 2).unwrap().is_false()); // "FX  " -> "FX"
+    assert!(evaluator.evaluate(&where_clause, 3).unwrap().is_false()); // "bonds" -> "bonds"
+    assert!(evaluator.evaluate(&where_clause, 4).unwrap().is_true()); // "   " -> ""
 }
 
 #[test]
@@ -147,5 +147,5 @@ fn test_trim_preserves_internal_spaces() {
     let where_clause = statement.where_clause.expect("Expected WHERE clause");
 
     // "  equity trading" should become "equity trading" (with space preserved between words)
-    assert!(evaluator.evaluate(&where_clause, 1).unwrap());
+    assert!(evaluator.evaluate(&where_clause, 1).unwrap().is_true());
 }

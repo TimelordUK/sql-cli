@@ -2,6 +2,7 @@ use crate::data::arithmetic_evaluator::ArithmeticEvaluator;
 use crate::data::datatable::{DataTable, DataValue};
 use crate::data::evaluation_context::EvaluationContext;
 use crate::data::query_engine::ExecutionContext;
+use crate::data::trilean::Trilean;
 use crate::data::value_comparisons::compare_with_op;
 use crate::sql::recursive_parser::{Condition, LogicalOp, SqlExpression, WhereClause};
 use anyhow::{anyhow, Result};
@@ -391,7 +392,7 @@ impl<'a, 'ctx, 'exec> RecursiveWhereEvaluator<'a, 'ctx, 'exec> {
     }
 
     /// Evaluate a WHERE clause for a specific row
-    pub fn evaluate(&mut self, where_clause: &WhereClause, row_index: usize) -> Result<bool> {
+    pub fn evaluate(&mut self, where_clause: &WhereClause, row_index: usize) -> Result<Trilean> {
         // Only log for first few rows to avoid performance impact
         if row_index < 3 {
             debug!(
@@ -406,7 +407,7 @@ impl<'a, 'ctx, 'exec> RecursiveWhereEvaluator<'a, 'ctx, 'exec> {
             if row_index < 3 {
                 debug!("RecursiveWhereEvaluator: evaluate() EXIT - no conditions, returning true");
             }
-            return Ok(true);
+            return Ok(Trilean::True);
         }
 
         // With the new expression tree structure, we should have a single condition
@@ -440,8 +441,8 @@ impl<'a, 'ctx, 'exec> RecursiveWhereEvaluator<'a, 'ctx, 'exec> {
                 // Use the connector from the previous condition
                 if let Some(connector) = &where_clause.conditions[i - 1].connector {
                     result = match connector {
-                        LogicalOp::And => result && next_result,
-                        LogicalOp::Or => result || next_result,
+                        LogicalOp::And => result.and(next_result),
+                        LogicalOp::Or => result.or(next_result),
                     };
                 }
             }
@@ -450,7 +451,7 @@ impl<'a, 'ctx, 'exec> RecursiveWhereEvaluator<'a, 'ctx, 'exec> {
         }
     }
 
-    fn evaluate_condition(&mut self, condition: &Condition, row_index: usize) -> Result<bool> {
+    fn evaluate_condition(&mut self, condition: &Condition, row_index: usize) -> Result<Trilean> {
         // Only log first few rows to avoid performance impact
         if row_index < 3 {
             debug!(
@@ -468,7 +469,7 @@ impl<'a, 'ctx, 'exec> RecursiveWhereEvaluator<'a, 'ctx, 'exec> {
         result
     }
 
-    fn evaluate_expression(&mut self, expr: &SqlExpression, row_index: usize) -> Result<bool> {
+    fn evaluate_expression(&mut self, expr: &SqlExpression, row_index: usize) -> Result<Trilean> {
         // Only log first few rows to avoid performance impact
         if row_index < 3 {
             debug!(
@@ -486,14 +487,18 @@ impl<'a, 'ctx, 'exec> RecursiveWhereEvaluator<'a, 'ctx, 'exec> {
             }
             SqlExpression::NotInList { expr, values } => {
                 let in_result = self.evaluate_in_list(expr, values, row_index, false)?;
-                Ok(!in_result)
+                // Three-valued negation: once `evaluate_in_list` can return
+                // UNKNOWN (a NULL operand, or a NULL in the list), this must
+                // stay UNKNOWN rather than flip to TRUE. That flip is P19.
+                Ok(in_result.negate())
             }
             SqlExpression::Between { expr, lower, upper } => {
                 self.evaluate_between(expr, lower, upper, row_index)
             }
             SqlExpression::Not { expr } => {
                 let inner_result = self.evaluate_expression(expr, row_index)?;
-                Ok(!inner_result)
+                // `NOT UNKNOWN` is UNKNOWN, not TRUE — see P18/P19.
+                Ok(inner_result.negate())
             }
             SqlExpression::MethodCall {
                 object,
@@ -518,7 +523,7 @@ impl<'a, 'ctx, 'exec> RecursiveWhereEvaluator<'a, 'ctx, 'exec> {
                 if row_index < 3 {
                     debug!("RecursiveWhereEvaluator: evaluate_expression() - unsupported expression type, returning false");
                 }
-                Ok(false) // Default to false for unsupported expressions
+                Ok(Trilean::False) // Default to false for unsupported expressions
             }
         };
 
@@ -537,7 +542,7 @@ impl<'a, 'ctx, 'exec> RecursiveWhereEvaluator<'a, 'ctx, 'exec> {
         op: &str,
         right: &SqlExpression,
         row_index: usize,
-    ) -> Result<bool> {
+    ) -> Result<Trilean> {
         // Only log first few rows to avoid performance impact
         if row_index < 3 {
             debug!(
@@ -552,8 +557,12 @@ impl<'a, 'ctx, 'exec> RecursiveWhereEvaluator<'a, 'ctx, 'exec> {
             let right_result = self.evaluate_expression(right, row_index)?;
 
             return Ok(match op.to_uppercase().as_str() {
-                "OR" => left_result || right_result,
-                "AND" => left_result && right_result,
+                // `Trilean::or` / `and` are the SQL truth tables, so FALSE still
+                // dominates AND and TRUE still dominates OR even when the other
+                // side is UNKNOWN — which `||`/`&&` over a collapsed bool could
+                // not express.
+                "OR" => left_result.or(right_result),
+                "AND" => left_result.and(right_result),
                 _ => unreachable!(),
             });
         }
@@ -575,8 +584,8 @@ impl<'a, 'ctx, 'exec> RecursiveWhereEvaluator<'a, 'ctx, 'exec> {
 
             // Convert the result to boolean
             return match result {
-                DataValue::Boolean(b) => Ok(b),
-                DataValue::Null => Ok(false),
+                DataValue::Boolean(b) => Ok(Trilean::from_bool(b)),
+                DataValue::Null => Ok(Trilean::False),
                 _ => Err(anyhow!("Comparison did not return a boolean value")),
             };
         }
@@ -675,13 +684,13 @@ impl<'a, 'ctx, 'exec> RecursiveWhereEvaluator<'a, 'ctx, 'exec> {
                 let table_value = cell_value.unwrap_or(DataValue::Null);
                 let pattern = match compare_value {
                     ExprValue::String(s) => s,
-                    _ => return Ok(false),
+                    _ => return Ok(Trilean::False),
                 };
 
                 let text = match &table_value {
                     DataValue::String(s) => s.as_str(),
                     DataValue::InternedString(s) => s.as_str(),
-                    _ => return Ok(false),
+                    _ => return Ok(Trilean::False),
                 };
 
                 // Use cached regex if context is available, otherwise compile fresh
@@ -689,7 +698,7 @@ impl<'a, 'ctx, 'exec> RecursiveWhereEvaluator<'a, 'ctx, 'exec> {
                     let regex = ctx
                         .get_or_compile_like_regex(&pattern)
                         .map_err(|e| anyhow::anyhow!("{}", e))?;
-                    Ok(regex.is_match(text))
+                    Ok(Trilean::from_bool(regex.is_match(text)))
                 } else {
                     // Fallback to compiling regex each time (old behavior)
                     let regex_pattern = pattern.replace('%', ".*").replace('_', ".");
@@ -697,23 +706,25 @@ impl<'a, 'ctx, 'exec> RecursiveWhereEvaluator<'a, 'ctx, 'exec> {
                         .case_insensitive(self.case_insensitive)
                         .build()
                         .map_err(|e| anyhow::anyhow!("Invalid LIKE pattern: {}", e))?;
-                    Ok(regex.is_match(text))
+                    Ok(Trilean::from_bool(regex.is_match(text)))
                 }
             }
 
             // IS NULL / IS NOT NULL
-            "IS NULL" => Ok(cell_value.is_none() || matches!(cell_value, Some(DataValue::Null))),
-            "IS NOT NULL" => {
-                Ok(cell_value.is_some() && !matches!(cell_value, Some(DataValue::Null)))
-            }
+            "IS NULL" => Ok(Trilean::from_bool(
+                cell_value.is_none() || matches!(cell_value, Some(DataValue::Null)),
+            )),
+            "IS NOT NULL" => Ok(Trilean::from_bool(
+                cell_value.is_some() && !matches!(cell_value, Some(DataValue::Null)),
+            )),
 
             // Handle IS / IS NOT with NULL explicitly
-            "IS" if matches!(compare_value, ExprValue::Null) => {
-                Ok(cell_value.is_none() || matches!(cell_value, Some(DataValue::Null)))
-            }
-            "IS NOT" if matches!(compare_value, ExprValue::Null) => {
-                Ok(cell_value.is_some() && !matches!(cell_value, Some(DataValue::Null)))
-            }
+            "IS" if matches!(compare_value, ExprValue::Null) => Ok(Trilean::from_bool(
+                cell_value.is_none() || matches!(cell_value, Some(DataValue::Null)),
+            )),
+            "IS NOT" if matches!(compare_value, ExprValue::Null) => Ok(Trilean::from_bool(
+                cell_value.is_some() && !matches!(cell_value, Some(DataValue::Null)),
+            )),
 
             // Standard comparison operators - use centralized logic
             _ => {
@@ -727,12 +738,16 @@ impl<'a, 'ctx, 'exec> RecursiveWhereEvaluator<'a, 'ctx, 'exec> {
                     );
                 }
 
-                Ok(compare_with_op(
+                Ok(Trilean::from_bool(compare_with_op(
                     &table_value,
                     &comparison_value,
                     op,
                     self.case_insensitive,
-                ))
+                )))
+                // P18 lives here: `compare_with_op` answers in `bool`, so a
+                // NULL on either side comes back FALSE — except for `=`, where
+                // NULL = NULL currently answers TRUE. Slice 1c returns UNKNOWN
+                // whenever either side is NULL and lets it propagate.
             }
         }
     }
@@ -772,7 +787,7 @@ impl<'a, 'ctx, 'exec> RecursiveWhereEvaluator<'a, 'ctx, 'exec> {
         values: &[SqlExpression],
         row_index: usize,
         _ignore_case: bool,
-    ) -> Result<bool> {
+    ) -> Result<Trilean> {
         let cell_value = self.evaluate_operand_value(expr, row_index)?;
 
         for value_expr in values {
@@ -781,12 +796,17 @@ impl<'a, 'ctx, 'exec> RecursiveWhereEvaluator<'a, 'ctx, 'exec> {
             let comparison_value = self.expr_value_to_data_value(&compare_value);
 
             // Use centralized comparison for equality
+            // P18's second site: `IN` is built on this same equality, so a NULL
+            // *in the list* currently matches every NULL row. Slice 1c makes a
+            // NULL comparison UNKNOWN, and `IN` then has to remember whether it
+            // saw one — no match plus an UNKNOWN is UNKNOWN, not FALSE, which
+            // is also what makes `NOT IN` exclude NULLs (P19).
             if compare_with_op(table_value, &comparison_value, "=", self.case_insensitive) {
-                return Ok(true);
+                return Ok(Trilean::True);
             }
         }
 
-        Ok(false)
+        Ok(Trilean::False)
     }
 
     fn evaluate_between(
@@ -795,7 +815,7 @@ impl<'a, 'ctx, 'exec> RecursiveWhereEvaluator<'a, 'ctx, 'exec> {
         lower: &SqlExpression,
         upper: &SqlExpression,
         row_index: usize,
-    ) -> Result<bool> {
+    ) -> Result<Trilean> {
         let cell_value = self.evaluate_operand_value(expr, row_index)?;
         let lower_value = self.extract_value(lower)?;
         let upper_value = self.extract_value(upper)?;
@@ -810,7 +830,7 @@ impl<'a, 'ctx, 'exec> RecursiveWhereEvaluator<'a, 'ctx, 'exec> {
         let le_upper =
             compare_with_op(&table_value, &upper_data_value, "<=", self.case_insensitive);
 
-        Ok(ge_lower && le_upper)
+        Ok(Trilean::from_bool(ge_lower && le_upper))
     }
 
     fn evaluate_method_call(
@@ -819,7 +839,7 @@ impl<'a, 'ctx, 'exec> RecursiveWhereEvaluator<'a, 'ctx, 'exec> {
         method: &str,
         args: &[SqlExpression],
         row_index: usize,
-    ) -> Result<bool> {
+    ) -> Result<Trilean> {
         if row_index < 3 {
             debug!(
                 "RecursiveWhereEvaluator: evaluate_method_call - object='{}', method='{}', row={}",
@@ -863,7 +883,7 @@ impl<'a, 'ctx, 'exec> RecursiveWhereEvaluator<'a, 'ctx, 'exec> {
                         if row_index < 3 {
                             debug!("RecursiveWhereEvaluator: Row {} contains('{}') on '{}' = {} (case-insensitive)", row_index, search_str, s, result);
                         }
-                        Ok(result)
+                        Ok(Trilean::from_bool(result))
                     }
                     Some(DataValue::InternedString(ref s)) => {
                         let result = s.to_lowercase().contains(&search_lower);
@@ -871,7 +891,7 @@ impl<'a, 'ctx, 'exec> RecursiveWhereEvaluator<'a, 'ctx, 'exec> {
                         if row_index < 3 {
                             debug!("RecursiveWhereEvaluator: Row {} contains('{}') on interned '{}' = {} (case-insensitive)", row_index, search_str, s, result);
                         }
-                        Ok(result)
+                        Ok(Trilean::from_bool(result))
                     }
                     Some(DataValue::Integer(n)) => {
                         let str_val = n.to_string();
@@ -879,7 +899,7 @@ impl<'a, 'ctx, 'exec> RecursiveWhereEvaluator<'a, 'ctx, 'exec> {
                         if row_index < 3 {
                             debug!("RecursiveWhereEvaluator: Row {} contains('{}') on integer '{}' = {}", row_index, search_str, str_val, result);
                         }
-                        Ok(result)
+                        Ok(Trilean::from_bool(result))
                     }
                     Some(DataValue::Float(f)) => {
                         let str_val = f.to_string();
@@ -890,7 +910,7 @@ impl<'a, 'ctx, 'exec> RecursiveWhereEvaluator<'a, 'ctx, 'exec> {
                                 row_index, search_str, str_val, result
                             );
                         }
-                        Ok(result)
+                        Ok(Trilean::from_bool(result))
                     }
                     Some(DataValue::Boolean(b)) => {
                         let str_val = b.to_string();
@@ -898,7 +918,7 @@ impl<'a, 'ctx, 'exec> RecursiveWhereEvaluator<'a, 'ctx, 'exec> {
                         if row_index < 3 {
                             debug!("RecursiveWhereEvaluator: Row {} contains('{}') on boolean '{}' = {}", row_index, search_str, str_val, result);
                         }
-                        Ok(result)
+                        Ok(Trilean::from_bool(result))
                     }
                     Some(DataValue::DateTime(dt)) => {
                         // DateTime columns can use string methods via coercion
@@ -906,13 +926,13 @@ impl<'a, 'ctx, 'exec> RecursiveWhereEvaluator<'a, 'ctx, 'exec> {
                         if row_index < 3 {
                             debug!("RecursiveWhereEvaluator: Row {} contains('{}') on datetime '{}' = {}", row_index, search_str, dt, result);
                         }
-                        Ok(result)
+                        Ok(Trilean::from_bool(result))
                     }
                     _ => {
                         if row_index < 3 {
                             debug!("RecursiveWhereEvaluator: Row {} contains('{}') on null/empty value = false", row_index, search_str);
                         }
-                        Ok(false)
+                        Ok(Trilean::False)
                     }
                 }
             }
@@ -924,17 +944,25 @@ impl<'a, 'ctx, 'exec> RecursiveWhereEvaluator<'a, 'ctx, 'exec> {
 
                 // Type coercion: convert numeric values to strings for string methods
                 match cell_value {
-                    Some(DataValue::String(ref s)) => {
-                        Ok(s.to_lowercase().starts_with(&prefix.to_lowercase()))
+                    Some(DataValue::String(ref s)) => Ok(Trilean::from_bool(
+                        s.to_lowercase().starts_with(&prefix.to_lowercase()),
+                    )),
+                    Some(DataValue::InternedString(ref s)) => Ok(Trilean::from_bool(
+                        s.to_lowercase().starts_with(&prefix.to_lowercase()),
+                    )),
+                    Some(DataValue::Integer(n)) => {
+                        Ok(Trilean::from_bool(n.to_string().starts_with(&prefix)))
                     }
-                    Some(DataValue::InternedString(ref s)) => {
-                        Ok(s.to_lowercase().starts_with(&prefix.to_lowercase()))
+                    Some(DataValue::Float(f)) => {
+                        Ok(Trilean::from_bool(f.to_string().starts_with(&prefix)))
                     }
-                    Some(DataValue::Integer(n)) => Ok(n.to_string().starts_with(&prefix)),
-                    Some(DataValue::Float(f)) => Ok(f.to_string().starts_with(&prefix)),
-                    Some(DataValue::Boolean(b)) => Ok(b.to_string().starts_with(&prefix)),
-                    Some(DataValue::DateTime(dt)) => Ok(dt.starts_with(&prefix)),
-                    _ => Ok(false),
+                    Some(DataValue::Boolean(b)) => {
+                        Ok(Trilean::from_bool(b.to_string().starts_with(&prefix)))
+                    }
+                    Some(DataValue::DateTime(dt)) => {
+                        Ok(Trilean::from_bool(dt.starts_with(&prefix)))
+                    }
+                    _ => Ok(Trilean::False),
                 }
             }
             "endswith" => {
@@ -945,17 +973,23 @@ impl<'a, 'ctx, 'exec> RecursiveWhereEvaluator<'a, 'ctx, 'exec> {
 
                 // Type coercion: convert numeric values to strings for string methods
                 match cell_value {
-                    Some(DataValue::String(ref s)) => {
-                        Ok(s.to_lowercase().ends_with(&suffix.to_lowercase()))
+                    Some(DataValue::String(ref s)) => Ok(Trilean::from_bool(
+                        s.to_lowercase().ends_with(&suffix.to_lowercase()),
+                    )),
+                    Some(DataValue::InternedString(ref s)) => Ok(Trilean::from_bool(
+                        s.to_lowercase().ends_with(&suffix.to_lowercase()),
+                    )),
+                    Some(DataValue::Integer(n)) => {
+                        Ok(Trilean::from_bool(n.to_string().ends_with(&suffix)))
                     }
-                    Some(DataValue::InternedString(ref s)) => {
-                        Ok(s.to_lowercase().ends_with(&suffix.to_lowercase()))
+                    Some(DataValue::Float(f)) => {
+                        Ok(Trilean::from_bool(f.to_string().ends_with(&suffix)))
                     }
-                    Some(DataValue::Integer(n)) => Ok(n.to_string().ends_with(&suffix)),
-                    Some(DataValue::Float(f)) => Ok(f.to_string().ends_with(&suffix)),
-                    Some(DataValue::Boolean(b)) => Ok(b.to_string().ends_with(&suffix)),
-                    Some(DataValue::DateTime(dt)) => Ok(dt.ends_with(&suffix)),
-                    _ => Ok(false),
+                    Some(DataValue::Boolean(b)) => {
+                        Ok(Trilean::from_bool(b.to_string().ends_with(&suffix)))
+                    }
+                    Some(DataValue::DateTime(dt)) => Ok(Trilean::from_bool(dt.ends_with(&suffix))),
+                    _ => Ok(Trilean::False),
                 }
             }
             _ => Err(anyhow::anyhow!("Unsupported method: {}", method)),
@@ -1054,7 +1088,7 @@ impl<'a, 'ctx, 'exec> RecursiveWhereEvaluator<'a, 'ctx, 'exec> {
         when_branches: &[crate::sql::recursive_parser::WhenBranch],
         else_branch: &Option<Box<SqlExpression>>,
         row_index: usize,
-    ) -> Result<bool> {
+    ) -> Result<Trilean> {
         debug!(
             "RecursiveWhereEvaluator: evaluating CASE expression as bool for row {}",
             row_index
@@ -1065,7 +1099,9 @@ impl<'a, 'ctx, 'exec> RecursiveWhereEvaluator<'a, 'ctx, 'exec> {
             // Evaluate the condition as a boolean
             let condition_result = self.evaluate_expression(&branch.condition, row_index)?;
 
-            if condition_result {
+            // A WHEN whose condition is UNKNOWN does not match, exactly like
+            // FALSE — the same rule the row filter applies.
+            if condition_result.is_true() {
                 debug!("CASE: WHEN condition matched, evaluating result expression as bool");
                 // Evaluate the result and convert to boolean
                 return self.evaluate_expression_as_bool(&branch.result, row_index);
@@ -1078,7 +1114,7 @@ impl<'a, 'ctx, 'exec> RecursiveWhereEvaluator<'a, 'ctx, 'exec> {
             self.evaluate_expression_as_bool(else_expr, row_index)
         } else {
             debug!("CASE: No WHEN matched and no ELSE, returning false");
-            Ok(false)
+            Ok(Trilean::False)
         }
     }
 
@@ -1087,7 +1123,7 @@ impl<'a, 'ctx, 'exec> RecursiveWhereEvaluator<'a, 'ctx, 'exec> {
         &mut self,
         expr: &SqlExpression,
         row_index: usize,
-    ) -> Result<bool> {
+    ) -> Result<Trilean> {
         match expr {
             // For expressions that naturally return booleans, use the existing evaluator
             SqlExpression::BinaryOp { .. }
@@ -1109,13 +1145,17 @@ impl<'a, 'ctx, 'exec> RecursiveWhereEvaluator<'a, 'ctx, 'exec> {
                 let value = evaluator.evaluate(expr, row_index)?;
 
                 match value {
-                    crate::data::datatable::DataValue::Boolean(b) => Ok(b),
-                    crate::data::datatable::DataValue::Integer(i) => Ok(i != 0),
-                    crate::data::datatable::DataValue::Float(f) => Ok(f != 0.0),
-                    crate::data::datatable::DataValue::Null => Ok(false),
-                    crate::data::datatable::DataValue::String(s) => Ok(!s.is_empty()),
-                    crate::data::datatable::DataValue::InternedString(s) => Ok(!s.is_empty()),
-                    _ => Ok(true), // Other types are considered truthy
+                    crate::data::datatable::DataValue::Boolean(b) => Ok(Trilean::from_bool(b)),
+                    crate::data::datatable::DataValue::Integer(i) => Ok(Trilean::from_bool(i != 0)),
+                    crate::data::datatable::DataValue::Float(f) => Ok(Trilean::from_bool(f != 0.0)),
+                    crate::data::datatable::DataValue::Null => Ok(Trilean::False),
+                    crate::data::datatable::DataValue::String(s) => {
+                        Ok(Trilean::from_bool(!s.is_empty()))
+                    }
+                    crate::data::datatable::DataValue::InternedString(s) => {
+                        Ok(Trilean::from_bool(!s.is_empty()))
+                    }
+                    _ => Ok(Trilean::True), // Other types are considered truthy
                 }
             }
         }
