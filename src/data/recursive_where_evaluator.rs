@@ -148,6 +148,27 @@ impl<'a, 'ctx, 'exec> RecursiveWhereEvaluator<'a, 'ctx, 'exec> {
         }
     }
 
+    /// Compare two values under SQL three-valued logic: if **either** operand
+    /// is NULL the answer is UNKNOWN, never TRUE or FALSE.
+    ///
+    /// This test has to live here, at the predicate layer, and must not be
+    /// pushed down into `compare_with_op`. That function answers in `bool`, and
+    /// the `compare_values` beneath it deliberately reports `NULL = NULL` as
+    /// `Ordering::Equal` because **`ORDER BY` needs NULLs to group together**.
+    /// Correct for sorting, wrong for predicates — and using the one answer for
+    /// both is what made `WHERE score = NULL` return the NULL rows (P18).
+    ///
+    /// `IS NULL` / `IS NOT NULL` / `IS [NOT] NULL` are handled by their own
+    /// match arms before reaching any caller of this, and stay two-valued —
+    /// they are the sanctioned way to test for NULL, which is why nothing is
+    /// lost by making `=` never match one.
+    fn compare_trilean(&self, left: &DataValue, right: &DataValue, op: &str) -> Trilean {
+        if matches!(left, DataValue::Null) || matches!(right, DataValue::Null) {
+            return Trilean::Unknown;
+        }
+        Trilean::from_bool(compare_with_op(left, right, op, self.case_insensitive))
+    }
+
     /// Convert ExprValue to DataValue for centralized comparison
     fn expr_value_to_data_value(&self, expr_value: &ExprValue) -> DataValue {
         match expr_value {
@@ -582,10 +603,12 @@ impl<'a, 'ctx, 'exec> RecursiveWhereEvaluator<'a, 'ctx, 'exec> {
             let mut evaluator = ArithmeticEvaluator::new(self.table);
             let result = evaluator.evaluate(&comparison_expr, row_index)?;
 
-            // Convert the result to boolean
+            // Convert the result to a truth value. A NULL out of the
+            // arithmetic evaluator means a NULL propagated through the
+            // expression, so the comparison is UNKNOWN rather than false.
             return match result {
                 DataValue::Boolean(b) => Ok(Trilean::from_bool(b)),
-                DataValue::Null => Ok(Trilean::False),
+                DataValue::Null => Ok(Trilean::Unknown),
                 _ => Err(anyhow!("Comparison did not return a boolean value")),
             };
         }
@@ -684,12 +707,18 @@ impl<'a, 'ctx, 'exec> RecursiveWhereEvaluator<'a, 'ctx, 'exec> {
                 let table_value = cell_value.unwrap_or(DataValue::Null);
                 let pattern = match compare_value {
                     ExprValue::String(s) => s,
+                    // A NULL pattern makes the whole predicate UNKNOWN; any
+                    // other non-string pattern is simply not a match.
+                    ExprValue::Null => return Ok(Trilean::Unknown),
                     _ => return Ok(Trilean::False),
                 };
 
                 let text = match &table_value {
                     DataValue::String(s) => s.as_str(),
                     DataValue::InternedString(s) => s.as_str(),
+                    // Likewise on the value side: NULL LIKE '...' is UNKNOWN,
+                    // which matters under NOT — see P19.
+                    DataValue::Null => return Ok(Trilean::Unknown),
                     _ => return Ok(Trilean::False),
                 };
 
@@ -738,16 +767,7 @@ impl<'a, 'ctx, 'exec> RecursiveWhereEvaluator<'a, 'ctx, 'exec> {
                     );
                 }
 
-                Ok(Trilean::from_bool(compare_with_op(
-                    &table_value,
-                    &comparison_value,
-                    op,
-                    self.case_insensitive,
-                )))
-                // P18 lives here: `compare_with_op` answers in `bool`, so a
-                // NULL on either side comes back FALSE — except for `=`, where
-                // NULL = NULL currently answers TRUE. Slice 1c returns UNKNOWN
-                // whenever either side is NULL and lets it propagate.
+                Ok(self.compare_trilean(&table_value, &comparison_value, op))
             }
         }
     }
@@ -790,23 +810,31 @@ impl<'a, 'ctx, 'exec> RecursiveWhereEvaluator<'a, 'ctx, 'exec> {
     ) -> Result<Trilean> {
         let cell_value = self.evaluate_operand_value(expr, row_index)?;
 
+        // `x IN (a, b, ...)` is `x = a OR x = b OR ...`, so it inherits OR's
+        // truth table: a TRUE anywhere wins outright, but if nothing matched
+        // and any comparison was UNKNOWN, the answer is UNKNOWN — not FALSE.
+        // That distinction is invisible under `IN` (both drop the row) and is
+        // the whole of P19 under `NOT IN`, where FALSE would wrongly negate to
+        // TRUE and admit the NULL rows.
+        let mut saw_unknown = false;
+
         for value_expr in values {
             let compare_value = self.extract_value(value_expr)?;
             let table_value = cell_value.as_ref().unwrap_or(&DataValue::Null);
             let comparison_value = self.expr_value_to_data_value(&compare_value);
 
-            // Use centralized comparison for equality
-            // P18's second site: `IN` is built on this same equality, so a NULL
-            // *in the list* currently matches every NULL row. Slice 1c makes a
-            // NULL comparison UNKNOWN, and `IN` then has to remember whether it
-            // saw one — no match plus an UNKNOWN is UNKNOWN, not FALSE, which
-            // is also what makes `NOT IN` exclude NULLs (P19).
-            if compare_with_op(table_value, &comparison_value, "=", self.case_insensitive) {
-                return Ok(Trilean::True);
+            match self.compare_trilean(table_value, &comparison_value, "=") {
+                Trilean::True => return Ok(Trilean::True),
+                Trilean::Unknown => saw_unknown = true,
+                Trilean::False => {}
             }
         }
 
-        Ok(Trilean::False)
+        Ok(if saw_unknown {
+            Trilean::Unknown
+        } else {
+            Trilean::False
+        })
     }
 
     fn evaluate_between(
@@ -824,13 +852,14 @@ impl<'a, 'ctx, 'exec> RecursiveWhereEvaluator<'a, 'ctx, 'exec> {
         let lower_data_value = self.expr_value_to_data_value(&lower_value);
         let upper_data_value = self.expr_value_to_data_value(&upper_value);
 
-        // Use centralized comparison for BETWEEN: value >= lower AND value <= upper
-        let ge_lower =
-            compare_with_op(&table_value, &lower_data_value, ">=", self.case_insensitive);
-        let le_upper =
-            compare_with_op(&table_value, &upper_data_value, "<=", self.case_insensitive);
+        // BETWEEN is defined as `value >= lower AND value <= upper`, so it takes
+        // AND's truth table too: FALSE on either side still wins outright (a
+        // value below `lower` is not between, whatever `upper` is), and UNKNOWN
+        // only survives when the other side is TRUE or UNKNOWN.
+        let ge_lower = self.compare_trilean(&table_value, &lower_data_value, ">=");
+        let le_upper = self.compare_trilean(&table_value, &upper_data_value, "<=");
 
-        Ok(Trilean::from_bool(ge_lower && le_upper))
+        Ok(ge_lower.and(le_upper))
     }
 
     fn evaluate_method_call(
@@ -1168,4 +1197,197 @@ enum ExprValue {
     Boolean(bool),
     DateTime(DateTime<Utc>),
     Null,
+}
+
+#[cfg(test)]
+mod three_valued_logic_tests {
+    //! Regression tests for P18/P19 — SQL three-valued logic in `WHERE`.
+    //!
+    //! These assert the `Trilean` the evaluator produces for a single row,
+    //! rather than the rows a query returns, because that is where the defect
+    //! actually lived: UNKNOWN and FALSE are indistinguishable by row count
+    //! under `WHERE` (both drop the row) and only diverge under `NOT`. A
+    //! row-counting test would have passed against the broken evaluator for
+    //! half of these cases.
+    //!
+    //! They also run without DuckDB, unlike the corpus cases in
+    //! `tests/comparison/corpus/` that pin the same behaviour end to end.
+
+    use super::*;
+    use crate::data::datatable::{DataColumn, DataRow};
+    use crate::sql::recursive_parser::Parser;
+
+    /// Rows: 0 = score 50, 1 = score 30, 2 = score NULL.
+    fn table_with_nulls() -> DataTable {
+        let mut table = DataTable::new("t");
+        table.add_column(DataColumn::new("id"));
+        table.add_column(DataColumn::new("score"));
+        table.add_column(DataColumn::new("label"));
+
+        table
+            .add_row(DataRow::new(vec![
+                DataValue::Integer(1),
+                DataValue::Integer(50),
+                DataValue::String("alpha".to_string()),
+            ]))
+            .unwrap();
+        table
+            .add_row(DataRow::new(vec![
+                DataValue::Integer(2),
+                DataValue::Integer(30),
+                DataValue::String("beta".to_string()),
+            ]))
+            .unwrap();
+        table
+            .add_row(DataRow::new(vec![
+                DataValue::Integer(3),
+                DataValue::Null,
+                DataValue::Null,
+            ]))
+            .unwrap();
+
+        table
+    }
+
+    /// Evaluate a WHERE clause against one row and return its truth value.
+    fn eval(table: &DataTable, predicate: &str, row: usize) -> Trilean {
+        let sql = format!("SELECT * FROM t WHERE {predicate}");
+        let mut parser = Parser::new(&sql);
+        let statement = parser.parse().expect("failed to parse");
+        let where_clause = statement.where_clause.expect("expected a WHERE clause");
+
+        let mut evaluator = RecursiveWhereEvaluator::new(table);
+        evaluator
+            .evaluate(&where_clause, row)
+            .expect("evaluation failed")
+    }
+
+    // --- P18: `= NULL` yields UNKNOWN, never a match ---
+
+    #[test]
+    fn equals_null_is_unknown_for_every_row() {
+        let t = table_with_nulls();
+        // Including the NULL row itself: `NULL = NULL` is UNKNOWN, not TRUE.
+        // Returning TRUE here is exactly what made `WHERE score = NULL` behave
+        // like `IS NULL`.
+        for row in 0..3 {
+            assert_eq!(eval(&t, "score = NULL", row), Trilean::Unknown, "row {row}");
+        }
+    }
+
+    #[test]
+    fn comparison_against_a_null_column_is_unknown() {
+        let t = table_with_nulls();
+        assert_eq!(eval(&t, "score = 50", 2), Trilean::Unknown);
+        assert_eq!(eval(&t, "score > 10", 2), Trilean::Unknown);
+        assert_eq!(eval(&t, "score <> 50", 2), Trilean::Unknown);
+    }
+
+    #[test]
+    fn is_null_stays_two_valued() {
+        // The sanctioned way to match a NULL must keep working — that is what
+        // makes losing `= NULL` costless.
+        let t = table_with_nulls();
+        assert_eq!(eval(&t, "score IS NULL", 2), Trilean::True);
+        assert_eq!(eval(&t, "score IS NULL", 0), Trilean::False);
+        assert_eq!(eval(&t, "score IS NOT NULL", 0), Trilean::True);
+        assert_eq!(eval(&t, "score IS NOT NULL", 2), Trilean::False);
+    }
+
+    #[test]
+    fn in_list_with_a_null_matches_only_real_equals() {
+        let t = table_with_nulls();
+        // A match still wins outright, even with a NULL in the list.
+        assert_eq!(eval(&t, "score IN (50, NULL)", 0), Trilean::True);
+        // No match, but a NULL was compared: UNKNOWN, not FALSE. Returning
+        // FALSE here is invisible under IN and wrong under NOT IN.
+        assert_eq!(eval(&t, "score IN (50, NULL)", 1), Trilean::Unknown);
+        // NULL column against a list with no NULL in it: also UNKNOWN.
+        assert_eq!(eval(&t, "score IN (50, 70)", 2), Trilean::Unknown);
+        // Nothing NULL anywhere: ordinary FALSE.
+        assert_eq!(eval(&t, "score IN (50, 70)", 1), Trilean::False);
+    }
+
+    // --- P19: NOT must not turn UNKNOWN into TRUE ---
+
+    #[test]
+    fn not_in_excludes_nulls() {
+        let t = table_with_nulls();
+        // The bug: UNKNOWN collapsed to false and `!false` admitted the row.
+        assert_eq!(eval(&t, "score NOT IN (50, 70)", 2), Trilean::Unknown);
+        assert_eq!(eval(&t, "score NOT IN (50, 70)", 0), Trilean::False);
+        assert_eq!(eval(&t, "score NOT IN (50, 70)", 1), Trilean::True);
+    }
+
+    #[test]
+    fn not_over_an_unknown_comparison_stays_unknown() {
+        let t = table_with_nulls();
+        assert_eq!(eval(&t, "NOT (score > 50)", 2), Trilean::Unknown);
+        assert_eq!(eval(&t, "NOT (score > 50)", 1), Trilean::True);
+    }
+
+    // --- The truth tables, exercised through real predicates ---
+
+    /// CONTROL — passes with and without the P18/P19 fix, because the old
+    /// bool evaluator also produced FALSE here (for the wrong reason: it
+    /// collapsed the UNKNOWN rather than letting FALSE dominate). Kept because
+    /// it pins the half of AND's truth table the fix must not disturb; do not
+    /// read a pass here as evidence the fix works.
+    #[test]
+    fn false_still_dominates_and_over_unknown() {
+        let t = table_with_nulls();
+        // Row 1 has score 30, so `score = 50` is FALSE. FALSE AND UNKNOWN is
+        // FALSE — the row is excluded for a definite reason, not an unknown
+        // one. Getting this wrong would make the NOT of it wrong too.
+        assert_eq!(eval(&t, "score = 50 AND label = NULL", 1), Trilean::False);
+        assert_eq!(
+            eval(&t, "NOT (score = 50 AND label = NULL)", 1),
+            Trilean::True
+        );
+    }
+
+    #[test]
+    fn true_still_dominates_or_over_unknown() {
+        let t = table_with_nulls();
+        assert_eq!(eval(&t, "score = 50 OR label = NULL", 0), Trilean::True);
+        // Neither side definite: UNKNOWN.
+        assert_eq!(eval(&t, "score = 99 OR label = NULL", 1), Trilean::Unknown);
+    }
+
+    #[test]
+    fn between_follows_ands_truth_table() {
+        let t = table_with_nulls();
+        assert_eq!(eval(&t, "score BETWEEN 40 AND 60", 0), Trilean::True);
+        assert_eq!(eval(&t, "score BETWEEN 40 AND 60", 1), Trilean::False);
+        // NULL operand: UNKNOWN, and so is its negation.
+        assert_eq!(eval(&t, "score BETWEEN 40 AND 60", 2), Trilean::Unknown);
+        assert_eq!(
+            eval(&t, "NOT (score BETWEEN 40 AND 60)", 2),
+            Trilean::Unknown
+        );
+        // Row 1 is 30, below the lower bound, so the answer is FALSE outright
+        // even though the upper bound is NULL and that comparison is UNKNOWN.
+        assert_eq!(eval(&t, "score BETWEEN 40 AND NULL", 1), Trilean::False);
+    }
+
+    #[test]
+    fn like_against_a_null_is_unknown() {
+        let t = table_with_nulls();
+        assert_eq!(eval(&t, "label LIKE 'a%'", 0), Trilean::True);
+        assert_eq!(eval(&t, "label LIKE 'a%'", 1), Trilean::False);
+        assert_eq!(eval(&t, "label LIKE 'a%'", 2), Trilean::Unknown);
+        assert_eq!(eval(&t, "NOT (label LIKE 'a%')", 2), Trilean::Unknown);
+    }
+
+    // --- Controls: ordinary predicates over non-NULL data are untouched ---
+
+    #[test]
+    fn control_non_null_predicates_are_unchanged() {
+        let t = table_with_nulls();
+        assert_eq!(eval(&t, "score = 50", 0), Trilean::True);
+        assert_eq!(eval(&t, "score = 50", 1), Trilean::False);
+        assert_eq!(eval(&t, "score > 40 AND label = 'alpha'", 0), Trilean::True);
+        assert_eq!(eval(&t, "score > 40 OR label = 'beta'", 1), Trilean::True);
+        assert_eq!(eval(&t, "NOT (score = 50)", 1), Trilean::True);
+    }
 }

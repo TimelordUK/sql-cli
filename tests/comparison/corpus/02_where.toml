@@ -97,7 +97,6 @@ sql = "SELECT id FROM null_edges WHERE score IN (50, 70) AND team = 'alpha' ORDE
 id = "in_subquery_then_and"
 data = "null_edges.csv"
 sql = "SELECT id FROM null_edges WHERE score IN (SELECT score FROM null_edges WHERE id < 5) AND team = 'alpha' ORDER BY id"
-expect = "DIFFER"
 # P29, the subquery form — pinned separately because the IN-list and IN-subquery
 # paths are built differently (see P11) and a fix to one need not reach the other.
 # In the event the P29/P30 precedence fix covered both, since they share
@@ -143,11 +142,11 @@ sql = "SELECT id, team, score FROM null_edges WHERE team = 'beta' OR score IN (5
 id = "in_list_with_null_literal"
 data = "null_edges.csv"
 sql = "SELECT id FROM null_edges WHERE score IN (50, NULL) ORDER BY id"
-expect = "DIFFER"
-# P18, found 2026-08-08 while fixing P29/P30 — the literal-list form that
-# isolates what in_subquery_then_and trips over, with no subquery involved.
-# A NULL in the list matches every NULL-scored row: we return ids 1,2,3,10,11,12
-# where DuckDB returns 1,2. IN is built on the same equality as `= NULL`.
+# P18, found 2026-08-08 while fixing P29/P30, FIXED 2026-08-22 — the literal-list
+# form that isolates what in_subquery_then_and trips over, with no subquery
+# involved. A NULL in the list used to match every NULL-scored row: we returned
+# ids 1,2,3,10,11,12 where DuckDB returns 1,2. IN is built on the same equality
+# as `= NULL`, which is why one fix closed both.
 #
 # Discriminating pair: where_in_with_null_col (tier 10) AGREEs — a NULL column
 # value against a list with NO NULL in it is excluded correctly. The variable
@@ -160,3 +159,22 @@ sql = "SELECT id, team, score FROM null_edges WHERE team = 'alpha' AND score IN 
 # Added with the P29/P30 fix. IN in the MIDDLE of a chain — the case that needs
 # parse_comparison to both consume the IN and hand control back to the AND loop.
 # The old top-level placement could not express this at all.
+
+# --- P32: NOT LIKE does not parse ---
+
+[[case]]
+id = "not_like_pattern"
+data = "null_edges.csv"
+sql = "SELECT id FROM null_edges WHERE label NOT LIKE 'a%' ORDER BY id"
+expect = "GAP"
+# P32, found 2026-08-22 while verifying the P18/P19 fix against DuckDB. `NOT`
+# only accepts `IN` after it, so this is a parse error: "Expected IN after NOT".
+# Pre-existing — confirmed against main, unrelated to the three-valued-logic
+# work — and pinned here rather than fixed in that change, per the standing
+# rule that a divergence found while fixing something else gets its own entry.
+#
+# Worth having as a case regardless of the parse gap: DuckDB returns ids
+# 1,3,4,7,8,9 — note it EXCLUDES the NULL-label rows (2,5,10,11,12), which is
+# the same UNKNOWN-under-NOT rule as P19. So when the parse gap is closed, this
+# doubles as coverage that NOT LIKE inherits the fixed NULL semantics; the
+# evaluator side is already implemented and returns UNKNOWN for a NULL operand.
