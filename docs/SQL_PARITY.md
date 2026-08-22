@@ -80,10 +80,10 @@ Suggested fix order, by silent blast radius:
 | ~~3~~ | ~~[P30](#p30) `cond AND col IN (list)` returns 0 rows~~ | ✅ **Fixed 2026-08-08** |
 | ~~5~~ | ~~[P29](#p29) boolean operator after `IN (...)`~~ | ✅ **Fixed 2026-08-08** — same bug as P30, one change closed both |
 | ~~4~~ | ~~[P28](#p28) `INTO #tmp` stages unfiltered rows~~ | ✅ **Fixed 2026-08-16** — turned out to stage the *whole source table*, and the sweep it prescribed found [P31](#p31) |
-| **7** | **[P18](#p18)/[P19](#p19) three-valued logic** | Promoted: silent, P18 produces *extra* rows, and it now blocks two more corpus cases that the P29 fix uncovered. **Groundwork complete 2026-08-22** — the `Trilean` type and the evaluator conversion both landed with parity unmoved ([R10](ENGINE_REFACTORING.md#r10) slices 1a/1b); only the semantics flip (1c) is left |
+| ~~7~~ | ~~[P18](#p18)/[P19](#p19) three-valued logic~~ | ✅ **Fixed 2026-08-22** — 125 → 129 AGREE. Delivered as three slices ([R10](ENGINE_REFACTORING.md#r10)); the two no-op ones landed first, so the semantics change reviewed on its own |
 | 8 | [P24](#p24) `RANGE` treated as `ROWS` | Silent, hits the common `SUM(x) OVER (ORDER BY y)` running-total form |
 | 9 | [P14](#p14), [P16](#p16), [P17](#p17), [P20](#p20), [P23](#p23), P13 stage 2 | Smaller, self-contained, decisions already taken |
-| 10 | [P22](#p22), [P25](#p25), [P26](#p26), [P15](#p15) | Hard errors — visible, so less urgent than any of the above |
+| 10 | [P22](#p22), [P25](#p25), [P26](#p26), [P15](#p15), [P32](#p32) | Hard errors — visible, so less urgent than any of the above |
 | — | [P27](#p27) `OR` in `JOIN ... ON` | **Reclassified 2026-08-08 — not a quick win.** `JoinCondition` is a `Vec<SingleJoinCondition>` implicitly AND-ed, so there is nowhere in the AST to put an `OR`; it needs join conditions to become an expression, which reaches the join execution code. Sequence it with the R-log, not here |
 
 P27–P30 jump the queue because all four were found *by* fixing something else,
@@ -699,17 +699,16 @@ annotation be removed.
   the two ASC cases flip DIFFER → AGREE and their `expect` should be dropped.
 
 ### P18 — `= NULL` matches NULL rows instead of yielding UNKNOWN
-- **Status:** 🟡 IN PROGRESS — groundwork started 2026-08-22; **second site
-  found 2026-08-08, see below**
-- **Groundwork:** the fix is gated on the evaluator being able to *represent*
-  UNKNOWN at all — see [R10](ENGINE_REFACTORING.md#r10) for the slicing. Both
-  no-op slices landed 2026-08-22: `src/data/trilean.rs` (the type and its truth
-  tables), then the WHERE evaluator converted to `Result<Trilean>` with the
-  UNKNOWN→false collapse at the single row-filter boundary. Parity was unmoved
-  at 125 AGREE across both, because `Trilean::Unknown` is still constructed
-  nowhere. **All that remains is slice 1c — producing UNKNOWN at the leaves**,
-  which closes this entry together with P19. The three sites are marked in the
-  source: `grep -n P18 src/data/recursive_where_evaluator.rs`.
+- **Status:** 🟢 FIXED 2026-08-22, with P19 — branch
+  `fix/p18-p19-three-valued-logic`. Parity 125 → **129 AGREE**; four cases
+  closed at once (`where_equals_null`, `where_not_in_excludes_null`,
+  `in_list_with_null_literal`, `in_subquery_then_and`).
+- **Delivered in three slices** ([R10](ENGINE_REFACTORING.md#r10)), only the
+  last of which changed any result: the `Trilean` type and its truth tables
+  (1a), the evaluator converted to `Result<Trilean>` with one collapse point
+  (1b), then UNKNOWN produced at the leaves (1c). The first two were provable
+  no-ops and shipped separately, so the review of the semantics change was a
+  ~40-line diff rather than one buried in 200 lines of signature churn.
 - **Corpus:** `10_aggregate_nulls.toml :: where_equals_null` (DIFFER).
   Baseline: `where_is_null` (AGREE).
   Also `02_where.toml :: in_list_with_null_literal`, `in_subquery_then_and` (DIFFER).
@@ -737,8 +736,9 @@ annotation be removed.
   root equality is reached through at least three surfaces.
 
 ### P19 — `NOT IN` does not exclude NULLs
-- **Status:** 🟡 IN PROGRESS — same family as P18, same groundwork
-  ([R10](ENGINE_REFACTORING.md#r10) slice 1a landed 2026-08-22)
+- **Status:** 🟢 FIXED 2026-08-22, with P18 — one change closed both, as
+  predicted: they are the same missing propagation reached through different
+  operators.
 - **Corpus:** `10_aggregate_nulls.toml :: where_not_in_excludes_null` (DIFFER).
   Baselines: `where_not_equal_excludes_null`, `where_in_with_null_col` (AGREE).
 - **Observed:** `WHERE score NOT IN (50, 70)` returns 8 rows including the
@@ -1031,6 +1031,25 @@ annotation be removed.
   materialization helper rather than a copy loop per call site — and it is what
   the P28 entry's "check whether any other consumer takes the same route" note
   was for. **The note worked; make that sweep routine.**
+
+### P32 — `NOT LIKE` does not parse
+- **Status:** 🔴 OPEN — hard error, low urgency
+- **Corpus:** `02_where.toml :: not_like_pattern` (GAP)
+- **Observed:** `WHERE label NOT LIKE 'a%'` fails to parse with
+  `Expected IN after NOT` — `NOT` accepts only `IN` after it. `NOT (x LIKE ..)`
+  is the working spelling.
+- **Found 2026-08-22 while verifying the P18/P19 fix against DuckDB**, and
+  **pre-existing** — confirmed against `main`, unrelated to the three-valued
+  logic work. Pinned rather than fixed in that change, per the standing rule
+  that a divergence found while fixing something else gets its own entry.
+- **Visible, so it ranks below any silent finding.** It is a parse error, not a
+  wrong answer: nobody gets bad data from it.
+- **The evaluator half is already done.** DuckDB returns ids 1,3,4,7,8,9 for the
+  corpus query — note it *excludes* the NULL-label rows, which is the same
+  UNKNOWN-under-`NOT` rule as P19. Our `LIKE` already returns UNKNOWN for a NULL
+  operand as of the P18/P19 fix, so closing this is a parser change alone, and
+  the corpus case doubles as proof that `NOT LIKE` inherits the NULL semantics
+  rather than growing its own.
 
 ---
 

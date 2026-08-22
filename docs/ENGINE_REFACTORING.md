@@ -319,8 +319,8 @@ feature work**, and so we can tell the difference between "this is awkward" and
   the same failure mode as [R3](#r3)'s catch-all arms, one layer down.
 
 ### R10 — Predicate evaluation has no way to say UNKNOWN
-- **Status:** 🟡 IN PROGRESS — slices 1a and 1b done 2026-08-22; **1c** (the
-  semantics flip, which is what actually closes P18/P19) outstanding
+- **Status:** 🟢 DONE 2026-08-22 — all three slices landed the same day;
+  closes [P18](SQL_PARITY.md#p18) and [P19](SQL_PARITY.md#p19), parity 125 → 129
 - **Where:** `src/data/recursive_where_evaluator.rs` (9 `Result<bool>`
   signatures, 14 match arms), two construction sites in
   `src/data/query_engine.rs`, and one semantic boundary — the
@@ -358,18 +358,32 @@ feature work**, and so we can tell the difference between "this is awkward" and
     `is_true()`/`is_false()`; `is_false()` is deliberately used for the negative
     cases rather than `!is_true()`, so that when 1c lands, a result that turns
     UNKNOWN fails the assertion instead of silently satisfying it.
-  - **1c — outstanding, and the only slice that changes results.** Flip the
-    semantics (`= NULL`, `IN` with a NULL in the list, `NOT IN`, `NOT`). The
-    propagation is already wired, so 1c is about *producing* UNKNOWN at the
-    leaves. The three sites are marked in the source with comments naming P18
-    and P19 (`grep -n P18 src/data/recursive_where_evaluator.rs`):
-    `compare_with_op`'s result in `evaluate_binary_op`, the equality inside
-    `evaluate_in_list`, and the NULL arms that currently answer FALSE. Expect
-    FORMAL example churn; verify each diff against DuckDB before re-capturing.
-- **Why the split is worth it:** 1b is a large mechanical diff with zero
-  behaviour change, and 1c is a small diff with all of it. Landing them together
-  would mean reviewing a semantic change buried in 200 lines of signature
-  churn — and leave no checkpoint to bisect against if parity moves.
+  - **1c — done 2026-08-22, the only slice that changed results.** UNKNOWN is
+    now produced at the leaves and the already-wired propagation does the rest.
+    The whole semantic change is one helper, `compare_trilean`: if either
+    operand is NULL the answer is UNKNOWN. It is applied at the comparison arm,
+    inside `evaluate_in_list`, in `BETWEEN`'s two bounds, in `LIKE`, and to the
+    arithmetic evaluator's NULL result. **~40 lines**, which is the payoff for
+    having shipped 1a/1b separately.
+    **The root cause was one line in a function nobody would have suspected:**
+    `compare_values` reports `(Null, Null) => Some(Ordering::Equal)`. That is
+    *correct* — `ORDER BY` needs NULLs to group together — and the WHERE
+    evaluator was reusing the same answer, which is why `= NULL` behaved like
+    `IS NULL`. The fix tests for NULL at the predicate layer and leaves the
+    shared comparator alone; pushing it down would have broken sorting.
+    No FORMAL example churn materialised — none of them exercise NULL
+    predicates — so the P21 re-capture warning did not bite this time.
+- **Why the split was worth it, in hindsight:** 1b was 187 changed lines with
+  zero behaviour change; 1c was ~40 lines with all of it. Landed together, the
+  semantics would have been reviewed inside a wall of signature churn, and there
+  would have been no checkpoint to bisect against. The split also made the
+  acceptance criteria different in kind — 1b had to leave parity *exactly*
+  unmoved, 1c had to move exactly the four pinned cases and nothing else. Both
+  held.
+- **Reusable method:** for a type change of this shape, change the signatures
+  first and let `rustc` enumerate the leaves (57 here) instead of grepping for
+  them. The compiler's list is exhaustive by definition; the transform was
+  applied from its own line/column output.
 
 ---
 
@@ -392,7 +406,7 @@ R1 FROM migration ── independent; deferred (larger than P3)
 R4 fixtures ──────── adopt opportunistically, per transformer touched
 R5 dead code ─────── opportunistic
 R8 legacy WHERE ──── independent; stage 2 is self-contained, do it in a lull
-R10 Trilean ──────── 1a+1b landed (no-op); 1c flips semantics, closes P18/P19
+R10 Trilean ──────── DONE; closed P18/P19 (parity 125 → 129)
 ```
 
 **A note on ordering, from the P18/P19 work being next.** The WHERE evaluator
@@ -422,4 +436,5 @@ AGREE count — which makes it safe to land well before the semantics change.
 | 2026-08-08 | R8 filed and stage 1 done: 830 lines of zero-caller legacy WHERE deleted (`where_clause_converter`, `where_evaluator`, `simple_where`) plus `DebugWidget`'s dead WHERE-AST code. No behaviour change | #47 |
 | 2026-08-16 | R9 filed and done: view→table materialization consolidated on `materialize_view`; `DataView` gains `windowed_row_indices`/`with_max_rows`. Closes parity P28 and P31 | — |
 | 2026-08-22 | R10 filed; slice 1a landed: `data::trilean` with the 3VL truth tables and 13 unit tests. Unwired — no behaviour change, parity unmoved at 125/159 | #51 |
-| 2026-08-22 | R10 slice 1b: WHERE evaluator converted to `Result<Trilean>`; `is_true()` collapse at the single row-filter boundary. `Unknown` still never constructed, so no behaviour change — parity unmoved at 125/159 | — |
+| 2026-08-22 | R10 slice 1b: WHERE evaluator converted to `Result<Trilean>`; `is_true()` collapse at the single row-filter boundary. `Unknown` still never constructed, so no behaviour change — parity unmoved at 125/159 | #53 |
+| 2026-08-22 | R10 slice 1c: UNKNOWN produced at the leaves via `compare_trilean`. Closes parity P18/P19 — 125 → **129 AGREE**; new finding P32 (`NOT LIKE` parse gap) pinned, not fixed | — |
