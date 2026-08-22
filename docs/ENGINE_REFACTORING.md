@@ -318,6 +318,40 @@ feature work**, and so we can tell the difference between "this is awkward" and
   obvious-looking call at all four sites and the wrong one at three of them —
   the same failure mode as [R3](#r3)'s catch-all arms, one layer down.
 
+### R10 — Predicate evaluation has no way to say UNKNOWN
+- **Status:** 🟡 IN PROGRESS — slice 1a done 2026-08-22; 1b/1c outstanding
+- **Where:** `src/data/recursive_where_evaluator.rs` (9 `Result<bool>`
+  signatures, 14 match arms), two construction sites in
+  `src/data/query_engine.rs`, and one semantic boundary — the
+  `if result { filtered_rows.push(row_idx) }` row filter in the same file.
+- **Observed:** SQL predicates are evaluated in *three-valued* logic, but the
+  evaluator returns `Result<bool>`, so UNKNOWN has no representation. `NOT` is
+  `Ok(!inner)` and `NOT IN` is `Ok(!in_result)`, which turns UNKNOWN into TRUE
+  and admits rows that must not pass. This is the mechanism behind
+  [P18](SQL_PARITY.md#p18) and [P19](SQL_PARITY.md#p19) — a **type** problem
+  before it is a semantics problem, which is why patching per-operator has not
+  worked and should not be attempted.
+- **Slicing** (agreed 2026-08-08; only the last slice changes results):
+  - **1a — done 2026-08-22.** `src/data/trilean.rs`: the `Trilean` type, the
+    `AND`/`OR`/`NOT` truth tables, and `is_true()` as the *only* sanctioned
+    collapse back to `bool`. 13 unit tests assert the tables cell by cell rather
+    than deriving them, plus the algebraic laws the evaluator's rewrites lean on
+    (double negation, De Morgan, associativity) and the one that **fails** in
+    3VL — excluded middle, `x OR NOT x` is UNKNOWN when `x` is. Nothing is
+    wired; the engine does not reference it yet.
+  - **1b — outstanding.** Convert the evaluator to `Trilean` internally and
+    collapse `Unknown → false` at the single boundary. A no-op *by
+    construction*: `boolean_subset_matches_two_valued_logic` pins that `Trilean`
+    equals `bool` over TRUE/FALSE, and the acceptance test is that parity stays
+    at **exactly** its current AGREE count.
+  - **1c — outstanding.** Flip the semantics (`= NULL`, `IN` with a NULL in the
+    list, `NOT IN`, `NOT`). This one changes results and will churn FORMAL
+    example expectations; verify each diff against DuckDB before re-capturing.
+- **Why the split is worth it:** 1b is a large mechanical diff with zero
+  behaviour change, and 1c is a small diff with all of it. Landing them together
+  would mean reviewing a semantic change buried in 200 lines of signature
+  churn — and leave no checkpoint to bisect against if parity moves.
+
 ---
 
 ## Sequencing
@@ -339,6 +373,7 @@ R1 FROM migration ── independent; deferred (larger than P3)
 R4 fixtures ──────── adopt opportunistically, per transformer touched
 R5 dead code ─────── opportunistic
 R8 legacy WHERE ──── independent; stage 2 is self-contained, do it in a lull
+R10 Trilean ──────── 1a landed; 1b (no-op) then 1c (closes P18/P19)
 ```
 
 **A note on ordering, from the P18/P19 work being next.** The WHERE evaluator
@@ -367,3 +402,4 @@ AGREE count — which makes it safe to land well before the semantics change.
 | 2026-08-02 | Corpus tiers 08 (ordering), 09 (window/QUALIFY), 10 (aggregate/NULL) added; P13–P15 filed. 83 → 96 cases | — |
 | 2026-08-08 | R8 filed and stage 1 done: 830 lines of zero-caller legacy WHERE deleted (`where_clause_converter`, `where_evaluator`, `simple_where`) plus `DebugWidget`'s dead WHERE-AST code. No behaviour change | #47 |
 | 2026-08-16 | R9 filed and done: view→table materialization consolidated on `materialize_view`; `DataView` gains `windowed_row_indices`/`with_max_rows`. Closes parity P28 and P31 | — |
+| 2026-08-22 | R10 filed; slice 1a landed: `data::trilean` with the 3VL truth tables and 13 unit tests. Unwired — no behaviour change, parity unmoved at 125/159 | — |
