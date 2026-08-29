@@ -443,6 +443,9 @@ pub struct EnhancedTuiApp {
     // Debug system
     pub(crate) debug_registry: DebugRegistry,
     pub(crate) memory_tracker: MemoryTracker,
+
+    // Set by Ctrl+L; consumed by the event loop to clear before the next draw
+    force_redraw: bool,
 }
 
 impl DebugContext for EnhancedTuiApp {
@@ -1547,6 +1550,7 @@ impl EnhancedTuiApp {
             query_orchestrator: QueryOrchestrator::with_behavior_config(config.behavior.clone()),
             debug_registry: DebugRegistry::new(),
             memory_tracker: MemoryTracker::new(100),
+            force_redraw: false,
         };
 
         // Set up state dispatcher
@@ -1948,6 +1952,11 @@ impl EnhancedTuiApp {
         if self.table_widget_manager.borrow().needs_render() {
             info!("TableWidgetManager needs render after key event");
         }
+        if std::mem::take(&mut self.force_redraw) {
+            // Drop ratatui's notion of what is on screen so the next draw
+            // repaints every cell rather than diffing against a stale buffer.
+            terminal.clear()?;
+        }
         terminal.draw(|f| self.ui(f))?;
         self.table_widget_manager.borrow_mut().rendered();
 
@@ -2287,7 +2296,7 @@ impl EnhancedTuiApp {
 
         // Special handling for History mode - initialize history search
         if mode == AppMode::History {
-            eprintln!("[DEBUG] Using AppStateContainer for history search");
+            debug!(target: "history", "Using AppStateContainer for history search");
             let current_input = self.get_input_text();
 
             // Start history search
@@ -4895,8 +4904,8 @@ impl EnhancedTuiApp {
         static FILTER_DEPTH: AtomicUsize = AtomicUsize::new(0);
         let depth = FILTER_DEPTH.fetch_add(1, Ordering::SeqCst);
         if depth > 0 {
-            eprintln!(
-                "WARNING: apply_filter re-entrancy detected! depth={}, pattern='{}', thread={:?}",
+            warn!(
+                "apply_filter re-entrancy detected! depth={}, pattern='{}', thread={:?}",
                 depth,
                 pattern,
                 std::thread::current().id()
@@ -6854,32 +6863,31 @@ impl EnhancedTuiApp {
                 ));
             }
 
-            // Find current column in display order
-            if let Some(display_idx) = display_columns
-                .iter()
-                .position(|&idx| idx == current_column)
-            {
+            // current_column is a VISUAL position, so it indexes display_columns
+            // directly - it is not a DataTable index to be searched for.
+            if let Some(&datatable_idx) = display_columns.get(current_column) {
                 debug_info.push_str(&format!(
-                    "Current column {} is at display index {}/{}\n",
+                    "Current column: visual {}/{} -> DataTable [{}]\n",
                     current_column,
-                    display_idx,
-                    display_columns.len()
+                    display_columns.len(),
+                    datatable_idx
                 ));
 
                 // Show what happens on next move
-                if display_idx + 1 < display_columns.len() {
-                    let next_col = display_columns[display_idx + 1];
+                if current_column + 1 < display_columns.len() {
                     debug_info.push_str(&format!(
-                        "Next 'l' press should move to column {} (display index {})\n",
-                        next_col,
-                        display_idx + 1
+                        "Next 'l' press should move to visual {} -> DataTable [{}]\n",
+                        current_column + 1,
+                        display_columns[current_column + 1]
                     ));
                 } else {
                     debug_info.push_str("Next 'l' press should wrap to first column\n");
                 }
             } else {
                 debug_info.push_str(&format!(
-                    "WARNING: Current column {current_column} not found in display order!\n"
+                    "WARNING: Visual column {} is out of range ({} columns)!\n",
+                    current_column,
+                    display_columns.len()
                 ));
             }
         }
@@ -7642,6 +7650,12 @@ impl ActionHandlerContext for EnhancedTuiApp {
                 self.shadow_state.borrow().get_mode()
             );
         }
+    }
+
+    fn request_force_redraw(&mut self) {
+        debug!("Force redraw requested (Ctrl+L)");
+        self.force_redraw = true;
+        self.set_status_message("Screen refreshed");
     }
 
     fn toggle_viewport_lock(&mut self) {

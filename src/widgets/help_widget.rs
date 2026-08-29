@@ -469,7 +469,9 @@ Selection Modes:
   Ctrl+A      - Select all
   
 Viewport Control:
-  Ctrl+L      - Lock/unlock viewport
+  Space       - Lock/unlock viewport
+  Ctrl+Space  - Lock/unlock viewport (alternative)
+  Ctrl+L      - Redraw the screen
   z           - Center current row
   zt          - Current row to top
   zb          - Current row to bottom"

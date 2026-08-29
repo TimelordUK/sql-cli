@@ -146,6 +146,7 @@ impl HelpText {
             Line::from("  :        - Jump to row"),
             Line::from("  Space    - Toggle viewport lock"),
             Line::from("  Ctrl+Space - Toggle viewport lock (alternative)"),
+            Line::from("  Ctrl+L   - Redraw the screen"),
             Line::from("  x/X      - Toggle cursor lock"),
             Line::from("  p        - Pin/unpin column"),
             Line::from("  P        - Clear all pins"),

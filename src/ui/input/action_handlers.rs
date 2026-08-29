@@ -132,6 +132,9 @@ pub trait ActionHandlerContext {
     // Viewport lock operations
     fn toggle_cursor_lock(&mut self);
     fn toggle_viewport_lock(&mut self);
+
+    /// Request a full repaint on the next frame (Ctrl+L).
+    fn request_force_redraw(&mut self);
 }
 
 /// Handler for navigation actions (Up, Down, Left, Right, `PageUp`, etc.)
@@ -669,6 +672,10 @@ impl ActionHandler for DebugViewportActionHandler {
                 tui.toggle_viewport_lock();
                 Some(Ok(ActionResult::Handled))
             }
+            Action::ForceRedraw => {
+                tui.request_force_redraw();
+                Some(Ok(ActionResult::Handled))
+            }
             _ => None,
         }
     }
@@ -1071,6 +1078,9 @@ mod tests {
         }
         fn toggle_viewport_lock(&mut self) {
             self.last_action = "toggle_viewport_lock".to_string();
+        }
+        fn request_force_redraw(&mut self) {
+            self.last_action = "request_force_redraw".to_string();
         }
 
         // Input and text editing
