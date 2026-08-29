@@ -147,21 +147,37 @@ impl ColumnWidthCalculator {
         }
     }
 
-    /// Get cached column width for a specific `DataTable` column index
+    /// Get cached column width for a column's **visual position**.
+    ///
+    /// Widths are computed against `DataView`'s display order, so `visual_idx` must be a
+    /// visual position - not a `DataTable` source index. The two only coincide when the
+    /// view projects every source column in order; under a narrower projection a source
+    /// index runs off the end of the cache and silently returns `DEFAULT_COL_WIDTH`,
+    /// which truncates wide values. Callers holding a source index should translate it
+    /// via `DataView::visual_index_of_column` first.
     pub fn get_column_width(
         &mut self,
         dataview: &DataView,
         viewport_rows: &std::ops::Range<usize>,
-        col_idx: usize,
+        visual_idx: usize,
     ) -> u16 {
         if self.cache_dirty {
             self.recalculate_column_widths(dataview, viewport_rows);
         }
 
         self.column_widths
-            .get(col_idx)
+            .get(visual_idx)
             .copied()
-            .unwrap_or(DEFAULT_COL_WIDTH)
+            .unwrap_or_else(|| {
+                tracing::warn!(
+                    target: "viewport_manager",
+                    "get_column_width: visual index {} out of range ({} columns) -                      likely a DataTable index used as a visual position;                      falling back to {}w",
+                    visual_idx,
+                    self.column_widths.len(),
+                    DEFAULT_COL_WIDTH
+                );
+                DEFAULT_COL_WIDTH
+            })
     }
 
     /// Get all cached column widths, ensuring they're up to date

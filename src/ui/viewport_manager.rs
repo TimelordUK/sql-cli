@@ -13,12 +13,12 @@
 ///             → Renderer (pixels on screen)
 use std::ops::Range;
 use std::sync::Arc;
-use tracing::debug;
+use tracing::{debug, warn};
 
 use crate::data::data_view::DataView;
 use crate::data::datatable::DataRow;
 use crate::ui::viewport::column_width_calculator::{
-    COLUMN_PADDING, MAX_COL_WIDTH, MAX_COL_WIDTH_DATA_FOCUS, MIN_COL_WIDTH,
+    COLUMN_PADDING, DEFAULT_COL_WIDTH, MAX_COL_WIDTH, MAX_COL_WIDTH_DATA_FOCUS, MIN_COL_WIDTH,
 };
 use crate::ui::viewport::{ColumnPackingMode, ColumnWidthCalculator};
 
@@ -750,10 +750,29 @@ impl ViewportManager {
             .get_all_column_widths(&self.dataview, &self.viewport_rows)
     }
 
-    /// Get column width for a specific column
-    pub fn get_column_width(&mut self, col_idx: usize) -> u16 {
+    /// Get column width for a specific column, by **visual** position.
+    pub fn get_column_width(&mut self, visual_idx: usize) -> u16 {
         self.width_calculator
-            .get_column_width(&self.dataview, &self.viewport_rows, col_idx)
+            .get_column_width(&self.dataview, &self.viewport_rows, visual_idx)
+    }
+
+    /// Get column width for a column identified by its **`DataTable` (source)** index.
+    ///
+    /// `ColumnWidthCalculator` keys its cache by visual position, so a source index has
+    /// to be translated first. Passing a source index straight through reads past the
+    /// end of the width vector under any projection narrower than the source table, and
+    /// silently yields `DEFAULT_COL_WIDTH` - which truncates wide values such as
+    /// timestamps to 15 characters.
+    fn get_column_width_by_datatable_index(&mut self, datatable_idx: usize) -> u16 {
+        let Some(visual_idx) = self.dataview.visual_index_of_column(datatable_idx) else {
+            warn!(target: "viewport_manager",
+                  "get_column_width_by_datatable_index: DataTable column {} is not in this view, using default width",
+                  datatable_idx);
+            return DEFAULT_COL_WIDTH;
+        };
+
+        self.width_calculator
+            .get_column_width(&self.dataview, &self.viewport_rows, visual_idx)
     }
 
     /// Get visible rows in the current viewport
@@ -899,11 +918,7 @@ impl ViewportManager {
             }
 
             let datatable_idx = display_columns[visual_idx];
-            let width = self.width_calculator.get_column_width(
-                &self.dataview,
-                &self.viewport_rows,
-                datatable_idx,
-            );
+            let width = self.get_column_width(visual_idx);
 
             // Always include pinned columns, even if they exceed available width
             used_width += width + separator_width;
@@ -939,11 +954,7 @@ impl ViewportManager {
             // Get the DataTable index for this visual position
             let datatable_idx = display_columns[visual_idx];
 
-            let width = self.width_calculator.get_column_width(
-                &self.dataview,
-                &self.viewport_rows,
-                datatable_idx,
-            );
+            let width = self.get_column_width(visual_idx);
 
             if used_width + width + separator_width <= available_width {
                 used_width += width + separator_width;
@@ -999,15 +1010,15 @@ impl ViewportManager {
         column_count.max(1) // Always show at least one column
     }
 
-    /// Get calculated widths for specific columns
-    /// This is useful for rendering when we know which columns will be displayed
-    pub fn get_column_widths_for(&mut self, column_indices: &[usize]) -> Vec<u16> {
-        column_indices
+    /// Get calculated widths for specific columns, by **visual** position.
+    /// This is useful for rendering when we know which columns will be displayed.
+    ///
+    /// Note: `calculate_visible_column_indices` returns `DataTable` indices, not visual
+    /// positions - feed those to `get_column_width_by_datatable_index` instead.
+    pub fn get_column_widths_for(&mut self, visual_indices: &[usize]) -> Vec<u16> {
+        visual_indices
             .iter()
-            .map(|&idx| {
-                self.width_calculator
-                    .get_column_width(&self.dataview, &self.viewport_rows, idx)
-            })
+            .map(|&visual_idx| self.get_column_width(visual_idx))
             .collect()
     }
 
@@ -1048,18 +1059,15 @@ impl ViewportManager {
             return 0;
         }
 
-        let pinned = self.dataview.get_pinned_columns();
+        // Owned copy: the width lookups below take &mut self
+        let pinned = self.dataview.get_pinned_columns().to_vec();
         let _pinned_count = pinned.len();
 
         // Calculate how much width is used by pinned columns
         let mut pinned_width = 0u16;
         let separator_width = 1u16;
-        for &col_idx in pinned {
-            let width = self.width_calculator.get_column_width(
-                &self.dataview,
-                &self.viewport_rows,
-                col_idx,
-            );
+        for &col_idx in &pinned {
+            let width = self.get_column_width_by_datatable_index(col_idx);
             pinned_width += width + separator_width;
         }
 
@@ -1079,11 +1087,7 @@ impl ViewportManager {
 
         // Get the last scrollable column
         let last_col_idx = *scrollable_columns.last().unwrap();
-        let last_col_width = self.width_calculator.get_column_width(
-            &self.dataview,
-            &self.viewport_rows,
-            last_col_idx,
-        );
+        let last_col_width = self.get_column_width_by_datatable_index(last_col_idx);
 
         tracing::debug!(
             "Starting calculation: last_col_idx={}, width={}w, available={}w, scrollable_cols={}",
@@ -1098,11 +1102,7 @@ impl ViewportManager {
 
         // Now work backwards through scrollable columns to find how many more we can fit
         for (idx, &col_idx) in scrollable_columns.iter().enumerate().rev().skip(1) {
-            let width = self.width_calculator.get_column_width(
-                &self.dataview,
-                &self.viewport_rows,
-                col_idx,
-            );
+            let width = self.get_column_width_by_datatable_index(col_idx);
 
             let width_with_separator = width + separator_width;
 
@@ -1142,11 +1142,7 @@ impl ViewportManager {
         let mut can_see_last = false;
         for idx in best_offset..scrollable_columns.len() {
             let col_idx = scrollable_columns[idx];
-            let width = self.width_calculator.get_column_width(
-                &self.dataview,
-                &self.viewport_rows,
-                col_idx,
-            );
+            let width = self.get_column_width_by_datatable_index(col_idx);
             test_width += width + separator_width;
 
             if test_width > available_for_scrollable {
@@ -1173,11 +1169,7 @@ impl ViewportManager {
             test_width = 0;
             for idx in best_offset..scrollable_columns.len() {
                 let col_idx = scrollable_columns[idx];
-                let width = self.width_calculator.get_column_width(
-                    &self.dataview,
-                    &self.viewport_rows,
-                    col_idx,
-                );
+                let width = self.get_column_width_by_datatable_index(col_idx);
                 test_width += width + separator_width;
 
                 if test_width > available_for_scrollable {
@@ -1210,7 +1202,8 @@ impl ViewportManager {
         output.push_str("========== VIEWPORT MANAGER DEBUG ==========\n");
 
         let total_cols = self.dataview.column_count();
-        let pinned = self.dataview.get_pinned_columns();
+        // Owned copy: the width lookups below take &mut self
+        let pinned = self.dataview.get_pinned_columns().to_vec();
         let pinned_count = pinned.len();
 
         output.push_str(&format!("Total columns: {total_cols}\n"));
@@ -1326,12 +1319,8 @@ impl ViewportManager {
         // Calculate available width for scrollable columns
         let separator_width = 1u16;
         let mut pinned_width = 0u16;
-        for &col_idx in pinned {
-            let width = self.width_calculator.get_column_width(
-                &self.dataview,
-                &self.viewport_rows,
-                col_idx,
-            );
+        for &col_idx in &pinned {
+            let width = self.get_column_width_by_datatable_index(col_idx);
             pinned_width += width + separator_width;
         }
         let available_for_scrollable = available_width.saturating_sub(pinned_width);
@@ -1505,11 +1494,7 @@ impl ViewportManager {
 
         for &col_idx in &visible_indices {
             x_positions.push(current_x);
-            let width = self.width_calculator.get_column_width(
-                &self.dataview,
-                &self.viewport_rows,
-                col_idx,
-            );
+            let width = self.get_column_width_by_datatable_index(col_idx);
             current_x += width + separator_width;
         }
 
@@ -1543,11 +1528,7 @@ impl ViewportManager {
 
         // Process columns in DataView's order (pinned first, then display order)
         for &col_idx in &ordered_columns {
-            let width = self.width_calculator.get_column_width(
-                &self.dataview,
-                &self.viewport_rows,
-                col_idx,
-            );
+            let width = self.get_column_width_by_datatable_index(col_idx);
 
             if used_width + width + separator_width <= available_width {
                 visible_indices.push(col_idx);
@@ -1709,10 +1690,7 @@ impl ViewportManager {
         // Get the actual calculated widths for the visible columns
         let widths: Vec<u16> = visible_column_indices
             .iter()
-            .map(|&dt_idx| {
-                self.width_calculator
-                    .get_column_width(&self.dataview, &self.viewport_rows, dt_idx)
-            })
+            .map(|&dt_idx| self.get_column_width_by_datatable_index(dt_idx))
             .collect();
 
         debug!(target: "viewport_manager",
@@ -1807,11 +1785,7 @@ impl ViewportManager {
         let separator_width = 1u16;
 
         for &col_idx in &visible_indices {
-            let width = self.width_calculator.get_column_width(
-                &self.dataview,
-                &self.viewport_rows,
-                col_idx,
-            );
+            let width = self.get_column_width_by_datatable_index(col_idx);
             used_width += width + separator_width;
         }
 
@@ -1822,20 +1796,18 @@ impl ViewportManager {
 
         let wasted_space = available_width.saturating_sub(used_width);
 
-        // Find the next column that didn't fit
-        let next_column_width = if visible_indices.is_empty() {
-            None
-        } else {
-            let last_visible = *visible_indices.last().unwrap();
-            if last_visible + 1 < self.dataview.column_count() {
-                Some(self.width_calculator.get_column_width(
-                    &self.dataview,
-                    &self.viewport_rows,
-                    last_visible + 1,
-                ))
-            } else {
-                None
+        // visible_indices holds DataTable indices; widths are keyed by visual position
+        let visible_visual: Vec<usize> = visible_indices
+            .iter()
+            .filter_map(|&dt_idx| self.dataview.visual_index_of_column(dt_idx))
+            .collect();
+
+        // Find the next column that didn't fit (the one after the last visible, visually)
+        let next_column_width = match visible_visual.last() {
+            Some(&last_visual) if last_visual + 1 < self.dataview.column_count() => {
+                Some(self.get_column_width(last_visual + 1))
             }
+            _ => None,
         };
 
         // Find ALL columns that COULD fit in the wasted space
@@ -1846,7 +1818,7 @@ impl ViewportManager {
                 .get_all_column_widths(&self.dataview, &self.viewport_rows);
             for (idx, &width) in all_widths.iter().enumerate() {
                 // Skip already visible columns
-                if !visible_indices.contains(&idx) && width + separator_width <= wasted_space {
+                if !visible_visual.contains(&idx) && width + separator_width <= wasted_space {
                     columns_that_could_fit.push((idx, width));
                 }
             }
@@ -1866,10 +1838,7 @@ impl ViewportManager {
             visible_columns: visible_indices.len(),
             column_widths: visible_indices
                 .iter()
-                .map(|&idx| {
-                    self.width_calculator
-                        .get_column_width(&self.dataview, &self.viewport_rows, idx)
-                })
+                .map(|&idx| self.get_column_width_by_datatable_index(idx))
                 .collect(),
             next_column_width,
             columns_that_could_fit,
@@ -1979,13 +1948,8 @@ impl ViewportManager {
 
         // Calculate pinned width
         let mut pinned_width = 0u16;
-        for i in 0..pinned_count {
-            let col_idx = display_columns[i];
-            let width = self.width_calculator.get_column_width(
-                &self.dataview,
-                &self.viewport_rows,
-                col_idx,
-            );
+        for visual_idx in 0..pinned_count {
+            let width = self.get_column_width(visual_idx);
             pinned_width += width + 3; // separator width
         }
 
@@ -1997,12 +1961,7 @@ impl ViewportManager {
 
         // Work backwards from the last column to find the best scroll position
         for visual_idx in (pinned_count..=last_visual_column).rev() {
-            let col_idx = display_columns[visual_idx];
-            let width = self.width_calculator.get_column_width(
-                &self.dataview,
-                &self.viewport_rows,
-                col_idx,
-            );
+            let width = self.get_column_width(visual_idx);
             accumulated_width += width + 3; // separator width
 
             if accumulated_width > available_for_scrollable {
@@ -3502,10 +3461,8 @@ impl ViewportManager {
         // This needs to calculate based on visual columns
         let display_columns = self.dataview.get_display_columns();
         let mut total_width_needed = 0u16;
-        for &dt_idx in &display_columns {
-            let width =
-                self.width_calculator
-                    .get_column_width(&self.dataview, &self.viewport_rows, dt_idx);
+        for visual_idx in 0..display_columns.len() {
+            let width = self.get_column_width(visual_idx);
             total_width_needed += width + 1; // +1 for separator
         }
 
@@ -3575,12 +3532,7 @@ impl ViewportManager {
             // First account for pinned column widths
             for visual_idx in 0..pinned_count {
                 if visual_idx < display_columns.len() {
-                    let dt_idx = display_columns[visual_idx];
-                    let width = self.width_calculator.get_column_width(
-                        &self.dataview,
-                        &self.viewport_rows,
-                        dt_idx,
-                    );
+                    let width = self.get_column_width(visual_idx);
                     used_width += width + separator_width;
                 }
             }
@@ -3590,12 +3542,7 @@ impl ViewportManager {
             let visual_start = pinned_count + new_scroll_offset;
 
             for visual_idx in visual_start..display_columns.len() {
-                let dt_idx = display_columns[visual_idx];
-                let width = self.width_calculator.get_column_width(
-                    &self.dataview,
-                    &self.viewport_rows,
-                    dt_idx,
-                );
+                let width = self.get_column_width(visual_idx);
                 if used_width + width + separator_width <= terminal_width {
                     used_width += width + separator_width;
                     scrollable_columns_that_fit += 1;
@@ -3674,12 +3621,7 @@ impl ViewportManager {
 
         for visual_idx in 0..pinned_count {
             if visual_idx < display_columns.len() {
-                let dt_idx = display_columns[visual_idx];
-                let width = self.width_calculator.get_column_width(
-                    &self.dataview,
-                    &self.viewport_rows,
-                    dt_idx,
-                );
+                let width = self.get_column_width(visual_idx);
                 pinned_width += width + separator_width;
             }
         }
@@ -3719,12 +3661,7 @@ impl ViewportManager {
                 for test_scrollable_idx in test_scroll_offset..max_scrollable_columns {
                     let visual_idx = pinned_count + test_scrollable_idx;
                     if visual_idx < display_columns.len() {
-                        let dt_idx = display_columns[visual_idx];
-                        let width = self.width_calculator.get_column_width(
-                            &self.dataview,
-                            &self.viewport_rows,
-                            dt_idx,
-                        );
+                        let width = self.get_column_width(visual_idx);
 
                         if used_width + width + separator_width <= available_for_scrollable {
                             used_width += width + separator_width;

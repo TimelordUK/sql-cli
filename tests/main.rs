@@ -216,3 +216,6 @@ mod tui_integration_test;
 
 #[path = "viewport_manager_test.rs"]
 mod viewport_manager_test;
+
+#[path = "projection_column_width_tests.rs"]
+mod projection_column_width_tests;

@@ -628,6 +628,37 @@ impl DataView {
         self.visible_columns.clone()
     }
 
+    /// Translate a `DataTable` (source) column index into its visual position.
+    ///
+    /// The two index spaces only coincide when the view projects every source column in
+    /// source order (`SELECT *`). Under a narrower projection - `SELECT a, b, c` from a
+    /// wider table - `visible_columns` holds arbitrary source indices, so anything keyed
+    /// by visual position (column names, row values, column widths) must be looked up
+    /// through this translation rather than with the source index directly.
+    ///
+    /// Returns `None` if the column is not part of this view.
+    #[must_use]
+    pub fn visual_index_of_column(&self, datatable_index: usize) -> Option<usize> {
+        let real_position = self
+            .visible_columns
+            .iter()
+            .position(|&c| c == datatable_index)?;
+
+        // Virtual columns occupy visual slots too, so shift past any that sort before
+        // this one. Mirrors the assembly order in `get_all_column_names`/`get_row`.
+        let shift = self
+            .virtual_columns
+            .iter()
+            .filter(|vcol| match vcol.position {
+                VirtualColumnPosition::Left => true,
+                VirtualColumnPosition::Index(idx) => idx <= real_position,
+                VirtualColumnPosition::Right => false,
+            })
+            .count();
+
+        Some(real_position + shift)
+    }
+
     /// Get display column names in order (pinned first, then visible)
     #[must_use]
     pub fn get_display_column_names(&self) -> Vec<String> {
