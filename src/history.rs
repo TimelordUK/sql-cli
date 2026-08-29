@@ -5,10 +5,10 @@ use chrono::{DateTime, Utc};
 use fuzzy_matcher::skim::SkimMatcherV2;
 use fuzzy_matcher::FuzzyMatcher;
 use serde::{Deserialize, Serialize};
-use tracing::{debug, error, info, warn};
 use std::collections::HashMap;
 use std::fs;
 use std::path::PathBuf;
+use tracing::{debug, error, info, warn};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct QueryMetadata {

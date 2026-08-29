@@ -111,7 +111,14 @@ fn projected_widths_match_the_equivalent_unprojected_view() {
     // The same six columns, but as the only columns in the source table, so that
     // visual and DataTable indices coincide. Widths must agree either way.
     let mut narrow = DataTable::new("tc_narrow");
-    for header in ["Project", "Job", "JobId", "Started", "Finished", "DurationSec"] {
+    for header in [
+        "Project",
+        "Job",
+        "JobId",
+        "Started",
+        "Finished",
+        "DurationSec",
+    ] {
         narrow.add_column(DataColumn::new(header));
     }
     for i in 0..20 {
