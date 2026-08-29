@@ -1,38 +1,43 @@
-# SQL CLI v1.83.0
+# SQL CLI v1.83.1
 
-**Release Date:** August 22, 2026
+**Release Date:** August 29, 2026
 
 ## 📊 Release Overview
-- **Commits in this release:** 9
-- **Files updated:** 12
+- **Commits in this release:** 5
+- **Files updated:** 15
 
 ## ✨ Highlights
+
+### 🎨 Visual Improvements
 
 ### 🔍 Enhanced Debugging
 - **Better Diagnostics**: Improved error messages and state dumps
 
+### 🏗️ Architecture Improvements
+- **State Management**: Continued migration to centralized AppStateContainer
+- **Code Quality**: Transaction-like state updates for better consistency
+
+### 💾 Data Protection
+- **History Recovery**: Automatic recovery from corrupted files
+- **Atomic Writes**: Safer file operations to prevent data loss
+
 ## 📝 Changes by Category
 
-### 🐛 Bug Fixes
-- evaluate NULL predicates as UNKNOWN, not false (P18/P19)
-- key the Python venv cache on the interpreter version
+### 🚀 New Features
+- add Ctrl+L redraw, fix navigation debug index, add sample data
 
-### 🔧 Refactoring
-- evaluate WHERE in Trilean, not bool (R10 slice 1b)
-- add Trilean, the SQL three-valued truth type (R10 slice 1a)
+### 🐛 Bug Fixes
+- stop writing to stderr while the alternate screen is active
+- translate DataTable indices to visual positions for column widths
 
 <details>
 <summary>📋 View all commits</summary>
 
-- Merge pull request #54 from TimelordUK/fix/p18-p19-three-valued-logic (TimelordUK)
-- fix(engine): evaluate NULL predicates as UNKNOWN, not false (P18/P19) (TimelordUK)
-- Merge pull request #53 from TimelordUK/refactor/r10-trilean-wire-evaluator (TimelordUK)
-- refactor(engine): evaluate WHERE in Trilean, not bool (R10 slice 1b) (TimelordUK)
-- Merge pull request #51 from TimelordUK/refactor/r10-trilean-type (TimelordUK)
-- Merge branch 'main' into refactor/r10-trilean-type (TimelordUK)
-- Merge pull request #52 from TimelordUK/fix/ci-python-venv-cache (TimelordUK)
-- fix(ci): key the Python venv cache on the interpreter version (TimelordUK)
-- refactor(engine): add Trilean, the SQL three-valued truth type (R10 slice 1a) (TimelordUK)
+- Merge pull request #55 from TimelordUK/fix/projection-column-width-index (TimelordUK)
+- style: apply cargo fmt (TimelordUK)
+- feat(tui): add Ctrl+L redraw, fix navigation debug index, add sample data (TimelordUK)
+- fix(tui): stop writing to stderr while the alternate screen is active (TimelordUK)
+- fix(viewport): translate DataTable indices to visual positions for column widths (TimelordUK)
 
 </details>
 
