@@ -5,6 +5,7 @@ use chrono::{DateTime, Utc};
 use fuzzy_matcher::skim::SkimMatcherV2;
 use fuzzy_matcher::FuzzyMatcher;
 use serde::{Deserialize, Serialize};
+use tracing::{debug, error, info, warn};
 use std::collections::HashMap;
 use std::fs;
 use std::path::PathBuf;
@@ -493,7 +494,7 @@ impl CommandHistory {
         // SAFETY: Create backup before clearing
         let current_count = self.entries.len();
         if current_count > 0 {
-            eprintln!("[HISTORY WARNING] Clearing {current_count} entries - creating backup");
+            warn!(target: "history", "Clearing {current_count} entries - creating backup");
             if let Ok(content) = serde_json::to_string_pretty(&self.entries) {
                 self.protection.backup_before_write(&content, current_count);
             }
@@ -506,14 +507,14 @@ impl CommandHistory {
 
     fn load_from_file(&mut self) -> Result<()> {
         if !self.history_file.exists() {
-            eprintln!("[History] No history file found at {:?}", self.history_file);
+            debug!(target: "history", "No history file found at {:?}", self.history_file);
             return Ok(());
         }
 
-        eprintln!("[History] Loading history from {:?}", self.history_file);
+        debug!(target: "history", "Loading history from {:?}", self.history_file);
         let content = fs::read_to_string(&self.history_file)?;
         if content.trim().is_empty() {
-            eprintln!("[History] History file is empty");
+            debug!(target: "history", "History file is empty");
             return Ok(());
         }
 
@@ -521,18 +522,19 @@ impl CommandHistory {
         let entries: Vec<HistoryEntry> = match serde_json::from_str(&content) {
             Ok(entries) => entries,
             Err(e) => {
-                eprintln!("[History] ERROR: Failed to parse history file: {e}");
-                eprintln!("[History] Attempting recovery from backup...");
+                error!(target: "history", "Failed to parse history file: {e}");
+                warn!(target: "history", "Attempting recovery from backup...");
 
                 // Try to recover from backup
                 if let Some(backup_content) = self.protection.recover_from_backup() {
-                    eprintln!("[History] Found backup, attempting to restore...");
+                    warn!(target: "history", "Found backup, attempting to restore...");
 
                     // Try to parse the backup
                     match serde_json::from_str::<Vec<HistoryEntry>>(&backup_content) {
                         Ok(backup_entries) => {
-                            eprintln!(
-                                "[History] Successfully recovered {} entries from backup",
+                            warn!(
+                                target: "history",
+                                "Successfully recovered {} entries from backup",
                                 backup_entries.len()
                             );
 
@@ -545,30 +547,31 @@ impl CommandHistory {
                                 self.history_file.with_extension("json"),
                                 &corrupted_path,
                             );
-                            eprintln!("[History] Corrupted file moved to {corrupted_path:?}");
+                            warn!(target: "history", "Corrupted file moved to {corrupted_path:?}");
 
                             backup_entries
                         }
                         Err(backup_err) => {
-                            eprintln!("[History] Backup also corrupted: {backup_err}");
-                            eprintln!("[History] Starting with empty history");
+                            error!(target: "history", "Backup also corrupted: {backup_err}");
+                            warn!(target: "history", "Starting with empty history");
                             Vec::new()
                         }
                     }
                 } else {
-                    eprintln!("[History] No backup available, starting with empty history");
+                    warn!(target: "history", "No backup available, starting with empty history");
 
                     // Move the corrupted file for investigation
                     let corrupted_path = self.history_file.with_extension("json.corrupted");
                     let _ = fs::copy(&self.history_file, &corrupted_path);
-                    eprintln!("[History] Corrupted file copied to {corrupted_path:?}");
+                    warn!(target: "history", "Corrupted file copied to {corrupted_path:?}");
 
                     Vec::new()
                 }
             }
         };
-        eprintln!(
-            "[History] Loaded {} entries from history file",
+        debug!(
+            target: "history",
+            "Loaded {} entries from history file",
             entries.len()
         );
         let original_count = entries.len();
@@ -594,7 +597,7 @@ impl CommandHistory {
         // Log if we removed duplicates (only on first load, not every save)
         let removed_count = original_count - deduplicated.len();
         if removed_count > 0 {
-            eprintln!("[sql-cli] Cleaned {removed_count} duplicate commands from history");
+            info!(target: "history", "Cleaned {removed_count} duplicate commands from history");
         }
 
         // Rebuild command counts
@@ -607,8 +610,9 @@ impl CommandHistory {
         }
 
         self.entries = deduplicated;
-        eprintln!(
-            "[History] Final history contains {} unique entries",
+        debug!(
+            target: "history",
+            "Final history contains {} unique entries",
             self.entries.len()
         );
         Ok(())
@@ -635,7 +639,7 @@ impl CommandHistory {
             .protection
             .validate_write(old_count, new_count, &new_content)
         {
-            eprintln!("[HISTORY PROTECTION] Write blocked! Attempting recovery from backup...");
+            error!(target: "history", "Write blocked! Attempting recovery from backup...");
             if let Some(backup_content) = self.protection.recover_from_backup() {
                 fs::write(&self.history_file, backup_content)?;
                 return Ok(());

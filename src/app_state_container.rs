@@ -1,3 +1,8 @@
+//! Shared application state driven by the TUI.
+//!
+//! Like `crate::ui`, this must not write to stdout/stderr - see `ui/mod.rs`.
+#![deny(clippy::print_stdout, clippy::print_stderr)]
+
 use crate::api_client::QueryResponse;
 use crate::buffer::{AppMode, BufferAPI, BufferManager, SortOrder};
 use crate::debug_service::DebugLevel;
@@ -17,7 +22,7 @@ use std::cell::RefCell;
 use std::collections::{HashMap, VecDeque};
 use std::fmt;
 use std::time::{Duration, Instant};
-use tracing::{info, trace};
+use tracing::{debug, info, trace};
 
 /// Platform type for key handling
 #[derive(Debug, Clone, PartialEq)]
@@ -3607,8 +3612,9 @@ impl AppStateContainer {
             })
             .collect();
 
-        eprintln!(
-            "[DEBUG] Created {} matches in history_search",
+        debug!(
+            target: "history",
+            "Created {} matches in history_search",
             history_search.matches.len()
         );
 

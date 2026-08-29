@@ -2287,7 +2287,7 @@ impl EnhancedTuiApp {
 
         // Special handling for History mode - initialize history search
         if mode == AppMode::History {
-            eprintln!("[DEBUG] Using AppStateContainer for history search");
+            debug!(target: "history", "Using AppStateContainer for history search");
             let current_input = self.get_input_text();
 
             // Start history search
@@ -4895,8 +4895,8 @@ impl EnhancedTuiApp {
         static FILTER_DEPTH: AtomicUsize = AtomicUsize::new(0);
         let depth = FILTER_DEPTH.fetch_add(1, Ordering::SeqCst);
         if depth > 0 {
-            eprintln!(
-                "WARNING: apply_filter re-entrancy detected! depth={}, pattern='{}', thread={:?}",
+            warn!(
+                "apply_filter re-entrancy detected! depth={}, pattern='{}', thread={:?}",
                 depth,
                 pattern,
                 std::thread::current().id()
