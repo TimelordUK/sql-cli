@@ -116,6 +116,7 @@ pub enum Action {
     NavigateToViewportBottom,
     ToggleCursorLock,
     ToggleViewportLock,
+    ForceRedraw, // Ctrl+L - repaint the whole screen
     ToggleCaseInsensitive,
     ToggleKeyIndicator,
     ShowColumnStatistics, // For 'S' key

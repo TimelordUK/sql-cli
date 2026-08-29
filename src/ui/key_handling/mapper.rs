@@ -65,6 +65,10 @@ impl KeyMapper {
         // Force quit
         self.global_mappings
             .insert((Char('c'), Mod::CONTROL), Action::ForceQuit);
+        // Ctrl+L: repaint the screen, the universal terminal convention. An
+        // escape hatch for display corruption from anything outside our control.
+        self.global_mappings
+            .insert((Char('l'), Mod::CONTROL), Action::ForceRedraw);
         self.global_mappings
             .insert((Char('C'), Mod::CONTROL), Action::ForceQuit);
     }
@@ -562,6 +566,44 @@ mod tests {
         let key = KeyEvent::new(KeyCode::F(1), KeyModifiers::NONE);
         let action = mapper.map_key(key, &context);
         assert_eq!(action, Some(Action::ShowHelp));
+    }
+
+    #[test]
+    fn ctrl_l_maps_to_force_redraw_in_every_mode() {
+        // Ctrl+L is the universal "repaint the screen" convention. It lives in the
+        // global map so it stays reachable regardless of mode, and must not collide
+        // with the readline bindings (Ctrl+W delete-word, Ctrl+P prev-history) or
+        // with viewport lock, which is Space / Ctrl+Space.
+        let ctrl_l = KeyEvent::new(KeyCode::Char('l'), KeyModifiers::CONTROL);
+
+        for mode in [AppMode::Results, AppMode::Command] {
+            let mut mapper = KeyMapper::new();
+            let context = ActionContext {
+                mode: mode.clone(),
+                selection_mode: SelectionMode::Row,
+                has_results: true,
+                has_filter: false,
+                has_search: false,
+                row_count: 10,
+                column_count: 10,
+                current_row: 0,
+                current_column: 0,
+            };
+
+            assert_eq!(
+                mapper.map_key(ctrl_l, &context),
+                Some(Action::ForceRedraw),
+                "Ctrl+L should force a redraw in {mode:?} mode"
+            );
+
+            // Plain 'l' must still navigate right, not redraw
+            let plain_l = KeyEvent::new(KeyCode::Char('l'), KeyModifiers::NONE);
+            assert_ne!(
+                mapper.map_key(plain_l, &context),
+                Some(Action::ForceRedraw),
+                "plain 'l' should not redraw in {mode:?} mode"
+            );
+        }
     }
 
     #[test]
