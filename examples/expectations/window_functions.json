@@ -837,21 +837,21 @@
   ],
   [
     {
-      "last_sale_in_frame": 15000,
+      "last_sale_in_frame": 12000,
       "month": "2024-01",
       "region": "North",
       "sales_amount": 15000,
       "salesperson": "Alice"
     },
     {
-      "last_sale_in_frame": 18000,
+      "last_sale_in_frame": 14000,
       "month": "2024-02",
       "region": "North",
       "sales_amount": 18000,
       "salesperson": "Alice"
     },
     {
-      "last_sale_in_frame": 22000,
+      "last_sale_in_frame": 16000,
       "month": "2024-03",
       "region": "North",
       "sales_amount": 22000,
@@ -879,21 +879,21 @@
       "salesperson": "Bob"
     },
     {
-      "last_sale_in_frame": 20000,
+      "last_sale_in_frame": 17000,
       "month": "2024-01",
       "region": "South",
       "sales_amount": 20000,
       "salesperson": "Charlie"
     },
     {
-      "last_sale_in_frame": 19000,
+      "last_sale_in_frame": 21000,
       "month": "2024-02",
       "region": "South",
       "sales_amount": 19000,
       "salesperson": "Charlie"
     },
     {
-      "last_sale_in_frame": 25000,
+      "last_sale_in_frame": 23000,
       "month": "2024-03",
       "region": "South",
       "sales_amount": 25000,
@@ -921,21 +921,21 @@
       "salesperson": "Diana"
     },
     {
-      "last_sale_in_frame": 13000,
+      "last_sale_in_frame": 11000,
       "month": "2024-01",
       "region": "East",
       "sales_amount": 13000,
       "salesperson": "Eve"
     },
     {
-      "last_sale_in_frame": 15000,
+      "last_sale_in_frame": 13000,
       "month": "2024-02",
       "region": "East",
       "sales_amount": 15000,
       "salesperson": "Eve"
     },
     {
-      "last_sale_in_frame": 19000,
+      "last_sale_in_frame": 14000,
       "month": "2024-03",
       "region": "East",
       "sales_amount": 19000,
@@ -963,21 +963,21 @@
       "salesperson": "Frank"
     },
     {
-      "last_sale_in_frame": 24000,
+      "last_sale_in_frame": 16000,
       "month": "2024-01",
       "region": "West",
       "sales_amount": 24000,
       "salesperson": "Grace"
     },
     {
-      "last_sale_in_frame": 26000,
+      "last_sale_in_frame": 18000,
       "month": "2024-02",
       "region": "West",
       "sales_amount": 26000,
       "salesperson": "Grace"
     },
     {
-      "last_sale_in_frame": 28000,
+      "last_sale_in_frame": 20000,
       "month": "2024-03",
       "region": "West",
       "sales_amount": 28000,

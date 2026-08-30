@@ -236,6 +236,15 @@ expect = "GAP"
 # explicitly as of 2026-08-30 rather than silently answering as ROWS, which is
 # the defect P24 removed.
 
+[[case]]
+id = "win_last_value_default_frame"
+data = "null_edges.csv"
+sql = "SELECT id, score, LAST_VALUE(score) OVER (ORDER BY score) AS v FROM null_edges WHERE score IS NOT NULL ORDER BY id"
+# P24 via a different frame consumer. SUM reads the whole frame, LAST_VALUE only
+# its final row, so it pins the end bound precisely: with ties it must report the
+# last PEER, not the current row. An examples/ expectation had captured the old
+# ROWS answer here, which is why this is worth a case of its own.
+
 # --- P25 / P26: window placements we reject ---
 
 [[case]]

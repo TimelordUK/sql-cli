@@ -96,7 +96,11 @@ FROM test;
 GO
 
 -- 9. LAST_VALUE - Show last sale in each region
--- Note: LAST_VALUE by default only looks at rows up to current row
+-- Note: with no explicit frame the default is RANGE UNBOUNDED PRECEDING AND
+-- CURRENT ROW, so the frame ends at the last PEER row - every row tying on the
+-- ORDER BY key (month), not the current row itself. Both salespeople in a
+-- region/month therefore report the same value. Use ROWS for the row-at-a-time
+-- reading, or CURRENT ROW AND UNBOUNDED FOLLOWING for the partition's last sale.
 SELECT 
     region,
     salesperson,

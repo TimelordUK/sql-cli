@@ -929,6 +929,23 @@ calls `Equal`. A pleasant consequence: with no `ORDER BY` every row is a peer of
 every other, so a bare `RANGE` frame spans the partition, which is what the
 standard specifies, without a special case.
 
+**A captured expectation had frozen the bug — the third instance of this
+pattern.** `examples/expectations/window_functions.json` stored `LAST_VALUE(x)
+OVER (PARTITION BY region ORDER BY month)` returning each row's *own* amount,
+which is the ROWS answer; the fix broke that "passing" test. DuckDB agrees with
+the new output on all 24 rows, so the capture was wrong, not the fix, and it was
+re-captured. The suite's other 22 failures are pre-existing smoke-test noise —
+missing fixtures and unreachable URLs — and only FORMAL mismatches fail the job.
+
+This is the same shape as the P29/P30 note above ("two had *passing* [unit tests]
+asserting the broken behaviour"), and worth stating as a rule: **when a fix
+breaks a golden/captured test, establish which side is right against the
+reference engine before touching either.** Re-capturing is the correct move only
+once the reference has confirmed the new output; done reflexively it would have
+silently re-frozen the defect. Both `examples/window_functions.sql`'s comment and
+a new corpus case (`win_last_value_default_frame`) now record the real semantics,
+so the next person meets the rule rather than the artefact.
+
 **A lesson worth generalising: the entry's own prescription was half stale.**
 "Make the default resolve to RANGE" described a defect that had already been
 fixed elsewhere, and following it literally would have meant editing a parser
