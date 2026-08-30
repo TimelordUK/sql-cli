@@ -54,11 +54,19 @@ pub struct OrderedPartition {
 
     /// Quick lookup: row_index -> position in partition
     row_positions: HashMap<usize, usize>,
+
+    /// Peer-group bounds by position: rows that tie on every ORDER BY key.
+    /// `peer_bounds[pos] == (first, last)` inclusive positions of the group
+    /// containing `pos`. RANGE frames are defined over these groups rather than
+    /// over physical rows, which is the whole difference between RANGE and ROWS.
+    /// With no ORDER BY every row is a peer of every other, so the single group
+    /// spans the partition - which is exactly what SQL specifies there.
+    peer_bounds: Vec<(usize, usize)>,
 }
 
 impl OrderedPartition {
-    /// Create a new ordered partition from row indices
-    fn new(rows: Vec<usize>) -> Self {
+    /// Create a new ordered partition from rows already sorted by `sort_cols`
+    fn new(rows: Vec<usize>, table: &DataTable, sort_cols: &[(usize, bool)]) -> Self {
         // Build position lookup
         let row_positions: HashMap<usize, usize> = rows
             .iter()
@@ -66,10 +74,45 @@ impl OrderedPartition {
             .map(|(pos, &row_idx)| (row_idx, pos))
             .collect();
 
+        let peer_bounds = Self::compute_peer_bounds(&rows, table, sort_cols);
+
         Self {
             rows,
             row_positions,
+            peer_bounds,
         }
+    }
+
+    /// Walk the sorted rows once, grouping runs that compare equal on every
+    /// ORDER BY key. Linear, so a partition of all-equal keys costs no more
+    /// than one of all-distinct keys.
+    fn compute_peer_bounds(
+        rows: &[usize],
+        table: &DataTable,
+        sort_cols: &[(usize, bool)],
+    ) -> Vec<(usize, usize)> {
+        let mut bounds = vec![(0usize, 0usize); rows.len()];
+        let mut group_start = 0usize;
+
+        for pos in 1..=rows.len() {
+            let ends_group = pos == rows.len()
+                || WindowContext::compare_by_sort_cols(table, rows[pos - 1], rows[pos], sort_cols)
+                    != std::cmp::Ordering::Equal;
+
+            if ends_group {
+                for b in bounds.iter_mut().take(pos).skip(group_start) {
+                    *b = (group_start, pos - 1);
+                }
+                group_start = pos;
+            }
+        }
+
+        bounds
+    }
+
+    /// Inclusive positions of the peer group containing `pos`
+    fn peer_bounds_at(&self, pos: usize) -> Option<(usize, usize)> {
+        self.peer_bounds.get(pos).copied()
     }
 
     /// Navigate to offset from current position
@@ -134,6 +177,8 @@ impl WindowContext {
 
     /// Create a new window context with a full window specification
     pub fn new_with_spec(view: Arc<DataView>, spec: WindowSpec) -> Result<Self> {
+        Self::validate_frame(&spec)?;
+
         let overall_start = Instant::now();
         let partition_by = spec.partition_by.clone();
         let order_by = spec.order_by.clone();
@@ -241,13 +286,14 @@ impl WindowContext {
         let mut partitions = BTreeMap::new();
         let partition_count = partition_map.len();
 
+        let sort_cols = Self::resolve_sort_columns(source_table, &order_by)?;
         for (key, mut rows) in partition_map {
             // Sort rows within partition
-            if !order_by.is_empty() {
-                Self::sort_rows(&mut rows, source_table, &order_by)?;
+            if !sort_cols.is_empty() {
+                Self::sort_rows(&mut rows, source_table, &sort_cols);
             }
 
-            partitions.insert(key, OrderedPartition::new(rows));
+            partitions.insert(key, OrderedPartition::new(rows, source_table, &sort_cols));
         }
 
         info!(
@@ -275,16 +321,45 @@ impl WindowContext {
         })
     }
 
+    /// Reject window frames we would otherwise answer wrongly.
+    ///
+    /// A numeric offset under RANGE (`RANGE BETWEEN 1 PRECEDING AND CURRENT
+    /// ROW`) is defined on ORDER BY *values*, not row positions - "every row
+    /// whose key is within 1 of mine". We only implement the peer-group bounds
+    /// (UNBOUNDED / CURRENT ROW). Erroring here is deliberate: the alternative
+    /// is silently computing the ROWS answer, which is the defect this
+    /// peer-group work exists to remove.
+    fn validate_frame(spec: &WindowSpec) -> Result<()> {
+        let Some(frame) = &spec.frame else {
+            return Ok(());
+        };
+        if frame.unit != FrameUnit::Range {
+            return Ok(());
+        }
+
+        let bounds = std::iter::once(&frame.start).chain(frame.end.iter());
+        for bound in bounds {
+            if matches!(bound, FrameBound::Preceding(_) | FrameBound::Following(_)) {
+                return Err(anyhow!(
+                    "RANGE frames with a numeric offset are not supported. Use ROWS for an offset counted in rows, or RANGE with UNBOUNDED PRECEDING / CURRENT ROW / UNBOUNDED FOLLOWING."
+                ));
+            }
+        }
+
+        Ok(())
+    }
+
     /// Create a single partition from the entire view
     fn create_single_partition(
         view: &DataView,
         order_by: &[OrderByItem],
     ) -> Result<OrderedPartition> {
         let mut rows: Vec<usize> = view.get_visible_rows();
+        let sort_cols = Self::resolve_sort_columns(view.source(), order_by)?;
 
-        if !order_by.is_empty() {
+        if !sort_cols.is_empty() {
             let sort_start = Instant::now();
-            Self::sort_rows(&mut rows, view.source(), order_by)?;
+            Self::sort_rows(&mut rows, view.source(), &sort_cols);
             debug!(
                 "Single partition sort took {:.2}ms ({} rows)",
                 sort_start.elapsed().as_secs_f64() * 1000.0,
@@ -292,15 +367,15 @@ impl WindowContext {
             );
         }
 
-        Ok(OrderedPartition::new(rows))
+        Ok(OrderedPartition::new(rows, view.source(), &sort_cols))
     }
 
-    /// Sort row indices according to ORDER BY specification
-    fn sort_rows(rows: &mut Vec<usize>, table: &DataTable, order_by: &[OrderByItem]) -> Result<()> {
-        let prep_start = Instant::now();
-
-        // Get column indices for ORDER BY columns
-        let sort_cols: Vec<(usize, bool)> = order_by
+    /// Resolve ORDER BY items to (column index, ascending) pairs
+    fn resolve_sort_columns(
+        table: &DataTable,
+        order_by: &[OrderByItem],
+    ) -> Result<Vec<(usize, bool)>> {
+        order_by
             .iter()
             .map(|col| {
                 // Extract column name from expression (currently only supports simple columns)
@@ -316,57 +391,63 @@ impl WindowContext {
                 let ascending = matches!(col.direction, SortDirection::Asc);
                 Ok((idx, ascending))
             })
-            .collect::<Result<Vec<_>>>()?;
+            .collect()
+    }
 
-        debug!(
-            "Sort preparation took {:.2}μs ({} sort columns)",
-            prep_start.elapsed().as_micros(),
-            sort_cols.len()
-        );
+    /// Order two rows by the resolved ORDER BY columns.
+    ///
+    /// `Ordering::Equal` means the rows are *peers*: RANGE frames are built on
+    /// this, so sorting and peer detection must agree exactly - hence one
+    /// function serving both.
+    fn compare_by_sort_cols(
+        table: &DataTable,
+        a: usize,
+        b: usize,
+        sort_cols: &[(usize, bool)],
+    ) -> std::cmp::Ordering {
+        for &(col_idx, ascending) in sort_cols {
+            let val_a = table.get_value(a, col_idx);
+            let val_b = table.get_value(b, col_idx);
 
-        let sort_start = Instant::now();
-
-        // Sort rows based on column values
-        rows.sort_by(|&a, &b| {
-            for &(col_idx, ascending) in &sort_cols {
-                let val_a = table.get_value(a, col_idx);
-                let val_b = table.get_value(b, col_idx);
-
-                match (val_a, val_b) {
-                    (None, None) => continue,
-                    (None, Some(_)) => {
-                        return if ascending {
-                            std::cmp::Ordering::Less
-                        } else {
-                            std::cmp::Ordering::Greater
-                        }
+            match (val_a, val_b) {
+                (None, None) => continue,
+                (None, Some(_)) => {
+                    return if ascending {
+                        std::cmp::Ordering::Less
+                    } else {
+                        std::cmp::Ordering::Greater
                     }
-                    (Some(_), None) => {
-                        return if ascending {
-                            std::cmp::Ordering::Greater
-                        } else {
-                            std::cmp::Ordering::Less
-                        }
+                }
+                (Some(_), None) => {
+                    return if ascending {
+                        std::cmp::Ordering::Greater
+                    } else {
+                        std::cmp::Ordering::Less
                     }
-                    (Some(v_a), Some(v_b)) => {
-                        // DataValue only implements PartialOrd, not Ord
-                        let ord = v_a.partial_cmp(&v_b).unwrap_or(std::cmp::Ordering::Equal);
-                        if ord != std::cmp::Ordering::Equal {
-                            return if ascending { ord } else { ord.reverse() };
-                        }
+                }
+                (Some(v_a), Some(v_b)) => {
+                    // DataValue only implements PartialOrd, not Ord
+                    let ord = v_a.partial_cmp(v_b).unwrap_or(std::cmp::Ordering::Equal);
+                    if ord != std::cmp::Ordering::Equal {
+                        return if ascending { ord } else { ord.reverse() };
                     }
                 }
             }
-            std::cmp::Ordering::Equal
-        });
+        }
+        std::cmp::Ordering::Equal
+    }
+
+    /// Sort row indices according to ORDER BY specification
+    fn sort_rows(rows: &mut [usize], table: &DataTable, sort_cols: &[(usize, bool)]) {
+        let sort_start = Instant::now();
+
+        rows.sort_by(|&a, &b| Self::compare_by_sort_cols(table, a, b, sort_cols));
 
         debug!(
             "Actual sort operation took {:.2}μs ({} rows)",
             sort_start.elapsed().as_micros(),
             rows.len()
         );
-
-        Ok(())
     }
 
     /// Get value at offset from current row (for LAG/LEAD)
@@ -547,15 +628,28 @@ impl WindowContext {
                 (start, end)
             }
             FrameUnit::Range => {
-                // RANGE frame - based on ORDER BY values (not yet fully implemented)
-                // For now, treat like ROWS
-                let start =
-                    self.calculate_frame_position(&frame.start, current_pos, partition.rows.len());
+                // RANGE frame - bounds land on peer-group edges, not physical
+                // rows. CURRENT ROW means "the whole tie group at this ORDER BY
+                // value": as a start bound its first row, as an end bound its
+                // last. On distinct keys every group is a single row and this
+                // coincides with ROWS, which is why the difference only shows up
+                // against data containing ties.
+                let (peer_first, peer_last) = partition
+                    .peer_bounds_at(current_pos as usize)
+                    .unwrap_or((current_pos as usize, current_pos as usize));
+
+                let start = self.calculate_range_frame_position(
+                    &frame.start,
+                    peer_first as i64,
+                    partition.rows.len(),
+                );
                 let end = match &frame.end {
-                    Some(bound) => {
-                        self.calculate_frame_position(bound, current_pos, partition.rows.len())
-                    }
-                    None => current_pos,
+                    Some(bound) => self.calculate_range_frame_position(
+                        bound,
+                        peer_last as i64,
+                        partition.rows.len(),
+                    ),
+                    None => peer_last as i64, // Default to CURRENT ROW
                 };
                 (start, end)
             }
@@ -585,6 +679,31 @@ impl WindowContext {
             FrameBound::CurrentRow => current_pos,
             FrameBound::Preceding(n) => current_pos - n,
             FrameBound::Following(n) => current_pos + n,
+        }
+    }
+
+    /// Calculate absolute position from a RANGE frame bound.
+    ///
+    /// `peer_edge` is the edge of the current row's peer group appropriate to
+    /// the bound's side - first position for a start bound, last for an end
+    /// bound - so CURRENT ROW extends to cover the whole tie group.
+    ///
+    /// Numeric offsets (`RANGE 1 PRECEDING`) are value-based in SQL rather than
+    /// positional, and are rejected up front in `new_with_spec`; the arm here is
+    /// unreachable in practice and falls back to positional rather than
+    /// inventing an answer.
+    fn calculate_range_frame_position(
+        &self,
+        bound: &FrameBound,
+        peer_edge: i64,
+        partition_size: usize,
+    ) -> i64 {
+        match bound {
+            FrameBound::UnboundedPreceding => 0,
+            FrameBound::UnboundedFollowing => partition_size as i64 - 1,
+            FrameBound::CurrentRow => peer_edge,
+            FrameBound::Preceding(n) => peer_edge - n,
+            FrameBound::Following(n) => peer_edge + n,
         }
     }
 

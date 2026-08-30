@@ -199,19 +199,51 @@ expect = "DIFFER"
 id = "win_range_frame_with_ties"
 data = "null_edges.csv"
 sql = "SELECT id, score, SUM(score) OVER (ORDER BY score RANGE BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS v FROM null_edges WHERE score IS NOT NULL ORDER BY id"
-expect = "DIFFER"
-# P24. At score 50 (a tie) RANGE must include BOTH peer rows -> 160; we return
-# 110, i.e. only one of them, which is ROWS behaviour. The ties in the fixture
-# are the entire reason this is detectable.
+# P24 fixed 2026-08-30. At score 50 (a tie) RANGE includes BOTH peer rows -> 160.
+# The ties in the fixture are the entire reason this is detectable: on distinct
+# keys RANGE and ROWS coincide, so keep them.
 
 [[case]]
 id = "win_default_frame_ordered"
 data = "null_edges.csv"
 sql = "SELECT id, score, SUM(score) OVER (ORDER BY score) AS v FROM null_edges WHERE score IS NOT NULL ORDER BY id"
-expect = "DIFFER"
-# P24, and the more damaging half: with an ORDER BY and no explicit frame the
-# default is RANGE UNBOUNDED PRECEDING TO CURRENT ROW. Users write this form far
-# more often than an explicit RANGE, and it is silently wrong on ties.
+# P24 fixed 2026-08-30, and the more damaging half: with an ORDER BY and no
+# explicit frame the default is RANGE UNBOUNDED PRECEDING TO CURRENT ROW. Users
+# write this form far more often than an explicit RANGE, so it must stay pinned.
+
+[[case]]
+id = "win_range_frame_peer_start"
+data = "null_edges.csv"
+sql = "SELECT id, score, SUM(score) OVER (ORDER BY score RANGE BETWEEN CURRENT ROW AND UNBOUNDED FOLLOWING) AS v FROM null_edges WHERE score IS NOT NULL ORDER BY id"
+# P24 from the other side: CURRENT ROW as a *start* bound must open at the FIRST
+# row of the peer group, where as an end bound it closes at the last. The
+# UNBOUNDED PRECEDING cases above only exercise the end bound.
+
+[[case]]
+id = "win_range_frame_partitioned_ties"
+data = "null_edges.csv"
+sql = "SELECT id, team, score, SUM(score) OVER (PARTITION BY team ORDER BY score) AS v FROM null_edges WHERE score IS NOT NULL AND team IS NOT NULL ORDER BY id"
+# P24 with PARTITION BY: peer groups must not span a partition boundary. Team
+# beta holds the tie (70, 70) that makes this bite.
+
+[[case]]
+id = "win_range_numeric_offset"
+data = "null_edges.csv"
+sql = "SELECT id, score, SUM(score) OVER (ORDER BY score RANGE BETWEEN 1 PRECEDING AND CURRENT ROW) AS v FROM null_edges WHERE score IS NOT NULL ORDER BY id"
+expect = "GAP"
+# P33. A numeric offset under RANGE is value-based ("keys within 1 of mine"),
+# not positional, and we implement only the peer-group bounds. Rejected
+# explicitly as of 2026-08-30 rather than silently answering as ROWS, which is
+# the defect P24 removed.
+
+[[case]]
+id = "win_last_value_default_frame"
+data = "null_edges.csv"
+sql = "SELECT id, score, LAST_VALUE(score) OVER (ORDER BY score) AS v FROM null_edges WHERE score IS NOT NULL ORDER BY id"
+# P24 via a different frame consumer. SUM reads the whole frame, LAST_VALUE only
+# its final row, so it pins the end bound precisely: with ties it must report the
+# last PEER, not the current row. An examples/ expectation had captured the old
+# ROWS answer here, which is why this is worth a case of its own.
 
 # --- P25 / P26: window placements we reject ---
 

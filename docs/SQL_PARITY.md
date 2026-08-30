@@ -81,7 +81,7 @@ Suggested fix order, by silent blast radius:
 | ~~5~~ | ~~[P29](#p29) boolean operator after `IN (...)`~~ | ✅ **Fixed 2026-08-08** — same bug as P30, one change closed both |
 | ~~4~~ | ~~[P28](#p28) `INTO #tmp` stages unfiltered rows~~ | ✅ **Fixed 2026-08-16** — turned out to stage the *whole source table*, and the sweep it prescribed found [P31](#p31) |
 | ~~7~~ | ~~[P18](#p18)/[P19](#p19) three-valued logic~~ | ✅ **Fixed 2026-08-22** — 125 → 129 AGREE. Delivered as three slices ([R10](ENGINE_REFACTORING.md#r10)); the two no-op ones landed first, so the semantics change reviewed on its own |
-| 8 | [P24](#p24) `RANGE` treated as `ROWS` | Silent, hits the common `SUM(x) OVER (ORDER BY y)` running-total form |
+| ~~8~~ | ~~[P24](#p24) `RANGE` treated as `ROWS`~~ | ✅ **Fixed 2026-08-30** — 129 → 133 AGREE (+2 fixed, +2 new coverage). One defect, not two: the parser already emitted the right default frame, so fixing peer groups closed both cases. Spun off [P33](#p33) |
 | 9 | [P14](#p14), [P16](#p16), [P17](#p17), [P20](#p20), [P23](#p23), P13 stage 2 | Smaller, self-contained, decisions already taken |
 | 10 | [P22](#p22), [P25](#p25), [P26](#p26), [P15](#p15), [P32](#p32) | Hard errors — visible, so less urgent than any of the above |
 | — | [P27](#p27) `OR` in `JOIN ... ON` | **Reclassified 2026-08-08 — not a quick win.** `JoinCondition` is a `Vec<SingleJoinCondition>` implicitly AND-ed, so there is nowhere in the AST to put an `OR`; it needs join conditions to become an expression, which reaches the join execution code. Sequence it with the R-log, not here |
@@ -887,23 +887,88 @@ annotation be removed.
   through as the out-of-range fallback.
 
 ### P24 — A `RANGE` frame is treated as `ROWS`
-- **Status:** 🔴 OPEN
+- **Status:** 🟢 FIXED 2026-08-30 — 129 → 133 AGREE (+2 fixed, +2 new coverage)
 - **Corpus:** `09_window.toml :: win_range_frame_with_ties`,
-  `win_default_frame_ordered` (both DIFFER). Baselines: the three explicit
-  `ROWS` frame cases (all AGREE).
+  `win_default_frame_ordered` (both now AGREE; `expect` dropped). New cases:
+  `win_range_frame_peer_start`, `win_range_frame_partitioned_ties` (AGREE),
+  `win_range_numeric_offset` (GAP — see [P33](#p33)). Baselines: the three
+  explicit `ROWS` frame cases, all still AGREE.
 - **Observed:** with ties in the ORDER BY key, `RANGE BETWEEN UNBOUNDED
   PRECEDING AND CURRENT ROW` must include **all peer rows** at the current
-  value. At `score = 50` (two peers) DuckDB returns 160; we return 110 — one
+  value. At `score = 50` (two peers) DuckDB returns 160; we returned 110 — one
   peer only, i.e. ROWS behaviour.
 - **The damaging half is the default frame.** With an `ORDER BY` in the window
   and no explicit frame, the SQL default is `RANGE UNBOUNDED PRECEDING AND
   CURRENT ROW`. `SUM(x) OVER (ORDER BY y)` is a far more common way to write a
-  running total than any explicit frame, and it is silently wrong wherever `y`
-  has duplicates. Explicit `ROWS` frames are unaffected and already correct.
+  running total than any explicit frame, and it was silently wrong wherever `y`
+  had duplicates. Explicit `ROWS` frames were unaffected and already correct.
 - **Only detectable because the fixture has ties** — on distinct keys ROWS and
   RANGE coincide, which is why this survived until `null_edges.csv` existed.
 - **Decision:** **Fix.** Implement peer-group semantics for `RANGE`, and make
   the no-frame-with-ORDER-BY default resolve to `RANGE` rather than `ROWS`.
+
+**How it was fixed.** Both halves turned out to be one defect. The parser
+*already* synthesised the correct default frame — `recursive_parser.rs` has
+emitted `RANGE UNBOUNDED PRECEDING .. CURRENT ROW` for an ORDER BY without an
+explicit frame since before this entry was filed. The whole divergence lived in
+`window_context.rs::get_frame_rows`, whose `FrameUnit::Range` arm carried the
+comment *"not yet fully implemented — for now, treat like ROWS"* and duplicated
+the ROWS arm verbatim. So the second half of the decision above needed no work,
+and fixing the first half closed both corpus cases at once.
+
+`OrderedPartition` now carries `peer_bounds`, computed in one linear pass over
+the already-sorted rows, so a partition of all-equal keys costs no more than one
+of all-distinct keys. `CURRENT ROW` resolves to the **first** row of the peer
+group as a start bound and the **last** as an end bound — the asymmetry is the
+entire mechanism, and `win_range_frame_peer_start` exists because the two
+original cases only exercised the end bound.
+
+Sorting and peer detection must agree exactly or frames land mid-group, so both
+now route through one `compare_by_sort_cols`; peers are precisely the rows it
+calls `Equal`. A pleasant consequence: with no `ORDER BY` every row is a peer of
+every other, so a bare `RANGE` frame spans the partition, which is what the
+standard specifies, without a special case.
+
+**A captured expectation had frozen the bug — the third instance of this
+pattern.** `examples/expectations/window_functions.json` stored `LAST_VALUE(x)
+OVER (PARTITION BY region ORDER BY month)` returning each row's *own* amount,
+which is the ROWS answer; the fix broke that "passing" test. DuckDB agrees with
+the new output on all 24 rows, so the capture was wrong, not the fix, and it was
+re-captured. The suite's other 22 failures are pre-existing smoke-test noise —
+missing fixtures and unreachable URLs — and only FORMAL mismatches fail the job.
+
+This is the same shape as the P29/P30 note above ("two had *passing* [unit tests]
+asserting the broken behaviour"), and worth stating as a rule: **when a fix
+breaks a golden/captured test, establish which side is right against the
+reference engine before touching either.** Re-capturing is the correct move only
+once the reference has confirmed the new output; done reflexively it would have
+silently re-frozen the defect. Both `examples/window_functions.sql`'s comment and
+a new corpus case (`win_last_value_default_frame`) now record the real semantics,
+so the next person meets the rule rather than the artefact.
+
+**A lesson worth generalising: the entry's own prescription was half stale.**
+"Make the default resolve to RANGE" described a defect that had already been
+fixed elsewhere, and following it literally would have meant editing a parser
+that was already right. Re-read the *code* each entry points at before scoping
+the work — a finding records what was true when it was filed, and the codebase
+moves underneath it. This is the P28 lesson ("a finding inherits its probe's
+blind spot") in a different key: there the write-up was too narrow, here it was
+out of date.
+
+### P33 — A `RANGE` frame with a numeric offset is rejected
+- **Status:** 🔴 OPEN — hard error, deliberate, low urgency
+- **Corpus:** `09_window.toml :: win_range_numeric_offset` (GAP).
+- **Observed:** `RANGE BETWEEN 1 PRECEDING AND CURRENT ROW` → "RANGE frames with
+  a numeric offset are not supported." DuckDB evaluates it.
+- **Created by the [P24](#p24) fix, deliberately.** A numeric offset under RANGE
+  is defined on ORDER BY *values* — "every row whose key is within 1 of mine" —
+  not on positions, and needs single-key, numeric/temporal arithmetic that peer
+  groups do not provide. Before P24 this form silently returned the ROWS answer.
+  Rejecting it converts a silent wrong answer into a visible error, which is a
+  strict improvement and the same trade the P13 stage-1 work made.
+- **Decision:** **Fix eventually.** Self-contained and well-specified; wants the
+  ORDER BY key restricted to one numeric or temporal column, then a value-window
+  scan. Ranks below any silent finding, being a hard error.
 
 ### P25 — A window's `ORDER BY` accepts only a plain column
 - **Status:** 🔴 OPEN

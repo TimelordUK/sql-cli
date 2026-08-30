@@ -438,3 +438,4 @@ AGREE count — which makes it safe to land well before the semantics change.
 | 2026-08-22 | R10 filed; slice 1a landed: `data::trilean` with the 3VL truth tables and 13 unit tests. Unwired — no behaviour change, parity unmoved at 125/159 | #51 |
 | 2026-08-22 | R10 slice 1b: WHERE evaluator converted to `Result<Trilean>`; `is_true()` collapse at the single row-filter boundary. `Unknown` still never constructed, so no behaviour change — parity unmoved at 125/159 | #53 |
 | 2026-08-22 | R10 slice 1c: UNKNOWN produced at the leaves via `compare_trilean`. Closes parity P18/P19 — 125 → **129 AGREE**; new finding P32 (`NOT LIKE` parse gap) pinned, not fixed | — |
+| 2026-08-30 | `RANGE` window frames given peer-group semantics (`OrderedPartition::peer_bounds`); sorting and peer detection unified on one comparator. Closes parity P24 — 129 → **133 AGREE**; new finding P33 (`RANGE` with a numeric offset) now a deliberate hard error rather than a silent ROWS answer | — |
