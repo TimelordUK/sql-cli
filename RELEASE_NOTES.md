@@ -1,30 +1,23 @@
-# SQL CLI v1.83.3
+# SQL CLI v1.83.4
 
 **Release Date:** August 30, 2026
 
 ## 📊 Release Overview
 - **Commits in this release:** 2
-- **Files updated:** 12
+- **Files updated:** 4
 
 ## ✨ Highlights
-
-### 🔍 Enhanced Debugging
-- **Better Diagnostics**: Improved error messages and state dumps
-
-### 💾 Data Protection
-- **History Recovery**: Automatic recovery from corrupted files
-- **Atomic Writes**: Safer file operations to prevent data loss
 
 ## 📝 Changes by Category
 
 ### 🐛 Bug Fixes
-- stop completion mangling column names that need quoting (T1)
+- stop ORDER BY splitting quoted column names at the dot (P34)
 
 <details>
 <summary>📋 View all commits</summary>
 
-- Merge pull request #57 from TimelordUK/feat/tui-completion-quoted-columns (TimelordUK)
-- fix(tui): stop completion mangling column names that need quoting (T1) (TimelordUK)
+- Merge pull request #58 from TimelordUK/fix/p34-order-by-quoted-dotted-columns (TimelordUK)
+- fix(engine): stop ORDER BY splitting quoted column names at the dot (P34) (TimelordUK)
 
 </details>
 
