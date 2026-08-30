@@ -6,6 +6,7 @@
 pub mod aggregate_functions;
 pub mod aggregates;
 pub mod cache;
+pub mod completion_token;
 pub mod cursor_aware_parser;
 pub mod functions;
 pub mod generators;

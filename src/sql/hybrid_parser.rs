@@ -22,6 +22,9 @@ pub struct HybridResult {
     pub recursive_context: String,
     pub cursor_position: usize,
     pub query_complexity: String,
+    /// Byte offset where an accepted suggestion replaces text; see
+    /// [`crate::sql::cursor_aware_parser::ParseResult::replace_start`].
+    pub replace_start: usize,
 }
 
 impl Default for HybridParser {
@@ -75,6 +78,7 @@ impl HybridParser {
             recursive_context: recursive_context.to_string(),
             cursor_position: cursor_pos,
             query_complexity: self.analyze_query_complexity(query),
+            replace_start: result.replace_start,
         }
     }
 

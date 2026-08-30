@@ -684,6 +684,10 @@ pub struct CompletionState {
     pub last_query: String,
     pub last_cursor_pos: usize,
     pub is_active: bool,
+    /// Byte offset in `last_query` where the accepted suggestion is spliced in,
+    /// as reported by the parser. Held across Tab presses so cycling replaces
+    /// the previous suggestion instead of appending to it.
+    pub replace_start: usize,
     // Statistics
     pub total_completions: usize,
     pub last_completion_time: Option<std::time::Instant>,
@@ -704,6 +708,7 @@ impl CompletionState {
             last_query: String::new(),
             last_cursor_pos: 0,
             is_active: false,
+            replace_start: 0,
             total_completions: 0,
             last_completion_time: None,
         }
@@ -717,11 +722,12 @@ impl CompletionState {
         // Keep last_query and last_cursor_pos for context
     }
 
-    /// Set new suggestions
-    pub fn set_suggestions(&mut self, suggestions: Vec<String>) {
+    /// Set new suggestions along with the span they replace
+    pub fn set_suggestions(&mut self, suggestions: Vec<String>, replace_start: usize) {
         self.is_active = !suggestions.is_empty();
         self.suggestions = suggestions;
         self.current_index = 0;
+        self.replace_start = replace_start;
         if self.is_active {
             self.last_completion_time = Some(std::time::Instant::now());
             self.total_completions += 1;
@@ -3515,10 +3521,10 @@ impl AppStateContainer {
         }
     }
 
-    pub fn set_completion_suggestions(&self, suggestions: Vec<String>) {
+    pub fn set_completion_suggestions(&self, suggestions: Vec<String>, replace_start: usize) {
         let mut completion = self.completion.borrow_mut();
         let count = suggestions.len();
-        completion.set_suggestions(suggestions);
+        completion.set_suggestions(suggestions, replace_start);
 
         if count > 0 {
             if let Some(ref debug_service) = *self.debug_service.borrow() {
@@ -3554,6 +3560,11 @@ impl AppStateContainer {
 
     pub fn is_completion_active(&self) -> bool {
         self.completion.borrow().is_active
+    }
+
+    /// Byte offset the current suggestion replaces from
+    pub fn completion_replace_start(&self) -> usize {
+        self.completion.borrow().replace_start
     }
 
     pub fn update_completion_context(&self, query: String, cursor_pos: usize) {
