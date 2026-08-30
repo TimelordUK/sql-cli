@@ -385,6 +385,38 @@ feature work**, and so we can tell the difference between "this is awkward" and
   them. The compiler's list is exhaustive by definition; the transform was
   applied from its own line/column output.
 
+### R11 — ORDER BY resolves columns with its own copy of the resolver
+- **Status:** 🔴 OPEN — filed 2026-08-30 by [P34](SQL_PARITY.md#p34)
+- **Where:** `query_engine::apply_multi_order_by_with_context` vs.
+  `query_engine::resolve_column_index` (same file, ~3000 lines apart)
+- **Observed:** `resolve_column_index` carries a doc comment declaring itself
+  the canonical resolver, "used by all SQL clauses (WHERE, SELECT, ORDER BY,
+  GROUP BY) to ensure consistent alias resolution behavior". ORDER BY does not
+  call it. It has its own inline resolution instead, and that copy differs on
+  two points: it treats any dot in the name as a table qualifier and takes the
+  suffix (the canonical one tries the literal name **first**), and it ignores
+  `table_prefix` entirely (the canonical one resolves the alias and tries the
+  qualified name). The first divergence was a live wrong-answer bug for
+  quoted dotted column names — [P34](SQL_PARITY.md#p34).
+- **Impact:** one hard error, now fixed narrowly in place. The second
+  divergence — ORDER BY ignoring `table_prefix` — has no known failing case
+  because the fallback to the bare name happens to work after projection
+  unqualifies the columns. That is luck, not design.
+- **Same shape as [R9](#r9):** one helper documented as the single
+  implementation, plus a hand-rolled copy at a site that never adopted it, and
+  the copy is the one that is wrong. As with R9, the copy looks locally
+  reasonable — nothing at the ORDER BY site hints that a shared resolver exists.
+- **Deliberately deferred at fix time.** Converging on `resolve_column_index`
+  changes behaviour for *unquoted* dotted names: the canonical path matches a
+  column's `qualified_name`, the ORDER BY copy strips to the suffix. Those
+  differ whenever a table's columns were not enriched with qualified names, so
+  the swap is a behaviour change and wants its own change with parity run,
+  not a rider on a bug fix. The P34 fix therefore only reordered the ORDER BY
+  copy's own lookups (literal first) and left the copy in place.
+- **When done:** delete the inline resolution, call `resolve_column_index`, and
+  keep both P34 regression tests green — they pin exactly the two behaviours
+  the shared resolver has to reproduce.
+
 ---
 
 ## Sequencing
@@ -407,6 +439,7 @@ R4 fixtures ──────── adopt opportunistically, per transformer to
 R5 dead code ─────── opportunistic
 R8 legacy WHERE ──── independent; stage 2 is self-contained, do it in a lull
 R10 Trilean ──────── DONE; closed P18/P19 (parity 125 → 129)
+R11 ORDER BY resolver ─ independent; small, but a behaviour change — wants its own parity run
 ```
 
 **A note on ordering, from the P18/P19 work being next.** The WHERE evaluator
@@ -439,3 +472,4 @@ AGREE count — which makes it safe to land well before the semantics change.
 | 2026-08-22 | R10 slice 1b: WHERE evaluator converted to `Result<Trilean>`; `is_true()` collapse at the single row-filter boundary. `Unknown` still never constructed, so no behaviour change — parity unmoved at 125/159 | #53 |
 | 2026-08-22 | R10 slice 1c: UNKNOWN produced at the leaves via `compare_trilean`. Closes parity P18/P19 — 125 → **129 AGREE**; new finding P32 (`NOT LIKE` parse gap) pinned, not fixed | — |
 | 2026-08-30 | `RANGE` window frames given peer-group semantics (`OrderedPartition::peer_bounds`); sorting and peer detection unified on one comparator. Closes parity P24 — 129 → **133 AGREE**; new finding P33 (`RANGE` with a numeric offset) now a deliberate hard error rather than a silent ROWS answer | — |
+| 2026-08-30 | P34 fixed: `ORDER BY "col.with.dot"` no longer strips a quoted identifier at the dot. R11 filed — ORDER BY still resolves columns with its own copy of `resolve_column_index` rather than the canonical one | — |

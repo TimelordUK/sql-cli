@@ -353,3 +353,72 @@ fn test_direct_multi_sort_method() {
     assert_eq!(row3.values[1], DataValue::Integer(1));
     assert_eq!(row3.values[2], DataValue::Float(2.0));
 }
+
+/// P34: a double-quoted identifier containing a dot (e.g. `"name.common"`) is a
+/// single column name, not a `table.column` qualifier. ORDER BY used to strip
+/// everything before the last dot and then fail to find `common`.
+#[test]
+fn test_order_by_quoted_column_containing_dot() {
+    let mut table = DataTable::new("countries");
+    table.add_column(DataColumn::new("name.common"));
+    table.add_column(DataColumn::new("region"));
+
+    for (name, region) in [
+        ("Peru", "Americas"),
+        ("Chad", "Africa"),
+        ("Angola", "Africa"),
+        ("Brazil", "Americas"),
+    ] {
+        table
+            .add_row(DataRow::new(vec![
+                DataValue::String(name.to_string()),
+                DataValue::String(region.to_string()),
+            ]))
+            .unwrap();
+    }
+
+    let table_arc = Arc::new(table);
+    let engine = QueryEngine::new();
+
+    let view = engine
+        .execute(
+            table_arc.clone(),
+            r#"SELECT "name.common", region FROM countries ORDER BY region, "name.common""#,
+        )
+        .unwrap();
+
+    assert_eq!(view.row_count(), 4);
+    let names: Vec<String> = (0..4)
+        .map(|i| view.get_row(i).unwrap().values[0].to_string())
+        .collect();
+    assert_eq!(names, vec!["Angola", "Chad", "Brazil", "Peru"]);
+}
+
+/// The qualifier-stripping fallback must still work for an unqualified name that
+/// really does carry a table prefix.
+#[test]
+fn test_order_by_table_qualified_column_still_resolves() {
+    let mut table = DataTable::new("countries");
+    table.add_column(DataColumn::new("region"));
+
+    for region in ["Americas", "Africa", "Asia"] {
+        table
+            .add_row(DataRow::new(vec![DataValue::String(region.to_string())]))
+            .unwrap();
+    }
+
+    let table_arc = Arc::new(table);
+    let engine = QueryEngine::new();
+
+    let view = engine
+        .execute(
+            table_arc.clone(),
+            "SELECT region FROM countries ORDER BY countries.region",
+        )
+        .unwrap();
+
+    let regions: Vec<String> = (0..3)
+        .map(|i| view.get_row(i).unwrap().values[0].to_string())
+        .collect();
+    assert_eq!(regions, vec!["Africa", "Americas", "Asia"]);
+}

@@ -1116,6 +1116,46 @@ out of date.
   the corpus case doubles as proof that `NOT LIKE` inherits the NULL semantics
   rather than growing its own.
 
+### P34 — `ORDER BY "col.with.dot"` fails to resolve the column
+- **Status:** 🟢 FIXED 2026-08-30
+- **Observed:** with a CSV whose header carries dotted names (`data/countries.csv`
+  has `name.common`, `name.official`, `translations.ara.common`, ...),
+
+  ```
+  SELECT "name.common", region FROM countries ORDER BY region, "name.common"
+  ```
+
+  failed with `Column 'name.common' not found. Did you mean 'name.common'?` —
+  the error naming the column it had just refused to find. The same query
+  without the quoted column in the ORDER BY worked, and the SELECT list
+  resolved `"name.common"` correctly, which is what made it look like an
+  ORDER BY *parsing* problem.
+- **Not parsing.** The AST is right: the parser produces
+  `ColumnRef { name: "name.common", quote_style: DoubleQuotes, table_prefix: None }`,
+  and a genuinely qualified `countries.region` parses to
+  `name: "region", table_prefix: Some("countries")`. The bug was in resolution.
+  `apply_multi_order_by_with_context` treated *any* dot in the name as a
+  qualifier and looked up only the part after the last dot (`common`), which
+  does not exist. The "did you mean" suggestion was computed from the *full*
+  name, hence the self-contradicting message.
+- **Fix:** try the literal column name first, and fall back to
+  qualifier-stripping only for an **unquoted** reference. A double-quoted
+  identifier is one name, dots included — that is what the quotes are *for*.
+  The fallback is kept for unquoted dotted names, which older parse paths can
+  still produce.
+- **Regression tests:** `tests/test_multi_column_order_by.rs` —
+  `test_order_by_quoted_column_containing_dot` (the bug) and
+  `test_order_by_table_qualified_column_still_resolves` (the fallback the fix
+  must not break).
+- **Note the shape.** `resolve_column_index` (`query_engine.rs:106`) is
+  documented as *the* canonical resolver "used by all SQL clauses ... to ensure
+  consistent alias resolution", and it already gets this case right — literal
+  name first, dotted name as a qualified lookup second. ORDER BY never called
+  it and hand-rolled a worse copy. The narrow fix above is deliberate:
+  converging the ORDER BY path onto the shared resolver changes behaviour for
+  unquoted dotted names (qualified-name match vs. suffix strip), so it belongs
+  in [`ENGINE_REFACTORING.md`](ENGINE_REFACTORING.md), not in a bug fix.
+
 ---
 
 ## Deferred / won't fix (intentional)
