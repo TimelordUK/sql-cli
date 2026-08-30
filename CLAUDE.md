@@ -380,12 +380,16 @@ The script parser is basic - it chunks on `GO` statements, so proper formatting 
 
 ## 🔗 Quick Links
 
-### Books of Work (read before starting engine changes)
+### Books of Work (read before starting engine or TUI changes)
 - **`docs/SQL_PARITY.md`** — P-numbered log of divergences vs DuckDB (*do we
   return the right answer?*). Backed by `tests/comparison/` and a CI gate.
 - **`docs/ENGINE_REFACTORING.md`** — R-numbered log of structural debt (*can we
   keep changing the engine safely?*). Records why groundwork is sequenced the
   way it is, and which refactors are deliberately deferred.
+- **`docs/TUI_FEATURES.md`** — T-numbered log for the interactive editor
+  (*is it pleasant to use?*): completion, key handling, ergonomics. The TUI has
+  no equivalent of the parity harness, so annoyances get logged here rather than
+  worked around.
 
 ### Code
 - Function Registry: `src/sql/functions/mod.rs`

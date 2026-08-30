@@ -1,6 +1,7 @@
 use crate::data::csv_fixes::quote_if_needed;
 use crate::parser::{ParseState, Schema};
 use crate::recursive_parser::{detect_cursor_context, CursorContext, LogicalOp};
+use crate::sql::completion_token::{find_completion_token, CompletionToken};
 
 #[derive(Debug, Clone)]
 pub struct CursorAwareParser {
@@ -12,6 +13,20 @@ pub struct ParseResult {
     pub suggestions: Vec<String>,
     pub context: String,
     pub partial_word: Option<String>,
+    /// Byte offset in the query where an accepted suggestion should be spliced
+    /// in; it replaces `query[replace_start..cursor_pos]`. The parser owns this
+    /// because only it knows whether the text before the cursor is a column
+    /// reference (`name.com` - replace all of it) or a method call on a column
+    /// (`price.Con` - replace only `Con`).
+    pub replace_start: usize,
+}
+
+/// Strip the surrounding quotes from a quoted identifier so it can be compared
+/// against what the user typed.
+fn strip_identifier_quotes(suggestion: &str) -> &str {
+    suggestion
+        .strip_prefix('"')
+        .map_or(suggestion, |rest| rest.strip_suffix('"').unwrap_or(rest))
 }
 
 impl Default for CursorAwareParser {
@@ -53,6 +68,20 @@ impl CursorAwareParser {
             .schema
             .get_first_table_name()
             .unwrap_or("trade_deal".to_string());
+
+        // The identifier the cursor sits in, scanned with quote- and
+        // dot-awareness. It is the single source of truth for both what we
+        // filter against and which span an accepted suggestion replaces.
+        let token = find_completion_token(query, cursor_pos);
+
+        // `name.com` is ambiguous: a column literally called `name.common`, or
+        // a method call on a column called `name`. Columns win when the text
+        // actually prefixes one, because completion is the only way to
+        // discover a dotted column name - methods stay reachable on any column
+        // whose name really exists.
+        if let Some(result) = self.complete_dotted_column(token.as_ref(), &default_table) {
+            return result;
+        }
 
         let (suggestions, context_str) = match &cursor_context {
             CursorContext::SelectClause => {
@@ -267,80 +296,93 @@ impl CursorAwareParser {
                     suggestions,
                     context: format!("{context:?} (partial: {partial_word:?})"),
                     partial_word,
+                    replace_start: token.as_ref().map_or(cursor_pos, |t| t.start),
                 };
             }
         };
 
-        // Filter by partial word if present (but not for method suggestions as they're already filtered)
-        let mut final_suggestions = suggestions;
         let is_method_context = matches!(
             cursor_context,
-            CursorContext::AfterColumn(_)
-                | CursorContext::InMethodCall(_, _)
-                | CursorContext::AfterComparisonOp(_, _)
+            CursorContext::AfterColumn(_) | CursorContext::InMethodCall(_, _)
         );
+        let is_value_context = matches!(cursor_context, CursorContext::AfterComparisonOp(_, _));
 
-        if let Some(ref partial) = partial_word {
-            if !is_method_context {
-                // Only filter non-method suggestions
-                final_suggestions.retain(|suggestion| {
-                    // Check if we're dealing with a partial quoted identifier
-                    if let Some(partial_without_quote) = partial.strip_prefix('"') {
-                        // User is typing a quoted identifier like "customer
-                        // Remove the opening quote
-
-                        // Check if suggestion is a quoted identifier that matches
-                        if suggestion.starts_with('"')
-                            && suggestion.ends_with('"')
-                            && suggestion.len() > 2
-                        {
-                            // Full quoted identifier like "Customer Id"
-                            let suggestion_without_quotes = &suggestion[1..suggestion.len() - 1];
-                            suggestion_without_quotes
-                                .to_lowercase()
-                                .starts_with(&partial_without_quote.to_lowercase())
-                        } else if suggestion.starts_with('"') && suggestion.len() > 1 {
-                            // Partial quoted identifier (shouldn't happen in suggestions but handle it)
-                            let suggestion_without_quote = &suggestion[1..];
-                            suggestion_without_quote
-                                .to_lowercase()
-                                .starts_with(&partial_without_quote.to_lowercase())
-                        } else {
-                            // Also check non-quoted suggestions that might need quotes
-                            suggestion
-                                .to_lowercase()
-                                .starts_with(&partial_without_quote.to_lowercase())
-                        }
-                    } else {
-                        // Normal non-quoted partial (e.g., "customer")
-                        // Handle quoted column names - check if the suggestion starts with a quote
-                        let suggestion_to_check = if suggestion.starts_with('"')
-                            && suggestion.ends_with('"')
-                            && suggestion.len() > 2
-                        {
-                            // Remove both quotes for comparison (e.g., "Customer Id" -> "Customer Id")
-                            &suggestion[1..suggestion.len() - 1]
-                        } else if suggestion.starts_with('"') && suggestion.len() > 1 {
-                            // Malformed quoted identifier - just strip opening quote
-                            &suggestion[1..]
-                        } else {
-                            suggestion
-                        };
-
-                        // Now compare the cleaned suggestion with the partial
-                        suggestion_to_check
-                            .to_lowercase()
-                            .starts_with(&partial.to_lowercase())
-                    }
+        // Method suggestions arrive pre-filtered against the partial method
+        // name; everything else is filtered here. Suggestions may be quoted
+        // (`"name.common"`) while the user typed either `na` or `"na`, so both
+        // sides are compared with quotes stripped.
+        let mut final_suggestions = suggestions;
+        if !is_method_context && !is_value_context {
+            if let Some(needle) = token
+                .as_ref()
+                .map(CompletionToken::unquoted)
+                .filter(|n| !n.is_empty())
+            {
+                let needle = needle.to_lowercase();
+                final_suggestions.retain(|s| {
+                    strip_identifier_quotes(s)
+                        .to_lowercase()
+                        .starts_with(&needle)
                 });
             }
         }
+
+        // Method names replace only the segment after the dot (`price.Con` ->
+        // `price.Contains('')`); everything else replaces the whole identifier.
+        // After a quoted column the dot terminates the token, so the partial
+        // method is already the whole token (`"name.common".Star` -> `Star`).
+        let replace_start = if is_method_context {
+            token.as_ref().map_or(cursor_pos, |t| {
+                t.last_segment().map_or(t.start, |(start, _)| start)
+            })
+        } else {
+            token.as_ref().map_or(cursor_pos, |t| t.start)
+        };
 
         ParseResult {
             suggestions: final_suggestions,
             context: format!("{context_str} (partial: {partial_word:?})"),
             partial_word,
+            replace_start,
         }
+    }
+
+    /// Suggest real column names when the text at the cursor prefixes one.
+    ///
+    /// Only dotted text reaches here: undotted prefixes are already handled by
+    /// the clause contexts, whereas a dotted prefix would otherwise be read as
+    /// a method call and the column would be unreachable by completion.
+    fn complete_dotted_column(
+        &self,
+        token: Option<&CompletionToken>,
+        table: &str,
+    ) -> Option<ParseResult> {
+        let token = token?;
+        let needle = token.unquoted();
+        if !needle.contains('.') {
+            return None;
+        }
+
+        let needle_lower = needle.to_lowercase();
+        let matches: Vec<String> = self
+            .schema
+            .get_columns(table)
+            .into_iter()
+            .filter(|col| col.to_lowercase().starts_with(&needle_lower))
+            .map(|col| quote_if_needed(&col))
+            .collect();
+
+        // No column by that name - leave it to the method-call handling.
+        if matches.is_empty() {
+            return None;
+        }
+
+        Some(ParseResult {
+            suggestions: matches,
+            context: format!("DottedColumn (partial: {needle:?})"),
+            partial_word: Some(token.text.clone()),
+            replace_start: token.start,
+        })
     }
 
     fn extract_word_at_cursor(&self, query: &str, cursor_pos: usize) -> Option<String> {

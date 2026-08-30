@@ -4070,7 +4070,7 @@ impl EnhancedTuiApp {
             }
 
             self.state_container
-                .set_completion_suggestions(hybrid_result.suggestions);
+                .set_completion_suggestions(hybrid_result.suggestions, hybrid_result.replace_start);
         } else if self.state_container.is_completion_active() {
             // Cycle to next suggestion
             self.state_container.next_completion();
@@ -4091,28 +4091,34 @@ impl EnhancedTuiApp {
     }
 
     /// Apply a completion suggestion to the input
+    ///
+    /// The span to replace comes from the parser rather than being re-derived
+    /// here: the two used to disagree over quotes and dots, which is how
+    /// cycling past `"name.common"` produced `"name.commonname.official"`.
     fn apply_completion_to_input(&mut self, query: &str, cursor_pos: usize, suggestion: &str) {
-        let partial_word =
-            crate::ui::utils::text_operations::extract_partial_word_at_cursor(query, cursor_pos);
+        let replace_start = self.state_container.completion_replace_start();
 
-        if let Some(partial) = partial_word {
-            self.apply_partial_completion(query, cursor_pos, &partial, suggestion);
+        if replace_start < cursor_pos && query.is_char_boundary(replace_start) {
+            self.apply_partial_completion(query, cursor_pos, replace_start, suggestion);
         } else {
             self.apply_full_insertion(query, cursor_pos, suggestion);
         }
     }
 
-    /// Apply completion when we have a partial word to complete
+    /// Replace `query[replace_start..cursor_pos]` with the suggestion
     fn apply_partial_completion(
         &mut self,
         query: &str,
         cursor_pos: usize,
-        partial: &str,
+        replace_start: usize,
         suggestion: &str,
     ) {
         // Use extracted completion logic
         let result = crate::ui::utils::text_operations::apply_completion_to_text(
-            query, cursor_pos, partial, suggestion,
+            query,
+            cursor_pos,
+            replace_start,
+            suggestion,
         );
 
         // Use helper to set text and cursor together - this ensures sync
