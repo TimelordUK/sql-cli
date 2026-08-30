@@ -21,6 +21,7 @@ use crate::data::temp_table_registry::TempTableRegistry;
 use crate::execution_plan::{ExecutionPlan, ExecutionPlanBuilder, StepType};
 use crate::sql::aggregates::{contains_aggregate, is_aggregate_compatible};
 use crate::sql::parser::ast::ColumnRef;
+use crate::sql::parser::ast::QuoteStyle;
 use crate::sql::parser::ast::SetOperation;
 use crate::sql::parser::ast::TableSource;
 use crate::sql::parser::ast::WindowSpec;
@@ -3155,8 +3156,11 @@ impl QueryEngine {
 
         for order_col in order_by_columns {
             // Extract column name from expression (currently only supports simple columns)
-            let column_name = match &order_col.expr {
-                SqlExpression::Column(col_ref) => col_ref.name.clone(),
+            let (column_name, is_quoted) = match &order_col.expr {
+                SqlExpression::Column(col_ref) => (
+                    col_ref.name.clone(),
+                    !matches!(col_ref.quote_style, QuoteStyle::None),
+                ),
                 _ => {
                     // TODO: Support expression evaluation in ORDER BY
                     return Err(anyhow!(
@@ -3165,46 +3169,47 @@ impl QueryEngine {
                 }
             };
 
-            // Try to find the column index, handling qualified column names (table.column)
-            let col_index = if column_name.contains('.') {
-                // Qualified column name - extract unqualified part
-                if let Some(dot_pos) = column_name.rfind('.') {
+            // Always try the literal column name first: a quoted identifier such as
+            // "name.common" is a single column whose name contains a dot, not a
+            // table-qualified reference (genuine qualifiers land in table_prefix).
+            let col_index = view
+                .source()
+                .get_column_index(&column_name)
+                .or_else(|| {
+                    if is_quoted {
+                        return None;
+                    }
+                    // Unquoted name still carrying a qualifier (e.g. "t.col" from an
+                    // older parse path) - after SELECT processing columns are
+                    // unqualified, so fall back to the part after the last dot.
+                    let dot_pos = column_name.rfind('.')?;
                     let col_name = &column_name[dot_pos + 1..];
-
-                    // After SELECT processing, columns are unqualified
-                    // So just use the column name part
                     debug!(
                         "ORDER BY: Extracting unqualified column '{}' from '{}'",
                         col_name, column_name
                     );
                     view.source().get_column_index(col_name)
-                } else {
-                    view.source().get_column_index(&column_name)
-                }
-            } else {
-                // Simple column name
-                view.source().get_column_index(&column_name)
-            }
-            .ok_or_else(|| {
-                // If not found, provide helpful error with suggestions
-                let suggestion = self.find_similar_column(view.source(), &column_name);
-                match suggestion {
-                    Some(similar) => anyhow::anyhow!(
-                        "Column '{}' not found. Did you mean '{}'?",
-                        column_name,
-                        similar
-                    ),
-                    None => {
-                        // Also list available columns for debugging
-                        let available_cols = view.source().column_names().join(", ");
-                        anyhow::anyhow!(
-                            "Column '{}' not found. Available columns: {}",
+                })
+                .ok_or_else(|| {
+                    // If not found, provide helpful error with suggestions
+                    let suggestion = self.find_similar_column(view.source(), &column_name);
+                    match suggestion {
+                        Some(similar) => anyhow::anyhow!(
+                            "Column '{}' not found. Did you mean '{}'?",
                             column_name,
-                            available_cols
-                        )
+                            similar
+                        ),
+                        None => {
+                            // Also list available columns for debugging
+                            let available_cols = view.source().column_names().join(", ");
+                            anyhow::anyhow!(
+                                "Column '{}' not found. Available columns: {}",
+                                column_name,
+                                available_cols
+                            )
+                        }
                     }
-                }
-            })?;
+                })?;
 
             let ascending = matches!(order_col.direction, SortDirection::Asc);
             sort_columns.push((col_index, ascending));
