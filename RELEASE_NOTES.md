@@ -1,25 +1,30 @@
-# SQL CLI v1.83.2
+# SQL CLI v1.83.3
 
 **Release Date:** August 30, 2026
 
 ## 📊 Release Overview
-- **Commits in this release:** 3
-- **Files updated:** 7
+- **Commits in this release:** 2
+- **Files updated:** 12
 
 ## ✨ Highlights
+
+### 🔍 Enhanced Debugging
+- **Better Diagnostics**: Improved error messages and state dumps
+
+### 💾 Data Protection
+- **History Recovery**: Automatic recovery from corrupted files
+- **Atomic Writes**: Safer file operations to prevent data loss
 
 ## 📝 Changes by Category
 
 ### 🐛 Bug Fixes
-- re-capture window_functions expectation frozen on the P24 bug
-- give RANGE frames peer-group semantics (P24)
+- stop completion mangling column names that need quoting (T1)
 
 <details>
 <summary>📋 View all commits</summary>
 
-- Merge pull request #56 from TimelordUK/fix/p24-range-window-frames (TimelordUK)
-- fix(examples): re-capture window_functions expectation frozen on the P24 bug (TimelordUK)
-- fix(window): give RANGE frames peer-group semantics (P24) (TimelordUK)
+- Merge pull request #57 from TimelordUK/feat/tui-completion-quoted-columns (TimelordUK)
+- fix(tui): stop completion mangling column names that need quoting (T1) (TimelordUK)
 
 </details>
 
