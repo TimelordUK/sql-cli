@@ -161,6 +161,17 @@ impl OrderByAliasTransformer {
         }
     }
 
+    /// Is this ORDER BY item a bare numeric literal?
+    ///
+    /// Only a bare literal counts. `ORDER BY 1+1` is an ordinary constant
+    /// expression that sorts nothing, which is what DuckDB does too, so it is
+    /// deliberately not matched here. Non-integer literals are matched so that
+    /// `ORDER BY 1.5` reaches the engine and is rejected there, rather than
+    /// being promoted into a constant column and silently sorting nothing.
+    fn is_numeric_literal(expr: &SqlExpression) -> bool {
+        matches!(expr, SqlExpression::NumberLiteral(_))
+    }
+
     /// Check if an ORDER BY column matches an aggregate pattern
     /// Returns the normalized aggregate string if it matches
     fn extract_aggregate_from_order_column(column_name: &str) -> Option<String> {
@@ -333,6 +344,16 @@ impl OrderByAliasTransformer {
                 }
             }
 
+            // ORDER BY <ordinal> (P16) is a positional reference to an output
+            // column, not an expression to compute. Promoting it would append a
+            // hidden *constant* column and sort on that - every row compares
+            // equal, so the sort silently becomes a no-op. Resolution needs the
+            // projected column list, which only exists once the query runs, so
+            // leave the literal in place for query_engine to resolve.
+            if Self::is_numeric_literal(&order_col.expr) {
+                continue;
+            }
+
             // Determine the dedup key and clone the expression we'll promote.
             // For Column refs we use the column name (case-insensitive); for
             // arbitrary expressions we use the debug-formatted string. Two
@@ -381,7 +402,7 @@ impl OrderByAliasTransformer {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::sql::parser::ast::{ColumnRef, QuoteStyle, SortDirection};
+    use crate::sql::parser::ast::{ColumnRef, OrderByItem, QuoteStyle, SortDirection};
 
     #[test]
     fn test_extract_aggregate_from_order_column() {
@@ -422,6 +443,99 @@ mod tests {
             OrderByAliasTransformer::normalize_aggregate_expr(&expr),
             "SUM(SALES_AMOUNT)"
         );
+    }
+
+    #[test]
+    fn ordinal_literal_is_not_promoted_to_a_hidden_column() {
+        // P16: promoting `ORDER BY 2` would append a hidden CONSTANT column and
+        // sort on it, so every row compares equal and the sort silently does
+        // nothing. The literal must survive to query_engine, which resolves it
+        // positionally against the projected output.
+        let mut stmt = SelectStatement::default();
+        stmt.select_items = vec![
+            SelectItem::Column {
+                column: ColumnRef::unquoted("id".to_string()),
+                leading_comments: Vec::new(),
+                trailing_comment: None,
+            },
+            SelectItem::Column {
+                column: ColumnRef::unquoted("score".to_string()),
+                leading_comments: Vec::new(),
+                trailing_comment: None,
+            },
+        ];
+        stmt.order_by = Some(vec![OrderByItem {
+            expr: SqlExpression::NumberLiteral("2".to_string()),
+            direction: SortDirection::Desc,
+        }]);
+
+        let stmt = OrderByAliasTransformer::new()
+            .transform_statement(stmt)
+            .expect("transform");
+
+        assert_eq!(stmt.select_items.len(), 2, "no hidden column appended");
+        assert!(matches!(
+            stmt.order_by.as_ref().unwrap()[0].expr,
+            SqlExpression::NumberLiteral(ref n) if n == "2"
+        ));
+    }
+
+    #[test]
+    fn non_integer_literal_also_reaches_the_engine() {
+        // `ORDER BY 1.5` is not positional, but it must still not be promoted:
+        // the engine rejects it, whereas a hidden constant column would make it
+        // a silent no-op. Only the engine knows the valid range to report.
+        let mut stmt = SelectStatement::default();
+        stmt.select_items = vec![SelectItem::Column {
+            column: ColumnRef::unquoted("id".to_string()),
+            leading_comments: Vec::new(),
+            trailing_comment: None,
+        }];
+        stmt.order_by = Some(vec![OrderByItem {
+            expr: SqlExpression::NumberLiteral("1.5".to_string()),
+            direction: SortDirection::Asc,
+        }]);
+
+        let stmt = OrderByAliasTransformer::new()
+            .transform_statement(stmt)
+            .expect("transform");
+
+        assert_eq!(stmt.select_items.len(), 1);
+        assert!(matches!(
+            stmt.order_by.as_ref().unwrap()[0].expr,
+            SqlExpression::NumberLiteral(_)
+        ));
+    }
+
+    #[test]
+    fn arithmetic_in_order_by_is_still_promoted() {
+        // The other half of the rule: `1+1` is an ordinary constant expression,
+        // not an ordinal, so it keeps the existing promotion path. Guards
+        // against the ordinal check widening to any numeric-valued expression.
+        let mut stmt = SelectStatement::default();
+        stmt.select_items = vec![SelectItem::Column {
+            column: ColumnRef::unquoted("id".to_string()),
+            leading_comments: Vec::new(),
+            trailing_comment: None,
+        }];
+        stmt.order_by = Some(vec![OrderByItem {
+            expr: SqlExpression::BinaryOp {
+                left: Box::new(SqlExpression::NumberLiteral("1".to_string())),
+                op: "+".to_string(),
+                right: Box::new(SqlExpression::NumberLiteral("1".to_string())),
+            },
+            direction: SortDirection::Asc,
+        }]);
+
+        let stmt = OrderByAliasTransformer::new()
+            .transform_statement(stmt)
+            .expect("transform");
+
+        assert_eq!(stmt.select_items.len(), 2, "expression promoted as hidden");
+        assert!(matches!(
+            stmt.order_by.as_ref().unwrap()[0].expr,
+            SqlExpression::Column(ref c) if c.name.starts_with(HIDDEN_ORDERBY_PREFIX)
+        ));
     }
 
     #[test]

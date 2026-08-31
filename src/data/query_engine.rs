@@ -3135,6 +3135,55 @@ impl QueryEngine {
         Ok(view.with_rows(unique_row_indices))
     }
 
+    /// Resolve `ORDER BY <n>` - a 1-based positional reference to a select-list
+    /// item - to a source column index (P16).
+    ///
+    /// The reference is against the *output* columns, so it is resolved here
+    /// rather than in `OrderByAliasTransformer`: by this point projection,
+    /// `SELECT *` expansion and GROUP BY have all run, and `ORDER BY 2` means
+    /// the same thing in every one of those shapes.
+    ///
+    /// Columns promoted for ORDER BY visibility (and HAVING's hidden
+    /// aggregates) are appended *after* the real output, so they are excluded
+    /// from both the mapping and the range check - `ORDER BY 3` must not
+    /// silently land on `__hidden_orderby_1`.
+    ///
+    /// Following DuckDB: out-of-range is an error, and a non-integer literal is
+    /// an error too rather than a sort that quietly does nothing.
+    fn resolve_order_by_ordinal(view: &DataView, literal: &str) -> Result<usize> {
+        use crate::query_plan::having_alias_transformer::HIDDEN_AGG_PREFIX;
+        use crate::query_plan::order_by_alias_transformer::HIDDEN_ORDERBY_PREFIX;
+
+        let output_columns: Vec<usize> = view
+            .get_display_columns()
+            .into_iter()
+            .filter(|&idx| {
+                view.source().columns.get(idx).is_none_or(|c| {
+                    !c.name.starts_with(HIDDEN_ORDERBY_PREFIX)
+                        && !c.name.starts_with(HIDDEN_AGG_PREFIX)
+                })
+            })
+            .collect();
+
+        let ordinal: i64 = literal.trim().parse().map_err(|_| {
+            anyhow!(
+                "ORDER BY {} has no effect: a non-integer literal is not a positional reference. Use a column name, or a position between 1 and {}",
+                literal,
+                output_columns.len()
+            )
+        })?;
+
+        if ordinal < 1 || ordinal as usize > output_columns.len() {
+            return Err(anyhow!(
+                "ORDER BY position {} is out of range - should be between 1 and {}",
+                ordinal,
+                output_columns.len()
+            ));
+        }
+
+        Ok(output_columns[ordinal as usize - 1])
+    }
+
     /// Apply multi-column ORDER BY sorting to the view
     fn apply_multi_order_by(
         &self,
@@ -3155,6 +3204,15 @@ impl QueryEngine {
         let mut sort_columns = Vec::new();
 
         for order_col in order_by_columns {
+            // ORDER BY <ordinal> is positional, so it resolves against the
+            // projected output rather than by name (P16).
+            if let SqlExpression::NumberLiteral(literal) = &order_col.expr {
+                let col_index = Self::resolve_order_by_ordinal(&view, literal)?;
+                let ascending = matches!(order_col.direction, SortDirection::Asc);
+                sort_columns.push((col_index, ascending));
+                continue;
+            }
+
             // Extract column name from expression (currently only supports simple columns)
             let (column_name, is_quoted) = match &order_col.expr {
                 SqlExpression::Column(col_ref) => (

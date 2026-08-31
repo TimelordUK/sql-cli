@@ -422,3 +422,122 @@ fn test_order_by_table_qualified_column_still_resolves() {
         .collect();
     assert_eq!(regions, vec!["Africa", "Americas", "Asia"]);
 }
+
+/// Build the small fixture the P16 ordinal tests share.
+fn ordinal_fixture() -> Arc<DataTable> {
+    let mut table = DataTable::new("scores");
+    table.add_column(DataColumn::new("id"));
+    table.add_column(DataColumn::new("team"));
+    table.add_column(DataColumn::new("score"));
+
+    for (id, team, score) in [
+        (1, "alpha", 50),
+        (2, "beta", 10),
+        (3, "alpha", 90),
+        (4, "beta", 30),
+    ] {
+        table
+            .add_row(DataRow::new(vec![
+                DataValue::Integer(id),
+                DataValue::String(team.to_string()),
+                DataValue::Integer(score),
+            ]))
+            .unwrap();
+    }
+
+    Arc::new(table)
+}
+
+fn column_as_strings(view: &DataView, col: usize) -> Vec<String> {
+    (0..view.row_count())
+        .map(|i| view.get_row(i).unwrap().values[col].to_string())
+        .collect()
+}
+
+/// P16: `ORDER BY 2` is a positional reference to the 2nd select-list item. It
+/// used to be promoted into a hidden constant column, so every row compared
+/// equal and the rows came back in insertion order with no error at all.
+#[test]
+fn test_order_by_ordinal_resolves_to_select_list_position() {
+    let view = QueryEngine::new()
+        .execute(ordinal_fixture(), "SELECT id, score FROM scores ORDER BY 2")
+        .unwrap();
+
+    assert_eq!(column_as_strings(&view, 0), vec!["2", "4", "1", "3"]);
+}
+
+/// The direction has to survive resolution — a fix that found the column but
+/// dropped DESC would still pass the test above.
+#[test]
+fn test_order_by_ordinal_honours_desc() {
+    let view = QueryEngine::new()
+        .execute(
+            ordinal_fixture(),
+            "SELECT id, score FROM scores ORDER BY 2 DESC",
+        )
+        .unwrap();
+
+    assert_eq!(column_as_strings(&view, 0), vec!["3", "1", "4", "2"]);
+}
+
+/// Under `SELECT *` the ordinal counts source columns. This is why the ordinal
+/// is resolved at execution time and not in `OrderByAliasTransformer`, where
+/// the star has not been expanded yet.
+#[test]
+fn test_order_by_ordinal_under_select_star() {
+    let view = QueryEngine::new()
+        .execute(ordinal_fixture(), "SELECT * FROM scores ORDER BY 3")
+        .unwrap();
+
+    assert_eq!(column_as_strings(&view, 0), vec!["2", "4", "1", "3"]);
+}
+
+/// Out of range is an error rather than a sort that quietly does nothing.
+#[test]
+fn test_order_by_ordinal_out_of_range_errors() {
+    for sql in [
+        "SELECT id, score FROM scores ORDER BY 3",
+        "SELECT id, score FROM scores ORDER BY 0",
+    ] {
+        let err = QueryEngine::new()
+            .execute(ordinal_fixture(), sql)
+            .expect_err("out-of-range ordinal must be rejected");
+        assert!(
+            err.to_string().contains("out of range"),
+            "unexpected error for `{sql}`: {err}"
+        );
+    }
+}
+
+/// A column promoted purely so ORDER BY can see it is appended after the real
+/// output, and must not be reachable by position: `ORDER BY team, 3` selects
+/// from two output columns, not three.
+#[test]
+fn test_order_by_ordinal_ignores_promoted_hidden_columns() {
+    let err = QueryEngine::new()
+        .execute(
+            ordinal_fixture(),
+            "SELECT id, score FROM scores ORDER BY team, 3",
+        )
+        .expect_err("hidden ORDER BY column must not be addressable by position");
+    assert!(
+        err.to_string().contains("between 1 and 2"),
+        "hidden column leaked into the ordinal range: {err}"
+    );
+}
+
+/// A non-integer literal is rejected too — it is not positional, and promoting
+/// it would make it a silent no-op.
+#[test]
+fn test_order_by_non_integer_literal_errors() {
+    let err = QueryEngine::new()
+        .execute(
+            ordinal_fixture(),
+            "SELECT id, score FROM scores ORDER BY 1.5",
+        )
+        .expect_err("non-integer literal must be rejected");
+    assert!(
+        err.to_string().contains("has no effect"),
+        "unexpected error: {err}"
+    );
+}

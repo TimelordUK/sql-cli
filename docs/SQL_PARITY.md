@@ -82,7 +82,8 @@ Suggested fix order, by silent blast radius:
 | ~~4~~ | ~~[P28](#p28) `INTO #tmp` stages unfiltered rows~~ | ✅ **Fixed 2026-08-16** — turned out to stage the *whole source table*, and the sweep it prescribed found [P31](#p31) |
 | ~~7~~ | ~~[P18](#p18)/[P19](#p19) three-valued logic~~ | ✅ **Fixed 2026-08-22** — 125 → 129 AGREE. Delivered as three slices ([R10](ENGINE_REFACTORING.md#r10)); the two no-op ones landed first, so the semantics change reviewed on its own |
 | ~~8~~ | ~~[P24](#p24) `RANGE` treated as `ROWS`~~ | ✅ **Fixed 2026-08-30** — 129 → 133 AGREE (+2 fixed, +2 new coverage). One defect, not two: the parser already emitted the right default frame, so fixing peer groups closed both cases. Spun off [P33](#p33) |
-| 9 | [P14](#p14), [P16](#p16), [P17](#p17), [P20](#p20), [P23](#p23), P13 stage 2 | Smaller, self-contained, decisions already taken |
+| ~~9a~~ | ~~[P16](#p16) `ORDER BY <ordinal>` ignored~~ | ✅ **Fixed 2026-08-31** — 134 → 139 AGREE. The literal was being promoted into a hidden *constant* column, so the sort ran on a column where every row tied |
+| 9b | [P14](#p14), [P17](#p17), [P20](#p20), [P23](#p23), P13 stage 2 | Smaller, self-contained, decisions already taken |
 | 10 | [P22](#p22), [P25](#p25), [P26](#p26), [P15](#p15), [P32](#p32) | Hard errors — visible, so less urgent than any of the above |
 | — | [P27](#p27) `OR` in `JOIN ... ON` | **Reclassified 2026-08-08 — not a quick win.** `JoinCondition` is a `Vec<SingleJoinCondition>` implicitly AND-ed, so there is nowhere in the AST to put an `OR`; it needs join conditions to become an expression, which reaches the join execution code. Sequence it with the R-log, not here |
 
@@ -629,9 +630,13 @@ annotation be removed.
   silently or loudly depending only on luck.
 
 ### P16 — `ORDER BY <ordinal>` is silently ignored
-- **Status:** 🔴 OPEN
+- **Status:** 🟢 FIXED 2026-08-31 — 134 → 139 AGREE (+2 fixed, +3 new coverage,
+  +1 new BOTH_ERR)
 - **Corpus:** `08_ordering.toml :: order_by_ordinal`, `order_by_ordinal_desc`
-  (both DIFFER).
+  (were DIFFER, now AGREE). Added with the fix: `order_by_ordinal_star`,
+  `order_by_ordinal_group_by`,
+  `order_by_ordinal_expression_is_not_positional` (AGREE) and
+  `order_by_ordinal_out_of_range` (BOTH_ERR).
 - **Observed:** `ORDER BY 2` and `ORDER BY 2 DESC` return rows in **natural
   insertion order** — no sorting is applied at all, and no error is raised. The
   integer is evaluated as a constant expression, so every row compares equal.
@@ -648,6 +653,53 @@ annotation be removed.
   `ORDER BY 2 DESC LIMIT 3` returned three rows, so it *looked* fine, but they
   were the first three in file order rather than the top three. Row count is not
   evidence of correct ordering.
+
+#### As built (2026-08-31)
+
+The root cause was not in the sort at all, and not where the entry above guessed
+("the integer is evaluated as a constant expression"). It is close, but the
+mechanism matters for where the fix goes:
+`OrderByAliasTransformer::promote_hidden_order_by_columns` exists to keep an
+ORDER BY key alive through projection, and it promotes **anything that is not a
+visible column** into a hidden SELECT item. `NumberLiteral("2")` is not a
+column, so it was promoted as a hidden column *whose value is the constant 2* —
+after which the engine sorted, correctly, on a column where every row compares
+equal. Nothing was ignored; the wrong thing was sorted on.
+
+**The ordinal is resolved during execution, not in the transformer.** The
+transformer knows the select list but not the *output* columns, and the two
+differ in exactly the cases that matter: `SELECT *` is still unexpanded there,
+and GROUP BY has not run. `apply_multi_order_by_with_context` in
+`query_engine.rs` sees the projected view and resolves all three shapes with one
+rule, so the transformer's only job is to stop promoting numeric literals.
+
+Rules pinned against DuckDB before implementing, rather than assumed:
+
+| Query | Behaviour |
+|---|---|
+| `ORDER BY 2` | 2nd output column — under an explicit select list, `SELECT *`, or after GROUP BY |
+| `ORDER BY 1+1` | **not** an ordinal: an ordinary constant expression, sorts nothing |
+| `ORDER BY 0`, `ORDER BY -1`, `ORDER BY 3` (of 2) | error, `should be between 1 and N` |
+| `ORDER BY 1.5` | error — DuckDB: *"ORDER BY non-integer literal has no effect"* |
+
+The last row is why the transformer skips **every** numeric literal and not just
+integer-valued ones: leaving `1.5` to be promoted would have kept it a silent
+no-op, and only the engine knows the valid range to report. That is the P13
+principle — a refusal beats a different query that succeeds.
+
+**Hidden columns are excluded from the ordinal range.** Columns promoted for
+ORDER BY visibility (and HAVING's `__hidden_agg_` columns) are appended *after*
+the real output, so `SELECT a, b FROM t ORDER BY c, 3` must error rather than
+resolve to `__hidden_orderby_1`. Pinned by
+`test_order_by_ordinal_ignores_promoted_hidden_columns`.
+
+**A note on picking the corpus cases.** Two cases would have been enough to turn
+the entry green, and would have left the two most valuable shapes untested: the
+defect is about *output* columns, so every construct that changes what the
+output columns are is a separate risk. `SELECT *` and GROUP BY were added for
+that reason, and `order_by_ordinal_group_by` is the one that matters most in
+practice — "top N by total" is where silently returning group order is most
+likely to be believed.
 
 ### P17 — Default NULL placement differs on `ASC`
 - **Status:** 🔴 OPEN — **decision made 2026-08-02: follow the reference engine
