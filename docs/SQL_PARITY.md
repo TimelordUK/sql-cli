@@ -85,6 +85,7 @@ Suggested fix order, by silent blast radius:
 | ~~9a~~ | ~~[P16](#p16) `ORDER BY <ordinal>` ignored~~ | ✅ **Fixed 2026-08-31** — 134 → 139 AGREE. The literal was being promoted into a hidden *constant* column, so the sort ran on a column where every row tied |
 | 9b | [P14](#p14), [P17](#p17), [P20](#p20), [P23](#p23), P13 stage 2 | Smaller, self-contained, decisions already taken |
 | 10 | [P22](#p22), [P25](#p25), [P26](#p26), [P15](#p15), [P32](#p32) | Hard errors — visible, so less urgent than any of the above |
+| 11 | [P35](#p35), [P36](#p36) | Not parity obligations — a DuckDB extension and a naming difference. Decide *whether*, not just when |
 | — | [P27](#p27) `OR` in `JOIN ... ON` | **Reclassified 2026-08-08 — not a quick win.** `JoinCondition` is a `Vec<SingleJoinCondition>` implicitly AND-ed, so there is nowhere in the AST to put an `OR`; it needs join conditions to become an expression, which reaches the join execution code. Sequence it with the R-log, not here |
 
 P27–P30 jump the queue because all four were found *by* fixing something else,
@@ -1207,6 +1208,69 @@ out of date.
   converging the ORDER BY path onto the shared resolver changes behaviour for
   unquoted dotted names (qualified-name match vs. suffix strip), so it belongs
   in [`ENGINE_REFACTORING.md`](ENGINE_REFACTORING.md), not in a bug fix.
+
+### P35 — `#n` positional column references are not supported
+- **Status:** 🔴 OPEN — **decision deliberately left open: this is a DuckDB
+  extension, not standard SQL.** Argue it on usefulness or mark ⚪ WON'T FIX;
+  the "follow the reference engine" default does *not* apply.
+- **Corpus:** none yet — file the cases with the decision.
+- **Observed:** `SELECT #1, #2, #5 FROM wrapped` returns `id, team, bonus` in
+  DuckDB. We error with `Column '#1' not found. Did you mean 'id'?`
+- **Raised 2026-08-31**, immediately after [P16](#p16), from the question "does
+  DuckDB support `WITH wrapped AS (SELECT ...) SELECT 1, 2, 5 FROM wrapped`".
+  The question has two readings and only one is a gap:
+
+  | Written | DuckDB | sql-cli |
+  |---|---|---|
+  | `SELECT 1, 2, 5` | three **constants**, columns named `1`, `2`, `5` | three constants, columns named `expr_1..3` — see [P36](#p36) |
+  | `SELECT #1, #2, #5` | 1st, 2nd, 5th **columns** | error |
+
+  Worth stating plainly because it is a live trap: **`SELECT 1, 2, 5` is not
+  positional in either engine**, and we already agree with DuckDB on its values.
+- **`#n` is not uniform across clauses — verified, do not assume it is.** In
+  `ORDER BY` it resolves against the **output** list, not the source:
+  `SELECT #1, #3 FROM t ORDER BY #3` errors with *"ORDER term out of range —
+  should be between 1 and 2"*. That is the same rule P16 just implemented for
+  bare ordinals, which is the natural place to hang the implementation.
+  Range errors: `#0` is a parser error ("needs to be >= 1"); `#7` of 6 is a
+  binder error ("Positional reference 7 out of range (total 6 columns)").
+- **Cheaper than it looks, and the `#tmp` collision is narrow.** `#1` already
+  lexes as `Identifier("#1")` through the lexer's catch-all — the same route
+  `;` took before P13 stage 1 — so **no lexer change is needed**; it arrives at
+  column resolution as a name that happens to start with `#`. Temp tables are
+  `#` + letters and positional refs are `#` + digits, so the two are separable,
+  but `Token::Identifier(id) if id.starts_with('#')`
+  (`recursive_parser.rs:1575`) and the six other `starts_with('#')` sites are
+  the list to check before committing.
+- **Why it might be worth doing anyway:** wrapping an awkward query in a CTE and
+  taking columns by position is the workflow that hurts most on wide files with
+  unwieldy headers — the same pain that produced [P34](#p34) on
+  `data/countries.csv`. It is a *feature* argument, not a parity one, and should
+  be recorded as such either way.
+
+### P36 — Unaliased expression columns are named `expr_N`, not by their text
+- **Status:** 🔴 OPEN — cosmetic but user-visible; **size the blast radius
+  before starting**
+- **Corpus:** none yet — needs a deliberately *unaliased* case; see below.
+- **Observed:**
+
+  | Query | DuckDB | sql-cli |
+  |---|---|---|
+  | `SELECT score*2, UPPER(team) FROM t` | `(score * 2)`, `upper(team)` | `expr_1`, `expr_2` |
+  | `SELECT 1, 2, 5 FROM t` | `1`, `2`, `5` | `expr_1`, `expr_2`, `expr_3` |
+
+- **Currently invisible to the corpus, by construction.** Tier convention is to
+  alias computed columns so the comparison aligns — the harness even says so in
+  its own diff output (`column mismatch ... (alias computed columns to align)`).
+  So this cannot be pinned by adding a case to an existing tier; it needs a case
+  written specifically *not* to alias, and a note saying why it breaks the
+  convention.
+- **The reason to check before fixing:** column names feed the TUI, the export
+  paths and the **FORMAL example expectations**, which are captured from our own
+  output. This changes no values anywhere and could still churn a lot of
+  captured JSON — exactly the P21 pattern, but with none of the payoff of
+  finding a bug. Measure the churn first, then decide whether the naming is
+  worth it.
 
 ---
 
