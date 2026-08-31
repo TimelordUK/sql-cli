@@ -1,23 +1,28 @@
-# SQL CLI v1.83.4
+# SQL CLI v1.83.5
 
-**Release Date:** August 30, 2026
+**Release Date:** August 31, 2026
 
 ## 📊 Release Overview
-- **Commits in this release:** 2
-- **Files updated:** 4
+- **Commits in this release:** 4
+- **Files updated:** 5
 
 ## ✨ Highlights
 
 ## 📝 Changes by Category
 
 ### 🐛 Bug Fixes
-- stop ORDER BY splitting quoted column names at the dot (P34)
+- resolve ORDER BY <ordinal> to the Nth output column (P16)
+
+### 📚 Documentation
+- file P35 (#n positional refs) and P36 (expr_N column naming)
 
 <details>
 <summary>📋 View all commits</summary>
 
-- Merge pull request #58 from TimelordUK/fix/p34-order-by-quoted-dotted-columns (TimelordUK)
-- fix(engine): stop ORDER BY splitting quoted column names at the dot (P34) (TimelordUK)
+- Merge pull request #60 from TimelordUK/docs/p35-p36-positional-refs (TimelordUK)
+- docs(parity): file P35 (#n positional refs) and P36 (expr_N column naming) (TimelordUK)
+- Merge pull request #59 from TimelordUK/fix/p16-order-by-ordinal (TimelordUK)
+- fix(engine): resolve ORDER BY <ordinal> to the Nth output column (P16) (TimelordUK)
 
 </details>
 
