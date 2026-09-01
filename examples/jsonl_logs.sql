@@ -17,7 +17,7 @@
 -- How many events, and what services / levels are in play?
 SELECT
     COUNT(*)                    AS total_events,
-    COUNT(DISTINCT service)     AS distinct_services,
+   COUNT(DISTINCT service)     AS distinct_services,
     COUNT(DISTINCT level)       AS distinct_levels
 FROM READ_JSONL('data/app_logs.jsonl');
 GO
@@ -69,7 +69,7 @@ GO
 SELECT method, path, status, latency_ms
 FROM READ_JSONL('data/app_logs.jsonl')
 WHERE status IS NOT NULL
-ORDER BY latency_ms DESC NULLS LAST
+ORDER BY latency_ms DESC 
 LIMIT 5;
 GO
 

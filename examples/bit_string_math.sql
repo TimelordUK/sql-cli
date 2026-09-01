@@ -8,7 +8,7 @@ with shifts as (
 SELECT
 BIT_ROTATE_LEFT('00000001', value) as left_shift,
 BIT_ROTATE_RIGHT('10000000', value) as right_shift
-FROM range(0,7);
+FROM range(0,7)
 ) select *, BIT_OR_STR(left_shift, right_shift) as left_right_shift from shifts;
 go
 

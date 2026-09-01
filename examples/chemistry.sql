@@ -35,7 +35,7 @@ GO
 
 SELECT Element, Symbol, Group, Type
 FROM periodic_table
-WHERE Type.Contains('Noble')
+WHERE Type.Contains('Noble');
 GO
 
 SELECT MAX(Year) AS latest_year_discovery, MIN(Year) AS earliest_year_discovery
@@ -43,7 +43,7 @@ FROM periodic_table;
 GO
 
 SELECT COUNT(DISTINCT Type) AS number_types, MAX(Year) AS latest_year_discovery, MIN(Year) AS earliest_year_discovery
-FROM periodic_table
+FROM periodic_table;
 GO
 
 SELECT 
@@ -141,31 +141,6 @@ FROM periodic_table
 INNER JOIN year_analysis ON periodic_table.Year = year_analysis.max_discovery_year;
 GO
 
--- Show discovery statistics by joining CTEs
-WITH discovery_stats AS (
-    SELECT 
-        Year,
-        COUNT(*) as elements_discovered
-    FROM periodic_table
-    WHERE Year IS NOT NULL
-    GROUP BY Year
-),
-year_bounds AS (
-    SELECT 
-        MAX(Year) as latest_year,
-        MIN(Year) as earliest_year
-    FROM periodic_table
-    WHERE Year IS NOT NULL
-)
-SELECT 
-    Year,
-    elements_discovered,
-    latest_year,
-    earliest_year
-FROM discovery_stats
-INNER JOIN year_bounds ON Year = latest_year OR Year = earliest_year
-ORDER BY Year;
-GO
 
 -- Self-join example: Find pairs of elements discovered in same year
 -- Note: This demonstrates a workaround since table aliases don't work
