@@ -86,6 +86,8 @@ ORDER BY date
 LIMIT 30;
 GO
 
+
+-- [SKIP]
 -- ============================================
 -- Example 6: Calculate rolling min/max (support and resistance levels)
 -- Using window frames to find local highs and lows
