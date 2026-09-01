@@ -1,4 +1,5 @@
 use crate::cursor_aware_parser::CursorAwareParser;
+use crate::parser::TableInfo;
 use crate::recursive_parser::{detect_cursor_context, tokenize_query, CursorContext, LogicalOp};
 
 #[derive(Clone)]
@@ -43,6 +44,11 @@ impl HybridParser {
 
     pub fn update_single_table(&mut self, table_name: String, columns: Vec<String>) {
         self.parser.update_single_table(table_name, columns);
+    }
+
+    /// Replace the schema with a fully-typed snapshot of the loaded table.
+    pub fn update_single_table_info(&mut self, table: TableInfo) {
+        self.parser.update_single_table_info(table);
     }
 
     #[must_use]

@@ -1,5 +1,5 @@
 use crate::data::csv_fixes::quote_if_needed;
-use crate::parser::{ParseState, Schema};
+use crate::parser::{ParseState, Schema, TableInfo};
 use crate::recursive_parser::{detect_cursor_context, CursorContext, LogicalOp};
 use crate::sql::completion_token::{find_completion_token, CompletionToken};
 
@@ -49,6 +49,13 @@ impl CursorAwareParser {
 
     pub fn update_single_table(&mut self, table_name: String, columns: Vec<String>) {
         self.schema.set_single_table(&table_name, columns);
+    }
+
+    /// Replace the schema with a fully-typed snapshot of the loaded table.
+    /// Preferred over [`Self::update_single_table`], which can only say
+    /// "string" about every column.
+    pub fn update_single_table_info(&mut self, table: TableInfo) {
+        self.schema.set_single_table_info(table);
     }
 
     #[must_use]
@@ -220,6 +227,7 @@ impl CursorAwareParser {
                         // For numbers, no specific suggestions
                         vec![]
                     }
+                    "boolean" => vec!["true".to_string(), "false".to_string()],
                     _ => vec![],
                 };
                 (suggestions, format!("AfterComparison({col_name} {op})"))
@@ -709,147 +717,18 @@ impl CursorAwareParser {
         selected_columns
     }
 
-    fn detect_method_call_context(
-        &self,
-        query_before_cursor: &str,
-        _cursor_pos: usize,
-    ) -> Option<(String, String)> {
-        // Look for pattern: "propertyName." at the end of the query before cursor
-        // This handles cases like "WHERE platformOrderId." or "SELECT COUNT(*) WHERE ticker."
-        // But NOT cases like "WHERE prop.Contains('x') AND " where we've moved past the method call
-
-        // Find the last dot before cursor
-        if let Some(dot_pos) = query_before_cursor.rfind('.') {
-            // Check if cursor is close to the dot - if there's too much text after the dot,
-            // we're probably not in method call context anymore
-            let text_after_dot = &query_before_cursor[dot_pos + 1..];
-
-            // If there's significant text after the dot that looks like a completed method call,
-            // we're probably not in method call context
-            if text_after_dot.contains(')')
-                && (text_after_dot.contains(" AND ")
-                    || text_after_dot.contains(" OR ")
-                    || text_after_dot.trim().ends_with(" AND")
-                    || text_after_dot.trim().ends_with(" OR"))
-            {
-                return None; // We've completed the method call and moved on
-            }
-
-            // Extract the word immediately before the dot
-            let before_dot = &query_before_cursor[..dot_pos];
-
-            // Find the start of the property name (going backwards from dot)
-            let mut property_start = dot_pos;
-            let chars: Vec<char> = before_dot.chars().collect();
-
-            while property_start > 0 {
-                let char_pos = property_start - 1;
-                if char_pos < chars.len() {
-                    let ch = chars[char_pos];
-                    if ch.is_alphanumeric() || ch == '_' {
-                        property_start -= 1;
-                    } else {
-                        break;
-                    }
-                } else {
-                    break;
-                }
-            }
-
-            if property_start < dot_pos {
-                let property_name = before_dot[property_start..].trim().to_string();
-
-                // Check if this property exists in our schema and get its type
-                if let Some(property_type) = self.get_property_type(&property_name) {
-                    return Some((property_name, property_type));
-                }
-            }
-        }
-
-        None
-    }
-
+    /// The completion category of a column, from the loaded schema.
+    ///
+    /// Before T2 this was a hardcoded list of trade-desk column names with
+    /// `else => "string"`, so on any other dataset every column was a string:
+    /// numeric columns were offered `Contains('')` and date columns never got
+    /// `DateTime(`. `None` now means genuinely unknown - no file loaded yet,
+    /// or text that is not a column at all - and callers still fall back to
+    /// string methods there, which is the safe default for an unknown name.
     fn get_property_type(&self, property_name: &str) -> Option<String> {
-        // Get property type from schema - for now, we'll use a simple mapping
-        // In a more sophisticated implementation, this would query the actual schema
-
-        let property_lower = property_name.to_lowercase();
-
-        // String properties (most common for Dynamic LINQ operations)
-        let string_properties = [
-            "platformorderid",
-            "dealid",
-            "externalorderid",
-            "parentorderid",
-            "instrumentid",
-            "instrumentname",
-            "instrumenttype",
-            "isin",
-            "cusip",
-            "ticker",
-            "exchange",
-            "counterparty",
-            "counterpartyid",
-            "counterpartytype",
-            "counterpartycountry",
-            "trader",
-            "portfolio",
-            "strategy",
-            "desk",
-            "status",
-            "confirmationstatus",
-            "settlementstatus",
-            "allocationstatus",
-            "currency",
-            "side",
-            "producttype",
-            "venue",
-            "clearinghouse",
-            "prime",
-            "comments",
-            "book",
-            "source",
-            "sourcesystem",
-        ];
-
-        // Numeric properties
-        let numeric_properties = [
-            "price",
-            "quantity",
-            "notional",
-            "commission",
-            "accrual",
-            "netamount",
-            "accruedinterest",
-            "grossamount",
-            "settlementamount",
-            "fees",
-            "tax",
-        ];
-
-        // DateTime properties
-        let datetime_properties = [
-            "tradedate",
-            "settlementdate",
-            "createddate",
-            "modifieddate",
-            "valuedate",
-            "maturitydate",
-            "confirmationdate",
-            "executiondate",
-            "lastmodifieddate",
-        ];
-
-        if string_properties.contains(&property_lower.as_str()) {
-            Some("string".to_string())
-        } else if numeric_properties.contains(&property_lower.as_str()) {
-            Some("numeric".to_string())
-        } else if datetime_properties.contains(&property_lower.as_str()) {
-            Some("datetime".to_string())
-        } else {
-            // Default to string for unknown properties
-            Some("string".to_string())
-        }
+        self.schema
+            .find_column(property_name)
+            .map(|column| column.data_type.as_str().to_string())
     }
 
     /// Find a safe UTF-8 character boundary at or before the given position
@@ -990,8 +869,33 @@ impl CursorAwareParser {
 mod tests {
     use super::*;
 
+    use crate::parser::ColumnInfo;
+    use crate::parser::ColumnType;
+
+    /// The trade_deal schema these tests were written against. It used to be
+    /// the *default* schema, which is exactly what T2 removed - a parser with
+    /// no file loaded now knows no columns, so the fixture has to say so.
     fn create_test_parser() -> CursorAwareParser {
-        CursorAwareParser::new()
+        let mut parser = CursorAwareParser::new();
+        parser.update_single_table_info(TableInfo::new(
+            "trade_deal",
+            crate::config::schema_config::get_full_trade_deal_columns()
+                .into_iter()
+                .map(|name| {
+                    let column_type = match name.to_lowercase().as_str() {
+                        "price" | "quantity" | "notional" | "commission" | "netamount" => {
+                            ColumnType::Numeric
+                        }
+                        "tradedate" | "settlementdate" | "createddate" | "confirmationdate" => {
+                            ColumnType::DateTime
+                        }
+                        _ => ColumnType::String,
+                    };
+                    ColumnInfo::new(name).with_type(column_type)
+                })
+                .collect(),
+        ));
+        parser
     }
 
     #[test]

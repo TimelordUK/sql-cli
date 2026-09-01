@@ -19,6 +19,9 @@ mod datatable_integration_test;
 #[path = "datetime_completion.rs"]
 mod datetime_completion;
 
+#[path = "completion_schema.rs"]
+mod completion_schema;
+
 #[path = "temp_table_qualified_join_tests.rs"]
 mod temp_table_qualified_join_tests;
 

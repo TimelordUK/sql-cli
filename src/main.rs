@@ -754,8 +754,16 @@ fn run_classic_console_mode() -> io::Result<()> {
         FileBackedHistory::with_file(50, history_file).expect("Error configuring history"),
     );
 
-    // Set up SQL completion
-    let completer = Box::new(SqlCompleter::new());
+    // Set up SQL completion. This REPL talks to the trade-deal API
+    // (`query_trades` below), so its schema really is trade_deal - seeding it
+    // here, rather than defaulting `Schema::new()` to it, keeps the trade-desk
+    // column list out of the file-based TUI's completer (T2).
+    let mut sql_completer = SqlCompleter::new();
+    sql_completer.update_schema(
+        "trade_deal".to_string(),
+        sql_cli::config::schema_config::get_full_trade_deal_columns(),
+    );
+    let completer = Box::new(sql_completer);
     let completion_menu = Box::new(
         ColumnarMenu::default()
             .with_name("sql_completion")
