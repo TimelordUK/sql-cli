@@ -7,6 +7,7 @@ use crate::buffer::{AppMode, Buffer, BufferAPI, BufferManager};
 use crate::config::config::Config;
 use crate::data::data_view::DataView;
 use crate::sql::hybrid_parser::HybridParser;
+use crate::sql::parser::{ColumnInfo, TableInfo};
 use crate::ui::viewport_manager::ViewportManager;
 use crate::widgets::search_modes_widget::SearchMode;
 
@@ -26,6 +27,30 @@ pub struct StateCoordinator {
 
     /// SQL parser with schema information
     pub hybrid_parser: HybridParser,
+}
+
+/// Snapshot a loaded table's columns for the completer.
+///
+/// The parser gets a bounded copy - names, inferred types, distinct counts -
+/// and never a handle to the `DataView`. Keeping completion a pure function of
+/// `(query, cursor, schema)` is what makes its tests cheap to write, and the
+/// snapshot is what T2 needed: `infer_column_types()` has already computed all
+/// of this on every load path, and this wiring used to throw it away and pass
+/// `Vec<String>`.
+///
+/// Columns come from the *source* table rather than the view, so hiding a
+/// column in the TUI does not make it uncompletable.
+fn schema_snapshot(table_name: &str, dataview: &DataView) -> TableInfo {
+    let source = dataview.source();
+    TableInfo::new(
+        table_name,
+        source
+            .columns
+            .iter()
+            .map(ColumnInfo::from_data_column)
+            .collect(),
+    )
+    .with_row_count(source.row_count())
 }
 
 impl StateCoordinator {
@@ -61,14 +86,14 @@ impl StateCoordinator {
     pub fn update_parser_with_refs(state_container: &AppStateContainer, parser: &mut HybridParser) {
         if let Some(dataview) = state_container.get_buffer_dataview() {
             let table_name = dataview.source().name.clone();
-            let columns = dataview.source().column_names();
+            let table = schema_snapshot(&table_name, &dataview);
 
             debug!(
-                "StateCoordinator: Updating parser with {} columns for table '{}'",
-                columns.len(),
+                "StateCoordinator: Updating parser with {} typed columns for table '{}'",
+                table.columns.len(),
                 table_name
             );
-            parser.update_single_table(table_name, columns);
+            parser.update_single_table_info(table);
         }
     }
 
@@ -145,14 +170,14 @@ impl StateCoordinator {
         // Update parser schema from DataView
         if let Some(dataview) = self.state_container.get_buffer_dataview() {
             let table_name = dataview.source().name.clone();
-            let columns = dataview.source().column_names();
+            let table = schema_snapshot(&table_name, &dataview);
 
             debug!(
-                "StateCoordinator: Updating parser with {} columns for table '{}'",
-                columns.len(),
+                "StateCoordinator: Updating parser with {} typed columns for table '{}'",
+                table.columns.len(),
                 table_name
             );
-            self.hybrid_parser.update_single_table(table_name, columns);
+            self.hybrid_parser.update_single_table_info(table);
         }
     }
 
@@ -631,8 +656,7 @@ impl StateCoordinator {
             .current()
             .and_then(|b| b.get_dataview())
         {
-            let columns = dataview.column_names();
-            parser.update_single_table(table_name.to_string(), columns);
+            parser.update_single_table_info(schema_snapshot(table_name, dataview));
 
             // Set status message
             let display_msg = if raw_table_name == table_name {

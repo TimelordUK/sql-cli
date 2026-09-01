@@ -23,7 +23,9 @@ pub use ast::{
 pub use lexer::{Lexer, LexerMode, Token};
 
 // Re-export legacy types for backward compatibility
-pub use legacy::{ParseContext, ParseState, Schema, SqlParser, SqlToken, TableInfo};
+pub use legacy::{
+    ColumnInfo, ColumnType, ParseContext, ParseState, Schema, SqlParser, SqlToken, TableInfo,
+};
 
 // Test modules
 #[cfg(test)]
