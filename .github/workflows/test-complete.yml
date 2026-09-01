@@ -177,6 +177,15 @@ jobs:
     - name: Build SQL CLI
       run: cargo build --release
 
+    # data/test_simple_*.csv are generated, not committed (.gitignore's
+    # `test_*.csv` rule covers them), so several examples that pass locally
+    # fail here without this. Mirrors the same step in the Python Tests job.
+    - name: Generate test data
+      run: |
+        if [ ! -f "data/test_simple_math.csv" ] || [ ! -f "data/test_simple_strings.csv" ]; then
+          uv run python scripts/generate_simple_test.py
+        fi
+
     - name: Run examples test suite
       run: |
         uv run python tests/integration/test_examples.py

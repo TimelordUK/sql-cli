@@ -111,6 +111,9 @@ trades_*.json
 trades_*.csv
 test_shift_g.rs
 test_*.csv
+# ...but this one is a hand-written fixture used by examples/, not
+# generated output, so it has to ship with the repo (see CI examples job).
+!data/test_dummy.csv
 test_state_comparison
 test_results.txt
 tests/__pycache__/
