@@ -53,14 +53,17 @@ dividing line is whether a correct engine would still leave the user annoyed.
 
 ## Where this effort is up to
 
-**Phase: opening.** T1 is the first entry and the first fix. It surfaced T2–T5
-in the course of being done, which is the expected pattern — the completer's
-real problem is that it has no model of the data, and every feature worth having
-is downstream of fixing that.
+**Phase: groundwork done.** T1 fixed the text half of completion — which span
+gets replaced. T2 fixed the data half — what the completer knows about the
+columns it is completing. Between them the completer now has both primitives
+the remaining entries need: a byte span to splice over, and a typed schema.
 
-**Recommended order: T2 → T3 → T4 → T5.** T2 is groundwork that is mostly
-deletion and pays for itself immediately on any non-trading dataset. T3 is
-mechanical but wants doing *before* T4, not as a retrofit.
+**Recommended order: T3 → T4 → T5**, with **T7** droppable anywhere — it is
+independent of the others and mostly deletion. T3 is mechanical but wants doing
+*before* T4, not as a retrofit. T4 is the first entry that consumes what T2
+captured (`ColumnInfo::cardinality`, `TableInfo::row_count`); those numbers are
+already flowing and pinned by tests, so the gate can be designed against real
+values rather than guessed at.
 
 ---
 
@@ -106,38 +109,60 @@ mechanical but wants doing *before* T4, not as a retrofit.
   unit tests for the scanner.
 
 ### T2 — The completer has no schema, only column names
-- **Status:** 🔴 OPEN — **the blocker; do this first**
-- **Where:** `src/sql/parser/legacy.rs:119` (`Schema` / `TableInfo`),
-  `src/sql/cursor_aware_parser.rs:772` (`get_property_type`),
-  `src/ui/state/state_coordinator.rs:61` (`update_parser_with_refs`)
-- **Observed:** `TableInfo` is `{ name: String, columns: Vec<String> }` — names
+- **Status:** 🟢 DONE 2026-09-01
+- **Where:** `src/sql/parser/legacy.rs` (`ColumnType`, `ColumnInfo`, `TableInfo`,
+  `Schema`), `src/sql/cursor_aware_parser.rs` (`get_property_type`),
+  `src/ui/state/state_coordinator.rs` (`schema_snapshot`)
+- **Observed:** `TableInfo` was `{ name: String, columns: Vec<String> }` — names
   only. Two consequences:
-  - `get_property_type()`, which decides string-methods vs `DateTime(`, is a
+  - `get_property_type()`, which decides string-methods vs `DateTime(`, was a
     **hardcoded list of trade-desk column names** (`platformorderid`,
     `counterparty`, `tradedate`, …) with `else => "string"`. For any other
-    dataset *every* column falls through to that else. A numeric column gets
-    offered `Contains('')`; a date column not on the list never gets
+    dataset *every* column fell through to that else. A numeric column got
+    offered `Contains('')`; a date column not on the list never got
     `DateTime(`.
-  - `Schema::new()` **defaults to the trade_deal schema**, so before a file
-    loads the completer suggests trading columns.
-- **Impact:** every type-driven decision in the completer is wrong by default on
-  non-trading data. This is almost certainly a bigger day-to-day annoyance than
-  T3–T5 combined, and it blocks all of them.
-- **The fix is mostly deletion.** `DataColumn` (`src/data/datatable.rs:69`)
-  already carries what is needed — `data_type: DataType`, `unique_values:
-  Option<usize>`, `null_count`, `nullable` — and `infer_column_types()`
-  populates all of it on every load path. `update_parser_with_refs` already runs
-  at the right moment holding the `DataView`; it just discards everything and
-  passes `Vec<String>`. Give `TableInfo` a real `ColumnInfo { name, data_type,
-  cardinality, nullable }`, populate it there, delete the hardcoded list and the
-  trade_deal default.
-- **Keep the boundary:** the schema should hold a **bounded snapshot**, never a
-  live handle to the `DataTable`. The parser being a pure function of
-  `(query, cursor, schema)` is what makes T1's tests cheap to write; handing it
-  live data gives that up.
+  - `Schema::new()` **defaulted to the trade_deal schema**, so before a file
+    loaded the completer suggested trading columns.
+- **Impact:** every type-driven decision in the completer was wrong by default
+  on non-trading data, and it blocked T3–T5.
+- **Fixed by:** `ColumnInfo { name, data_type, cardinality, nullable }` and
+  `TableInfo { name, columns, row_count }`. `ColumnInfo::from_data_column`
+  reads what `infer_column_types()` had already computed and thrown away on
+  every load path; `StateCoordinator::schema_snapshot` takes it at the three
+  points that previously passed `Vec<String>`. `get_property_type` is now a
+  schema lookup, and the name list, the trade_deal default, and a third
+  dead backward scanner (`detect_method_call_context`, the same class of bug
+  T1 removed two of) are all deleted. `ColumnType` is deliberately coarser
+  than `DataType` — `Integer` vs `Float` changes no suggestion — and boolean
+  columns, which had no representation at all before, now offer `true`/`false`
+  after a comparison operator.
+- **The boundary held:** the schema is a bounded snapshot, not a handle to the
+  `DataView`, so the parser stays a pure function of `(query, cursor, schema)`
+  and every test below runs without a terminal. Columns are snapshotted from
+  the *source* table rather than the view, so hiding a column in the TUI does
+  not make it uncompletable.
+- **Where the trade-desk list went:** `run_classic_console_mode` in `main.rs`
+  — the reedline REPL that talks to the trade-deal API — seeds it explicitly.
+  That is the one place it is actually true.
+- **Tests:** `tests/completion_schema.rs` (4) loads `data/countries.csv`
+  through the ordinary loader and asserts suggestions follow from the data;
+  `tests/datetime_completion.rs` gained the negative cases (a string column
+  named `tradeDate` must *not* be offered `DateTime(`); 5 unit tests in
+  `legacy.rs`.
+- **Left for T4, already captured:** `cardinality` and `row_count` are
+  populated and pinned by test — on `countries.csv`, `region` has 5 distinct
+  values across 250 rows and `name.common` has 250. Nothing reads them yet.
+- **Found on the way, not fixed here:** one quoted-empty cell (`""`) in an
+  otherwise integer column makes the loader store `String("")` rather than
+  `Null`, which merges the column to `DataType::Mixed`. `independent` in
+  `countries.csv` is a 0/1 flag that types as string for exactly this reason,
+  while `unMember` — same shape, no empty cell — types as numeric. That is
+  upstream type inference and affects more than completion, so it wants its
+  own number rather than a patch here; `tests/completion_schema.rs` records
+  the current behaviour so a change is visible.
 
 ### T3 — Suggestions are untyped strings
-- **Status:** 🔴 OPEN — prerequisite for T4
+- **Status:** 🔴 OPEN — **do this next**; prerequisite for T4
 - **Where:** `ParseResult::suggestions: Vec<String>` and every site that builds
   one
 - **Observed:** A flat `Vec<String>` cannot express a display label distinct
@@ -151,7 +176,7 @@ mechanical but wants doing *before* T4, not as a retrofit.
   than retrofitting.
 
 ### T4 — No value completion for low-cardinality columns
-- **Status:** 🔴 OPEN — depends on T2 and T3
+- **Status:** 🔴 OPEN — depends on T3; T2 has landed
 - **Where:** `detect_cursor_context` in `src/sql/recursive_parser.rs`
 - **Observed:** `WHERE region = '<tab>'` offers nothing. There is
   `AfterComparisonOp(col, op)` for a cursor *after* an operator, but no context
@@ -195,8 +220,8 @@ mechanical but wants doing *before* T4, not as a retrofit.
   completion that have not been written down. T1 was the first of them to be
   described precisely enough to fix.
 - **Action:** as each is hit, give it a T-number rather than working around it.
-  Worth capturing *before* starting T2, in case any of them changes what belongs
-  in `ColumnInfo`.
+  `ColumnInfo` now exists and is cheap to extend, so a new annoyance that wants
+  another per-column fact is a field addition rather than a redesign.
 
 ---
 
@@ -228,3 +253,37 @@ Older, non-living notes that still contain usable thinking:
   Fold it into T3 rather than doing it twice.
 - [`NVIM_SMART_COLUMN_COMPLETION.md`](NVIM_SMART_COLUMN_COMPLETION.md) — see T4.
 - [`DEBUGGING_TUI.md`](DEBUGGING_TUI.md) — F5 debug view.
+
+### T7 — Residual trade-desk awareness outside the completer
+- **Status:** 🔴 OPEN — mostly deletion; do after T3 or whenever
+- **Where:** see the survey below
+- **Observed:** T2 removed the trade-desk column list from the completer's
+  *type* decisions, but the TUI still knows what a trade desk is in several
+  other places. The principle the codebase should hold: **the editor drives
+  itself entirely from the loaded table's schema and data, and knows nothing
+  about any particular dataset.** Anything left over is a hack from before
+  there was a schema to drive from.
+- **Survey (2026-09-01), in descending order of how much it matters:**
+
+  | Site | What it does | Disposition |
+  |---|---|---|
+  | `src/sql/cursor_aware_parser.rs:77,573` | `get_first_table_name().unwrap_or("trade_deal")` — the default table name when no file is loaded | **Live behaviour.** With an empty schema there is no table; the fallback should be "no columns", not a made-up table name. |
+  | `src/ui/tui_app.rs:254-256,377-381` | Help panes hardcode `SELECT * FROM trade_deal WHERE counterparty.Contains('Goldman')` etc. | **Live and user-facing** — reachable from `main.rs:1794`. Examples should be generated from the loaded table, or be dataset-neutral. |
+  | `src/sql/smart_parser.rs` | Five hardcoded `schema.get_columns("trade_deal")` lookups and a `["trade_deal", "instrument"]` table list | **Dead file.** Only reference is `pub mod smart_parser;`. Delete. |
+  | `src/dynamic_schema.rs` | Its own `TableInfo`, and a `vec!["trade_deal"]` fallback | **Dead file.** Only reference is `pub mod dynamic_schema;`. Also the only caller of `schema_config::load_schema_config()`. Delete. |
+  | `src/config/schema_config.rs:47` | A default schema whose one table is `trade_deal` | Falls out once `dynamic_schema` goes. |
+  | `src/config/schema_config.rs:65` | `get_full_trade_deal_columns()` | Keep for now — see below. |
+  | `src/cli/help.rs:282-285`, `src/main.rs:403-406` | Printed example queries against `trade_deal` | Cosmetic, but same principle. |
+
+- **The one place it is legitimate:** `run_classic_console_mode` in `main.rs` is
+  a reedline REPL that talks to a trade-deal API (`api_client.query_trades`),
+  so *its* schema really is trade_deal — T2 moved the seeding there
+  deliberately. That is the natural home for
+  `get_full_trade_deal_columns()`, and it disappears with the classic REPL if
+  that mode is ever retired.
+- **Why it is worth a number rather than a cleanup commit:** two of the five
+  sites are dead files, and deleting a dead file that mentions `trade_deal` is
+  easy to mistake for the whole job. The live ones are the two in the table's
+  first two rows.
+- **Not to be confused with T2's leftovers:** the completer's *type* decisions
+  are already schema-driven. This entry is about the surrounding TUI.

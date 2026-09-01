@@ -1,8 +1,21 @@
 use sql_cli::sql::cursor_aware_parser::CursorAwareParser;
+use sql_cli::sql::parser::{ColumnInfo, ColumnType, TableInfo};
+
+/// Datetime completion is now driven by the schema rather than by a hardcoded
+/// list of trade-desk column names (T2). These tests therefore have to say
+/// what the column *is*; before T2 `createdDate` was datetime because it was
+/// spelled that way, and every column on any other dataset was a string.
+fn parser_with(columns: Vec<ColumnInfo>) -> CursorAwareParser {
+    let mut parser = CursorAwareParser::new();
+    parser.update_single_table_info(TableInfo::new("trade_deal", columns));
+    parser
+}
 
 #[test]
 fn test_datetime_completion_after_comparison() {
-    let parser = CursorAwareParser::new();
+    let parser = parser_with(vec![
+        ColumnInfo::new("createdDate").with_type(ColumnType::DateTime)
+    ]);
 
     // Test completion after datetime column comparison
     let result = parser.get_completions("SELECT * FROM trade_deal WHERE createdDate > ", 45);
@@ -15,7 +28,9 @@ fn test_datetime_completion_after_comparison() {
 
 #[test]
 fn test_datetime_completion_with_partial() {
-    let parser = CursorAwareParser::new();
+    let parser = parser_with(vec![
+        ColumnInfo::new("createdDate").with_type(ColumnType::DateTime)
+    ]);
 
     // Test completion with partial "Date"
     let result = parser.get_completions("SELECT * FROM trade_deal WHERE createdDate > Date", 49);
@@ -25,6 +40,84 @@ fn test_datetime_completion_with_partial() {
     assert!(result.suggestions.contains(&"DateTime(".to_string()));
     assert!(result.suggestions.contains(&"DateTime.Today".to_string()));
     assert!(result.suggestions.contains(&"DateTime.Now".to_string()));
+}
+
+/// The other half of T2: a column that merely *looks* like a date is not one.
+/// The old name list matched on spelling, so a CSV column called `tradeDate`
+/// holding free text was offered `DateTime(`.
+#[test]
+fn test_datetime_suggestions_follow_the_schema_not_the_name() {
+    let parser = parser_with(vec![
+        ColumnInfo::new("tradeDate").with_type(ColumnType::String)
+    ]);
+
+    let query = "SELECT * FROM trade_deal WHERE tradeDate > ";
+    let result = parser.get_completions(query, query.len());
+
+    assert!(result.context.contains("AfterComparison"));
+    assert!(
+        !result.suggestions.contains(&"DateTime(".to_string()),
+        "a string column must not be offered a DateTime constructor: {:?}",
+        result.suggestions
+    );
+    assert!(result.suggestions.contains(&"''".to_string()));
+}
+
+/// Numeric columns used to fall through the name list to `string`, so they
+/// were offered `Contains('')` ahead of anything numeric.
+#[test]
+fn test_numeric_column_gets_numeric_methods() {
+    let parser = parser_with(vec![
+        ColumnInfo::new("population").with_type(ColumnType::Numeric)
+    ]);
+
+    let query = "SELECT * FROM trade_deal WHERE population.";
+    let result = parser.get_completions(query, query.len());
+
+    assert!(
+        result.suggestions.contains(&"ToString()".to_string()),
+        "numeric columns should offer ToString(): {:?}",
+        result.suggestions
+    );
+    assert!(
+        !result.suggestions.contains(&"Trim()".to_string()),
+        "numeric columns should not offer string-only methods: {:?}",
+        result.suggestions
+    );
+}
+
+/// Boolean columns had no representation at all before T2 - `independent` on
+/// `data/countries.csv` is the motivating case.
+#[test]
+fn test_boolean_column_suggests_literals() {
+    let parser = parser_with(vec![
+        ColumnInfo::new("independent").with_type(ColumnType::Boolean)
+    ]);
+
+    let query = "SELECT * FROM trade_deal WHERE independent = ";
+    let result = parser.get_completions(query, query.len());
+
+    assert!(result.context.contains("AfterComparison"));
+    assert_eq!(
+        result.suggestions,
+        vec!["true".to_string(), "false".to_string()]
+    );
+}
+
+/// An unknown name - no file loaded, or text that is not a column - still
+/// falls back to string methods rather than offering nothing.
+#[test]
+fn test_unknown_column_falls_back_to_string_methods() {
+    let parser = CursorAwareParser::new();
+
+    let query = "SELECT * FROM whatever WHERE mystery.";
+    let result = parser.get_completions(query, query.len());
+
+    assert!(
+        result.suggestions.contains(&"Contains('')".to_string()),
+        "unknown columns keep the safe string default: {:?}",
+        result.suggestions
+    );
 }
 
 #[test]

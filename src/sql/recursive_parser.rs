@@ -8,7 +8,9 @@ pub use super::parser::ast::{
     SortDirection, SqlExpression, TableFunction, TableSource, WebCTESpec, WhenBranch, WhereClause,
     WindowFrame, WindowSpec, CTE,
 };
-pub use super::parser::legacy::{ParseContext, ParseState, Schema, SqlParser, SqlToken, TableInfo};
+pub use super::parser::legacy::{
+    ColumnInfo, ColumnType, ParseContext, ParseState, Schema, SqlParser, SqlToken, TableInfo,
+};
 pub use super::parser::lexer::{Lexer, LexerMode, Token};
 pub use super::parser::ParserConfig;
 
