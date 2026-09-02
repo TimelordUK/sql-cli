@@ -1,3 +1,4 @@
+-- [TEST:SKIP] nvim formatter fixture; posts to the placeholder host tradesapi
 -- Example: Testing SQL formatter with WEB CTE using BODY with JSON
 
 WITH WEB trades AS (

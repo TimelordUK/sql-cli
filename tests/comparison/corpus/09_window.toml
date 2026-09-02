@@ -285,3 +285,15 @@ expect = "GAP"
 # column. But the lifter only walks the SELECT list, so a window function
 # written inline in QUALIFY is never lifted and arrives at the WHERE evaluator
 # as a raw WindowFunction. Fix site is `expression_lifter`, not QUALIFY.
+
+[[case]]
+id = "window_in_where_inline"
+data = "international_sales.csv"
+sql = "SELECT region, amount FROM international_sales WHERE ROW_NUMBER() OVER (PARTITION BY region ORDER BY amount DESC) <= 2 ORDER BY region, amount"
+expect = "OURS_ONLY"
+# P37, added 2026-09-02. DuckDB rejects this outright ("WHERE clause cannot
+# contain window functions"). We do not error -- we return **zero rows**, with
+# a header and a success exit code. Silent empty result, the same class as
+# P30/P31. Sibling of P15: the ExpressionLifter only walks the SELECT list, so
+# an inline window reaches the WHERE evaluator unlifted; QUALIFY errors there
+# (P15) but WHERE quietly filters everything out instead.

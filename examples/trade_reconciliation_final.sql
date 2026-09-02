@@ -1,3 +1,4 @@
+-- [TEST:SKIP] template -- expects the user's own trades file (see the Run: line above)
 -- ============================================================================
 -- Trade Reconciliation - Final Version with Dynamic Root Order Extraction
 -- Uses IndexOf('_') to find underscore and extract root order ID

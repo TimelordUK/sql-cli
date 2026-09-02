@@ -1,3 +1,4 @@
+-- [TEST:SKIP] needs a live Elasticsearch server
 -- Elasticsearch: broad filter at the server, heavy lifting in SQL
 --
 -- Pattern: let Elasticsearch do what it's good at (time-window filtering,

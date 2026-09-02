@@ -17,7 +17,7 @@
 -- How many events, and what services / levels are in play?
 SELECT
     COUNT(*)                    AS total_events,
-   COUNT(DISTINCT service)     AS distinct_services,
+    COUNT(DISTINCT service)     AS distinct_services,
     COUNT(DISTINCT level)       AS distinct_levels
 FROM READ_JSONL('data/app_logs.jsonl');
 GO
@@ -69,7 +69,21 @@ GO
 SELECT method, path, status, latency_ms
 FROM READ_JSONL('data/app_logs.jsonl')
 WHERE status IS NOT NULL
-ORDER BY latency_ms DESC 
+ORDER BY latency_ms DESC
+LIMIT 5;
+GO
+
+-- [SKIP]
+-- The same query as originally written, with an explicit null-ordering
+-- clause. SKIPPED: NULLS FIRST / NULLS LAST is not parsed -- parity issue
+-- P13 stage 2 (see docs/SQL_PARITY.md). There is no NULLS handling anywhere
+-- in src/sql/. Before P13 stage 1 the clause was silently swallowed along
+-- with the LIMIT below it, so this returned every row instead of 5; it is a
+-- parse error today. Drop the [SKIP] when stage 2 lands.
+SELECT method, path, status, latency_ms
+FROM READ_JSONL('data/app_logs.jsonl')
+WHERE status IS NOT NULL
+ORDER BY latency_ms DESC NULLS LAST
 LIMIT 5;
 GO
 

@@ -57,3 +57,30 @@ sql = "SELECT symbol, price FROM trades WHERE price > (WITH avg_cte AS (SELECT A
 # primary expression: With"). Fixed 2026-07-25 — the subquery-detection guards
 # now accept a leading WITH (parse_subquery already dispatched it to the CTE
 # parser). DuckDB allows a CTE inside a scalar subquery; now AGREE.
+
+[[case]]
+id = "scalar_subquery_in_cte_select_list"
+data = "international_sales.csv"
+sql = "WITH z AS (SELECT region, amount - (SELECT AVG(amount) FROM international_sales) AS d FROM international_sales) SELECT region, d FROM z ORDER BY region, d"
+expect = "GAP"
+# P38, added 2026-09-02. "Unsupported expression type for arithmetic
+# evaluation: ScalarSubquery { ... }". A scalar subquery in a CTE body's SELECT
+# list is never evaluated. Located by the two controls below: the same
+# expression at the top level AGREEs, and plain arithmetic inside a CTE AGREEs
+# -- so this is the CTE SELECT-list path specifically, not scalar subqueries
+# and not CTEs.
+
+[[case]]
+id = "scalar_subquery_in_select_arithmetic"
+data = "international_sales.csv"
+sql = "SELECT region, amount - (SELECT AVG(amount) FROM international_sales) AS d FROM international_sales ORDER BY region, d"
+# Control for P38: identical expression at the TOP level. AGREEs, which is what
+# puts the P38 fix site in the CTE SELECT-list path rather than in the
+# arithmetic evaluator's handling of ScalarSubquery in general.
+
+[[case]]
+id = "plain_arithmetic_in_cte_select_list"
+data = "international_sales.csv"
+sql = "WITH z AS (SELECT region, amount * 2 AS d FROM international_sales) SELECT region, d FROM z ORDER BY region, d"
+# Control for P38: arithmetic inside a CTE with no subquery. AGREEs, so CTE
+# SELECT-list arithmetic is not broken in general -- only the ScalarSubquery arm.

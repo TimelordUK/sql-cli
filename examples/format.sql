@@ -1,3 +1,4 @@
+-- [TEST:SKIP] nvim formatter fixture (deliberately unformatted); also needs live endpoints
 -- Example: Testing SQL formatter - UNFORMATTED VERSION
 -- Test these cases in nvim to verify formatting works correctly:
 -- 1. JSON pretty-printing with $JSON$ delimiters

@@ -1,3 +1,4 @@
+-- [TEST:SKIP] illustrative -- {{PARAM}} templates resolved by the nvim plugin, placeholder host
 -- Example of parameterized trade queries
 -- Use {{PARAM_NAME}} to define parameters that will be resolved at execution time
 

@@ -1,3 +1,4 @@
+-- [TEST:SKIP] nvim plugin macro template (expand with \sTe); needs the test server on localhost:5001
 -- ============================================
 -- SQL-CLI Trade Queries Master Template
 -- ============================================
