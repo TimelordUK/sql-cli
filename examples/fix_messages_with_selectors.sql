@@ -1,4 +1,5 @@
 -- #! data/fix_messages.json
+-- [TEST:SKIP] needs the message-query server on localhost:5050
 -- Example: Querying FIX messages with custom selectors
 -- This shows how to specify the actual selector configuration in the SQL query
 

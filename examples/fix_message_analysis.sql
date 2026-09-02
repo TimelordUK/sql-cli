@@ -1,4 +1,5 @@
 -- #! ../data/fix_messages.json
+-- [TEST:SKIP] needs the message-query server on localhost:5050 (FORM_FILE upload)
 -- Example: Analyzing FIX messages using Web CTE with file upload
 -- This demonstrates how to upload a JSON file containing FIX messages to a selector service
 -- and query the flattened results

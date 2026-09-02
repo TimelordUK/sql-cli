@@ -1,3 +1,4 @@
+-- [TEST:SKIP] needs a web service to accept the FORM_FILE upload
 -- Example: Using Web CTE with file uploads
 -- This demonstrates the FORM_FILE syntax for uploading files to web services
 

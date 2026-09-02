@@ -107,6 +107,48 @@ ORDER BY occurrences DESC
 LIMIT 1;
 GO
 
+-- [SKIP]
+-- Statistical summary for outlier detection
+-- Values more than 2 standard deviations from mean might be outliers
+-- SKIPPED: a scalar subquery inside a CTE body's SELECT list is never evaluated
+-- -- "Unsupported expression type for arithmetic evaluation: ScalarSubquery".
+-- Parity issue P38 (see docs/SQL_PARITY.md). The same expression works at the
+-- top level; it is the CTE SELECT-list path that lacks the ScalarSubquery arm.
+-- Drop the [SKIP] when P38 is fixed.
+WITH sales_with_zscore AS (
+    SELECT
+        product,
+        region,
+        sales_amount,
+        (sales_amount - (SELECT AVG(sales_amount) FROM sales_data)) /
+              (SELECT STDDEV(sales_amount) FROM sales_data) as z_score_raw
+    FROM sales_data
+),
+with_classification AS (
+    SELECT
+        product,
+        region,
+        sales_amount,
+        ROUND(z_score_raw, 2) as z_score,
+        ABS(z_score_raw) as abs_z_score,
+        CASE
+            WHEN ABS(z_score_raw) > 2 THEN 'Potential Outlier'
+            WHEN ABS(z_score_raw) > 1 THEN 'Above/Below Average'
+            ELSE 'Normal Range'
+        END as classification
+    FROM sales_with_zscore
+)
+SELECT
+    product,
+    region,
+    sales_amount,
+    z_score,
+    classification
+FROM with_classification
+ORDER BY abs_z_score DESC
+LIMIT 10;
+GO
+
 
 -- Coefficient of Variation (CV) - relative variability measure
 -- CV = (Standard Deviation / Mean) * 100

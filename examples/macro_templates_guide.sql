@@ -1,3 +1,4 @@
+-- [TEST:SKIP] nvim plugin macro guide -- prose only, contains no runnable statement
 -- ============================================
 -- SQL-CLI Macro Templates Guide
 -- ============================================

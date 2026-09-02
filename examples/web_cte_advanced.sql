@@ -1,3 +1,4 @@
+-- [TEST:SKIP] illustrative -- posts to the placeholder host api.example.com
 -- Example: Advanced WEB CTE features including POST requests, JSON path extraction, and authentication
 -- This demonstrates the new capabilities added for REST API integration
 

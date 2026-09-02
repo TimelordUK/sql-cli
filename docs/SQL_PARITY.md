@@ -76,15 +76,16 @@ Suggested fix order, by silent blast radius:
 | | Finding | Why first |
 |---|---|---|
 | ~~1~~ | ~~[P21](#p21) windows evaluated before `WHERE`~~ | ✅ **Fixed 2026-08-02** |
-| ~~2~~ | ~~[P13](#p13) trailing tokens discarded~~ | ✅ **Stage 1 done 2026-08-02**; stage 2 (`NULLS FIRST`/`LAST`) is item 6 below |
+| ~~2~~ | ~~[P13](#p13) trailing tokens discarded~~ | ✅ **Stage 1 done 2026-08-02**; stage 2 (`NULLS FIRST`/`LAST`) is in row 9b below |
 | ~~3~~ | ~~[P30](#p30) `cond AND col IN (list)` returns 0 rows~~ | ✅ **Fixed 2026-08-08** |
 | ~~5~~ | ~~[P29](#p29) boolean operator after `IN (...)`~~ | ✅ **Fixed 2026-08-08** — same bug as P30, one change closed both |
 | ~~4~~ | ~~[P28](#p28) `INTO #tmp` stages unfiltered rows~~ | ✅ **Fixed 2026-08-16** — turned out to stage the *whole source table*, and the sweep it prescribed found [P31](#p31) |
 | ~~7~~ | ~~[P18](#p18)/[P19](#p19) three-valued logic~~ | ✅ **Fixed 2026-08-22** — 125 → 129 AGREE. Delivered as three slices ([R10](ENGINE_REFACTORING.md#r10)); the two no-op ones landed first, so the semantics change reviewed on its own |
 | ~~8~~ | ~~[P24](#p24) `RANGE` treated as `ROWS`~~ | ✅ **Fixed 2026-08-30** — 129 → 133 AGREE (+2 fixed, +2 new coverage). One defect, not two: the parser already emitted the right default frame, so fixing peer groups closed both cases. Spun off [P33](#p33) |
 | ~~9a~~ | ~~[P16](#p16) `ORDER BY <ordinal>` ignored~~ | ✅ **Fixed 2026-08-31** — 134 → 139 AGREE. The literal was being promoted into a hidden *constant* column, so the sort ran on a column where every row tied |
+| **6** | [P37](#p37) window in `WHERE` returns 0 rows | **Silent — take this first.** Zero rows, success exit code, no error. Reads as "no matching data", not as a defect (the [P30](#p30) trap). Shares a fix site with [P15](#p15), so the two are one piece of work |
 | 9b | [P14](#p14), [P17](#p17), [P20](#p20), [P23](#p23), P13 stage 2 | Smaller, self-contained, decisions already taken |
-| 10 | [P22](#p22), [P25](#p25), [P26](#p26), [P15](#p15), [P32](#p32) | Hard errors — visible, so less urgent than any of the above |
+| 10 | [P22](#p22), [P25](#p25), [P26](#p26), [P15](#p15), [P32](#p32), [P38](#p38) | Hard errors — visible, so less urgent than any of the above |
 | 11 | [P35](#p35), [P36](#p36) | Not parity obligations — a DuckDB extension and a naming difference. Decide *whether*, not just when |
 | — | [P27](#p27) `OR` in `JOIN ... ON` | **Reclassified 2026-08-08 — not a quick win.** `JoinCondition` is a `Vec<SingleJoinCondition>` implicitly AND-ed, so there is nowhere in the AST to put an `OR`; it needs join conditions to become an expression, which reaches the join execution code. Sequence it with the R-log, not here |
 
@@ -485,6 +486,14 @@ annotation be removed.
   BOTH_ERR. That is the correct intermediate state: a hard error is strictly
   better than a silently different answer. Only stage 2 flips the NULLS cases to
   AGREE.
+- **Acceptance test for stage 2:** `examples/jsonl_logs.sql` carries the
+  `ORDER BY latency_ms DESC NULLS LAST LIMIT 5` statement that motivated this,
+  marked `-- [SKIP]` (2026-09-02) so the examples smoke run stays green, next
+  to the NULLS-free version that does run. Drop the directive when stage 2
+  lands. Note the JSONL fixture *does* contain NULLs inside the filtered set
+  (16 rows pass `status IS NOT NULL`, one of which has a NULL `latency_ms`),
+  so unlike the corpus it can pin real NULL-ordering semantics, not just the
+  lost `LIMIT`.
 - **Note on fixtures:** every corpus data file is NULL-free, so these cases pin
   the *lost LIMIT* only — the actual NULL ordering semantics remain untested.
   Tier 08 needs a fixture containing NULLs before that can be asserted either
@@ -531,6 +540,10 @@ annotation be removed.
 - **Decision:** **Fix.** Join conditions should accept the same boolean
   expressions `WHERE` does; `AND` already works (multi-condition joins are
   well covered — see P7/P8), so this is `OR` specifically.
+- **Acceptance test:** the `examples/chemistry.sql` statement that found this
+  is still in the file, marked `-- [SKIP]` (2026-09-02) so the examples smoke
+  run stays green. Drop the directive when P27 is fixed — it is the
+  end-to-end check, alongside the corpus case.
 
 ### P28 — `SELECT ... INTO #tmp` stages the *unfiltered* rows
 - **Status:** 🟢 FIXED (2026-08-16)
@@ -1271,6 +1284,75 @@ out of date.
   captured JSON — exactly the P21 pattern, but with none of the payoff of
   finding a bug. Measure the churn first, then decide whether the naming is
   worth it.
+
+### P37 — A window function inline in `WHERE` silently returns zero rows
+- **Status:** 🔴 OPEN — **silent wrong answer**
+- **Corpus:** `09_window.toml :: window_in_where_inline` (OURS_ONLY).
+- **Observed:** `SELECT region, amount FROM international_sales WHERE
+  ROW_NUMBER() OVER (PARTITION BY region ORDER BY amount DESC) <= 2` returns
+  **0 rows** — header printed, success exit code, no error. The table has 20
+  rows. DuckDB refuses the query outright: *"Binder Error: WHERE clause cannot
+  contain window functions"*.
+- **Why it is `OURS_ONLY` and not `GAP`:** we "succeed" where the reference
+  errors, so the harness scores it as an extension. It is not one — it is an
+  empty result standing in for an unimplemented feature, which is strictly worse
+  than the reference's hard error. The bucket is right; the behaviour is not.
+- **Found:** 2026-09-02, while triaging examples smoke-test failures.
+  `examples/expander_rewriters.sql` advertises "expression lifter (window
+  function in WHERE)" as a working transformation. Half of that query fails
+  loudly ([P26](#p26)); this half fails silently, which is why it had never been
+  noticed.
+- **Sibling of [P15](#p15) — same root cause, different symptom.** `ExpressionLifter`
+  only walks the **SELECT list**, so a window function written inline anywhere
+  else is never hoisted and arrives at `recursive_where_evaluator.rs` as a raw
+  `WindowFunction`. From QUALIFY that path errors (P15). From WHERE it evaluates
+  to something falsy for every row instead. One fix site — `expression_lifter` —
+  covers SELECT-list, QUALIFY and WHERE.
+- **Decision:** **Fix.** Two acceptable end states, in order of preference:
+  1. Lift it, so `WHERE <window> <op> <val>` works as `QUALIFY` does once P15
+     lands — this is what `examples/expander_rewriters.sql` already claims and
+     it makes the two clauses consistent.
+  2. Failing that, **error** like DuckDB. Either is acceptable; returning zero
+     rows is not.
+  Whichever is chosen, the silent-empty path must go first — it is the dangerous
+  half and it is independent of the feature decision.
+- **Related:** [P26](#p26) is the other half of the same example statement, and
+  [P21](#p21) is the same "when are windows evaluated" confusion from a third angle.
+
+### P38 — A scalar subquery in a CTE's `SELECT` list is never evaluated
+- **Status:** 🔴 OPEN
+- **Corpus:** `06_ctes_setops.toml :: scalar_subquery_in_cte_select_list` (GAP).
+  Controls: `scalar_subquery_in_select_arithmetic`,
+  `plain_arithmetic_in_cte_select_list` (both AGREE).
+- **Observed:** `WITH z AS (SELECT region, amount - (SELECT AVG(amount) FROM
+  international_sales) AS d FROM international_sales) SELECT * FROM z` →
+  *"Unsupported expression type for arithmetic evaluation: ScalarSubquery { … }"*.
+- **Precisely located by the controls — narrower than it first looks.** The
+  first diagnosis was "scalar subqueries don't work in arithmetic". That is
+  wrong. Three probes:
+
+  | Query shape | Result |
+  |---|---|
+  | Top-level `SELECT amount - (SELECT AVG(…)) AS d` | ✅ works |
+  | Top-level `(a - (SELECT …)) / (SELECT …)` | ✅ works |
+  | Same expression inside a **CTE body** | 🚫 error |
+  | `SELECT (SELECT AVG(…)) AS a` inside a CTE body (no arithmetic at all) | 🚫 error |
+  | `SELECT amount * 2` inside a CTE body | ✅ works |
+
+  So neither scalar subqueries nor CTE arithmetic is broken in general. The CTE
+  SELECT-list path routes items through an evaluator whose expression match has
+  **no `ScalarSubquery` arm**, while the top-level path has one. The error text
+  says "arithmetic evaluation" only because that is the evaluator it lands in;
+  arithmetic is not the trigger.
+- **Found:** 2026-09-02, in `examples/statistical_analysis.sql` — a z-score
+  block computing `(x - (SELECT AVG(x))) / (SELECT STDDEV(x))` inside a CTE.
+  The statement is restored in that file marked `-- [SKIP]`; drop the directive
+  when this is fixed and it becomes the end-to-end check.
+- **Decision:** **Fix.** Two SELECT-list evaluation paths that disagree on which
+  expression types they support is a shape problem, not just a missing arm —
+  when picking this up, check against [`ENGINE_REFACTORING.md`](ENGINE_REFACTORING.md)
+  whether the honest fix is to converge the two paths rather than add the arm
+  twice. Adding the arm is the tactical fix if convergence is too large.
 
 ---
 

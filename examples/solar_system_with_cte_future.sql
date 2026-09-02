@@ -1,3 +1,4 @@
+-- [TEST:SKIP] aspirational design sketch, not bound to a data file
 -- Solar System Queries with CTEs (Future Capability)
 -- This file shows what will be possible once CTEs are implemented
 -- It demonstrates how CTEs solve current limitations with window functions and ORDER BY

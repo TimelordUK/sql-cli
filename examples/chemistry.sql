@@ -141,6 +141,38 @@ FROM periodic_table
 INNER JOIN year_analysis ON periodic_table.Year = year_analysis.max_discovery_year;
 GO
 
+-- [SKIP]
+-- Show discovery statistics by joining CTEs
+-- SKIPPED: OR in a JOIN ... ON clause is not supported (parity issue P27 --
+-- see docs/SQL_PARITY.md). JoinCondition is a Vec of AND-ed conditions, so
+-- there is nowhere in the AST to put an OR; this is a parse error today.
+-- Restore this statement (and drop the [SKIP]) as the acceptance test when
+-- P27 is fixed.
+WITH discovery_stats AS (
+    SELECT 
+        Year,
+        COUNT(*) as elements_discovered
+    FROM periodic_table
+    WHERE Year IS NOT NULL
+    GROUP BY Year
+),
+year_bounds AS (
+    SELECT 
+        MAX(Year) as latest_year,
+        MIN(Year) as earliest_year
+    FROM periodic_table
+    WHERE Year IS NOT NULL
+)
+SELECT 
+    Year,
+    elements_discovered,
+    latest_year,
+    earliest_year
+FROM discovery_stats
+INNER JOIN year_bounds ON Year = latest_year OR Year = earliest_year
+ORDER BY Year;
+GO
+
 
 -- Self-join example: Find pairs of elements discovered in same year
 -- Note: This demonstrates a workaround since table aliases don't work
