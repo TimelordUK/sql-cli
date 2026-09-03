@@ -86,6 +86,7 @@ Suggested fix order, by silent blast radius:
 | **6** | [P37](#p37) window in `WHERE` returns 0 rows | **Silent — take this first.** Zero rows, success exit code, no error. Reads as "no matching data", not as a defect (the [P30](#p30) trap). Shares a fix site with [P15](#p15), so the two are one piece of work |
 | 9b | [P14](#p14), [P17](#p17), [P20](#p20), [P23](#p23), P13 stage 2 | Smaller, self-contained, decisions already taken |
 | 10 | [P22](#p22), [P25](#p25), [P26](#p26), [P15](#p15), [P32](#p32), [P38](#p38) | Hard errors — visible, so less urgent than any of the above |
+| 10b | [P39](#p39) `x/0` errors, voiding the whole statement | Hard error like row 10, but the only one whose blast radius is the *query* rather than the cell. Settle the four inconsistent call sites as one decision; it currently has no live probe (see the entry) |
 | 11 | [P35](#p35), [P36](#p36) | Not parity obligations — a DuckDB extension and a naming difference. Decide *whether*, not just when |
 | — | [P27](#p27) `OR` in `JOIN ... ON` | **Reclassified 2026-08-08 — not a quick win.** `JoinCondition` is a `Vec<SingleJoinCondition>` implicitly AND-ed, so there is nowhere in the AST to put an `OR`; it needs join conditions to become an expression, which reaches the join execution code. Sequence it with the R-log, not here |
 
@@ -1353,6 +1354,104 @@ out of date.
   when picking this up, check against [`ENGINE_REFACTORING.md`](ENGINE_REFACTORING.md)
   whether the honest fix is to converge the two paths rather than add the arm
   twice. Adding the arm is the tactical fix if convergence is too large.
+
+---
+
+### P39 — Division by zero is a hard error, failing the whole statement
+- **Status:** 🔴 OPEN — hard error, but with an amplifier: one degenerate row
+  kills an otherwise valid result set
+- **Corpus:** none yet — see *Pinning it* below.
+- **Observed:** `divide_values` (`src/data/arithmetic_evaluator.rs:481-490`)
+  tests the divisor for exact zero and returns `Err("Division by zero")`. The
+  error propagates out of the row loop, so the **query returns no rows at all**
+  rather than one bad cell.
+
+  Found 2026-08-31 from a real example, not from the corpus:
+  `examples/stock_analysis.sql` statement #7 (Example 6, rolling min/max) is
+
+  ```sql
+  (close - MIN(close) OVER (ORDER BY date ROWS 19 PRECEDING)) /
+  (MAX(close) OVER (...) - MIN(close) OVER (...)) * 100
+  ```
+
+  On the first row of the filtered set the 20-row frame holds exactly one row,
+  so `MAX == MIN` and the denominator is 0. The other 19 rows are fine; the
+  statement fails anyway. That is the shape that makes this worth an entry —
+  the *blast radius* is a whole query, and it scales with the row count, so a
+  100k-row query is hostage to its single worst row.
+
+- **DuckDB 1.5.5 (the pinned reference) does NOT return NULL for `/`.** Checked
+  directly, because the assumption that it did is what prompted this entry:
+
+  | Expression | DuckDB 1.5.5 | sql-cli |
+  |---|---|---|
+  | `1/0` | `inf` (typed `DOUBLE`) | error |
+  | `-1/0` | `-inf` | error |
+  | `0/0` | `nan` | error |
+  | `1//0` (integer division) | `NULL` | n/a |
+  | `10 % 0` | `NULL` | error (`Division by zero in MOD`) |
+
+  So DuckDB splits the answer: **IEEE semantics for `/`** (it is float division,
+  returning `DOUBLE`), **NULL for the integer operators `//` and `%`**. Note
+  `1/0 IS NULL` is *false* there. Following the reference engine means
+  reproducing that split, not a blanket NULL.
+
+- **We already answer this question three different ways internally**, which is
+  the real finding and should be settled as one decision rather than patched at
+  the call site that hurts:
+
+  | Site | Behaviour on divide-by-zero |
+  |---|---|
+  | `data/arithmetic_evaluator.rs:489` (`/`) | `Err("Division by zero")` |
+  | `sql/functions/math.rs:223,277` (`MOD`, `QUOTIENT`) | `Err(...)` |
+  | `sql/window_functions/mod.rs:734` | returns `DataValue::Null` |
+  | `sql/functions/analytics.rs:237` (`PERCENT_CHANGE`) | pushes the string `"inf"` |
+
+- **Open question for whoever picks this up: can we represent the result?**
+  This is not just a matter of deleting the `is_zero` guard. `DataValue::Float`
+  is an `f64` and holds `inf`/`nan` fine, but nothing downstream has been
+  checked — comparison and sort ordering (`nan` is unordered), `RENDER_NUMBER`,
+  the CSV/JSON writers, and the TUI. The harness's own `normalize.py` collapses
+  numerics to rounded floats and treats `""` as NULL; `inf` through that path is
+  unexamined. The neighbouring hard errors suggest the engine's standing habit
+  is "IEEE special values are errors" — `SELECT SQRT(-1)` fails the same way —
+  so this is a small semantic decision with a wide surface, and the surface is
+  what to measure first.
+
+- **Three defensible outcomes**, listed so the next session starts from the
+  decision and not from scratch:
+  1. **Follow DuckDB** — `/` yields `inf`/`-inf`/`nan`, `MOD`/`QUOTIENT` yield
+     NULL. Maximum parity, largest surface (needs the representability audit).
+  2. **NULL everywhere** — one rule, easy to explain, matches our coercion-first
+     leaning and the window-function site that already does it. A deliberate
+     divergence from the reference on `/`, so it belongs in *Deferred / won't
+     fix* with a rationale if chosen.
+  3. **Keep erroring, but per-row** — the value stays an error, yet one bad row
+     no longer voids the statement. Addresses the amplifier without taking a
+     position on semantics; likely the biggest engine change of the three.
+
+  Whichever is chosen, apply it to all four sites above — the inconsistency is
+  worse than any of the three answers.
+
+- **Pinning it.** No corpus case yet: this was filed from an example, and the
+  cases want writing against tier 03 (scalar `MOD`/`QUOTIENT`/`/` by a literal
+  zero) *and* tier 09 (the degenerate-window shape above, which is the one that
+  actually bit). They are deliberately not added blind — the expected bucket
+  differs per case (`GAP` for the scalar `/`, since DuckDB returns a value and
+  we error) and it should be recorded from a real harness run. The corpus
+  environment did not build in the msys64 clone during this session (`pandas`
+  has no wheel for this Python and fails to compile), so the run belongs in the
+  session that takes the fix.
+
+- **The example is parked, not fixed.** `examples/stock_analysis.sql` Example 6
+  was marked `-- [SKIP]` in `2061168` so the smoke suite stays green. That is
+  the right call and matches the convention `dc84409` set for P27/P13/P38 —
+  keep the query in the tree as evidence rather than deleting it — but it means
+  the divergence now has *no* live probe. **Un-skip it when this is closed.**
+  Note the example also has a genuine bug of its own, independent of the engine
+  decision: the 20-row frame is legitimately zero-width on the first row, so it
+  wants a `NULLIF` on the denominator or a wider `WHERE`. Fixing the engine
+  must not be mistaken for fixing the query.
 
 ---
 
