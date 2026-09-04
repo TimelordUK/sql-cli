@@ -82,6 +82,12 @@ feature work**, and so we can tell the difference between "this is awkward" and
   own project.
 - **Related:** [P3](SQL_PARITY.md) needs `from_source` to be authoritative for
   the scope work.
+- **Related:** [P40](SQL_PARITY.md#p40) is this entry's first field report.
+  The missing table-function variant is *why* generators stay on the legacy
+  path — and that path is the one with no source-table resolution, so a
+  generator's arguments are evaluated against DUAL and no column reference
+  can resolve. Note P40's first two fixes do **not** need the `TableSource`
+  change; only lateral table functions in `FROM` would drag it in.
 
 ### R2 — Branch logic over `SqlExpression` is copy-pasted everywhere
 - **Status:** 🟡 IN PROGRESS — helpers landed (#31), crossing forms made primitive
@@ -473,3 +479,4 @@ AGREE count — which makes it safe to land well before the semantics change.
 | 2026-08-22 | R10 slice 1c: UNKNOWN produced at the leaves via `compare_trilean`. Closes parity P18/P19 — 125 → **129 AGREE**; new finding P32 (`NOT LIKE` parse gap) pinned, not fixed | — |
 | 2026-08-30 | `RANGE` window frames given peer-group semantics (`OrderedPartition::peer_bounds`); sorting and peer detection unified on one comparator. Closes parity P24 — 129 → **133 AGREE**; new finding P33 (`RANGE` with a numeric offset) now a deliberate hard error rather than a silent ROWS answer | — |
 | 2026-08-30 | P34 fixed: `ORDER BY "col.with.dot"` no longer strips a quoted identifier at the dot. R11 filed — ORDER BY still resolves columns with its own copy of `resolve_column_index` rather than the canonical one | — |
+| 2026-09-04 | P40 filed from field use: a generator's args are evaluated against DUAL (`statement_executor.rs` has no `from_function` case), so no column reference resolves in `FROM SPLIT(col, …)`. Cross-linked here — R1's missing table-function variant is the reason generators sit on the legacy path | — |

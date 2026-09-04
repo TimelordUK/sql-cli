@@ -88,6 +88,7 @@ Suggested fix order, by silent blast radius:
 | 10 | [P22](#p22), [P25](#p25), [P26](#p26), [P15](#p15), [P32](#p32), [P38](#p38) | Hard errors — visible, so less urgent than any of the above |
 | 10b | [P39](#p39) `x/0` errors, voiding the whole statement | Hard error like row 10, but the only one whose blast radius is the *query* rather than the cell. Settle the four inconsistent call sites as one decision; it currently has no live probe (see the entry) |
 | 11 | [P35](#p35), [P36](#p36) | Not parity obligations — a DuckDB extension and a naming difference. Decide *whether*, not just when |
+| 12 | [P40](#p40) a generator's args can't reference columns | Hard error and loudly signposted, so last by blast radius — but it splits: the misleading *"may not support qualified column names"* message is a few lines and is the part that wastes the next person's afternoon. Take that alone; the explode feature can wait on the `UNNEST` decision |
 | — | [P27](#p27) `OR` in `JOIN ... ON` | **Reclassified 2026-08-08 — not a quick win.** `JoinCondition` is a `Vec<SingleJoinCondition>` implicitly AND-ed, so there is nowhere in the AST to put an `OR`; it needs join conditions to become an expression, which reaches the join execution code. Sequence it with the R-log, not here |
 
 P27–P30 jump the queue because all four were found *by* fixing something else,
@@ -1452,6 +1453,101 @@ out of date.
   decision: the 20-row frame is legitimately zero-width on the first row, so it
   wants a `NULLIF` on the denominator or a wider `WHERE`. Fixing the engine
   must not be mistaken for fixing the query.
+
+---
+
+### P40 — A table generator's arguments cannot reference columns, so there is no way to explode one row into many
+- **Status:** 🔴 OPEN — hard error, but the error text misdirects (see below)
+- **Corpus:** none yet — see *Pinning it*.
+- **Observed:** `SPLIT` is a **table generator** (`sql/generators/string_generators.rs:12`),
+  in the same family as `READ_JSON` / `RANGE`, so it can only appear in `FROM`.
+  Every attempt to feed it a column fails:
+
+  | Query | Result |
+  |---|---|
+  | `SELECT * FROM split('a/b/c','/')` | ✅ 3 rows, columns `value,index` |
+  | `sql-cli p.csv -q "SELECT * FROM split(path,'/')"` | 🚫 *Column 'path' not found* — and `path` is a real column of `p` |
+  | `WITH a AS (…) SELECT * FROM split(path,'/')` | 🚫 *Column 'path' not found* |
+  | `WITH a AS (…) SELECT * FROM split(a.path,'/')` | 🚫 *Column 'a.path' not found. Table 'a' may not support qualified column names* |
+  | `SELECT * FROM split((SELECT p FROM …),'/')` | 🚫 *Unsupported expression type for arithmetic evaluation: ScalarSubquery* |
+
+- **The error message is actively misleading, and it misdirected the report
+  that opened this entry.** "Table 'a' may not support qualified column names"
+  is the generic fallback at `query_engine.rs:132`. Read literally it points at
+  CTE scoping and qualified-name resolution — and that is exactly the conclusion
+  it produced ("maybe table doesn't support qualified columns"). Neither is
+  involved. The unqualified
+  form fails identically, and so does a plain base-table column with no CTE in
+  sight. Whatever else is decided here, **this message must stop blaming
+  qualification** — a generator argument that is not a constant should say so.
+
+- **Root cause — two defects stacked, and only the second is a feature request:**
+  1. **The args are evaluated against DUAL.** `statement_executor.rs:124-148`
+     picks the source table from `from_source` / `from_table` only. There is no
+     `from_function` case, so a generator query falls through to
+     `Arc::new(DataTable::dual())`. `query_engine.rs:1300-1314` then builds an
+     `ArithmeticEvaluator` on *that* table. DUAL has no columns, so **no** column
+     reference can ever resolve there — the CTE is not consulted, and neither is
+     the loaded CSV. That is a plain wiring bug, not a design limit.
+  2. **Even with args resolved, `generate()` is called once**, at
+     `dummy_row = 0`. Exploding a column into rows needs one invocation *per
+     input row* with the results concatenated — a lateral/correlated table
+     function. The engine has no such concept, and no `UNNEST`.
+
+- **DuckDB 1.5.5 (the pinned reference), verified directly** — including the
+  shape that was actually reported, which turns out to be invalid there too:
+
+  | Query | DuckDB 1.5.5 |
+  |---|---|
+  | `SELECT path, unnest(str_split(path,'/')) FROM a` | ✅ 5 rows from 2 — the idiomatic form |
+  | `SELECT * FROM a, unnest(str_split(a.path,'/')) u(part)` | ✅ lateral join |
+  | `WITH a AS (…) SELECT * FROM unnest(str_split(a.path,'/'))` | 🚫 *Binder Error: Referenced table "a" not found!* |
+  | `SELECT * FROM a, generate_series(1, a.n)` | ✅ correlated table function |
+  | `SELECT * FROM split('a/b','/')` | 🚫 *Catalog Error: Table Function with name split does not exist* |
+
+  Two things follow. **The reported query is not the one to make work** — `a` is
+  not in its `FROM`, and DuckDB rejects it for that reason; the target shapes are
+  rows 1 and 2. And **our `SPLIT` generator is an extension**, not a parity
+  obligation: DuckDB's `str_split` is scalar and returns a list. Ours already
+  emits `value,index`, i.e. `WITH ORDINALITY` for free, which is worth keeping.
+
+- **What works today:** `SPLIT_PART(path,'/',n)` — scalar, resolves columns
+  normally, fine for fixed positions. There is no way to handle
+  arbitrary-depth paths.
+
+- **Found:** 2026-09-04, from real use rather than the corpus — a TeamCity API
+  response piped into `READ_JSON('-', …)`, wrapped in a CTE to extract an
+  artifact path, then wanting that path split into its segments. The CTE and the
+  qualified `a.path` reference both work in `SELECT`; only the generator
+  argument fails.
+
+- **Decision: fix, in three independently shippable pieces**, smallest first:
+  1. **The message.** No semantics, no risk, and it is the part that wastes
+     other people's time. Do this even if the rest is deferred.
+  2. **Resolve generator arguments against the real source table and CTE
+     context** instead of DUAL. Makes single-row and constant-expression
+     arguments honest, and makes the remaining failure an accurate "this needs a
+     lateral join" rather than a bogus "column not found".
+  3. **Row-wise explode.** Prefer `UNNEST` in the `SELECT` list (reference row
+     1) over lateral table functions in `FROM` (row 2): it is the idiomatic
+     form, it is what people will reach for, and it avoids touching
+     `TableSource` — which the `FROM` form cannot, see below.
+
+- **Related — [R1](ENGINE_REFACTORING.md#r1) is the structural reason this is
+  the way it is.** R1 already records that `TableSource` has *no table-function
+  variant*, so `from_source` is set to `None` whenever `from_function` is
+  populated and generators are stranded on the legacy path — which is precisely
+  the path that has no source-table resolution. Piece 3-via-`FROM` needs the
+  `TableSource` change R1 assessed as its own project (it drags in joins);
+  piece 3-via-`UNNEST` does not. Piece 1 and piece 2 are independent of R1.
+  The `ScalarSubquery` row in the first table is
+  [R7](ENGINE_REFACTORING.md#r7) showing through, not a separate finding.
+
+- **Pinning it.** No corpus case yet, deliberately — the useful cases are for
+  the *target* shapes (`UNNEST` in a `SELECT` list; a lateral table function),
+  both of which we do not parse, and the bucket should be recorded from a real
+  harness run rather than guessed. They want a home in tier 03 (`03_functions.toml`)
+  plus one in tier 06 (`06_ctes_setops.toml`) for the shape that was actually hit. Expect `GAP`.
 
 ---
 
