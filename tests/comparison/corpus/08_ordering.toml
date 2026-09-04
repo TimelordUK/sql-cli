@@ -209,3 +209,67 @@ sql = "SELECT id, label FROM null_edges ORDER BY label, id"
 expect = "DIFFER"
 # P17 on a string column — pinned separately to prove the rule is type-independent
 # and that a fix has to cover both comparators.
+
+# --- P13 stage 2 / P17: explicit NULLS FIRST/LAST, over data that actually has
+# NULLs.
+#
+# Added 2026-09-04. The three `order_by_nulls_*` cases above run on
+# international_sales.csv, which is 100% NULL-free (verified: 0 empty fields in
+# 20 rows). They therefore pin only "the clause parses and the LIMIT survives" —
+# an implementation that accepts `NULLS LAST` into the AST and then ignores it in
+# the comparator would flip all three to AGREE and pass the gate. These cases
+# close that hole; they are the acceptance criteria for P13 stage 2, and the
+# three above are not.
+#
+# Design note: once P17 makes NULLS LAST the default in both directions, an
+# explicit `NULLS LAST` no longer distinguishes "honoured" from "ignored" — it
+# agrees with the default either way. The load-bearing cases are therefore the
+# NULLS FIRST ones. `order_by_nulls_last_asc_numeric` is kept anyway because it
+# is the case that changes meaning *today* (we currently sort NULL as the
+# minimum, so ASC puts them first), and it documents the default converging on
+# the explicit form rather than leaving that untested.
+
+[[case]]
+id = "order_by_nulls_first_asc_numeric"
+data = "null_edges.csv"
+sql = "SELECT id, score FROM null_edges ORDER BY score NULLS FIRST, id"
+expect = "GAP"
+# THE case for P13 stage 2: the only shape that disagrees with the post-P17
+# default, so it is the one that fails if the clause is parsed and dropped.
+# Expected: ids 3, 10, 11, 12 (the NULL scores) first, then ascending by score.
+
+[[case]]
+id = "order_by_nulls_last_asc_numeric"
+data = "null_edges.csv"
+sql = "SELECT id, score FROM null_edges ORDER BY score NULLS LAST, id"
+expect = "GAP"
+# Agrees with the post-P17 default, so it cannot catch an ignored clause — kept
+# because it is the explicit form of the behaviour P17 changes, and its flip to
+# AGREE is what proves the default moved.
+
+[[case]]
+id = "order_by_nulls_first_desc_numeric"
+data = "null_edges.csv"
+sql = "SELECT id, score FROM null_edges ORDER BY score DESC NULLS FIRST, id"
+expect = "GAP"
+# DESC is where the two engines' defaults coincide (see order_by_null_default_desc),
+# so an explicit NULLS FIRST is the only way to pin the DESC comparator honouring
+# the clause rather than falling through to a default that happens to match.
+
+[[case]]
+id = "order_by_nulls_first_string"
+data = "null_edges.csv"
+sql = "SELECT id, label FROM null_edges ORDER BY label NULLS FIRST, id"
+expect = "GAP"
+# The string comparator, mirroring order_by_null_default_asc_string: a fix that
+# reaches only the numeric path is caught here.
+
+[[case]]
+id = "order_by_nulls_first_limit"
+data = "null_edges.csv"
+sql = "SELECT id, score FROM null_edges ORDER BY score NULLS FIRST, id LIMIT 3"
+expect = "GAP"
+# P13's two halves in one case, over real NULLs: the LIMIT must survive the
+# NULLS clause *and* the clause must reorder. Expected exactly ids 3, 10, 11 —
+# all NULL-scored, so a dropped clause returns a visibly different set rather
+# than a subtly different order.

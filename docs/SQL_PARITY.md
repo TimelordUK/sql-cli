@@ -65,8 +65,11 @@ session apiece to fix properly, so **discovery is paused and the effort moves to
 picking them off**. Widen the corpus again when the open list is short, or
 opportunistically when a fix needs a case that doesn't exist yet.
 
-Corpus coverage today: tiers 01–10. **Tier 10 (aggregate & NULL edges) is
-deliberately partial** — it holds the P14 and P18–P20 cases and their baselines,
+Corpus coverage today: tiers 01–10, **177 cases** (141 AGREE / 13 DIFFER /
+20 GAP / 1 OURS_ONLY / 2 BOTH_ERR as of 2026-09-04 — five `NULLS FIRST`/`LAST`
+cases were added that day as the acceptance criteria for [P13](#p13) stage 2,
+which is why GAP moved 15 → 20 without anything regressing). **Tier 10
+(aggregate & NULL edges) is deliberately partial** — it holds the P14 and P18–P20 cases and their baselines,
 but was never built out the way tiers 08 and 09 were. Finish it during a lull;
 the aggregate-function surface (`STDDEV`, `DISTINCT` aggregates, `FILTER`,
 empty-vs-all-NULL distinctions) is largely unexamined.
@@ -83,13 +86,14 @@ Suggested fix order, by silent blast radius:
 | ~~7~~ | ~~[P18](#p18)/[P19](#p19) three-valued logic~~ | ✅ **Fixed 2026-08-22** — 125 → 129 AGREE. Delivered as three slices ([R10](ENGINE_REFACTORING.md#r10)); the two no-op ones landed first, so the semantics change reviewed on its own |
 | ~~8~~ | ~~[P24](#p24) `RANGE` treated as `ROWS`~~ | ✅ **Fixed 2026-08-30** — 129 → 133 AGREE (+2 fixed, +2 new coverage). One defect, not two: the parser already emitted the right default frame, so fixing peer groups closed both cases. Spun off [P33](#p33) |
 | ~~9a~~ | ~~[P16](#p16) `ORDER BY <ordinal>` ignored~~ | ✅ **Fixed 2026-08-31** — 134 → 139 AGREE. The literal was being promoted into a hidden *constant* column, so the sort ran on a column where every row tied |
-| **6** | [P37](#p37) window in `WHERE` returns 0 rows | **Silent — take this first.** Zero rows, success exit code, no error. Reads as "no matching data", not as a defect (the [P30](#p30) trap). Shares a fix site with [P15](#p15), so the two are one piece of work |
-| 9b | [P14](#p14), [P17](#p17), [P20](#p20), [P23](#p23), P13 stage 2 | Smaller, self-contained, decisions already taken |
+| **NEXT** | [P17](#p17) + [P13](#p13) stage 2 — NULL ordering | **Queued 2026-09-04 for the next session.** One slice: both are the ORDER BY comparator's NULL rule and both decisions were taken together on 2026-08-02, so it is implementation, not deliberation. Largest movement available — 2 DIFFER + 3 GAP + `win_first_value_unfiltered`. Three comparator sites, and they currently disagree with *each other* (the window's internal sort puts NULLs first on DESC, the outer sort puts them last). Land the five new `null_edges` cases as the acceptance criteria first — see [P13](#p13) |
+| **6** | [P37](#p37) window in `WHERE` returns 0 rows | **Silent — take this first.** Zero rows, success exit code, no error. Reads as "no matching data", not as a defect (the [P30](#p30) trap). Shares a fix site with [P15](#p15), so the two are one piece of work. Not taken for the 2026-09-05 session only because the NEXT row above is one already-decided comparator change; this stays the top *silent-bug* priority |
+| 9b | [P14](#p14), [P20](#p20), [P23](#p23) | Smaller, self-contained, decisions already taken |
 | 10 | [P22](#p22), [P25](#p25), [P26](#p26), [P15](#p15), [P32](#p32), [P38](#p38) | Hard errors — visible, so less urgent than any of the above |
 | 10b | [P39](#p39) `x/0` errors, voiding the whole statement | Hard error like row 10, but the only one whose blast radius is the *query* rather than the cell. Settle the four inconsistent call sites as one decision; it currently has no live probe (see the entry) |
 | 11 | [P35](#p35), [P36](#p36) | Not parity obligations — a DuckDB extension and a naming difference. Decide *whether*, not just when |
 | 12 | [P40](#p40) a generator's args can't reference columns | Hard error and loudly signposted, so last by blast radius — but it splits: the misleading *"may not support qualified column names"* message is a few lines and is the part that wastes the next person's afternoon. Take that alone; the explode feature can wait on the `UNNEST` decision |
-| — | [P27](#p27) `OR` in `JOIN ... ON` | **Reclassified 2026-08-08 — not a quick win.** `JoinCondition` is a `Vec<SingleJoinCondition>` implicitly AND-ed, so there is nowhere in the AST to put an `OR`; it needs join conditions to become an expression, which reaches the join execution code. Sequence it with the R-log, not here |
+| — | [P27](#p27) `OR` in `JOIN ... ON` | **Reclassified 2026-08-08, re-scoped 2026-09-04 — possibly smaller than it was filed as.** The AST is still the blocker (`JoinCondition` is a `Vec` of AND-ed conditions with nowhere to put an `OR`), but the executor already evaluates expressions per row pair and already has a merged-row `cross_join`, so `INNER JOIN ON <expr>` may lower to cross-join + the R10 WHERE evaluator. Do the timeboxed scoping pass in the entry before sequencing this |
 
 P27–P30 jump the queue because all four were found *by* fixing something else,
 and all four are the dangerous shape: wrong data that looks plausible. Two of
@@ -496,10 +500,28 @@ annotation be removed.
   (16 rows pass `status IS NOT NULL`, one of which has a NULL `latency_ms`),
   so unlike the corpus it can pin real NULL-ordering semantics, not just the
   lost `LIMIT`.
-- **Note on fixtures:** every corpus data file is NULL-free, so these cases pin
-  the *lost LIMIT* only — the actual NULL ordering semantics remain untested.
-  Tier 08 needs a fixture containing NULLs before that can be asserted either
-  way.
+- **Note on fixtures — superseded 2026-09-04, and the correction matters.** This
+  entry used to say every corpus data file was NULL-free. That was true when it
+  was written; `null_edges.csv` (12 rows, NULLs in five columns, both engines
+  verified to see the same ones) was purpose-built for tier 08 shortly after, and
+  the P17 cases already use it. But **the three `order_by_nulls_*` cases above
+  were never moved onto it** — they still run on `international_sales.csv`, which
+  is 100% NULL-free (re-verified 2026-09-04: 0 empty fields in 20 rows).
+  Consequence: those three pin *"the clause parses and the `LIMIT` survives"* and
+  nothing more. An implementation that accepts `NULLS LAST` into the AST and then
+  ignores it in the comparator flips all three to AGREE and passes `--check`.
+  **They are not the acceptance criteria for stage 2.**
+- **Acceptance criteria for stage 2 (added 2026-09-04):** five cases on
+  `null_edges.csv` — `order_by_nulls_first_asc_numeric`,
+  `order_by_nulls_last_asc_numeric`, `order_by_nulls_first_desc_numeric`,
+  `order_by_nulls_first_string`, `order_by_nulls_first_limit` (all `GAP`; the
+  parse error is the current state). The load-bearing ones are the **`NULLS
+  FIRST`** cases: once [P17](#p17) makes NULLS LAST the default in both
+  directions, an explicit `NULLS LAST` agrees with the default whether or not the
+  clause is honoured, so only `NULLS FIRST` can fail on a parsed-and-dropped
+  clause. `order_by_nulls_first_limit` carries both halves of P13 at once and is
+  the sharpest single check: the answer is exactly ids 3, 10, 11 (all NULL-scored),
+  so a dropped clause returns a different *set*, not a subtly different order.
 - **Stage 1, as built (2026-08-02).** `Parser::parse` now ends with
   `expect_end_of_statement()`, which accepts an optional trailing `;` and
   trailing comments and otherwise errors with the offending token and its
@@ -546,6 +568,42 @@ annotation be removed.
   is still in the file, marked `-- [SKIP]` (2026-09-02) so the examples smoke
   run stays green. Drop the directive when P27 is fixed — it is the
   end-to-end check, alongside the corpus case.
+- **Re-scoped 2026-09-04 — the 2026-08-08 "larger than P3" assessment looks
+  pessimistic, and it predates a look at the executor.** Two things narrow it:
+  1. **Per-row-pair expression evaluation already exists.**
+     `nested_loop_join_inner_multi` / `_left_multi` / `_right_multi`
+     (`data/hash_join.rs`) evaluate `SqlExpression` operands for each row pair,
+     routing each operand to its owning table by alias rather than syntactic
+     position (that is the P7 fix). Arbitrary join predicates are not new ground
+     in the executor; only the *shape of the condition* is.
+  2. **There is already a merged-row substrate.** `hash_join.rs:789 cross_join`
+     materializes a table carrying both sides' columns — which is exactly what
+     the Trilean WHERE evaluator from [R10](ENGINE_REFACTORING.md#r10) needs.
+     `INNER JOIN ON <expr>` lowers to cross join + WHERE filter, correct by
+     construction, and NULL-in-`ON` then falls out of R10 instead of needing its
+     own rule.
+
+  So the blocking work is the AST (`JoinCondition` stops being a `Vec` of
+  AND-ed conditions) and the parser's AND-only loop at
+  `recursive_parser.rs:1987-1992`, plus a decision on which executor path an
+  `OR` predicate takes.
+- **Caveats, deliberately not discharged — this is a scoping note, not a plan:**
+  - **Outer joins cannot use the lowering.** They need "did any right row match"
+    tracking, so cross-join-then-filter is INNER-only.
+    `nested_loop_join_left_multi` already tracks that, so the shape exists, but
+    the shortcut does not extend to it.
+  - **`cross_join` is not drop-in.** It caps at 1M result rows for safety, and
+    it clones both sides' columns *without* the `_right` collision renaming the
+    nested-loop paths do — so overlapping column names would resolve differently
+    than they do today.
+  - **It is O(n×m).** So is the nested-loop path it would replace, so no
+    regression for the shapes already routed there — but the pure
+    equality-AND case must keep taking the hash path, or this becomes a
+    performance regression dressed as a feature.
+- **Next action: a timeboxed scoping pass, not a fix.** Prove the lowering
+  end-to-end against `join_on_or_condition` first. That is the cheap experiment,
+  and it is what decides whether P27 is a session or a project — which is the
+  question the 2026-08-08 note left open.
 
 ### P28 — `SELECT ... INTO #tmp` stages the *unfiltered* rows
 - **Status:** 🟢 FIXED (2026-08-16)
@@ -720,10 +778,16 @@ likely to be believed.
 ### P17 — Default NULL placement differs on `ASC`
 - **Status:** 🔴 OPEN — **decision made 2026-08-02: follow the reference engine
   (NULLS LAST in both directions), plus explicit `NULLS FIRST`/`LAST` from P13
-  stage 2.** Implementation pending.
+  stage 2.** Queued 2026-09-04 as **one slice with [P13](#p13) stage 2** — same
+  comparators, and the decision on both was taken in the same sitting.
 - **Corpus:** `08_ordering.toml :: order_by_null_default_asc_numeric`,
   `order_by_null_default_asc_string` (DIFFER); `order_by_null_default_desc`
   (AGREE). Second site: `09_window.toml :: win_first_value_unfiltered` (DIFFER).
+- **What proves the default actually moved:** the two ASC `DIFFER` cases flip to
+  AGREE. Note `order_by_null_default_desc` cannot help — it AGREEs today for the
+  wrong reason and will keep AGREEing afterwards. The explicit-clause case
+  `order_by_nulls_last_asc_numeric` (added 2026-09-04, see P13) is the one that
+  pins the new default and the explicit form converging on the same answer.
 - **Two sites, and they disagree with each other.** Added 2026-08-02 while
   fixing P21. Besides the main `ORDER BY` path, a window's *internal* `ORDER BY`
   sorts in `window_context.rs::sort_rows` — and it places NULLs **first on
