@@ -291,9 +291,15 @@ id = "window_in_where_inline"
 data = "international_sales.csv"
 sql = "SELECT region, amount FROM international_sales WHERE ROW_NUMBER() OVER (PARTITION BY region ORDER BY amount DESC) <= 2 ORDER BY region, amount"
 expect = "OURS_ONLY"
-# P37, added 2026-09-02. DuckDB rejects this outright ("WHERE clause cannot
-# contain window functions"). We do not error -- we return **zero rows**, with
-# a header and a success exit code. Silent empty result, the same class as
-# P30/P31. Sibling of P15: the ExpressionLifter only walks the SELECT list, so
-# an inline window reaches the WHERE evaluator unlifted; QUALIFY errors there
-# (P15) but WHERE quietly filters everything out instead.
+# P37, added 2026-09-02, FIXED 2026-09-05. DuckDB rejects this outright
+# ("WHERE clause cannot contain window functions"), so we are OURS_ONLY either
+# way -- which is the point worth knowing about this case: it was OURS_ONLY when
+# we returned **zero rows** with a success exit code, and it is OURS_ONLY now
+# that we return the correct top-2 per region. `--check` cannot tell those two
+# apart, so it cannot catch a regression here. The regression test that can is
+# `bare_value_predicate_tests` in src/data/recursive_where_evaluator.rs.
+#
+# Keep expect = "OURS_ONLY". Do NOT read a green run as evidence this still
+# works; if you change the WHERE evaluator or ExpressionLifter, run that Rust
+# module. The original note here blamed the lifter for not walking WHERE -- it
+# does; see P37 in docs/SQL_PARITY.md for the actual cause.
