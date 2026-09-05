@@ -1,23 +1,23 @@
-# SQL CLI v1.83.7
+# SQL CLI v1.83.8
 
 **Release Date:** September 05, 2026
 
 ## 📊 Release Overview
 - **Commits in this release:** 2
-- **Files updated:** 3
+- **Files updated:** 8
 
 ## ✨ Highlights
 
 ## 📝 Changes by Category
 
 ### 🐛 Bug Fixes
-- bare value as a WHERE predicate — P37
+- quote column names when expanding SELECT * (T8)
 
 <details>
 <summary>📋 View all commits</summary>
 
-- Merge pull request #65 from TimelordUK/fix/p37-bare-value-predicate (TimelordUK)
-- fix(parity): bare value as a WHERE predicate — P37 (TimelordUK)
+- Merge pull request #66 from TimelordUK/fix/t8-expand-asterisk-quoting (TimelordUK)
+- fix(tui): quote column names when expanding SELECT * (T8) (TimelordUK)
 
 </details>
 
