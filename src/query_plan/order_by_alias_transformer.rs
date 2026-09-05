@@ -402,7 +402,7 @@ impl OrderByAliasTransformer {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::sql::parser::ast::{ColumnRef, OrderByItem, QuoteStyle, SortDirection};
+    use crate::sql::parser::ast::{ColumnRef, NullsOrder, OrderByItem, QuoteStyle, SortDirection};
 
     #[test]
     fn test_extract_aggregate_from_order_column() {
@@ -467,6 +467,7 @@ mod tests {
         stmt.order_by = Some(vec![OrderByItem {
             expr: SqlExpression::NumberLiteral("2".to_string()),
             direction: SortDirection::Desc,
+            nulls: NullsOrder::Unspecified,
         }]);
 
         let stmt = OrderByAliasTransformer::new()
@@ -494,6 +495,7 @@ mod tests {
         stmt.order_by = Some(vec![OrderByItem {
             expr: SqlExpression::NumberLiteral("1.5".to_string()),
             direction: SortDirection::Asc,
+            nulls: NullsOrder::Unspecified,
         }]);
 
         let stmt = OrderByAliasTransformer::new()
@@ -525,6 +527,7 @@ mod tests {
                 right: Box::new(SqlExpression::NumberLiteral("1".to_string())),
             },
             direction: SortDirection::Asc,
+            nulls: NullsOrder::Unspecified,
         }]);
 
         let stmt = OrderByAliasTransformer::new()

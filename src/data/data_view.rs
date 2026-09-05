@@ -8,7 +8,9 @@ use tracing::{debug, info};
 
 use crate::data::data_provider::DataProvider;
 use crate::data::datatable::{DataRow, DataTable, DataValue};
-use crate::data::datavalue_compare::{compare_datavalues, compare_optional_datavalues};
+use crate::data::datavalue_compare::{
+    compare_datavalues, compare_for_order_by, compare_optional_datavalues,
+};
 
 /// Sort order for columns
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -1068,14 +1070,14 @@ impl DataView {
     }
 
     /// Apply multi-column sorting
-    /// Each tuple contains (`source_column_index`, ascending)
-    pub fn apply_multi_sort(&mut self, sort_columns: &[(usize, bool)]) -> Result<()> {
+    /// Each tuple contains (`source_column_index`, ascending, `nulls_first`)
+    pub fn apply_multi_sort(&mut self, sort_columns: &[(usize, bool, bool)]) -> Result<()> {
         if sort_columns.is_empty() {
             return Ok(());
         }
 
         // Validate all column indices first
-        for (col_idx, _) in sort_columns {
+        for (col_idx, _, _) in sort_columns {
             if *col_idx >= self.source.column_count() {
                 return Err(anyhow::anyhow!(
                     "Source column index {} out of bounds",
@@ -1087,15 +1089,17 @@ impl DataView {
         let source = &self.source;
         self.visible_rows.sort_by(|&a, &b| {
             // Compare by each column in order until we find a difference
-            for (col_idx, ascending) in sort_columns {
+            for (col_idx, ascending, nulls_first) in sort_columns {
                 let val_a = source.get_value(a, *col_idx);
                 let val_b = source.get_value(b, *col_idx);
 
-                let cmp = compare_optional_datavalues(val_a, val_b);
+                // Direction and NULL placement are applied together here: the
+                // NULL rule is absolute and must not be flipped by DESC.
+                let cmp = compare_for_order_by(val_a, val_b, *ascending, *nulls_first);
 
                 // If values are different, return the comparison
                 if cmp != std::cmp::Ordering::Equal {
-                    return if *ascending { cmp } else { cmp.reverse() };
+                    return cmp;
                 }
                 // If equal, continue to next column
             }
@@ -1105,7 +1109,7 @@ impl DataView {
         });
 
         // Update sort state to reflect the primary sort column
-        if let Some((primary_col, ascending)) = sort_columns.first() {
+        if let Some((primary_col, ascending, _)) = sort_columns.first() {
             // Find the visible column index for the primary sort column
             if let Some(visible_idx) = self.visible_columns.iter().position(|&x| x == *primary_col)
             {

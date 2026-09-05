@@ -804,7 +804,10 @@ pub fn format_expression(expr: &SqlExpression) -> String {
                             SqlExpression::Column(col_ref) => col_ref.name.clone(),
                             _ => format_expression(&col.expr),
                         };
-                        format!("{}{}", expr_str, dir)
+                        let nulls = col
+                            .nulls_keyword()
+                            .map_or(String::new(), |k| format!(" {k}"));
+                        format!("{expr_str}{dir}{nulls}")
                     })
                     .collect();
                 result.push_str(&order_strs.join(", "));

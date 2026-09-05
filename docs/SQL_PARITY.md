@@ -65,10 +65,10 @@ session apiece to fix properly, so **discovery is paused and the effort moves to
 picking them off**. Widen the corpus again when the open list is short, or
 opportunistically when a fix needs a case that doesn't exist yet.
 
-Corpus coverage today: tiers 01–10, **177 cases** (141 AGREE / 13 DIFFER /
-20 GAP / 1 OURS_ONLY / 2 BOTH_ERR as of 2026-09-04 — five `NULLS FIRST`/`LAST`
-cases were added that day as the acceptance criteria for [P13](#p13) stage 2,
-which is why GAP moved 15 → 20 without anything regressing). **Tier 10
+Corpus coverage today: tiers 01–10, **177 cases** (152 AGREE / 10 DIFFER /
+12 GAP / 1 OURS_ONLY / 2 BOTH_ERR as of 2026-09-05, after the NULL-ordering
+slice closed [P13](#p13) stage 2 and [P17](#p17) together — eleven cases in one
+change, the largest single movement so far). **Tier 10
 (aggregate & NULL edges) is deliberately partial** — it holds the P14 and P18–P20 cases and their baselines,
 but was never built out the way tiers 08 and 09 were. Finish it during a lull;
 the aggregate-function surface (`STDDEV`, `DISTINCT` aggregates, `FILTER`,
@@ -86,8 +86,8 @@ Suggested fix order, by silent blast radius:
 | ~~7~~ | ~~[P18](#p18)/[P19](#p19) three-valued logic~~ | ✅ **Fixed 2026-08-22** — 125 → 129 AGREE. Delivered as three slices ([R10](ENGINE_REFACTORING.md#r10)); the two no-op ones landed first, so the semantics change reviewed on its own |
 | ~~8~~ | ~~[P24](#p24) `RANGE` treated as `ROWS`~~ | ✅ **Fixed 2026-08-30** — 129 → 133 AGREE (+2 fixed, +2 new coverage). One defect, not two: the parser already emitted the right default frame, so fixing peer groups closed both cases. Spun off [P33](#p33) |
 | ~~9a~~ | ~~[P16](#p16) `ORDER BY <ordinal>` ignored~~ | ✅ **Fixed 2026-08-31** — 134 → 139 AGREE. The literal was being promoted into a hidden *constant* column, so the sort ran on a column where every row tied |
-| **NEXT** | [P17](#p17) + [P13](#p13) stage 2 — NULL ordering | **Queued 2026-09-04 for the next session.** One slice: both are the ORDER BY comparator's NULL rule and both decisions were taken together on 2026-08-02, so it is implementation, not deliberation. Largest movement available — 2 DIFFER + 3 GAP + `win_first_value_unfiltered`. Three comparator sites, and they currently disagree with *each other* (the window's internal sort puts NULLs first on DESC, the outer sort puts them last). Land the five new `null_edges` cases as the acceptance criteria first — see [P13](#p13) |
-| **6** | [P37](#p37) window in `WHERE` returns 0 rows | **Silent — take this first.** Zero rows, success exit code, no error. Reads as "no matching data", not as a defect (the [P30](#p30) trap). Shares a fix site with [P15](#p15), so the two are one piece of work. Not taken for the 2026-09-05 session only because the NEXT row above is one already-decided comparator change; this stays the top *silent-bug* priority |
+| ~~9c~~ | ~~[P17](#p17) + [P13](#p13) stage 2 — NULL ordering~~ | ✅ **Fixed 2026-09-05** — 141 → **152 AGREE**, eleven cases in one change. Both halves were the same comparator's NULL rule, so they were taken as one slice. The two sorts that disagreed with each other now *share* one function (`compare_for_order_by`), which is the part that stops the divergence recurring; the window site turned out to be sorting NULL as the **maximum** via a derived `PartialOrd`, not merely following a different rule |
+| **NEXT** | [P37](#p37) window in `WHERE` returns 0 rows | **Silent — take this next.** Zero rows, success exit code, no error. Reads as "no matching data", not as a defect (the [P30](#p30) trap). Shares a fix site with [P15](#p15), so the two are one piece of work. Deferred once already (2026-09-05) for the NULL-ordering slice above; it is now the top priority outright |
 | 9b | [P14](#p14), [P20](#p20), [P23](#p23) | Smaller, self-contained, decisions already taken |
 | 10 | [P22](#p22), [P25](#p25), [P26](#p26), [P15](#p15), [P32](#p32), [P38](#p38) | Hard errors — visible, so less urgent than any of the above |
 | 10b | [P39](#p39) `x/0` errors, voiding the whole statement | Hard error like row 10, but the only one whose blast radius is the *query* rather than the cell. Settle the four inconsistent call sites as one decision; it currently has no live probe (see the entry) |
@@ -457,12 +457,14 @@ annotation be removed.
   input.
 
 ### P13 — Unparsed trailing tokens are silently discarded, taking later clauses with them
-- **Status:** 🟡 STAGE 1 DONE (2026-08-02) — the parser now rejects trailing
-  input. Stage 2 (implement `NULLS FIRST` / `LAST`) outstanding.
-- **Corpus:** `08_ordering.toml :: trailing_garbage_token` (OURS_ONLY — the root
+- **Status:** 🟢 FIXED — stage 1 (reject trailing input) 2026-08-02, stage 2
+  (`NULLS FIRST` / `NULLS LAST`) 2026-09-05 in one slice with [P17](#p17).
+- **Corpus:** `08_ordering.toml :: trailing_garbage_token` (BOTH_ERR — the root
   cause, pinned directly), `order_by_nulls_last_limit` and
-  `order_by_nulls_first_limit` (DIFFER — the instance users actually hit).
-  Controls: `order_by_limit`, `order_by_nulls_last_no_limit` (both AGREE).
+  `order_by_nulls_first_limit_nullfree` (the instance users actually hit; both
+  AGREE since stage 2). Controls: `order_by_limit`,
+  `order_by_nulls_last_no_limit`. The stage-2 acceptance criteria are the five
+  `null_edges.csv` cases listed below, not these.
 - **Observed:** `ORDER BY amount DESC NULLS LAST LIMIT 3` returns **all 20 rows**
   instead of 3. No error. The `LIMIT` is simply gone.
 - **Root cause — broader than it first looks.** `NULLS` is not the issue; there
@@ -494,9 +496,12 @@ annotation be removed.
   AGREE.
 - **Acceptance test for stage 2:** `examples/jsonl_logs.sql` carries the
   `ORDER BY latency_ms DESC NULLS LAST LIMIT 5` statement that motivated this,
-  marked `-- [SKIP]` (2026-09-02) so the examples smoke run stays green, next
-  to the NULLS-free version that does run. Drop the directive when stage 2
-  lands. Note the JSONL fixture *does* contain NULLs inside the filtered set
+  which was marked `-- [SKIP]` (2026-09-02) so the examples smoke run stayed
+  green, next to the NULLS-free version that did run. **The `[SKIP]` was dropped
+  2026-09-05** and both statements now return the identical top 5 — the
+  filtered set contains a row with a NULL `latency_ms`, so `NULLS LAST` is doing
+  real work there and the default agreeing with it is the P17 change visible
+  end-to-end. Note the JSONL fixture *does* contain NULLs inside the filtered set
   (16 rows pass `status IS NOT NULL`, one of which has a NULL `latency_ms`),
   so unlike the corpus it can pin real NULL-ordering semantics, not just the
   lost `LIMIT`.
@@ -522,6 +527,7 @@ annotation be removed.
   clause. `order_by_nulls_first_limit` carries both halves of P13 at once and is
   the sharpest single check: the answer is exactly ids 3, 10, 11 (all NULL-scored),
   so a dropped clause returns a different *set*, not a subtly different order.
+  All five closed 2026-09-05, `order_by_nulls_first_limit` included.
 - **Stage 1, as built (2026-08-02).** `Parser::parse` now ends with
   `expect_end_of_statement()`, which accepts an optional trailing `;` and
   trailing comments and otherwise errors with the offending token and its
@@ -544,6 +550,24 @@ annotation be removed.
      `GO` semantics are untouched, and statement *scope* is unaffected — the
      executor builds one `ExecutionContext` per script, so `INTO #tmp` stays
      visible across both separators (verified explicitly).
+- **Stage 2, as built (2026-09-05).** `OrderByItem` gained a `nulls:
+  NullsOrder` field (`Unspecified` / `First` / `Last`), and
+  `OrderByItem::nulls_first()` is the single place the default lives — see
+  [P17](#p17) for the comparator work it feeds.
+  - **`NULLS`, `FIRST` and `LAST` were deliberately *not* made keywords.** They
+    are matched contextually, as identifiers, in the one position they can
+    appear. All three are plausible column names — `first` and `last`
+    especially — and reserving them would have broken queries that have nothing
+    to do with NULL ordering, in a codebase that reads user CSVs with arbitrary
+    headers. `SELECT nulls FROM t ORDER BY nulls` still parses, and there is a
+    test that says so.
+  - **A malformed clause errors rather than being ignored**, which is stage 1's
+    rule applied to the feature stage 1 was blocking: `NULLS SIDEWAYS` names the
+    offending token.
+  - **The formatters round-trip what was typed, not what was resolved.** That is
+    why `Unspecified` is a distinct variant from `Last` even though the two mean
+    the same thing to the comparator — printing `NULLS LAST` onto a query the
+    user never wrote it in would be a silent edit.
 - **What stage 1 exposed.** Beyond the above: `OR` in a `JOIN ... ON` clause is
   not parsed ([P27](#p27)), and a stray `end` token had been sitting unnoticed in
   `examples/case_when.sql`. Two examples (`prime_numbers`,
@@ -776,18 +800,18 @@ practice — "top N by total" is where silently returning group order is most
 likely to be believed.
 
 ### P17 — Default NULL placement differs on `ASC`
-- **Status:** 🔴 OPEN — **decision made 2026-08-02: follow the reference engine
-  (NULLS LAST in both directions), plus explicit `NULLS FIRST`/`LAST` from P13
-  stage 2.** Queued 2026-09-04 as **one slice with [P13](#p13) stage 2** — same
-  comparators, and the decision on both was taken in the same sitting.
+- **Status:** 🟢 FIXED 2026-09-05, in one slice with [P13](#p13) stage 2 — same
+  comparators, and the decision on both was taken in the same sitting
+  (2026-08-02). Parity 141 → **152 AGREE**; eleven cases closed at once.
 - **Corpus:** `08_ordering.toml :: order_by_null_default_asc_numeric`,
-  `order_by_null_default_asc_string` (DIFFER); `order_by_null_default_desc`
-  (AGREE). Second site: `09_window.toml :: win_first_value_unfiltered` (DIFFER).
-- **What proves the default actually moved:** the two ASC `DIFFER` cases flip to
-  AGREE. Note `order_by_null_default_desc` cannot help — it AGREEs today for the
-  wrong reason and will keep AGREEing afterwards. The explicit-clause case
-  `order_by_nulls_last_asc_numeric` (added 2026-09-04, see P13) is the one that
-  pins the new default and the explicit form converging on the same answer.
+  `order_by_null_default_asc_string` (were DIFFER, now AGREE);
+  `order_by_null_default_desc` (AGREE throughout). Second site:
+  `09_window.toml :: win_first_value_unfiltered` (was DIFFER, now AGREE).
+- **What proved the default actually moved:** the two ASC `DIFFER` cases flipped
+  to AGREE. Note `order_by_null_default_desc` could not help — it AGREEd before
+  for the wrong reason and still AGREEs, now for the right one. The
+  explicit-clause case `order_by_nulls_last_asc_numeric` (added 2026-09-04, see
+  P13) pins the new default and the explicit form converging on one answer.
 - **Two sites, and they disagree with each other.** Added 2026-08-02 while
   fixing P21. Besides the main `ORDER BY` path, a window's *internal* `ORDER BY`
   sorts in `window_context.rs::sort_rows` — and it places NULLs **first on
@@ -824,11 +848,42 @@ likely to be believed.
   2. Implement explicit `NULLS FIRST` / `NULLS LAST` (P13 stage 2), after which
      the default matters much less because users can override it.
   This is a user-visible behaviour change on `ORDER BY <col>` over NULL-bearing
-  data; call it out in the changelog when it lands.
+  data; called out in `CHANGELOG.md` under `[Unreleased]`. Note that file had
+  gone stale (newest entry 1.69.1 against a 1.83.5 `Cargo.toml`) and no earlier
+  parity fix was logged in it — an `[Unreleased]` section was opened rather than
+  inventing a version number.
 - **Note:** `order_by_null_default_desc` AGREEs *for the wrong reason* — the two
   different rules coincide there. It is kept as a case precisely to document
-  that. Under the decision above it will keep AGREEing, now for the right reason;
-  the two ASC cases flip DIFFER → AGREE and their `expect` should be dropped.
+  that.
+- **Fix, as built (2026-09-05).** One comparator now serves every `ORDER BY` in
+  the engine: `datavalue_compare::compare_for_order_by(a, b, ascending,
+  nulls_first)`. Both call sites — `DataView::apply_multi_sort` and
+  `window_context::compare_by_sort_cols` — delegate to it, which is what
+  actually stops the two from drifting apart again; the corpus cases only prove
+  it for one shape each. Three things worth recording:
+  1. **NULL placement is applied *before* direction and is never reversed by
+     it.** `NULLS LAST` means last in the output whichever way the values sort.
+     A comparator that reversed the NULL arm along with the values would pass
+     every ASC case and fail the DESC ones, so both directions are asserted.
+  2. **The window site was worse than "a different rule".** It compared
+     `DataValue`s through their *derived* `PartialOrd`, which orders by variant
+     index — and `Null` is the last variant, so NULL sorted as the **maximum**,
+     then got reversed by DESC into first place. The same derived ordering also
+     compared cross-type values by variant rather than by value, so
+     `Integer(100)` sorted below `Float(1.0)` in a window's internal sort.
+     Routing this site through the shared comparator fixed that too; it has its
+     own regression test.
+  3. **`compare_datavalues` was deliberately left alone.** It still sorts NULL
+     as the minimum, because it is shared with aggregates, `MIN`/`MAX` and TUI
+     column sorting, where that is not the same question. The `ORDER BY` rule
+     lives in one wrapper rather than in the general-purpose comparator.
+- **A third comparator exists and was *not* changed:**
+  `csv_datasource.rs::sort_results` sorts `serde_json::Value`s and places NULLs
+  first. It is unreachable — it hangs off `CsvApiClient`, which `buffer.rs`
+  keeps only "for API compatibility" and never calls, and the `DataSourceAdapter`
+  that would reach it has no callers either. Left as-is rather than fixed
+  blind; noted here so that whoever revives that path knows it needs the same
+  rule. Reviving it without this is a silent divergence, not a compile error.
 
 ### P18 — `= NULL` matches NULL rows instead of yielding UNKNOWN
 - **Status:** 🟢 FIXED 2026-08-22, with P19 — branch

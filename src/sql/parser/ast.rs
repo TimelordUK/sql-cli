@@ -297,11 +297,24 @@ pub struct OrderByColumn {
     pub direction: SortDirection,
 }
 
+/// Where NULLs are placed by an `ORDER BY` item.
+///
+/// `Unspecified` records that the user wrote no `NULLS` clause, so the
+/// formatters can round-trip the query as typed; the default it stands for
+/// lives in `nulls_first()` alone.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum NullsOrder {
+    Unspecified,
+    First,
+    Last,
+}
+
 /// Modern ORDER BY item that supports expressions
 #[derive(Debug, Clone)]
 pub struct OrderByItem {
     pub expr: SqlExpression,
     pub direction: SortDirection,
+    pub nulls: NullsOrder,
 }
 
 impl OrderByItem {
@@ -314,12 +327,44 @@ impl OrderByItem {
                 table_prefix: None,
             }),
             direction,
+            nulls: NullsOrder::Unspecified,
         }
     }
 
     /// Create from an expression
     pub fn from_expression(expr: SqlExpression, direction: SortDirection) -> Self {
-        Self { expr, direction }
+        Self {
+            expr,
+            direction,
+            nulls: NullsOrder::Unspecified,
+        }
+    }
+
+    /// Should NULLs sort to the head of the result for this item?
+    ///
+    /// The default is **NULLS LAST in both directions**, following the
+    /// reference engine (P17). The standard leaves this implementation-defined
+    /// and the major engines disagree, so it is a recorded choice rather than a
+    /// correction: SQLite and MySQL sort NULL as the smallest value, PostgreSQL
+    /// as the largest, DuckDB pins NULLS LAST either way. This is the one place
+    /// that choice is written down.
+    pub fn nulls_first(&self) -> bool {
+        match self.nulls {
+            NullsOrder::First => true,
+            NullsOrder::Last | NullsOrder::Unspecified => false,
+        }
+    }
+
+    /// The `NULLS` clause to print, or `None` if the user did not write one.
+    ///
+    /// Formatters round-trip the query as typed rather than as resolved, so an
+    /// unspecified clause stays unspecified even though its meaning is pinned.
+    pub fn nulls_keyword(&self) -> Option<&'static str> {
+        match self.nulls {
+            NullsOrder::Unspecified => None,
+            NullsOrder::First => Some("NULLS FIRST"),
+            NullsOrder::Last => Some("NULLS LAST"),
+        }
     }
 }
 

@@ -5,6 +5,45 @@ All notable changes to SQL CLI will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### ⚠️ Behaviour change
+
+#### **`ORDER BY` now places NULLs last by default, in both directions**
+Previously NULL sorted as the smallest value, so `ORDER BY score` put NULLs
+first and `ORDER BY score DESC` put them last. NULLs now sort **last either
+way**, matching DuckDB (and this project's reference engine for parity).
+
+Standard SQL leaves NULL placement implementation-defined and the major engines
+genuinely disagree — SQLite and MySQL treat NULL as smallest, PostgreSQL as
+largest, DuckDB pins NULLS LAST — so this is a recorded choice, not a bug fix.
+**If you rely on NULLs appearing first in an ascending sort, add an explicit
+clause** (see below); the previous behaviour is still available, it is just no
+longer the default.
+
+The same rule now applies to a window's internal `ORDER BY`, which used to
+disagree with the top-level one: `FIRST_VALUE(score) OVER (ORDER BY score DESC)`
+returned NULL over a partition containing one, and now returns the largest
+non-NULL value.
+
+### ✨ Features
+
+#### **`NULLS FIRST` / `NULLS LAST` in `ORDER BY`**
+```sql
+SELECT id, score FROM data ORDER BY score NULLS FIRST;
+SELECT id, score FROM data ORDER BY score DESC NULLS FIRST, id;
+```
+Per item, so each sort key can differ. The placement is absolute — `NULLS LAST`
+means last in the output whichever direction the values sort in.
+
+Before this, the clause was not parsed at all. Until 2026-08-02 it was silently
+discarded *along with every clause after it*, so `ORDER BY amount DESC NULLS
+LAST LIMIT 3` quietly returned every row instead of 3; since then it has been a
+parse error. Both are now gone.
+
+`NULLS`, `FIRST` and `LAST` are **not** reserved words — they are recognised
+only in that position, so columns named `first`, `last` or `nulls` keep working.
+
 ## [1.69.1] - 2026-04-14
 
 ### Improvements

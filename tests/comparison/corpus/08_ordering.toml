@@ -89,27 +89,29 @@ sql = "SELECT id FROM null_edges ORDER BY id LIMIT 100"
 id = "order_by_nulls_last_no_limit"
 data = "international_sales.csv"
 sql = "SELECT country, amount FROM international_sales ORDER BY amount DESC NULLS LAST"
-expect = "GAP"
-# Was AGREE while P13 was live — the NULLS clause was silently ignored and, with
-# no LIMIT to lose, the remaining query happened to be the one the user meant.
-# Since P13 stage 1 (2026-08-02) we correctly REJECT the clause we do not
-# implement. Flips to AGREE when P13 stage 2 implements NULLS FIRST/LAST.
+# AGREE since P13 stage 2 (2026-09-05). Its history is the cautionary tale: it
+# was AGREE while P13 was live (the clause was silently ignored and, with no
+# LIMIT to lose, the remaining query happened to be the one the user meant),
+# GAP after stage 1 correctly rejected the unimplemented clause, and AGREE again
+# now for the right reason. international_sales.csv has no NULLs, so this pins
+# "the clause parses" and nothing about where NULLs land.
 
 [[case]]
 id = "order_by_nulls_last_limit"
 data = "international_sales.csv"
 sql = "SELECT country, amount FROM international_sales ORDER BY amount DESC NULLS LAST LIMIT 3"
-expect = "GAP"
-# Was P13: returned all 20 rows instead of 3, silently, because NULLS LAST took
-# the LIMIT with it. Now a parse error — the correct intermediate state, since a
-# refusal beats a different-query-that-succeeds. Flips to AGREE with stage 2.
+# The original P13 reproducer: returned all 20 rows instead of 3, silently,
+# because NULLS LAST took the LIMIT with it. Stage 1 made it a parse error;
+# stage 2 (2026-09-05) makes it AGREE. NULL-free data, so it pins the surviving
+# LIMIT only.
 
 [[case]]
-id = "order_by_nulls_first_limit"
+id = "order_by_nulls_first_limit_nullfree"
 data = "international_sales.csv"
 sql = "SELECT country, amount FROM international_sales ORDER BY amount NULLS FIRST LIMIT 3"
-expect = "GAP"
-# Same, the FIRST/ASC form.
+# Same, the FIRST/ASC form. Renamed 2026-09-05: it had collided with the
+# null_edges case of the same name below, so `--check` reported one id twice and
+# an id filter would have run both. The suffix marks which one cannot see NULLs.
 
 [[case]]
 id = "trailing_garbage_token"
@@ -197,18 +199,19 @@ sql = "SELECT id, score FROM null_edges ORDER BY score DESC, id"
 id = "order_by_null_default_asc_numeric"
 data = "null_edges.csv"
 sql = "SELECT id, score FROM null_edges ORDER BY score, id"
-expect = "DIFFER"
-# P17. We sort NULL as the smallest value (SQLite/MySQL convention) so NULLs
-# come FIRST; DuckDB sorts NULLS LAST regardless of direction. Standard SQL
-# leaves this implementation-defined, so this needs a decision, not a reflex fix.
+# P17, closed 2026-09-05. We used to sort NULL as the smallest value
+# (SQLite/MySQL convention) so NULLs came FIRST; the default is now NULLS LAST
+# in both directions, following the reference engine. Standard SQL leaves this
+# implementation-defined, so this case pins a recorded *choice*, not a law —
+# which is exactly why it is worth keeping now that it AGREEs.
 
 [[case]]
 id = "order_by_null_default_asc_string"
 data = "null_edges.csv"
 sql = "SELECT id, label FROM null_edges ORDER BY label, id"
-expect = "DIFFER"
-# P17 on a string column — pinned separately to prove the rule is type-independent
-# and that a fix has to cover both comparators.
+# P17 on a string column — pinned separately to prove the rule is type-independent.
+# It earned its keep: the fix routes NULL placement ahead of the type-specific
+# comparison, so a numeric-only fix would have failed here.
 
 # --- P13 stage 2 / P17: explicit NULLS FIRST/LAST, over data that actually has
 # NULLs.
@@ -225,24 +228,23 @@ expect = "DIFFER"
 # explicit `NULLS LAST` no longer distinguishes "honoured" from "ignored" — it
 # agrees with the default either way. The load-bearing cases are therefore the
 # NULLS FIRST ones. `order_by_nulls_last_asc_numeric` is kept anyway because it
-# is the case that changes meaning *today* (we currently sort NULL as the
-# minimum, so ASC puts them first), and it documents the default converging on
-# the explicit form rather than leaving that untested.
+# is the case whose meaning the P17 default change moved (we used to sort NULL
+# as the minimum, so ASC put them first), and it documents the default
+# converging on the explicit form rather than leaving that untested.
 
 [[case]]
 id = "order_by_nulls_first_asc_numeric"
 data = "null_edges.csv"
 sql = "SELECT id, score FROM null_edges ORDER BY score NULLS FIRST, id"
-expect = "GAP"
-# THE case for P13 stage 2: the only shape that disagrees with the post-P17
-# default, so it is the one that fails if the clause is parsed and dropped.
+# THE case for P13 stage 2 (closed 2026-09-05): the only shape that disagrees
+# with the post-P17 default, so it is the one that fails if the clause is parsed
+# and dropped.
 # Expected: ids 3, 10, 11, 12 (the NULL scores) first, then ascending by score.
 
 [[case]]
 id = "order_by_nulls_last_asc_numeric"
 data = "null_edges.csv"
 sql = "SELECT id, score FROM null_edges ORDER BY score NULLS LAST, id"
-expect = "GAP"
 # Agrees with the post-P17 default, so it cannot catch an ignored clause — kept
 # because it is the explicit form of the behaviour P17 changes, and its flip to
 # AGREE is what proves the default moved.
@@ -251,7 +253,6 @@ expect = "GAP"
 id = "order_by_nulls_first_desc_numeric"
 data = "null_edges.csv"
 sql = "SELECT id, score FROM null_edges ORDER BY score DESC NULLS FIRST, id"
-expect = "GAP"
 # DESC is where the two engines' defaults coincide (see order_by_null_default_desc),
 # so an explicit NULLS FIRST is the only way to pin the DESC comparator honouring
 # the clause rather than falling through to a default that happens to match.
@@ -260,7 +261,6 @@ expect = "GAP"
 id = "order_by_nulls_first_string"
 data = "null_edges.csv"
 sql = "SELECT id, label FROM null_edges ORDER BY label NULLS FIRST, id"
-expect = "GAP"
 # The string comparator, mirroring order_by_null_default_asc_string: a fix that
 # reaches only the numeric path is caught here.
 
@@ -268,7 +268,6 @@ expect = "GAP"
 id = "order_by_nulls_first_limit"
 data = "null_edges.csv"
 sql = "SELECT id, score FROM null_edges ORDER BY score NULLS FIRST, id LIMIT 3"
-expect = "GAP"
 # P13's two halves in one case, over real NULLs: the LIMIT must survive the
 # NULLS clause *and* the clause must reorder. Expected exactly ids 3, 10, 11 —
 # all NULL-scored, so a dropped clause returns a visibly different set rather

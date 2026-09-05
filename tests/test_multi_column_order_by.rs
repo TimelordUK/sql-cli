@@ -326,8 +326,9 @@ fn test_direct_multi_sort_method() {
 
     let mut view = DataView::new(Arc::new(table));
 
-    // Sort by col1 ASC, col2 DESC, col3 ASC
-    view.apply_multi_sort(&[(0, true), (1, false), (2, true)])
+    // Sort by col1 ASC, col2 DESC, col3 ASC (no NULLs in this fixture, so the
+    // third element - nulls_first - is not exercised here)
+    view.apply_multi_sort(&[(0, true, false), (1, false, false), (2, true, false)])
         .unwrap();
 
     // Verify the sorting

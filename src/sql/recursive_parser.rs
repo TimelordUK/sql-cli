@@ -3,10 +3,10 @@
 // Re-exports for backward compatibility - these serve as both imports and re-exports
 pub use super::parser::ast::{
     CTEType, Comment, Condition, DataFormat, FileCTESpec, FrameBound, FrameUnit, HttpMethod,
-    IntoTable, JoinClause, JoinCondition, JoinOperator, JoinType, LogicalOp, OrderByColumn,
-    OrderByItem, PivotAggregate, SelectItem, SelectStatement, SetOperation, SingleJoinCondition,
-    SortDirection, SqlExpression, TableFunction, TableSource, WebCTESpec, WhenBranch, WhereClause,
-    WindowFrame, WindowSpec, CTE,
+    IntoTable, JoinClause, JoinCondition, JoinOperator, JoinType, LogicalOp, NullsOrder,
+    OrderByColumn, OrderByItem, PivotAggregate, SelectItem, SelectStatement, SetOperation,
+    SingleJoinCondition, SortDirection, SqlExpression, TableFunction, TableSource, WebCTESpec,
+    WhenBranch, WhereClause, WindowFrame, WindowSpec, CTE,
 };
 pub use super::parser::legacy::{
     ColumnInfo, ColumnType, ParseContext, ParseState, Schema, SqlParser, SqlToken, TableInfo,
@@ -1557,7 +1557,13 @@ impl Parser {
                 _ => SortDirection::Asc, // Default to ASC if not specified
             };
 
-            order_items.push(OrderByItem { expr, direction });
+            let nulls = self.parse_nulls_order()?;
+
+            order_items.push(OrderByItem {
+                expr,
+                direction,
+                nulls,
+            });
 
             if matches!(self.current_token, Token::Comma) {
                 self.advance();
@@ -1567,6 +1573,35 @@ impl Parser {
         }
 
         Ok(order_items)
+    }
+
+    /// Parse an optional `NULLS FIRST` / `NULLS LAST` suffix on an ORDER BY item.
+    ///
+    /// `NULLS`, `FIRST` and `LAST` are matched contextually as identifiers
+    /// rather than promoted to keywords: all three are plausible column names
+    /// (`first`, `last` especially), and reserving them would break queries that
+    /// have nothing to do with NULL ordering. Position does the disambiguating -
+    /// this is only ever consulted directly after an ORDER BY item.
+    fn parse_nulls_order(&mut self) -> Result<NullsOrder, String> {
+        let is_kw = |tok: &Token, kw: &str| matches!(tok, Token::Identifier(id) if id.eq_ignore_ascii_case(kw));
+
+        if !is_kw(&self.current_token, "NULLS") {
+            return Ok(NullsOrder::Unspecified);
+        }
+        self.advance();
+
+        if is_kw(&self.current_token, "FIRST") {
+            self.advance();
+            Ok(NullsOrder::First)
+        } else if is_kw(&self.current_token, "LAST") {
+            self.advance();
+            Ok(NullsOrder::Last)
+        } else {
+            Err(format!(
+                "Expected FIRST or LAST after NULLS in ORDER BY, found {:?}",
+                self.current_token
+            ))
+        }
     }
 
     /// Parse INTO clause for temporary tables
@@ -3245,6 +3280,79 @@ mod tests {
             msg.contains("DELIMITER") || msg.contains("single ASCII"),
             "should reject multi-char delimiter: {}",
             msg
+        );
+    }
+
+    // ===== ORDER BY ... NULLS FIRST / LAST (P13 stage 2) =====
+
+    fn order_by_nulls(sql: &str) -> Vec<NullsOrder> {
+        let mut parser = Parser::new(sql);
+        let stmt = parser.parse().unwrap_or_else(|e| panic!("{sql}: {e}"));
+        stmt.order_by
+            .expect("order_by")
+            .iter()
+            .map(|item| item.nulls)
+            .collect()
+    }
+
+    #[test]
+    fn parses_nulls_clause_with_and_without_a_direction() {
+        assert_eq!(
+            order_by_nulls("SELECT a FROM t ORDER BY a NULLS FIRST"),
+            vec![NullsOrder::First]
+        );
+        assert_eq!(
+            order_by_nulls("SELECT a FROM t ORDER BY a DESC NULLS LAST"),
+            vec![NullsOrder::Last]
+        );
+        // Case-insensitive, like every other keyword.
+        assert_eq!(
+            order_by_nulls("SELECT a FROM t ORDER BY a asc nulls first"),
+            vec![NullsOrder::First]
+        );
+    }
+
+    #[test]
+    fn nulls_clause_is_per_item_not_per_statement() {
+        assert_eq!(
+            order_by_nulls("SELECT a, b, c FROM t ORDER BY a NULLS FIRST, b DESC, c NULLS LAST"),
+            vec![NullsOrder::First, NullsOrder::Unspecified, NullsOrder::Last]
+        );
+    }
+
+    #[test]
+    fn unspecified_is_distinct_from_an_explicit_last() {
+        // The two mean the same thing to the comparator but not to the
+        // formatters, which round-trip the query as typed.
+        assert_eq!(
+            order_by_nulls("SELECT a FROM t ORDER BY a"),
+            vec![NullsOrder::Unspecified]
+        );
+    }
+
+    #[test]
+    fn nulls_is_not_a_reserved_word() {
+        // `NULLS`, `FIRST` and `LAST` are matched by position, not promoted to
+        // keywords - all three are plausible column names, and reserving them
+        // would break queries that have nothing to do with NULL ordering.
+        for sql in [
+            "SELECT nulls FROM t ORDER BY nulls",
+            "SELECT first, last FROM t ORDER BY first, last DESC",
+            "SELECT a FROM t WHERE nulls > 1",
+        ] {
+            let mut parser = Parser::new(sql);
+            assert!(parser.parse().is_ok(), "should still parse: {sql}");
+        }
+    }
+
+    #[test]
+    fn nulls_without_first_or_last_is_a_loud_error() {
+        // P13's rule: never silently discard what we could not place.
+        let mut parser = Parser::new("SELECT a FROM t ORDER BY a NULLS SIDEWAYS");
+        let err = parser.parse().unwrap_err().to_string();
+        assert!(
+            err.contains("FIRST or LAST"),
+            "expected a NULLS-specific error, got: {err}"
         );
     }
 }
