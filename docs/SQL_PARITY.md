@@ -87,7 +87,8 @@ Suggested fix order, by silent blast radius:
 | ~~8~~ | ~~[P24](#p24) `RANGE` treated as `ROWS`~~ | ✅ **Fixed 2026-08-30** — 129 → 133 AGREE (+2 fixed, +2 new coverage). One defect, not two: the parser already emitted the right default frame, so fixing peer groups closed both cases. Spun off [P33](#p33) |
 | ~~9a~~ | ~~[P16](#p16) `ORDER BY <ordinal>` ignored~~ | ✅ **Fixed 2026-08-31** — 134 → 139 AGREE. The literal was being promoted into a hidden *constant* column, so the sort ran on a column where every row tied |
 | ~~9c~~ | ~~[P17](#p17) + [P13](#p13) stage 2 — NULL ordering~~ | ✅ **Fixed 2026-09-05** — 141 → **152 AGREE**, eleven cases in one change. Both halves were the same comparator's NULL rule, so they were taken as one slice. The two sorts that disagreed with each other now *share* one function (`compare_for_order_by`), which is the part that stops the divergence recurring; the window site turned out to be sorting NULL as the **maximum** via a derived `PartialOrd`, not merely following a different rule |
-| **NEXT** | [P37](#p37) window in `WHERE` returns 0 rows | **Silent — take this next.** Zero rows, success exit code, no error. Reads as "no matching data", not as a defect (the [P30](#p30) trap). Shares a fix site with [P15](#p15), so the two are one piece of work. Deferred once already (2026-09-05) for the NULL-ordering slice above; it is now the top priority outright |
+| ~~9d~~ | ~~[P37](#p37) window in `WHERE` returns 0 rows~~ | ✅ **Fixed 2026-09-05** — corpus count unchanged, and that is the finding: the case is `OURS_ONLY` before *and* after, so the harness cannot see this fix or a future regression of it (first entry of that kind — the regression test is a Rust module). The filed root cause was wrong: `ExpressionLifter` *does* lift from `WHERE`. The real defect was one arm in the WHERE evaluator answering FALSE for any bare value used as a predicate — `WHERE true` returned zero rows too. It did **not** close [P15](#p15), which needs the opposite change |
+| **NEXT** | [P41](#p41) `MODE` tie-break is random per run | **Silent, and it moves.** Found while verifying P37. Same input, same binary, different answer — six runs gave `0 1 1 0 0 1`. Worse than a wrong constant because no captured expectation can hold it, which is currently what blocks two example files from being promoted to FORMAL. Likely small: pick a total rule (smallest value wins) after checking whether the reference specifies one |
 | 9b | [P14](#p14), [P20](#p20), [P23](#p23) | Smaller, self-contained, decisions already taken |
 | 10 | [P22](#p22), [P25](#p25), [P26](#p26), [P15](#p15), [P32](#p32), [P38](#p38) | Hard errors — visible, so less urgent than any of the above |
 | 10b | [P39](#p39) `x/0` errors, voiding the whole statement | Hard error like row 10, but the only one whose blast radius is the *query* rather than the cell. Settle the four inconsistent call sites as one decision; it currently has no live probe (see the entry) |
@@ -726,6 +727,18 @@ annotation be removed.
   extending it to lift from the QUALIFY clause as well as the SELECT list. This
   is the R3 pattern again: the clause the transformer doesn't visit fails
   silently or loudly depending only on luck.
+- **Not closed by the [P37](#p37) fix, and no longer its sibling.** The two were
+  filed as one piece of work on the belief that the lifter skipped `WHERE` and
+  `QUALIFY` alike. It does not skip `WHERE` — see P37 — so that fix went into
+  the WHERE evaluator and left this untouched; inline `QUALIFY` still errors
+  exactly as recorded above. What P15 actually needs is the *opposite* of what
+  P37 needed: `QualifyToWhereTransformer` currently runs **after**
+  `ExpressionLifter` (`src/query_plan/mod.rs`), on the reasoning that windows
+  should already be lifted by the time QUALIFY is rewritten. For the alias form
+  (`QUALIFY rn <= 3`) that holds. For the inline form it is backwards — rewrite
+  QUALIFY to WHERE *first* and the WHERE lifting path, which works, picks it up
+  for free. **Check the alias form against the swap before taking it**: the
+  ordering was chosen for that case, and `WhereAliasExpander` runs after both.
 
 ### P16 — `ORDER BY <ordinal>` is silently ignored
 - **Status:** 🟢 FIXED 2026-08-31 — 134 → 139 AGREE (+2 fixed, +3 new coverage,
@@ -1407,10 +1420,14 @@ out of date.
   worth it.
 
 ### P37 — A window function inline in `WHERE` silently returns zero rows
-- **Status:** 🔴 OPEN — **silent wrong answer**
-- **Corpus:** `09_window.toml :: window_in_where_inline` (OURS_ONLY).
+- **Status:** 🟢 FIXED 2026-09-05 — branch `fix/p37-bare-value-predicate`
+- **Corpus:** `09_window.toml :: window_in_where_inline` (OURS_ONLY, before and
+  after — see *Why the corpus cannot gate this* below).
+- **Regression test:** `bare_value_predicate_tests` in
+  `src/data/recursive_where_evaluator.rs` — six cases, on the general shape
+  rather than the window that exposed it.
 - **Observed:** `SELECT region, amount FROM international_sales WHERE
-  ROW_NUMBER() OVER (PARTITION BY region ORDER BY amount DESC) <= 2` returns
+  ROW_NUMBER() OVER (PARTITION BY region ORDER BY amount DESC) <= 2` returned
   **0 rows** — header printed, success exit code, no error. The table has 20
   rows. DuckDB refuses the query outright: *"Binder Error: WHERE clause cannot
   contain window functions"*.
@@ -1421,24 +1438,92 @@ out of date.
 - **Found:** 2026-09-02, while triaging examples smoke-test failures.
   `examples/expander_rewriters.sql` advertises "expression lifter (window
   function in WHERE)" as a working transformation. Half of that query fails
-  loudly ([P26](#p26)); this half fails silently, which is why it had never been
-  noticed.
-- **Sibling of [P15](#p15) — same root cause, different symptom.** `ExpressionLifter`
-  only walks the **SELECT list**, so a window function written inline anywhere
-  else is never hoisted and arrives at `recursive_where_evaluator.rs` as a raw
-  `WindowFunction`. From QUALIFY that path errors (P15). From WHERE it evaluates
-  to something falsy for every row instead. One fix site — `expression_lifter` —
-  covers SELECT-list, QUALIFY and WHERE.
-- **Decision:** **Fix.** Two acceptable end states, in order of preference:
-  1. Lift it, so `WHERE <window> <op> <val>` works as `QUALIFY` does once P15
-     lands — this is what `examples/expander_rewriters.sql` already claims and
-     it makes the two clauses consistent.
-  2. Failing that, **error** like DuckDB. Either is acceptable; returning zero
-     rows is not.
-  Whichever is chosen, the silent-empty path must go first — it is the dangerous
-  half and it is independent of the feature decision.
+  loudly ([P26](#p26)); this half failed silently, which is why it had never
+  been noticed.
+
+- **The root cause first recorded here was wrong, and the correction is the
+  useful part of this entry.** The original diagnosis — carried over from
+  [P15](#p15) — was that `ExpressionLifter` only walks the SELECT list, so an
+  inline window in `WHERE` is never hoisted. It does walk `WHERE`, and it does
+  hoist; `RUST_LOG=info` says so on the failing query itself:
+
+  ```
+  INFO sql_cli::query_plan::transformer_adapters: ExpressionLifter generated 1 CTE(s)
+  ```
+
+  The lifter rewrites `WHERE <window> <op> <val>` into a CTE that computes the
+  whole comparison as a boolean column, leaving the outer query as
+  `WHERE lifted_value`. Both halves of that were already correct. The rows
+  vanished one step later, in `evaluate_expression`
+  (`src/data/recursive_where_evaluator.rs`), whose catch-all arm read:
+
+  ```rust
+  _ => Ok(Trilean::False)  // Default to false for unsupported expressions
+  ```
+
+  A **bare value used as a predicate** — which is exactly what
+  `WHERE lifted_value` is — fell into that arm and was FALSE for every row.
+
+- **The defect was never window-specific.** Two probes taken before touching
+  anything, both against the unmodified binary:
+
+  | Query | Rows returned |
+  |---|---|
+  | `SELECT region FROM international_sales WHERE true` | **0** |
+  | `WITH t AS (SELECT *, amount > 100 AS f FROM …) SELECT … FROM t WHERE f` | **0** |
+  | `… WHERE f = true` (control) | correct |
+
+  `WHERE true` returning nothing, on any table, is the whole bug in one line.
+  The window function was a way of reaching it, not the thing that was broken —
+  which is why the fix is in the WHERE evaluator and not in `expression_lifter`
+  at all.
+
+- **Fix:** the catch-all now evaluates the expression for its **value** and
+  coerces that to a predicate, via a helper the file already had
+  (`evaluate_expression_as_bool`, used for CASE branch results) and which was
+  simply never wired to the top level. The two copies of the coercion table are
+  now one function, `evaluate_value_as_predicate`. A raw `WindowFunction`
+  reaching it **errors** rather than coercing — an unlifted window is a defect,
+  not a value, and the P37 rule is that a loud failure beats a silent empty
+  result. That satisfies both acceptable end states in the original decision:
+  the lifted path gives end state 1, the unlifted path gives end state 2.
+- **One deliberate behaviour change came with the unification:** a NULL-valued
+  predicate now yields UNKNOWN rather than FALSE. The CASE path had answered
+  FALSE. Under `WHERE` the two are indistinguishable — both drop the row — and
+  they diverge only under `NOT`, which is precisely the [P18](#p18)/[P19](#p19)
+  trap, so the two paths now agree on the answer P18/P19 settled.
+
+- **Why the corpus cannot gate this, and what does instead.** The corpus case
+  is `OURS_ONLY` *before and after*: DuckDB rejects a window function in `WHERE`
+  either way, so `runner.py --check` stays green whether we return the right
+  rows or none at all — and would stay green through a regression too. This is
+  the first entry whose fix is structurally invisible to the harness. The
+  regression protection is therefore a Rust module
+  (`bare_value_predicate_tests`), asserting the general shape: `WHERE true`,
+  `WHERE <bool column>`, NULL → UNKNOWN under `NOT`, composition with `AND`/`OR`,
+  and a control that an unlifted window errors rather than filtering silently.
+  Worth remembering when picking the next silent bug: *the corpus finds these,
+  but it cannot always hold them down.*
+
+- **Verification** (both binaries built and run side by side, since the fix
+  touches an arm every `WHERE` in the engine passes through):
+
+  | Check | Result |
+  |---|---|
+  | `cargo test --release` | 755 + 469 passed, 0 failed |
+  | All 177 corpus cases, old vs new binary | byte-identical except `window_in_where_inline` itself (0 rows → the correct 7, matching the CTE-with-`rn` ground truth) |
+  | All 153 `examples/*.sql`, old vs new | one meaningful change: `expander_rewriters.sql` goes `[]` → correct top-3-per-region, which is what that file has always claimed to demonstrate |
+  | 33 formal expectation JSONs | zero churn |
+
+  The examples sweep also turned up [P41](#p41) — unrelated to this fix, but it
+  is what the remaining old-vs-new differences turned out to be.
+
+- **[P15](#p15) is *not* closed by this.** Inline `QUALIFY` still errors
+  identically; see that entry for why it needs the opposite change (transformer
+  ordering) rather than the same one.
 - **Related:** [P26](#p26) is the other half of the same example statement, and
-  [P21](#p21) is the same "when are windows evaluated" confusion from a third angle.
+  [P21](#p21) is the same "when are windows evaluated" confusion from a third
+  angle.
 
 ### P38 — A scalar subquery in a CTE's `SELECT` list is never evaluated
 - **Status:** 🔴 OPEN
@@ -1667,6 +1752,48 @@ out of date.
   both of which we do not parse, and the bucket should be recorded from a real
   harness run rather than guessed. They want a home in tier 03 (`03_functions.toml`)
   plus one in tier 06 (`06_ctes_setops.toml`) for the shape that was actually hit. Expect `GAP`.
+
+### P41 — `MODE` picks a tie-break winner at random, run to run
+
+- **Status:** 🔴 OPEN — **silent wrong answer, and nondeterministic**
+- **Corpus:** none yet — see *Pinning it* below.
+- **Observed:** `MODE` tallies into a `std::collections::HashMap` and takes the
+  highest count with **no tie-break rule**
+  (`ModeState`, `src/sql/aggregates/mod.rs`). When two or more values tie, the
+  winner is whichever the hash iteration order happens to surface. Six runs of
+  the *same binary*, same data:
+
+  ```
+  $ for i in 1 2 3 4 5 6; do sql-cli -q "WITH r AS (SELECT value % 2 AS pn
+      FROM RANGE(1,50)) SELECT MODE(pn) FROM r" -o csv; done
+  0  1  1  0  0  1
+  ```
+
+  `RANGE(1,50)` is 25 even and 25 odd — a perfect tie — so both answers are
+  defensible and neither is stable.
+
+- **Found:** 2026-09-05, while verifying the [P37](#p37) fix. It surfaced as
+  three `examples/*.sql` files differing between the pre-fix and post-fix
+  binaries; the queries involved have no `WHERE` clause at all, which is what
+  prompted checking the same binary twice instead of blaming the change.
+
+- **Why it matters more than a tie-break usually would.** Two example files sit
+  directly on it: `stats_examples.sql` on the 25/25 parity tie above, and
+  `statistical_analysis.sql` on all-count-1 ties across three columns. Both are
+  currently smoke tests. **Do not `--capture` an expectation for either while
+  this is open** — the captured value would be whichever way the coin landed,
+  and would then fail intermittently forever. That is the practical cost here:
+  it silently blocks two files from being promoted to FORMAL.
+
+- **Pinning it:** a corpus case needs a deterministic reference answer to
+  compare against, so check DuckDB's rule first — it may itself be
+  unspecified on ties, in which case the corpus is the wrong instrument and this
+  wants a Rust test asserting *stability* (same input, same answer) plus
+  whatever rule we choose. "Smallest value wins" is the obvious candidate: cheap,
+  total, and it makes both example files capturable.
+
+- **Related:** the same class as [P36](#p36) — behaviour that is unspecified
+  rather than wrong — but unlike P36 this one moves under you between runs.
 
 ---
 

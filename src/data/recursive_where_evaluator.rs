@@ -540,12 +540,12 @@ impl<'a, 'ctx, 'exec> RecursiveWhereEvaluator<'a, 'ctx, 'exec> {
                 }
                 self.evaluate_case_expression_as_bool(when_branches, else_branch, row_index)
             }
-            _ => {
-                if row_index < 3 {
-                    debug!("RecursiveWhereEvaluator: evaluate_expression() - unsupported expression type, returning false");
-                }
-                Ok(Trilean::False) // Default to false for unsupported expressions
-            }
+            // A bare value expression used as a predicate -- `WHERE flag`,
+            // `WHERE true`, and the `WHERE lifted_value` that
+            // `ExpressionLifter` rewrites a window comparison into. This arm
+            // used to answer FALSE for every row, which is how P37 turned an
+            // unsupported shape into a silently empty result set.
+            _ => self.evaluate_value_as_predicate(expr, row_index),
         };
 
         if row_index < 3 {
@@ -1147,7 +1147,50 @@ impl<'a, 'ctx, 'exec> RecursiveWhereEvaluator<'a, 'ctx, 'exec> {
         }
     }
 
-    /// Helper method to evaluate any expression as a boolean
+    /// Evaluate an expression for its VALUE and coerce that value to a
+    /// predicate (P37).
+    ///
+    /// This is the tail of both `evaluate_expression` (a bare value used
+    /// directly as a `WHERE` predicate: `WHERE flag`, `WHERE true`, and the
+    /// `WHERE lifted_value` that `ExpressionLifter` rewrites a window
+    /// comparison into) and `evaluate_expression_as_bool` (the result of a
+    /// CASE branch). Both used to have their own copy of the coercion table
+    /// and disagreed on NULL; they now share this one.
+    ///
+    /// A raw `WindowFunction` reaching here means the lifter did not hoist it,
+    /// which is a defect rather than a value to coerce -- so it errors. That
+    /// is the P37 rule: a loud failure beats a silently empty result.
+    fn evaluate_value_as_predicate(
+        &mut self,
+        expr: &SqlExpression,
+        row_index: usize,
+    ) -> Result<Trilean> {
+        if let SqlExpression::WindowFunction { name, .. } = expr {
+            return Err(anyhow::anyhow!(
+                "Window function {name} cannot be used directly as a predicate (the expression was not lifted to a CTE column)"
+            ));
+        }
+
+        let mut evaluator = crate::data::arithmetic_evaluator::ArithmeticEvaluator::new(self.table);
+        let value = evaluator.evaluate(expr, row_index)?;
+
+        use crate::data::datatable::DataValue;
+        Ok(match value {
+            DataValue::Boolean(b) => Trilean::from_bool(b),
+            DataValue::Integer(i) => Trilean::from_bool(i != 0),
+            DataValue::Float(f) => Trilean::from_bool(f != 0.0),
+            // A NULL predicate is UNKNOWN, not FALSE. Under `WHERE` alone the
+            // two are indistinguishable -- both drop the row -- and they only
+            // diverge under `NOT`, which is exactly the P18/P19 trap. The CASE
+            // path used to answer FALSE here; this is the one deliberate
+            // behaviour change in unifying the two copies.
+            DataValue::Null => Trilean::Unknown,
+            DataValue::String(ref s) => Trilean::from_bool(!s.is_empty()),
+            DataValue::InternedString(ref s) => Trilean::from_bool(!s.is_empty()),
+            _ => Trilean::True,
+        })
+    }
+
     fn evaluate_expression_as_bool(
         &mut self,
         expr: &SqlExpression,
@@ -1166,27 +1209,9 @@ impl<'a, 'ctx, 'exec> RecursiveWhereEvaluator<'a, 'ctx, 'exec> {
                 when_branches,
                 else_branch,
             } => self.evaluate_case_expression_as_bool(when_branches, else_branch, row_index),
-            // For other expressions (columns, literals), use ArithmeticEvaluator and convert
-            _ => {
-                // Use ArithmeticEvaluator to get the value, then convert to boolean
-                let mut evaluator =
-                    crate::data::arithmetic_evaluator::ArithmeticEvaluator::new(self.table);
-                let value = evaluator.evaluate(expr, row_index)?;
-
-                match value {
-                    crate::data::datatable::DataValue::Boolean(b) => Ok(Trilean::from_bool(b)),
-                    crate::data::datatable::DataValue::Integer(i) => Ok(Trilean::from_bool(i != 0)),
-                    crate::data::datatable::DataValue::Float(f) => Ok(Trilean::from_bool(f != 0.0)),
-                    crate::data::datatable::DataValue::Null => Ok(Trilean::False),
-                    crate::data::datatable::DataValue::String(s) => {
-                        Ok(Trilean::from_bool(!s.is_empty()))
-                    }
-                    crate::data::datatable::DataValue::InternedString(s) => {
-                        Ok(Trilean::from_bool(!s.is_empty()))
-                    }
-                    _ => Ok(Trilean::True), // Other types are considered truthy
-                }
-            }
+            // For other expressions (columns, literals), evaluate the value
+            // and coerce -- the same rule the WHERE predicate path uses.
+            _ => self.evaluate_value_as_predicate(expr, row_index),
         }
     }
 }
@@ -1389,5 +1414,143 @@ mod three_valued_logic_tests {
         assert_eq!(eval(&t, "score > 40 AND label = 'alpha'", 0), Trilean::True);
         assert_eq!(eval(&t, "score > 40 OR label = 'beta'", 1), Trilean::True);
         assert_eq!(eval(&t, "NOT (score = 50)", 1), Trilean::True);
+    }
+}
+
+#[cfg(test)]
+mod bare_value_predicate_tests {
+    //! Regression tests for P37 — a bare value expression used as a `WHERE`
+    //! predicate.
+    //!
+    //! These live here rather than in `tests/comparison/corpus/` because the
+    //! parity harness structurally cannot see this fix. The corpus case that
+    //! found P37 (`09_window.toml :: window_in_where_inline`) is bucketed
+    //! `OURS_ONLY`: DuckDB rejects a window function in `WHERE` outright, so we
+    //! are in that bucket whether we return the right rows or, as before, zero
+    //! rows with a success exit code. `runner.py --check` stays green either
+    //! way, and would stay green through a regression too.
+    //!
+    //! So they assert the general shape rather than the window that exposed
+    //! it: the defect was never window-specific. `WHERE true` returned no rows
+    //! for the same reason.
+
+    use super::*;
+    use crate::data::datatable::{DataColumn, DataRow};
+    use crate::sql::recursive_parser::Parser;
+
+    /// Rows: 0 = (true, 1, "x"), 1 = (false, 0, ""), 2 = (NULL, NULL, NULL).
+    ///
+    /// `flag` stands in for the column `ExpressionLifter` synthesises when it
+    /// hoists a window comparison out of `WHERE` — the lifted CTE column is a
+    /// plain boolean, and `WHERE lifted_value` is what the main query is left
+    /// referencing.
+    fn table_with_flags() -> DataTable {
+        let mut table = DataTable::new("t");
+        table.add_column(DataColumn::new("flag"));
+        table.add_column(DataColumn::new("n"));
+        table.add_column(DataColumn::new("s"));
+
+        table
+            .add_row(DataRow::new(vec![
+                DataValue::Boolean(true),
+                DataValue::Integer(1),
+                DataValue::String("x".to_string()),
+            ]))
+            .unwrap();
+        table
+            .add_row(DataRow::new(vec![
+                DataValue::Boolean(false),
+                DataValue::Integer(0),
+                DataValue::String(String::new()),
+            ]))
+            .unwrap();
+        table
+            .add_row(DataRow::new(vec![
+                DataValue::Null,
+                DataValue::Null,
+                DataValue::Null,
+            ]))
+            .unwrap();
+
+        table
+    }
+
+    fn eval(table: &DataTable, predicate: &str, row: usize) -> Trilean {
+        let sql = format!("SELECT * FROM t WHERE {predicate}");
+        let mut parser = Parser::new(&sql);
+        let statement = parser.parse().expect("failed to parse");
+        let where_clause = statement.where_clause.expect("expected a WHERE clause");
+
+        let mut evaluator = RecursiveWhereEvaluator::new(table);
+        evaluator
+            .evaluate(&where_clause, row)
+            .expect("evaluation failed")
+    }
+
+    // --- P37: the shapes that used to be FALSE for every row ---
+
+    #[test]
+    fn a_boolean_column_is_a_predicate_in_its_own_right() {
+        let t = table_with_flags();
+        assert_eq!(eval(&t, "flag", 0), Trilean::True);
+        assert_eq!(eval(&t, "flag", 1), Trilean::False);
+    }
+
+    #[test]
+    fn a_boolean_literal_is_a_predicate() {
+        let t = table_with_flags();
+        // `WHERE true` returned zero rows before the fix, on any table.
+        assert_eq!(eval(&t, "true", 0), Trilean::True);
+        assert_eq!(eval(&t, "false", 0), Trilean::False);
+    }
+
+    #[test]
+    fn a_null_valued_predicate_is_unknown_not_false() {
+        let t = table_with_flags();
+        // The P18/P19 distinction: UNKNOWN and FALSE both drop the row under
+        // `WHERE`, and only diverge under `NOT`.
+        assert_eq!(eval(&t, "flag", 2), Trilean::Unknown);
+        assert_eq!(eval(&t, "NOT flag", 2), Trilean::Unknown);
+        assert_eq!(eval(&t, "NOT flag", 1), Trilean::True);
+    }
+
+    #[test]
+    fn a_bare_value_composes_with_ordinary_predicates() {
+        // The lifter can leave `WHERE lifted_value` beside other conditions,
+        // so the bare form has to survive AND/OR like any other predicate.
+        let t = table_with_flags();
+        assert_eq!(eval(&t, "flag AND n = 1", 0), Trilean::True);
+        assert_eq!(eval(&t, "flag AND n = 99", 0), Trilean::False);
+        // Row 1 is flag=false, n=0 -- so the right operand has to be a miss
+        // for the OR to come out FALSE.
+        assert_eq!(eval(&t, "flag OR n = 99", 1), Trilean::False);
+        assert_eq!(eval(&t, "flag OR n = 99", 0), Trilean::True);
+    }
+
+    #[test]
+    fn numeric_values_coerce_by_zero_ness() {
+        let t = table_with_flags();
+        assert_eq!(eval(&t, "n", 0), Trilean::True);
+        assert_eq!(eval(&t, "n", 1), Trilean::False);
+    }
+
+    // --- Control: the unlifted window is loud, not silently empty ---
+
+    #[test]
+    fn an_unlifted_window_function_errors_rather_than_filtering_everything() {
+        let t = table_with_flags();
+        let sql = "SELECT * FROM t WHERE ROW_NUMBER() OVER (ORDER BY n)";
+        let mut parser = Parser::new(sql);
+        let statement = parser.parse().expect("failed to parse");
+        let where_clause = statement.where_clause.expect("expected a WHERE clause");
+
+        let mut evaluator = RecursiveWhereEvaluator::new(&t);
+        let err = evaluator
+            .evaluate(&where_clause, 0)
+            .expect_err("a raw window function in WHERE must not evaluate quietly");
+        assert!(
+            err.to_string().contains("ROW_NUMBER"),
+            "error should name the function, got: {err}"
+        );
     }
 }
