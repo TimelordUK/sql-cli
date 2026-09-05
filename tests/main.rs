@@ -225,3 +225,6 @@ mod projection_column_width_tests;
 
 #[path = "dotted_column_completion.rs"]
 mod dotted_column_completion;
+
+#[path = "asterisk_expansion.rs"]
+mod asterisk_expansion;

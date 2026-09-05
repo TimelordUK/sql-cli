@@ -5,6 +5,7 @@ use crate::data::data_view::DataView;
 use crate::data::datatable::DataTable;
 use crate::hybrid_parser::HybridParser;
 use crate::input_manager::{create_from_input, create_single_line, InputManager};
+use crate::sql::identifier::quote_if_needed;
 use anyhow::Result;
 use crossterm::event::KeyEvent;
 use fuzzy_matcher::skim::SkimMatcherV2;
@@ -1573,8 +1574,16 @@ impl Buffer {
                             self.status_message =
                                 format!("No columns found for table '{table_name}'");
                         } else {
-                            // Build the replacement with all columns
-                            let columns_str = columns.join(", ");
+                            // Build the replacement with all columns. Every
+                            // name goes through the shared quoting rule -
+                            // countries.csv's name.official and idd.root are
+                            // unparseable bare, and expansion used to emit
+                            // them that way.
+                            let columns_str = columns
+                                .iter()
+                                .map(|col| quote_if_needed(col))
+                                .collect::<Vec<_>>()
+                                .join(", ");
 
                             // Replace * with the column list
                             let before_star = &query[..star_abs_pos];
@@ -1614,8 +1623,13 @@ impl Buffer {
                     let visible_columns = dataview.get_display_column_names();
 
                     if !visible_columns.is_empty() {
-                        // Build the replacement with visible columns only
-                        let columns_str = visible_columns.join(", ");
+                        // Build the replacement with visible columns only,
+                        // quoted by the same rule as the full expansion.
+                        let columns_str = visible_columns
+                            .iter()
+                            .map(|col| quote_if_needed(col))
+                            .collect::<Vec<_>>()
+                            .join(", ");
 
                         // Replace * with the column list
                         let before_star = &query[..star_abs_pos];

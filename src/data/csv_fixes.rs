@@ -3,27 +3,19 @@
 use std::collections::HashMap;
 
 /// Check if a column name needs quoting (contains spaces or special characters)
+///
+/// Thin re-export of [`crate::sql::identifier::needs_quoting`] — the rule lives
+/// there so completion, `SELECT *` expansion and the formatter cannot drift
+/// apart on it.
 #[must_use]
 pub fn needs_quoting(column_name: &str) -> bool {
-    column_name.contains(' ')
-        || column_name.contains('-')
-        || column_name.contains('.')
-        || column_name.contains('(')
-        || column_name.contains(')')
-        || column_name.contains('[')
-        || column_name.contains(']')
-        || column_name.contains('"')
-        || column_name.contains('\'')
+    crate::sql::identifier::needs_quoting(column_name)
 }
 
 /// Quote a column name if necessary
 #[must_use]
 pub fn quote_if_needed(column_name: &str) -> String {
-    if needs_quoting(column_name) {
-        format!("\"{}\"", column_name.replace('"', "\"\""))
-    } else {
-        column_name.to_string()
-    }
+    crate::sql::identifier::quote_if_needed(column_name)
 }
 
 /// Build a case-insensitive lookup map for column names
