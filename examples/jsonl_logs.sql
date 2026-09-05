@@ -73,13 +73,12 @@ ORDER BY latency_ms DESC
 LIMIT 5;
 GO
 
--- [SKIP]
--- The same query as originally written, with an explicit null-ordering
--- clause. SKIPPED: NULLS FIRST / NULLS LAST is not parsed -- parity issue
--- P13 stage 2 (see docs/SQL_PARITY.md). There is no NULLS handling anywhere
--- in src/sql/. Before P13 stage 1 the clause was silently swallowed along
--- with the LIMIT below it, so this returned every row instead of 5; it is a
--- parse error today. Drop the [SKIP] when stage 2 lands.
+-- The same query as originally written, with an explicit null-ordering clause.
+-- This is the query that motivated P13: before stage 1 the NULLS clause was
+-- silently swallowed along with the LIMIT below it, so it returned every row
+-- instead of 5; after stage 1 it was a parse error; since stage 2 (2026-09-05)
+-- it runs. One row in the filtered set has a NULL latency_ms, so NULLS LAST is
+-- doing real work here -- it is what keeps that row out of the top 5.
 SELECT method, path, status, latency_ms
 FROM READ_JSONL('data/app_logs.jsonl')
 WHERE status IS NOT NULL

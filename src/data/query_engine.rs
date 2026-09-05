@@ -3200,7 +3200,7 @@ impl QueryEngine {
         order_by_columns: &[OrderByItem],
         _exec_context: Option<&ExecutionContext>,
     ) -> Result<DataView> {
-        // Build list of (source_column_index, ascending) tuples
+        // Build list of (source_column_index, ascending, nulls_first) tuples
         let mut sort_columns = Vec::new();
 
         for order_col in order_by_columns {
@@ -3209,7 +3209,7 @@ impl QueryEngine {
             if let SqlExpression::NumberLiteral(literal) = &order_col.expr {
                 let col_index = Self::resolve_order_by_ordinal(&view, literal)?;
                 let ascending = matches!(order_col.direction, SortDirection::Asc);
-                sort_columns.push((col_index, ascending));
+                sort_columns.push((col_index, ascending, order_col.nulls_first()));
                 continue;
             }
 
@@ -3270,7 +3270,7 @@ impl QueryEngine {
                 })?;
 
             let ascending = matches!(order_col.direction, SortDirection::Asc);
-            sort_columns.push((col_index, ascending));
+            sort_columns.push((col_index, ascending, order_col.nulls_first()));
         }
 
         // Apply multi-column sorting

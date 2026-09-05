@@ -1,6 +1,6 @@
 use sql_cli::data::data_view::DataView;
 use sql_cli::data::datatable::{DataColumn, DataRow, DataTable, DataValue};
-use sql_cli::sql::parser::ast::{ColumnRef, OrderByItem, QuoteStyle, SqlExpression};
+use sql_cli::sql::parser::ast::{ColumnRef, NullsOrder, OrderByItem, QuoteStyle, SqlExpression};
 use sql_cli::sql::recursive_parser::SortDirection;
 use sql_cli::sql::window_context::WindowContext;
 use std::sync::Arc;
@@ -35,6 +35,7 @@ fn test_window_context_single_partition() {
                 table_prefix: None,
             }),
             direction: SortDirection::Asc,
+            nulls: NullsOrder::Unspecified,
         }],
     )
     .unwrap();
@@ -113,6 +114,7 @@ fn test_window_context_with_partitions() {
                 table_prefix: None,
             }),
             direction: SortDirection::Asc,
+            nulls: NullsOrder::Unspecified,
         }],
     )
     .unwrap();
@@ -185,6 +187,7 @@ fn test_window_context_order_by_desc() {
                 table_prefix: None,
             }),
             direction: SortDirection::Desc,
+            nulls: NullsOrder::Unspecified,
         }],
     )
     .unwrap();
@@ -251,6 +254,7 @@ fn order_by_score() -> Vec<OrderByItem> {
             table_prefix: None,
         }),
         direction: SortDirection::Asc,
+        nulls: NullsOrder::Unspecified,
     }]
 }
 

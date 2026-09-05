@@ -151,6 +151,7 @@ impl ILikeToLikeTransformer {
             .map(|item| OrderByItem {
                 expr: self.transform_expression(item.expr),
                 direction: item.direction,
+                nulls: item.nulls,
             })
             .collect()
     }

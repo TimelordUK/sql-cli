@@ -146,15 +146,15 @@ sql = "SELECT id, team, FIRST_VALUE(score) OVER (PARTITION BY team ORDER BY scor
 id = "win_first_value_unfiltered"
 data = "null_edges.csv"
 sql = "SELECT id, team, FIRST_VALUE(score) OVER (PARTITION BY team ORDER BY score DESC, id) AS v FROM null_edges ORDER BY id"
-expect = "DIFFER"
-# P17, in `window_context.rs::sort_rows` rather than the main ORDER BY path.
-# Partition 'alpha' is (50, 50, NULL). Sorted DESC the NULL must go LAST, so
-# FIRST_VALUE is 50; we sort it FIRST and return NULL.
+# P17's second site, closed 2026-09-05: `window_context.rs` rather than the main
+# ORDER BY path. Partition 'alpha' is (50, 50, NULL); sorted DESC the NULL must
+# go LAST, so FIRST_VALUE is 50 — we used to sort it FIRST and return NULL.
 #
-# Note this is the OPPOSITE of the outer ORDER BY's behaviour, which puts NULLs
-# last on DESC (`08_ordering.toml :: order_by_null_default_desc` AGREEs). So the
-# two sorts in the engine disagree with each other as well as with the
-# reference. The P17 fix has to reach both.
+# This was the OPPOSITE of the outer ORDER BY, which already put NULLs last on
+# DESC (`08_ordering.toml :: order_by_null_default_desc`), so the two sorts
+# disagreed with each other as well as with the reference. They now share one
+# comparator (`compare_for_order_by`), which is what actually stops them
+# drifting apart again — this case only proves it for one shape.
 
 # --- P22: unimplemented window functions return NULL instead of erroring ---
 

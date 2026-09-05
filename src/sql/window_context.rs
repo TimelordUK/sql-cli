@@ -12,6 +12,7 @@ use tracing::{debug, info};
 
 use crate::data::data_view::DataView;
 use crate::data::datatable::{DataTable, DataValue};
+use crate::data::datavalue_compare::compare_for_order_by;
 use crate::sql::parser::ast::{
     FrameBound, FrameUnit, OrderByItem, SortDirection, SqlExpression, WindowSpec,
 };
@@ -66,7 +67,8 @@ pub struct OrderedPartition {
 
 impl OrderedPartition {
     /// Create a new ordered partition from rows already sorted by `sort_cols`
-    fn new(rows: Vec<usize>, table: &DataTable, sort_cols: &[(usize, bool)]) -> Self {
+    /// (each entry is `(column index, ascending, nulls_first)`)
+    fn new(rows: Vec<usize>, table: &DataTable, sort_cols: &[(usize, bool, bool)]) -> Self {
         // Build position lookup
         let row_positions: HashMap<usize, usize> = rows
             .iter()
@@ -89,7 +91,7 @@ impl OrderedPartition {
     fn compute_peer_bounds(
         rows: &[usize],
         table: &DataTable,
-        sort_cols: &[(usize, bool)],
+        sort_cols: &[(usize, bool, bool)],
     ) -> Vec<(usize, usize)> {
         let mut bounds = vec![(0usize, 0usize); rows.len()];
         let mut group_start = 0usize;
@@ -370,11 +372,11 @@ impl WindowContext {
         Ok(OrderedPartition::new(rows, view.source(), &sort_cols))
     }
 
-    /// Resolve ORDER BY items to (column index, ascending) pairs
+    /// Resolve ORDER BY items to (column index, ascending, `nulls_first`) triples
     fn resolve_sort_columns(
         table: &DataTable,
         order_by: &[OrderByItem],
-    ) -> Result<Vec<(usize, bool)>> {
+    ) -> Result<Vec<(usize, bool, bool)>> {
         order_by
             .iter()
             .map(|col| {
@@ -389,7 +391,7 @@ impl WindowContext {
                     .get_column_index(column_name)
                     .ok_or_else(|| anyhow!("Invalid ORDER BY column: {}", column_name))?;
                 let ascending = matches!(col.direction, SortDirection::Asc);
-                Ok((idx, ascending))
+                Ok((idx, ascending, col.nulls_first()))
             })
             .collect()
     }
@@ -403,42 +405,29 @@ impl WindowContext {
         table: &DataTable,
         a: usize,
         b: usize,
-        sort_cols: &[(usize, bool)],
+        sort_cols: &[(usize, bool, bool)],
     ) -> std::cmp::Ordering {
-        for &(col_idx, ascending) in sort_cols {
+        for &(col_idx, ascending, nulls_first) in sort_cols {
             let val_a = table.get_value(a, col_idx);
             let val_b = table.get_value(b, col_idx);
 
-            match (val_a, val_b) {
-                (None, None) => continue,
-                (None, Some(_)) => {
-                    return if ascending {
-                        std::cmp::Ordering::Less
-                    } else {
-                        std::cmp::Ordering::Greater
-                    }
-                }
-                (Some(_), None) => {
-                    return if ascending {
-                        std::cmp::Ordering::Greater
-                    } else {
-                        std::cmp::Ordering::Less
-                    }
-                }
-                (Some(v_a), Some(v_b)) => {
-                    // DataValue only implements PartialOrd, not Ord
-                    let ord = v_a.partial_cmp(v_b).unwrap_or(std::cmp::Ordering::Equal);
-                    if ord != std::cmp::Ordering::Equal {
-                        return if ascending { ord } else { ord.reverse() };
-                    }
-                }
+            // Shared with the top-level ORDER BY (P17). This used to compare
+            // `DataValue`s through their derived `PartialOrd`, under which
+            // `Null` is the last variant and therefore sorts as the *maximum* -
+            // the exact opposite of the top-level comparator, and the reason
+            // `FIRST_VALUE(x) OVER (ORDER BY x DESC)` returned NULL. The derived
+            // ordering also compared cross-type values by variant rather than by
+            // value, so `Integer` never met `Float` numerically.
+            let ord = compare_for_order_by(val_a, val_b, ascending, nulls_first);
+            if ord != std::cmp::Ordering::Equal {
+                return ord;
             }
         }
         std::cmp::Ordering::Equal
     }
 
     /// Sort row indices according to ORDER BY specification
-    fn sort_rows(rows: &mut [usize], table: &DataTable, sort_cols: &[(usize, bool)]) {
+    fn sort_rows(rows: &mut [usize], table: &DataTable, sort_cols: &[(usize, bool, bool)]) {
         let sort_start = Instant::now();
 
         rows.sort_by(|&a, &b| Self::compare_by_sort_cols(table, a, b, sort_cols));

@@ -101,6 +101,62 @@ pub fn compare_datavalues(a: &DataValue, b: &DataValue) -> Ordering {
     }
 }
 
+/// Is this cell NULL for ordering purposes?
+///
+/// A missing cell (`None`, e.g. a short row) and an explicit `DataValue::Null`
+/// are the same thing to `ORDER BY` - both are the SQL NULL.
+#[must_use]
+pub fn is_null_for_ordering(v: Option<&DataValue>) -> bool {
+    matches!(v, None | Some(DataValue::Null))
+}
+
+/// Compare two cells for `ORDER BY`, applying the direction and the NULL rule.
+///
+/// This is the single comparator behind every `ORDER BY` in the engine - the
+/// top-level one and a window's internal one - so that they cannot drift apart
+/// again (see P17).
+///
+/// Two rules, deliberately independent of each other:
+/// - `ascending` reverses the comparison of two non-NULL values.
+/// - `nulls_first` places NULLs **absolutely**, at the head or the tail of the
+///   result. It is *not* reversed by `DESC`: `NULLS LAST` means last in the
+///   output whichever direction the values are sorted in, which is what both
+///   the SQL standard's explicit clause and DuckDB's default mean.
+#[must_use]
+pub fn compare_for_order_by(
+    a: Option<&DataValue>,
+    b: Option<&DataValue>,
+    ascending: bool,
+    nulls_first: bool,
+) -> Ordering {
+    match (is_null_for_ordering(a), is_null_for_ordering(b)) {
+        (true, true) => return Ordering::Equal,
+        (true, false) => {
+            return if nulls_first {
+                Ordering::Less
+            } else {
+                Ordering::Greater
+            }
+        }
+        (false, true) => {
+            return if nulls_first {
+                Ordering::Greater
+            } else {
+                Ordering::Less
+            }
+        }
+        (false, false) => {}
+    }
+
+    // Both non-NULL: the NULL arms of `compare_datavalues` are unreachable here.
+    let cmp = compare_optional_datavalues(a, b);
+    if ascending {
+        cmp
+    } else {
+        cmp.reverse()
+    }
+}
+
 /// Compare `DataValues` with optional values (handling None)
 #[must_use]
 pub fn compare_optional_datavalues(a: Option<&DataValue>, b: Option<&DataValue>) -> Ordering {
@@ -214,6 +270,86 @@ mod tests {
         assert_eq!(
             compare_datavalues(&DataValue::Float(1.0), &DataValue::String("a".to_string())),
             Ordering::Less
+        );
+    }
+
+    // ===== ORDER BY comparator (P17 / P13 stage 2) =====
+
+    const NUM: DataValue = DataValue::Integer(5);
+
+    fn cmp(a: Option<&DataValue>, b: Option<&DataValue>, asc: bool, nf: bool) -> Ordering {
+        compare_for_order_by(a, b, asc, nf)
+    }
+
+    #[test]
+    fn null_placement_is_absolute_not_reversed_by_desc() {
+        // The whole point of the rule: NULLS LAST means last in the output, in
+        // BOTH directions. A comparator that reversed the NULL arm along with
+        // the values would pass the ASC half of this test and fail the DESC half.
+        for ascending in [true, false] {
+            assert_eq!(
+                cmp(Some(&DataValue::Null), Some(&NUM), ascending, false),
+                Ordering::Greater,
+                "NULLS LAST, ascending={ascending}"
+            );
+            assert_eq!(
+                cmp(Some(&DataValue::Null), Some(&NUM), ascending, true),
+                Ordering::Less,
+                "NULLS FIRST, ascending={ascending}"
+            );
+        }
+    }
+
+    #[test]
+    fn default_is_nulls_last_in_both_directions() {
+        // P17: the recorded choice. `nulls_first = false` is what
+        // `OrderByItem::nulls_first()` returns for an unspecified clause.
+        assert_eq!(
+            cmp(Some(&NUM), Some(&DataValue::Null), true, false),
+            Ordering::Less
+        );
+        assert_eq!(
+            cmp(Some(&NUM), Some(&DataValue::Null), false, false),
+            Ordering::Less
+        );
+    }
+
+    #[test]
+    fn missing_cell_and_explicit_null_are_the_same_null() {
+        // A short row yields None; a parsed empty field yields DataValue::Null.
+        // ORDER BY must not tell them apart, or NULL placement would depend on
+        // how the row happened to be stored.
+        assert_eq!(
+            cmp(None, Some(&DataValue::Null), true, false),
+            Ordering::Equal
+        );
+        assert_eq!(cmp(None, Some(&NUM), true, false), Ordering::Greater);
+        assert_eq!(cmp(None, Some(&NUM), true, true), Ordering::Less);
+    }
+
+    #[test]
+    fn direction_still_reverses_non_null_values() {
+        let ten = DataValue::Integer(10);
+        assert_eq!(cmp(Some(&NUM), Some(&ten), true, false), Ordering::Less);
+        assert_eq!(cmp(Some(&NUM), Some(&ten), false, false), Ordering::Greater);
+        // ...and NULL placement does not disturb that.
+        assert_eq!(cmp(Some(&NUM), Some(&ten), false, true), Ordering::Greater);
+    }
+
+    #[test]
+    fn order_by_compares_mixed_numerics_by_value() {
+        // The window comparator used to reach `DataValue`'s derived PartialOrd,
+        // which orders by variant: Integer always sorted before Float, and Null
+        // (the last variant) sorted as the maximum. Both paths now share this
+        // function, so this is the regression guard for that.
+        assert_eq!(
+            cmp(
+                Some(&DataValue::Integer(100)),
+                Some(&DataValue::Float(1.0)),
+                true,
+                false
+            ),
+            Ordering::Greater
         );
     }
 }

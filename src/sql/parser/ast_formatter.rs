@@ -196,6 +196,9 @@ impl<'a> AstFormatter<'a> {
                         write!(&mut result, " {}", self.keyword("DESC")).unwrap()
                     }
                 }
+                if let Some(nulls) = col.nulls_keyword() {
+                    write!(&mut result, " {}", self.keyword(nulls)).unwrap();
+                }
             }
         }
 
@@ -974,6 +977,10 @@ impl<'a> AstFormatter<'a> {
                                 result.push(' ');
                                 result.push_str(&self.keyword("DESC"));
                             }
+                        }
+                        if let Some(nulls) = col.nulls_keyword() {
+                            result.push(' ');
+                            result.push_str(&self.keyword(nulls));
                         }
                     }
                 }
