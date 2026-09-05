@@ -896,34 +896,15 @@ fn format_token(token: &Token) -> String {
     }
 }
 
-// Check if a column name needs quotes (contains special characters or is a reserved word)
+// Check if a column name needs quotes. The rule itself lives in
+// crate::sql::identifier so the formatter, tab completion and SELECT *
+// expansion cannot drift apart on it; the only thing the formatter adds is
+// leaving text the parser already handed back quoted alone.
 fn needs_quotes(name: &str) -> bool {
-    // Check for special characters that require quoting
-    if name.contains('-') || name.contains(' ') || name.contains('.') || name.contains('/') {
-        return true;
+    if name.starts_with('"') {
+        return false;
     }
-
-    // Check if it starts with a number
-    if name.chars().next().map_or(false, |c| c.is_ascii_digit()) {
-        return true;
-    }
-
-    // Check if it's a SQL reserved word (common ones)
-    let reserved_words = [
-        "SELECT", "FROM", "WHERE", "ORDER", "GROUP", "BY", "HAVING", "INSERT", "UPDATE", "DELETE",
-        "CREATE", "DROP", "ALTER", "TABLE", "INDEX", "VIEW", "AND", "OR", "NOT", "IN", "EXISTS",
-        "BETWEEN", "LIKE", "CASE", "WHEN", "THEN", "ELSE", "END", "JOIN", "LEFT", "RIGHT", "INNER",
-        "OUTER", "ON", "AS", "DISTINCT", "ALL", "TOP", "LIMIT", "OFFSET", "ASC", "DESC",
-    ];
-
-    let upper_name = name.to_uppercase();
-    if reserved_words.contains(&upper_name.as_str()) {
-        return true;
-    }
-
-    // Check if all characters are valid for unquoted identifiers
-    // Valid: letters, numbers, underscore (but not starting with number)
-    !name.chars().all(|c| c.is_ascii_alphanumeric() || c == '_')
+    crate::sql::identifier::needs_quoting(name)
 }
 
 // Format CASE expressions with proper indentation

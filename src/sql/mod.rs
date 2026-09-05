@@ -11,6 +11,7 @@ pub mod cursor_aware_parser;
 pub mod functions;
 pub mod generators;
 pub mod hybrid_parser;
+pub mod identifier;
 pub mod parser;
 pub mod query_rewriter;
 pub mod recursive_parser;

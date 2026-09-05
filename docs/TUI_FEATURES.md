@@ -59,7 +59,9 @@ columns it is completing. Between them the completer now has both primitives
 the remaining entries need: a byte span to splice over, and a typed schema.
 
 **Recommended order: T3 → T4 → T5**, with **T7** droppable anywhere — it is
-independent of the others and mostly deletion. T3 is mechanical but wants doing
+independent of the others and mostly deletion. **T8** is done: it was T1's bug
+in the other producer of column text, and it left behind
+`src/sql/identifier.rs` as the one place the quoting rule lives. T3 is mechanical but wants doing
 *before* T4, not as a retrofit. T4 is the first entry that consumes what T2
 captured (`ColumnInfo::cardinality`, `TableInfo::row_count`); those numbers are
 already flowing and pinned by tests, so the gate can be designed against real
@@ -287,3 +289,53 @@ Older, non-living notes that still contain usable thinking:
   first two rows.
 - **Not to be confused with T2's leftovers:** the completer's *type* decisions
   are already schema-driven. This entry is about the surrounding TUI.
+
+### T8 — `SELECT *` expansion emits column names it cannot read back
+- **Status:** 🟢 DONE 2026-09-05
+- **Where:** `src/sql/identifier.rs` (new), `src/buffer.rs:1552,1609`,
+  `src/data/csv_fixes.rs`, `src/sql/parser/formatter.rs`
+- **Observed:** Ctrl+X (expand to all schema columns) and Alt+X (expand to
+  visible columns) both did `columns.join(", ")` on the raw names. On
+  `data/countries.csv` that produced
+
+  ```
+  SELECT name.common, name.official, tld, ..., idd.root, ... FROM countries
+  ```
+
+  which the parser reads as method calls on a `name` column. Every dotted name
+  — `name.*`, `idd.*` and 60-odd `translations.*.*`, i.e. most of the file —
+  came out unusable, and the user's next keystroke was to hand-quote 70 columns
+  or undo.
+- **Why it is the same bug as T1 in a different hat:** completion had already
+  been taught to quote (it calls `quote_if_needed` at nine sites in
+  `cursor_aware_parser.rs`). Expansion is the *other* producer of column text
+  and never learned. Two producers, one of them right, is the drift T1's
+  "the parser owns semantics, the editor owns text" principle is meant to stop
+  — it just did not have anywhere to put the rule.
+- **Fixed by:** `src/sql/identifier.rs`, the single home for *does this name
+  have to be quoted*. The rule mirrors `Lexer::read_identifier`, which is what
+  actually decides whether a bare word survives: Unicode alphanumerics plus
+  `_`, not starting with a digit. Keyword status comes from
+  `Token::from_keyword` rather than a second hand-kept list, so a column called
+  `row` or `end` is quoted for exactly as long as the lexer reserves those
+  words.
+
+  Three call sites now share it:
+
+  | Site | Was | Now |
+  |---|---|---|
+  | `csv_fixes::needs_quoting` (used by all of completion) | a 9-way `contains()` chain — missed leading digits and keywords | delegates |
+  | `formatter::needs_quotes` | its own 40-word reserved list, hand-kept | delegates (and stops re-quoting text the parser already handed back quoted) |
+  | `Buffer::expand_asterisk{,_visible}` | nothing at all | quotes |
+
+- **Tests:** `tests/asterisk_expansion.rs` (5) covers both expansion paths,
+  hidden columns, the rest of the query surviving intact, and names that
+  collide with keywords. `src/sql/identifier.rs` has 8 unit tests for the rule
+  itself. Verified end to end by running the full 76-column expansion of
+  `data/countries.csv`.
+- **Left open:** `formatter::needs_quotes` is applied to
+  `SelectStatement::columns`, which is the deprecated legacy field and can hold
+  expression text, so the formatter still wraps `COUNT(*)` in quotes. That is a
+  pre-existing formatter bug about *what* it quotes, not *when* — unchanged
+  here, and it wants fixing where the field is retired rather than in the
+  quoting rule.
