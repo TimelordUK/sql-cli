@@ -46,13 +46,20 @@ def test_method_parsing():
         )
         SELECT 1 as test
         """
-        # Just check that it parses without error by using --query-plan
-        # Don't actually execute the query
+        # Check that it parses, via --query-plan.
+        #
+        # NOTE: --query-plan prints the AST and then runs the query anyway, so
+        # despite the intent above this DOES attempt the fetch. On Linux the
+        # refused connection to a closed localhost port returns instantly; on
+        # Windows it takes ~2.4s, so the original timeout=2 made this the one
+        # test in the file that failed locally while passing in CI. The timeout
+        # is raised rather than tightened because the delay is the CLI's, not
+        # this test's. The real fix is for --query-plan not to execute.
         result = subprocess.run(
             [SQL_CLI, "-q", query, "--query-plan"],
             capture_output=True,
             text=True,
-            timeout=2  # Short timeout for localhost
+            timeout=15
         )
         # Check that parsing succeeded - should show the AST with method
         assert "WebCTESpec" in result.stdout or "method:" in result.stdout.lower(), \

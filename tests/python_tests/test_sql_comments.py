@@ -14,7 +14,7 @@ TEST_DATA = Path(__file__).parent.parent.parent / "data" / "test_simple_math.csv
 def run_query(query, output_format="json"):
     """Run a SQL query and return the result"""
     cmd = [str(SQL_CLI), str(TEST_DATA), "-q", query, "-o", output_format]
-    result = subprocess.run(cmd, capture_output=True, text=True)
+    result = subprocess.run(cmd, capture_output=True, text=True, encoding='utf-8')
     
     if result.returncode != 0:
         print(f"Command failed: {' '.join(cmd)}")
@@ -34,13 +34,20 @@ def run_query(query, output_format="json"):
 
 def run_query_file(sql_file_content, output_format="json"):
     """Run a SQL query from a file"""
-    with tempfile.NamedTemporaryFile(mode='w', suffix='.sql', delete=False) as f:
+    # encoding='utf-8' is required, not cosmetic: without it Python writes the
+    # temp file in the platform's preferred encoding, which is cp1252 on
+    # Windows, and the scientific-notation tests below (a₀, π, ε₀, ℏ) raise
+    # UnicodeEncodeError before the CLI is ever invoked. The CLI reads .sql
+    # files as UTF-8 on every platform, so this also makes the two agree.
+    with tempfile.NamedTemporaryFile(
+        mode='w', suffix='.sql', delete=False, encoding='utf-8'
+    ) as f:
         f.write(sql_file_content)
         temp_path = f.name
     
     try:
         cmd = [str(SQL_CLI), str(TEST_DATA), "-f", temp_path, "-o", output_format]
-        result = subprocess.run(cmd, capture_output=True, text=True)
+        result = subprocess.run(cmd, capture_output=True, text=True, encoding='utf-8')
         
         if result.returncode != 0:
             print(f"Command failed: {' '.join(cmd)}")
