@@ -7,16 +7,22 @@ import subprocess
 import json
 import csv
 import os
+import sys
 import tempfile
 import pytest
 from pathlib import Path
 
-# Find the sql-cli binary
+# Find the sql-cli binary. The .exe suffix is required on Windows: without it
+# the release `exists()` check fails, this file quietly falls through to the
+# debug path, and Windows then resolves `sql-cli` -> `sql-cli.exe` anyway — so
+# the tests pass while exercising the DEBUG binary. That is worse than the
+# outright failure the same omission caused in test_quoted_columns.py.
 PROJECT_ROOT = Path(__file__).parent.parent.parent
-SQL_CLI = PROJECT_ROOT / "target" / "release" / "sql-cli"
+_SUFFIX = ".exe" if sys.platform == "win32" else ""
+SQL_CLI = PROJECT_ROOT / "target" / "release" / f"sql-cli{_SUFFIX}"
 
 if not SQL_CLI.exists():
-    SQL_CLI = PROJECT_ROOT / "target" / "debug" / "sql-cli"
+    SQL_CLI = PROJECT_ROOT / "target" / "debug" / f"sql-cli{_SUFFIX}"
 
 
 def run_query(csv_file, query):

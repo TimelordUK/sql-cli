@@ -9,10 +9,22 @@ import tempfile
 from pathlib import Path
 from io import StringIO
 
+def _sql_cli_binary():
+    """Path to the release binary, with the .exe suffix Windows needs.
+
+    Without the suffix the `exists()` check below raised FileNotFoundError and
+    every test in this file silently never ran on a Windows box, while passing
+    in CI. Same fix as tests/comparison/engines.py and
+    test_in_between_operators.py already carry.
+    """
+    base_dir = Path(__file__).parent.parent.parent
+    suffix = ".exe" if sys.platform == "win32" else ""
+    return base_dir / "target" / "release" / f"sql-cli{suffix}"
+
+
 def run_query(query, data_file=None):
     """Execute a query and return the results."""
-    base_dir = Path(__file__).parent.parent.parent
-    sql_cli = base_dir / "target" / "release" / "sql-cli"
+    sql_cli = _sql_cli_binary()
 
     if not sql_cli.exists():
         raise FileNotFoundError(f"sql-cli not found at {sql_cli}")
@@ -37,10 +49,7 @@ def run_query(query, data_file=None):
 
 def format_query(query):
     """Format a SQL query."""
-    base_dir = Path(__file__).parent.parent.parent
-    sql_cli = base_dir / "target" / "release" / "sql-cli"
-
-    cmd = [str(sql_cli), "--format", "-"]
+    cmd = [str(_sql_cli_binary()), "--format", "-"]
     result = subprocess.run(cmd, input=query, capture_output=True, text=True)
 
     if result.returncode != 0:
