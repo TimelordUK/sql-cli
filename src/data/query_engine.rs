@@ -128,11 +128,14 @@ impl ExecutionContext {
             }
 
             // Not found with either qualified or unqualified name
-            Err(anyhow!(
-                "Column '{}' not found. Table '{}' may not support qualified column names",
-                qualified_name,
-                actual_table
-            ))
+            Err(
+                crate::data::column_resolution_error::qualified_column_not_found(
+                    table,
+                    table_prefix,
+                    &actual_table,
+                    &column_ref.name,
+                ),
+            )
         } else {
             // Unqualified column reference
             if let Some(idx) = table.get_column_index(&column_ref.name) {
@@ -3010,24 +3013,26 @@ impl QueryEngine {
                         // only lookup would otherwise fail. See
                         // `ExecutionContext::resolve_column_index` for the same logic.
                         let qualified_name = format!("{}.{}", table_prefix, col_ref.name);
-                        table.find_column_by_qualified_name(&qualified_name)
+                        table
+                            .find_column_by_qualified_name(&qualified_name)
                             .or_else(|| {
                                 table_columns
                                     .iter()
                                     .position(|c| c.eq_ignore_ascii_case(&col_ref.name))
                             })
                             .ok_or_else(|| {
-                                // Check if any columns have qualified names for better error message
-                                let has_qualified = table.columns.iter()
-                                    .any(|c| c.qualified_name.is_some());
-                                if !has_qualified {
-                                    anyhow::anyhow!(
-                                        "Column '{}' not found. Note: Table '{}' may not support qualified column names",
-                                        qualified_name, table_prefix
-                                    )
-                                } else {
-                                    anyhow::anyhow!("Column '{}' not found", qualified_name)
-                                }
+                                // The old message here branched on whether ANY
+                                // column carried a qualified name and, if not,
+                                // blamed qualified-name support. For a single
+                                // table or a CTE no column is qualified, so
+                                // that fired on the common case and was wrong
+                                // every time.
+                                crate::data::column_resolution_error::qualified_column_not_found(
+                                    table,
+                                    table_prefix,
+                                    table_prefix,
+                                    &col_ref.name,
+                                )
                             })?
                     } else {
                         // Simple column name lookup

@@ -96,7 +96,7 @@ Suggested fix order, by silent blast radius:
 | 10 | [P22](#p22), [P25](#p25), [P26](#p26), [P15](#p15), [P32](#p32), [P38](#p38) | Hard errors — visible, so less urgent than any of the above |
 | 10b | [P39](#p39) `x/0` errors, voiding the whole statement | Hard error like row 10, but the only one whose blast radius is the *query* rather than the cell. Settle the four inconsistent call sites as one decision; it currently has no live probe (see the entry) |
 | 11 | [P35](#p35), [P36](#p36), [P43](#p43) | Not parity obligations — a DuckDB extension, a naming difference, and a `RANGE` endpoint convention. Decide *whether*, not just when. P43 is the one with a migration cost attached, so it wants deciding before it accumulates more callers |
-| 12 | [P40](#p40) a generator's args can't reference columns | Hard error and loudly signposted, so last by blast radius — but it splits: the misleading *"may not support qualified column names"* message is a few lines and is the part that wastes the next person's afternoon. Take that alone; the explode feature can wait on the `UNNEST` decision |
+| 12 | [P40](#p40) a generator's args can't reference columns | Hard error and loudly signposted, so last by blast radius. **Piece 1 (the message) shipped 2026-09-06** after it misdirected a second investigation; pieces 2 (resolve args against the real table) and 3 (row-wise explode) remain, and the explode feature still waits on the `UNNEST` decision |
 | — | [P27](#p27) `OR` in `JOIN ... ON` | **Reclassified 2026-08-08, re-scoped 2026-09-04 — possibly smaller than it was filed as.** The AST is still the blocker (`JoinCondition` is a `Vec` of AND-ed conditions with nowhere to put an `OR`), but the executor already evaluates expressions per row pair and already has a merged-row `cross_join`, so `INNER JOIN ON <expr>` may lower to cross-join + the R10 WHERE evaluator. Do the timeboxed scoping pass in the entry before sequencing this |
 
 P27–P30 jump the queue because all four were found *by* fixing something else,
@@ -1683,7 +1683,8 @@ out of date.
 ---
 
 ### P40 — A table generator's arguments cannot reference columns, so there is no way to explode one row into many
-- **Status:** 🔴 OPEN — hard error, but the error text misdirects (see below)
+- **Status:** 🔴 OPEN — hard error. **Piece 1 of 3 (the misleading message) is
+  done, 2026-09-06**; pieces 2 and 3 remain
 - **Corpus:** none yet — see *Pinning it*.
 - **Observed:** `SPLIT` is a **table generator** (`sql/generators/string_generators.rs:12`),
   in the same family as `READ_JSON` / `RANGE`, so it can only appear in `FROM`.
@@ -1697,15 +1698,38 @@ out of date.
   | `WITH a AS (…) SELECT * FROM split(a.path,'/')` | 🚫 *Column 'a.path' not found. Table 'a' may not support qualified column names* |
   | `SELECT * FROM split((SELECT p FROM …),'/')` | 🚫 *Unsupported expression type for arithmetic evaluation: ScalarSubquery* |
 
-- **The error message is actively misleading, and it misdirected the report
-  that opened this entry.** "Table 'a' may not support qualified column names"
-  is the generic fallback at `query_engine.rs:132`. Read literally it points at
-  CTE scoping and qualified-name resolution — and that is exactly the conclusion
-  it produced ("maybe table doesn't support qualified columns"). Neither is
-  involved. The unqualified
-  form fails identically, and so does a plain base-table column with no CTE in
-  sight. Whatever else is decided here, **this message must stop blaming
-  qualification** — a generator argument that is not a constant should say so.
+- **The error message was actively misleading, and it misdirected the report
+  that opened this entry — 🟢 FIXED 2026-09-06.** "Table 'a' may not support
+  qualified column names" was the generic fallback, written out at *three* call
+  sites. Read literally it points at CTE scoping and qualified-name resolution —
+  and that is exactly the conclusion it produced ("maybe table doesn't support
+  qualified columns"). Neither is involved.
+
+  **It then cost a second afternoon, 2026-09-06**, on a query that had nothing to
+  do with generators: `WITH a AS (…) SELECT SPLIT_PART(a.path,'_',1)` with no
+  `FROM a`. That is simply an out-of-scope reference — DuckDB says *Referenced
+  table "a" not found!* — but the message sent the reader looking at qualified-name
+  support again. Two people-hours to one sentence of wrong explanation is the
+  argument for taking messages seriously as a class.
+
+  The worst of the three sites was the SELECT-list one: it branched on whether
+  *any* column carried a `qualified_name` and, if none did, blamed qualification.
+  For a single table or a CTE no column is qualified, so the heuristic fired on
+  the common case and was wrong every time.
+
+  Now one implementation, `data::column_resolution_error`, which separates the
+  two failures that were sharing a message:
+
+  | Situation | Message |
+  |---|---|
+  | prefix names nothing in scope | *Unknown table or alias 'a' in 'a.path'. The query selects from 'DUAL'. A CTE has to be named in a FROM clause before its columns can be referenced.* |
+  | prefix in scope, no such column | *Column 'nope' not found in 'a'. Available columns: path, id* |
+
+  The in-scope test is deliberately generous (table name, resolved alias, or any
+  column's qualified-name prefix): a false "in scope" costs only a less pointed
+  message, whereas a false "unknown table" would reintroduce the confident wrong
+  explanation this replaced. Five unit tests, one of which asserts the old
+  wording cannot return.
 
 - **Root cause — two defects stacked, and only the second is a feature request:**
   1. **The args are evaluated against DUAL.** `statement_executor.rs:124-148`
@@ -1748,8 +1772,11 @@ out of date.
   argument fails.
 
 - **Decision: fix, in three independently shippable pieces**, smallest first:
-  1. **The message.** No semantics, no risk, and it is the part that wastes
-     other people's time. Do this even if the rest is deferred.
+  1. ~~**The message.**~~ ✅ **Done 2026-09-06.** No semantics, no risk, and it
+     was the part that wasted other people's time — twice, as it turned out.
+     Note what it does *not* do: a generator argument that is not a constant
+     still reports "unknown table or alias", which is accurate for the reported
+     shape but will read oddly once piece 2 lands. Revisit the wording then.
   2. **Resolve generator arguments against the real source table and CTE
      context** instead of DUAL. Makes single-row and constant-expression
      arguments honest, and makes the remaining failure an accurate "this needs a
