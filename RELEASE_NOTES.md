@@ -1,23 +1,23 @@
-# SQL CLI v1.83.8
+# SQL CLI v1.83.9
 
-**Release Date:** September 05, 2026
+**Release Date:** September 06, 2026
 
 ## 📊 Release Overview
 - **Commits in this release:** 2
-- **Files updated:** 8
+- **Files updated:** 7
 
 ## ✨ Highlights
 
 ## 📝 Changes by Category
 
 ### 🐛 Bug Fixes
-- quote column names when expanding SELECT * (T8)
+- give MODE a deterministic tie-break (P41)
 
 <details>
 <summary>📋 View all commits</summary>
 
-- Merge pull request #66 from TimelordUK/fix/t8-expand-asterisk-quoting (TimelordUK)
-- fix(tui): quote column names when expanding SELECT * (T8) (TimelordUK)
+- Merge pull request #67 from TimelordUK/fix/p41-mode-tiebreak (TimelordUK)
+- fix(engine): give MODE a deterministic tie-break (P41) (TimelordUK)
 
 </details>
 
