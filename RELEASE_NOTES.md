@@ -1,23 +1,28 @@
-# SQL CLI v1.83.9
+# SQL CLI v1.83.10
 
 **Release Date:** September 06, 2026
 
 ## 📊 Release Overview
-- **Commits in this release:** 2
-- **Files updated:** 7
+- **Commits in this release:** 4
+- **Files updated:** 9
 
 ## ✨ Highlights
+
+### 🔍 Enhanced Debugging
+- **Better Diagnostics**: Improved error messages and state dumps
 
 ## 📝 Changes by Category
 
 ### 🐛 Bug Fixes
-- give MODE a deterministic tie-break (P41)
+- say which failure a qualified column reference hit (P40 piece 1)
 
 <details>
 <summary>📋 View all commits</summary>
 
-- Merge pull request #67 from TimelordUK/fix/p41-mode-tiebreak (TimelordUK)
-- fix(engine): give MODE a deterministic tie-break (P41) (TimelordUK)
+- Merge pull request #69 from TimelordUK/fix/p40-column-resolution-message (TimelordUK)
+- fix(errors): say which failure a qualified column reference hit (P40 piece 1) (TimelordUK)
+- Merge pull request #68 from TimelordUK/test/windows-python-suite-green (TimelordUK)
+- test: make the Python suite green on Windows (TimelordUK)
 
 </details>
 
