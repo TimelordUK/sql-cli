@@ -1,0 +1,154 @@
+[
+  [
+    {
+      "analysis": "AAPL Closing Prices",
+      "maximum": 179.26,
+      "mean": 109.06669849086583,
+      "median": 109.01,
+      "minimum": 55.7899,
+      "observations": 1259,
+      "p50_percentile": 109.01,
+      "std_deviation": 30.556811676964685,
+      "variance": 933.7187398614853
+    }
+  ],
+  [
+    {
+      "analysis": "AAPL Volume Analysis",
+      "avg_volume": 54047899.73550437,
+      "max_volume": 266833581,
+      "median_volume": 45668931.0,
+      "min_volume": 11475922,
+      "trading_days": 1259,
+      "volume_volatility": 33468353.335784018
+    }
+  ],
+  [
+    {
+      "analysis": "Price Range Distribution",
+      "avg_daily_range": 1.8095294678316098,
+      "avg_range_percent": 1.708748072581743,
+      "max_daily_range": 16.799999999999997,
+      "median_range": 1.5300000000000011,
+      "min_daily_range": 0.45999999999999375,
+      "range_volatility": 1.1173697868377992,
+      "total_days": 1259
+    }
+  ],
+  [
+    {
+      "avg_price_in_bucket": 134.74261705685606,
+      "frequency": 598,
+      "max_price_in_bucket": 179.26,
+      "min_price_in_bucket": 110.06,
+      "percentage": 47.49801429706116,
+      "price_bucket": "Over $110"
+    },
+    {
+      "avg_price_in_bucket": 95.84045443786984,
+      "frequency": 169,
+      "max_price_in_bucket": 99.99,
+      "min_price_in_bucket": 90.28,
+      "percentage": 13.423351866560763,
+      "price_bucket": "$90-100"
+    },
+    {
+      "avg_price_in_bucket": 105.87450609756102,
+      "frequency": 164,
+      "max_price_in_bucket": 109.99,
+      "min_price_in_bucket": 100.11,
+      "percentage": 13.026211278792692,
+      "price_bucket": "$100-110"
+    },
+    {
+      "avg_price_in_bucket": 63.41907058823527,
+      "frequency": 153,
+      "max_price_in_bucket": 69.9482,
+      "min_price_in_bucket": 55.7899,
+      "percentage": 12.152501985702939,
+      "price_bucket": "Under $70"
+    },
+    {
+      "avg_price_in_bucket": 75.1279766423358,
+      "frequency": 137,
+      "max_price_in_bucket": 79.6428,
+      "min_price_in_bucket": 70.0914,
+      "percentage": 10.881652104845115,
+      "price_bucket": "$70-80"
+    },
+    {
+      "avg_price_in_bucket": 83.75742105263156,
+      "frequency": 38,
+      "max_price_in_bucket": 89.8071,
+      "min_price_in_bucket": 80.0028,
+      "percentage": 3.0182684670373314,
+      "price_bucket": "$80-90"
+    }
+  ],
+  [
+    {
+      "analysis": "Synthetic Data (1-20)",
+      "max_val": 20,
+      "mean": 10.5,
+      "median": 10.5,
+      "min_val": 1,
+      "mode_value": 1.0,
+      "n": 20,
+      "std_dev": 5.916079783099616,
+      "variance": 35.0
+    }
+  ],
+  [
+    {
+      "analysis": "Most Frequent Price Levels",
+      "avg_rounded_price": 109.08657664813344,
+      "median_rounded_price": 109.0,
+      "most_frequent_price": 109.0,
+      "total_observations": 1259
+    }
+  ],
+  [
+    {
+      "avg_change": 0.44312450738916304,
+      "frequency": 812,
+      "max_change": 0.9984999999999999,
+      "min_change": 0.0,
+      "percentage": 64.49563145353456,
+      "volatility_class": "Low Volatility",
+      "volatility_stddev": 0.28721884296002986
+    },
+    {
+      "avg_change": 1.607333740831296,
+      "frequency": 409,
+      "max_change": 2.989999999999995,
+      "min_change": 1.0,
+      "percentage": 32.48610007942812,
+      "volatility_class": "Medium Volatility",
+      "volatility_stddev": 0.5312862891282142
+    },
+    {
+      "avg_change": 3.994642105263159,
+      "frequency": 38,
+      "max_change": 8.25,
+      "min_change": 3.030000000000001,
+      "percentage": 3.0182684670373314,
+      "volatility_class": "High Volatility",
+      "volatility_stddev": 1.3585912625656669
+    }
+  ],
+  [
+    {
+      "arithmetic_mean": 25.5,
+      "dataset": "Range Analysis (1-50)",
+      "maximum": 50,
+      "mean_quadratic": 858.5,
+      "median_quadratic": 650.5,
+      "median_value": 25.5,
+      "minimum": 1,
+      "modal_parity": "Odd",
+      "n": 50,
+      "standard_deviation": 14.577379737113251,
+      "variance": 212.5
+    }
+  ]
+]

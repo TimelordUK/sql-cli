@@ -1,0 +1,149 @@
+[
+  [
+    {
+      "average_sales_amount": 18291.666666666668,
+      "median_sales_amount": 18000.0,
+      "most_common_sales_amount": 15000.0,
+      "stddev_pop_explicit": 4568.726725126913,
+      "stddev_population": 4666.990154419578,
+      "stddev_sample": 4666.990154419572,
+      "total_records": 24,
+      "variance_pop_explicit": 20873263.888888836,
+      "variance_population": 21780797.101449277,
+      "variance_sample": 21780797.101449218
+    }
+  ],
+  [
+    {
+      "avg_sales_amount": 22000.0,
+      "max_sales_amount": 28000,
+      "median_sales_amount": 22000.0,
+      "min_sales_amount": 16000,
+      "region": "West",
+      "sales_count": 6,
+      "stddev": 4732.86,
+      "variance": 22400000.0
+    },
+    {
+      "avg_sales_amount": 20833.33,
+      "max_sales_amount": 25000,
+      "median_sales_amount": 20500.0,
+      "min_sales_amount": 17000,
+      "region": "South",
+      "sales_count": 6,
+      "stddev": 2857.74,
+      "variance": 8166666.67
+    },
+    {
+      "avg_sales_amount": 16166.67,
+      "max_sales_amount": 22000,
+      "median_sales_amount": 15500.0,
+      "min_sales_amount": 12000,
+      "region": "North",
+      "sales_count": 6,
+      "stddev": 3488.07,
+      "variance": 12166666.67
+    },
+    {
+      "avg_sales_amount": 14166.67,
+      "max_sales_amount": 19000,
+      "median_sales_amount": 13500.0,
+      "min_sales_amount": 11000,
+      "region": "East",
+      "sales_count": 6,
+      "stddev": 2714.16,
+      "variance": 7366666.67
+    }
+  ],
+  [
+    {
+      "mean": 17615.38,
+      "product": "Widget",
+      "sample_size": 13,
+      "stddev_difference": 0.0,
+      "stddev_pop": 4941.97,
+      "stddev_samp": 4941.97,
+      "var_pop": 24423076.92,
+      "var_samp": 24423076.92,
+      "variance_difference": 0.0
+    },
+    {
+      "mean": 19090.91,
+      "product": "Gadget",
+      "sample_size": 11,
+      "stddev_difference": 0.0,
+      "stddev_pop": 4414.85,
+      "stddev_samp": 4414.85,
+      "var_pop": 19490909.09,
+      "var_samp": 19490909.09,
+      "variance_difference": 0.0
+    }
+  ],
+  [
+    {
+      "most_common_hundred_range": 15000.0,
+      "most_common_sales_amount": 15000.0,
+      "most_common_thousand_range": 15.0
+    }
+  ],
+  [
+    {
+      "most_common_region": "North",
+      "occurrences": 6
+    }
+  ],
+  [
+    {
+      "most_common_product": "Widget",
+      "occurrences": 13
+    }
+  ],
+  [
+    {
+      "coefficient_of_variation": 28.05,
+      "mean": 17615.38,
+      "n": 13,
+      "product": "Widget",
+      "std_dev": 4941.97
+    },
+    {
+      "coefficient_of_variation": 23.13,
+      "mean": 19090.91,
+      "n": 11,
+      "product": "Gadget",
+      "std_dev": 4414.85
+    }
+  ],
+  [
+    {
+      "avg_sales_amount": 16000.0,
+      "max_sales_amount": 24000,
+      "median_sales_amount": 15500.0,
+      "min_sales_amount": 11000,
+      "month": "2024-01",
+      "range": 13000,
+      "transactions": 8,
+      "volatility": 4342.48
+    },
+    {
+      "avg_sales_amount": 18000.0,
+      "max_sales_amount": 26000,
+      "median_sales_amount": 18000.0,
+      "min_sales_amount": 13000,
+      "month": "2024-02",
+      "range": 13000,
+      "transactions": 8,
+      "volatility": 4208.83
+    },
+    {
+      "avg_sales_amount": 20875.0,
+      "max_sales_amount": 28000,
+      "median_sales_amount": 21000.0,
+      "min_sales_amount": 14000,
+      "month": "2024-03",
+      "range": 14000,
+      "transactions": 8,
+      "volatility": 4611.71
+    }
+  ]
+]

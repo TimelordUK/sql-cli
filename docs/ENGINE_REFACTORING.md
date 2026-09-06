@@ -423,6 +423,52 @@ feature work**, and so we can tell the difference between "this is awkward" and
   keep both P34 regression tests green — they pin exactly the two behaviours
   the shared resolver has to reproduce.
 
+### R12 — Two aggregate registries, nine functions implemented twice
+- **Status:** 🔴 OPEN — filed 2026-09-06 by [P41](SQL_PARITY.md#p41)
+- **Where:** `src/sql/aggregates/` (old, `AggregateRegistry`) and
+  `src/sql/aggregate_functions/` (new, `AggregateFunctionRegistry`). Dispatch is
+  in `ArithmeticEvaluator`, which holds both (`arithmetic_evaluator.rs:24-25`,
+  the fields commented *"old registry (being phased out)"* and *"new registry"*)
+  and checks the new one **first** at both call sites (`:637`, `:769`).
+- **Observed:** the migration adds to the new registry without removing from the
+  old, so the two overlap and the old copy is unreachable for everything in the
+  intersection. As of filing:
+
+  | | Functions |
+  |---|---|
+  | **Both — old copy is dead** | `AVG`, `MIN`, `MAX`, `STDDEV`, `VARIANCE`, `MEDIAN`, `MODE`, `PERCENTILE`, `STRING_AGG` |
+  | **New only** | `COUNT`, `COUNT_STAR`, `SUM` — the three done properly, commented out in the old list |
+  | **Old only — live** | `STDDEV_POP`, `STDDEV_SAMP`, `VAR_POP`, `VAR_SAMP`, and the analytics set (`DELTAS`, `SUMS`, `MAVG`, `PCT_CHANGE`, `RANK`, `CUMMAX`, `CUMMIN`) |
+
+  So the old registry is neither dead nor live — it is both, per function, and
+  nothing in either file says which.
+- **Impact: a fix can land in the wrong one and pass its own tests.** That is not
+  hypothetical; it is how [P41](SQL_PARITY.md#p41) went. The finding named
+  `ModeState` (old), the fix was written and unit-tested there, and the repro
+  still flipped between runs, because the live `MODE` is `CollectorState` in the
+  new registry. Worse, the two implementations *disagree on semantics*: the dead
+  one keys on a string rendering and returns the original `DataValue`; the live
+  one collects `Vec<f64>` and so rejects non-numeric input and returns a float
+  for integers ([P42](SQL_PARITY.md#p42)). The better implementation is the
+  unreachable one.
+- **Same shape as [R8](#r8) and [R11](#r11)**, with the failure mode of R8 (a
+  parallel stack with its own semantics) and the trap of R11 (the copy that runs
+  is the wrong one). It is worse than either in one respect: R8's legacy stack is
+  reachable only from tests, and R11's duplication is 3000 lines apart in *one*
+  file. Here both registries are genuinely live, and which one serves a given
+  function is invisible at every call site.
+- **Decision:** converge on the new registry, but **not as one change**. Order:
+  (1) make the overlap harmless — assert at construction that the two key sets
+  are disjoint, or simply delete the nine shadowed entries from the old list,
+  which is a provable no-op since they are unreachable today; (2) port the
+  old-only functions (`*_POP`/`*_SAMP` and analytics) across; (3) delete the old
+  registry. Step 1 is the one worth doing soon and is small — it is what stops
+  the next P41.
+- **Guard rail:** step 1 must not change behaviour, so the acceptance test is
+  parity staying at exactly its current AGREE count, plus the FORMAL examples.
+  [P42](SQL_PARITY.md#p42) is the natural companion to step 2 — porting `MODE`'s
+  type handling from the dead implementation to the live one is most of that fix.
+
 ---
 
 ## Sequencing
@@ -446,6 +492,7 @@ R5 dead code ─────── opportunistic
 R8 legacy WHERE ──── independent; stage 2 is self-contained, do it in a lull
 R10 Trilean ──────── DONE; closed P18/P19 (parity 125 → 129)
 R11 ORDER BY resolver ─ independent; small, but a behaviour change — wants its own parity run
+R12 aggregate registries ─ independent; step 1 is a provable no-op, do it before the next aggregate fix
 ```
 
 **A note on ordering, from the P18/P19 work being next.** The WHERE evaluator
@@ -480,3 +527,4 @@ AGREE count — which makes it safe to land well before the semantics change.
 | 2026-08-30 | `RANGE` window frames given peer-group semantics (`OrderedPartition::peer_bounds`); sorting and peer detection unified on one comparator. Closes parity P24 — 129 → **133 AGREE**; new finding P33 (`RANGE` with a numeric offset) now a deliberate hard error rather than a silent ROWS answer | — |
 | 2026-08-30 | P34 fixed: `ORDER BY "col.with.dot"` no longer strips a quoted identifier at the dot. R11 filed — ORDER BY still resolves columns with its own copy of `resolve_column_index` rather than the canonical one | — |
 | 2026-09-04 | P40 filed from field use: a generator's args are evaluated against DUAL (`statement_executor.rs` has no `from_function` case), so no column reference resolves in `FROM SPLIT(col, …)`. Cross-linked here — R1's missing table-function variant is the reason generators sit on the legacy path | — |
+| 2026-09-06 | R12 filed by parity P41: two aggregate registries, nine functions implemented twice with the newer one shadowing the older. P41's fix was written against the dead copy first and changed nothing — the entry records the disjointness assertion as step 1 | — |

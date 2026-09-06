@@ -158,3 +158,50 @@ expect = "DIFFER"
 # this one is arguably a coercion-first design choice rather than a bug — it
 # needs a decision recorded, not an automatic fix.
 
+
+# ---------------------------------------------------------------------------
+# P41 — MODE tie-breaking. Added 2026-09-06 with the fix.
+#
+# MODE had no tie-break rule at all: it took whichever entry `HashMap`
+# iteration surfaced last, so a tie returned a different value between runs of
+# the same binary. These cases pin the rule the reference engine uses —
+# earliest-seen value wins — which is only observable on a tie, so the corpus
+# needs a tie where the answer is NOT the value a plausible alternative rule
+# would pick.
+#
+# MODE is numeric-only for us (see P42), so every case here uses a numeric
+# column. The string form is where the divergence is easiest to see, and it is
+# exactly what we cannot yet express.
+# ---------------------------------------------------------------------------
+
+[[case]]
+id = "mode_two_way_tie"
+data = "null_edges.csv"
+sql = "SELECT MODE(score) AS m FROM null_edges"
+# 50 appears twice and 70 appears twice — a two-way tie, won by 50 on
+# first-seen. This is also the case where first-seen and "smallest wins" happen
+# to agree, which is exactly why it cannot stand alone.
+
+[[case]]
+id = "mode_tie_first_seen_not_smallest"
+data = "null_edges.csv"
+sql = "SELECT MODE(partner_id) AS m FROM null_edges"
+# The discriminating case. Every non-NULL partner_id is distinct
+# (3, 1, 5, 4, 8, 7, 11), so all seven tie at one occurrence. First-seen gives
+# 3; "smallest value wins" — the rule P41 was originally going to adopt — gives
+# 1. DuckDB gives 3. Without this case the corpus cannot tell the two apart.
+
+[[case]]
+id = "mode_all_null"
+data = "null_edges.csv"
+sql = "SELECT MODE(bonus) AS m FROM null_edges"
+# Every bonus is NULL. NULLs are ignored, so there is nothing to tally and the
+# answer is NULL rather than an error or a missing row.
+
+[[case]]
+id = "mode_grouped"
+data = "null_edges.csv"
+sql = "SELECT team, MODE(score) AS m FROM null_edges GROUP BY team ORDER BY team"
+# Per-group state: each group must tally independently, and the all-NULL group
+# ('delta') must still produce its row with NULL. Catches a fix applied to the
+# ungrouped path only.
