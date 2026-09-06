@@ -269,12 +269,15 @@ impl<'a> ArithmeticEvaluator<'a> {
                     .map(|v| v.clone());
             }
 
-            // If not found, return error
-            Err(anyhow!(
-                "Column '{}' not found. Table '{}' may not support qualified column names",
-                qualified_name,
-                actual_table
-            ))
+            // If not found, say which of the two failures this is.
+            Err(
+                crate::data::column_resolution_error::qualified_column_not_found(
+                    self.table,
+                    table_prefix,
+                    actual_table,
+                    &column_ref.name,
+                ),
+            )
         } else {
             // Simple column name lookup
             self.evaluate_column(&column_ref.name, row_index)
