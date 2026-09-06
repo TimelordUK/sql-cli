@@ -409,10 +409,22 @@ impl PercentileState {
     }
 }
 
+/// One distinct value's tally for MODE, carrying the position of its first
+/// occurrence so that ties are broken by input order rather than by hash
+/// iteration order.
+#[derive(Debug, Clone)]
+pub struct ModeTally {
+    pub value: DataValue,
+    pub count: i64,
+    pub first_seen: u64,
+}
+
 /// State for MODE aggregation (most frequent value)
 #[derive(Debug, Clone)]
 pub struct ModeState {
-    pub counts: std::collections::HashMap<String, (DataValue, i64)>,
+    pub counts: std::collections::HashMap<String, ModeTally>,
+    /// Position of the next non-NULL value, used only for tie-breaking.
+    next_position: u64,
 }
 
 impl Default for ModeState {
@@ -426,6 +438,7 @@ impl ModeState {
     pub fn new() -> Self {
         Self {
             counts: std::collections::HashMap::new(),
+            next_position: 0,
         }
     }
 
@@ -449,26 +462,35 @@ impl ModeState {
             DataValue::Null => return Ok(()),
         };
 
-        // Update count and store the original value
-        let entry = self.counts.entry(key).or_insert((value.clone(), 0));
-        entry.1 += 1;
+        // Update count and store the original value, remembering where the
+        // value was first seen so ties resolve deterministically.
+        let position = self.next_position;
+        self.next_position += 1;
+        let entry = self.counts.entry(key).or_insert_with(|| ModeTally {
+            value: value.clone(),
+            count: 0,
+            first_seen: position,
+        });
+        entry.count += 1;
 
         Ok(())
     }
 
+    /// Highest count wins; on a tie the value seen earliest in the input wins.
+    ///
+    /// The tie-break matters: without it the winner came from `HashMap`
+    /// iteration order, so the same binary on the same data returned different
+    /// answers run to run (P41). Earliest-seen is the reference engine's rule.
     #[must_use]
     pub fn finalize(self) -> DataValue {
-        if self.counts.is_empty() {
-            return DataValue::Null;
-        }
-
-        // Find the value with the highest count
-        let max_entry = self.counts.iter().max_by_key(|(_, (_, count))| count);
-
-        match max_entry {
-            Some((_, (value, _count))) => value.clone(),
-            None => DataValue::Null,
-        }
+        self.counts
+            .into_values()
+            .max_by(|a, b| {
+                a.count
+                    .cmp(&b.count)
+                    .then_with(|| b.first_seen.cmp(&a.first_seen))
+            })
+            .map_or(DataValue::Null, |tally| tally.value)
     }
 }
 
@@ -716,4 +738,85 @@ pub fn is_constant_expression(expr: &crate::recursive_parser::SqlExpression) -> 
 /// This is used to determine if a SELECT list should produce a single row
 pub fn is_aggregate_compatible(expr: &crate::recursive_parser::SqlExpression) -> bool {
     contains_aggregate(expr) || is_constant_expression(expr)
+}
+
+#[cfg(test)]
+mod mode_tie_break_tests {
+    use super::{DataValue, ModeState};
+
+    fn mode(values: &[DataValue]) -> DataValue {
+        let mut state = ModeState::new();
+        for v in values {
+            state.add(v).expect("MODE add should not fail");
+        }
+        state.finalize()
+    }
+
+    fn ints(values: &[i64]) -> Vec<DataValue> {
+        values.iter().map(|i| DataValue::Integer(*i)).collect()
+    }
+
+    fn strings(values: &[&str]) -> Vec<DataValue> {
+        values
+            .iter()
+            .map(|s| DataValue::String((*s).to_string()))
+            .collect()
+    }
+
+    #[test]
+    fn outright_winner_is_the_most_frequent_value() {
+        assert_eq!(mode(&ints(&[7, 3, 7, 3, 7])), DataValue::Integer(7));
+    }
+
+    #[test]
+    fn a_tie_resolves_to_the_value_seen_first() {
+        assert_eq!(mode(&ints(&[0, 0, 1, 1])), DataValue::Integer(0));
+        assert_eq!(mode(&ints(&[1, 1, 0, 0])), DataValue::Integer(1));
+    }
+
+    #[test]
+    fn the_tie_break_is_first_seen_not_smallest() {
+        // The discriminating case: every value ties at one occurrence, and the
+        // first one seen is not the smallest. Picking the smallest would pass
+        // the test above and still diverge from the reference engine here.
+        assert_eq!(mode(&ints(&[5, 3, 9, 1])), DataValue::Integer(5));
+        assert_eq!(
+            mode(&strings(&["delta", "charlie", "bravo", "alpha"])),
+            DataValue::String("delta".to_string())
+        );
+    }
+
+    #[test]
+    fn nulls_are_ignored_and_do_not_shift_the_tie_break() {
+        // NULLs never win, and interleaving them must not reorder the survivors.
+        let values = vec![
+            DataValue::Null,
+            DataValue::Integer(9),
+            DataValue::Null,
+            DataValue::Null,
+            DataValue::Integer(2),
+            DataValue::Null,
+        ];
+        assert_eq!(mode(&values), DataValue::Integer(9));
+    }
+
+    #[test]
+    fn all_null_and_empty_inputs_are_null() {
+        assert_eq!(mode(&[]), DataValue::Null);
+        assert_eq!(mode(&[DataValue::Null, DataValue::Null]), DataValue::Null);
+    }
+
+    #[test]
+    fn repeated_runs_over_a_tie_give_the_same_answer() {
+        // This is the P41 symptom itself: the old implementation took whichever
+        // entry `HashMap` iteration surfaced last, so a perfect tie returned a
+        // different value between runs of the same binary. Enough distinct keys
+        // to make hash ordering actually vary.
+        let values: Vec<DataValue> = (0..64).map(|i| DataValue::Integer(i % 32)).collect();
+        let first = mode(&values);
+        assert_eq!(first, DataValue::Integer(0));
+        for _ in 0..50 {
+            assert_eq!(mode(&values), first);
+        }
+    }
 }

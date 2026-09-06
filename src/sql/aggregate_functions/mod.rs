@@ -823,16 +823,27 @@ impl AggregateState for CollectorState {
                 }
             }
             CollectorFunction::Mode => {
+                // Tally each distinct value, remembering the position it was
+                // first seen at. `values` is in input order, so that position
+                // is the tie-break: highest count wins, and on a tie the value
+                // seen earliest wins.
+                //
+                // Without the tie-break the winner came from `HashMap`
+                // iteration order, so the same binary on the same data returned
+                // different answers run to run (P41). Earliest-seen is the
+                // reference engine's rule.
                 use std::collections::HashMap;
-                let mut counts = HashMap::new();
-                for value in &self.values {
-                    *counts.entry(value.to_bits()).or_insert(0) += 1;
+                let mut counts: HashMap<u64, (usize, usize)> = HashMap::new();
+                for (position, value) in self.values.iter().enumerate() {
+                    let entry = counts.entry(value.to_bits()).or_insert((0, position));
+                    entry.0 += 1;
                 }
-                if let Some((bits, _)) = counts.iter().max_by_key(|&(_, count)| count) {
-                    DataValue::Float(f64::from_bits(*bits))
-                } else {
-                    DataValue::Null
-                }
+                counts
+                    .into_iter()
+                    .max_by(|(_, a), (_, b)| a.0.cmp(&b.0).then_with(|| b.1.cmp(&a.1)))
+                    .map_or(DataValue::Null, |(bits, _)| {
+                        DataValue::Float(f64::from_bits(bits))
+                    })
             }
             CollectorFunction::StdDev | CollectorFunction::Variance => {
                 // Sample standard deviation and variance
@@ -988,5 +999,81 @@ mod tests {
             result,
             DataValue::String("apple, banana, cherry".to_string())
         );
+    }
+}
+
+#[cfg(test)]
+mod mode_tie_break_tests {
+    use super::{AggregateFunctionRegistry, DataValue};
+
+    /// Drives MODE through the registry, which is what the evaluator does — the
+    /// point of these tests is the path that actually runs, not a state type
+    /// that happens to be named after the function. See P41 in SQL_PARITY.md.
+    fn mode(values: &[DataValue]) -> DataValue {
+        let registry = AggregateFunctionRegistry::new();
+        let func = registry.get("MODE").expect("MODE should be registered");
+        let mut state = func.create_state();
+        for v in values {
+            state
+                .accumulate(v)
+                .expect("MODE accumulate should not fail");
+        }
+        state.finalize()
+    }
+
+    fn ints(values: &[i64]) -> Vec<DataValue> {
+        values.iter().map(|i| DataValue::Integer(*i)).collect()
+    }
+
+    #[test]
+    fn outright_winner_is_the_most_frequent_value() {
+        assert_eq!(mode(&ints(&[7, 3, 7, 3, 7])), DataValue::Float(7.0));
+    }
+
+    #[test]
+    fn a_tie_resolves_to_the_value_seen_first() {
+        assert_eq!(mode(&ints(&[0, 0, 1, 1])), DataValue::Float(0.0));
+        assert_eq!(mode(&ints(&[1, 1, 0, 0])), DataValue::Float(1.0));
+    }
+
+    #[test]
+    fn the_tie_break_is_first_seen_not_smallest() {
+        // The discriminating case: every value ties at one occurrence and the
+        // first one seen is not the smallest. "Smallest wins" would pass the
+        // test above and still diverge from the reference engine here.
+        assert_eq!(mode(&ints(&[5, 3, 9, 1])), DataValue::Float(5.0));
+    }
+
+    #[test]
+    fn nulls_are_ignored_and_do_not_shift_the_tie_break() {
+        let values = vec![
+            DataValue::Null,
+            DataValue::Integer(9),
+            DataValue::Null,
+            DataValue::Null,
+            DataValue::Integer(2),
+            DataValue::Null,
+        ];
+        assert_eq!(mode(&values), DataValue::Float(9.0));
+    }
+
+    #[test]
+    fn all_null_and_empty_inputs_are_null() {
+        assert_eq!(mode(&[]), DataValue::Null);
+        assert_eq!(mode(&[DataValue::Null, DataValue::Null]), DataValue::Null);
+    }
+
+    #[test]
+    fn repeated_runs_over_a_tie_give_the_same_answer() {
+        // The P41 symptom itself: the old implementation took whichever entry
+        // `HashMap` iteration surfaced last, so a perfect tie returned a
+        // different value between runs of the same binary. Enough distinct keys
+        // that hash ordering actually varies.
+        let values: Vec<DataValue> = (0..64).map(|i| DataValue::Integer(i % 32)).collect();
+        let first = mode(&values);
+        assert_eq!(first, DataValue::Float(0.0));
+        for _ in 0..50 {
+            assert_eq!(mode(&values), first);
+        }
     }
 }

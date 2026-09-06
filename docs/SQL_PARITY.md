@@ -65,14 +65,16 @@ session apiece to fix properly, so **discovery is paused and the effort moves to
 picking them off**. Widen the corpus again when the open list is short, or
 opportunistically when a fix needs a case that doesn't exist yet.
 
-Corpus coverage today: tiers 01–10, **177 cases** (152 AGREE / 10 DIFFER /
-12 GAP / 1 OURS_ONLY / 2 BOTH_ERR as of 2026-09-05, after the NULL-ordering
-slice closed [P13](#p13) stage 2 and [P17](#p17) together — eleven cases in one
-change, the largest single movement so far). **Tier 10
-(aggregate & NULL edges) is deliberately partial** — it holds the P14 and P18–P20 cases and their baselines,
-but was never built out the way tiers 08 and 09 were. Finish it during a lull;
-the aggregate-function surface (`STDDEV`, `DISTINCT` aggregates, `FILTER`,
-empty-vs-all-NULL distinctions) is largely unexamined.
+Corpus coverage today: tiers 01–10, **181 cases** (156 AGREE / 10 DIFFER /
+12 GAP / 1 OURS_ONLY / 2 BOTH_ERR as of 2026-09-06, after [P41](#p41) added four
+MODE cases). The largest single movement so far remains the 2026-09-05
+NULL-ordering slice, which closed [P13](#p13) stage 2 and [P17](#p17) together —
+eleven cases in one change. **Tier 10 (aggregate & NULL edges) is still
+deliberately partial** — it holds the P14, P18–P20 and P41 cases and their
+baselines, but was never built out the way tiers 08 and 09 were. Finish it during
+a lull; the aggregate-function surface (`STDDEV`, `DISTINCT` aggregates,
+`FILTER`, empty-vs-all-NULL distinctions) is largely unexamined, and P41 showed
+that surface is thinner than it looks.
 
 Suggested fix order, by silent blast radius:
 
@@ -88,11 +90,12 @@ Suggested fix order, by silent blast radius:
 | ~~9a~~ | ~~[P16](#p16) `ORDER BY <ordinal>` ignored~~ | ✅ **Fixed 2026-08-31** — 134 → 139 AGREE. The literal was being promoted into a hidden *constant* column, so the sort ran on a column where every row tied |
 | ~~9c~~ | ~~[P17](#p17) + [P13](#p13) stage 2 — NULL ordering~~ | ✅ **Fixed 2026-09-05** — 141 → **152 AGREE**, eleven cases in one change. Both halves were the same comparator's NULL rule, so they were taken as one slice. The two sorts that disagreed with each other now *share* one function (`compare_for_order_by`), which is the part that stops the divergence recurring; the window site turned out to be sorting NULL as the **maximum** via a derived `PartialOrd`, not merely following a different rule |
 | ~~9d~~ | ~~[P37](#p37) window in `WHERE` returns 0 rows~~ | ✅ **Fixed 2026-09-05** — corpus count unchanged, and that is the finding: the case is `OURS_ONLY` before *and* after, so the harness cannot see this fix or a future regression of it (first entry of that kind — the regression test is a Rust module). The filed root cause was wrong: `ExpressionLifter` *does* lift from `WHERE`. The real defect was one arm in the WHERE evaluator answering FALSE for any bare value used as a predicate — `WHERE true` returned zero rows too. It did **not** close [P15](#p15), which needs the opposite change |
-| **NEXT** | [P41](#p41) `MODE` tie-break is random per run | **Silent, and it moves.** Found while verifying P37. Same input, same binary, different answer — six runs gave `0 1 1 0 0 1`. Worse than a wrong constant because no captured expectation can hold it, which is currently what blocks two example files from being promoted to FORMAL. Likely small: pick a total rule (smallest value wins) after checking whether the reference specifies one |
-| 9b | [P14](#p14), [P20](#p20), [P23](#p23) | Smaller, self-contained, decisions already taken |
+| ~~9e~~ | ~~[P41](#p41) `MODE` tie-break is random per run~~ | ✅ **Fixed 2026-09-06** — 152 → **156 AGREE** (four new cases). Small, as predicted, but not where it was filed: the named `ModeState` was a *shadowed* implementation and fixing it moved nothing. Reference does specify a rule and it is **first-occurrence**, not the "smallest value wins" this row proposed. Unblocked both example files, now FORMAL. Spun off [P42](#p42), [P43](#p43), [R12](ENGINE_REFACTORING.md#r12) |
+| **NEXT** | [P14](#p14), [P20](#p20), [P23](#p23) | Smaller, self-contained, decisions already taken. Was row 9b |
+| 9f | [P42](#p42) `MODE` is numeric-only | Companion to [R12](ENGINE_REFACTORING.md#r12), and cheap if taken with it: the shadowed implementation already handles non-numerics and preserves type, so the fix is largely to stop the live path throwing away what it knows. Also buys the corpus its clearest tie-break case |
 | 10 | [P22](#p22), [P25](#p25), [P26](#p26), [P15](#p15), [P32](#p32), [P38](#p38) | Hard errors — visible, so less urgent than any of the above |
 | 10b | [P39](#p39) `x/0` errors, voiding the whole statement | Hard error like row 10, but the only one whose blast radius is the *query* rather than the cell. Settle the four inconsistent call sites as one decision; it currently has no live probe (see the entry) |
-| 11 | [P35](#p35), [P36](#p36) | Not parity obligations — a DuckDB extension and a naming difference. Decide *whether*, not just when |
+| 11 | [P35](#p35), [P36](#p36), [P43](#p43) | Not parity obligations — a DuckDB extension, a naming difference, and a `RANGE` endpoint convention. Decide *whether*, not just when. P43 is the one with a migration cost attached, so it wants deciding before it accumulates more callers |
 | 12 | [P40](#p40) a generator's args can't reference columns | Hard error and loudly signposted, so last by blast radius — but it splits: the misleading *"may not support qualified column names"* message is a few lines and is the part that wastes the next person's afternoon. Take that alone; the explode feature can wait on the `UNNEST` decision |
 | — | [P27](#p27) `OR` in `JOIN ... ON` | **Reclassified 2026-08-08, re-scoped 2026-09-04 — possibly smaller than it was filed as.** The AST is still the blocker (`JoinCondition` is a `Vec` of AND-ed conditions with nowhere to put an `OR`), but the executor already evaluates expressions per row pair and already has a merged-row `cross_join`, so `INNER JOIN ON <expr>` may lower to cross-join + the R10 WHERE evaluator. Do the timeboxed scoping pass in the entry before sequencing this |
 
@@ -114,6 +117,25 @@ plus the ordering lost. Re-probe a finding from a different angle before scoping
 the fix; the entry describes the symptom that was looked for, not necessarily the
 defect. The same session's sweep for other consumers of the same route turned up
 [P31](#p31), a live zero-rows bug in the `--limit` flag that nobody had reported.
+
+**A fourth lesson, from closing P41 (2026-09-06): the entry named a fix site, and
+the fix site was dead code.** `ModeState` in `src/sql/aggregates/mod.rs` is
+exactly what you find by grepping for MODE, and it is shadowed — a second, newer
+aggregate registry is consulted first, so the live implementation is a different
+tally in a different file ([R12](ENGINE_REFACTORING.md#r12)). The fix was applied,
+the tests passed, and the repro still flipped between runs. Generalised: **an
+entry's "Where" line is a lead, not a location. Confirm a fix site by changing it
+and watching the symptom move.** Where two implementations of the same operator
+exist, expect the *older-looking* one to be the dead one, since migrations here
+add to the new registry without removing from the old.
+
+**A fifth, cheaper one from the same session: check the fixture, not just the
+query.** P41's repro leaned on `RANGE(1,50)` being a 25/25 even/odd split. It is
+— for us. DuckDB's `range` stop bound is exclusive, so the same query is 25/24
+there and the tie the repro depends on does not exist. That is now [P43](#p43),
+and it was found only because a corpus case forces both engines to run the same
+text. Any repro written against one engine carries assumptions about that
+engine's builtins.
 
 **Two lessons from closing P29/P30 (2026-08-08), both worth generalising:**
 
@@ -1754,14 +1776,16 @@ out of date.
   plus one in tier 06 (`06_ctes_setops.toml`) for the shape that was actually hit. Expect `GAP`.
 
 ### P41 — `MODE` picks a tie-break winner at random, run to run
-
-- **Status:** 🔴 OPEN — **silent wrong answer, and nondeterministic**
-- **Corpus:** none yet — see *Pinning it* below.
-- **Observed:** `MODE` tallies into a `std::collections::HashMap` and takes the
-  highest count with **no tie-break rule**
-  (`ModeState`, `src/sql/aggregates/mod.rs`). When two or more values tie, the
-  winner is whichever the hash iteration order happens to surface. Six runs of
-  the *same binary*, same data:
+- **Status:** 🟢 FIXED 2026-09-06 — branch `fix/p41-mode-tiebreak`. 177 → **181
+  cases, 152 → 156 AGREE** (all four new, no bucket changes elsewhere)
+- **Corpus:** `10_aggregate_nulls.toml :: mode_two_way_tie`,
+  `mode_tie_first_seen_not_smallest`, `mode_all_null`, `mode_grouped` — all AGREE.
+- **Regression tests:** `mode_tie_break_tests` in
+  `src/sql/aggregate_functions/mod.rs` (the live path, driven through the
+  registry) and in `src/sql/aggregates/mod.rs` (the shadowed one) — six cases each.
+- **Observed:** `MODE` tallied into a `HashMap` and took the highest count with
+  **no tie-break rule**. When two or more values tied, the winner was whichever
+  the hash iteration surfaced last. Six runs of the *same binary*, same data:
 
   ```
   $ for i in 1 2 3 4 5 6; do sql-cli -q "WITH r AS (SELECT value % 2 AS pn
@@ -1769,31 +1793,105 @@ out of date.
   0  1  1  0  0  1
   ```
 
-  `RANGE(1,50)` is 25 even and 25 odd — a perfect tie — so both answers are
-  defensible and neither is stable.
-
 - **Found:** 2026-09-05, while verifying the [P37](#p37) fix. It surfaced as
   three `examples/*.sql` files differing between the pre-fix and post-fix
   binaries; the queries involved have no `WHERE` clause at all, which is what
   prompted checking the same binary twice instead of blaming the change.
 
-- **Why it matters more than a tie-break usually would.** Two example files sit
-  directly on it: `stats_examples.sql` on the 25/25 parity tie above, and
-  `statistical_analysis.sql` on all-count-1 ties across three columns. Both are
-  currently smoke tests. **Do not `--capture` an expectation for either while
-  this is open** — the captured value would be whichever way the coin landed,
-  and would then fail intermittently forever. That is the practical cost here:
-  it silently blocks two files from being promoted to FORMAL.
+- **The reference does specify a rule, and it is not the obvious one.** This
+  entry originally proposed *smallest value wins* — total, cheap, and wrong.
+  DuckDB breaks ties by **first occurrence in the input**
+  (`extension/core_functions/aggregate/holistic/mode.cpp`, which tracks a
+  `first_row` per distinct value and compares
+  `count > best.count || (count == best.count && first_row < best.first_row)`).
+  Probed directly to confirm: `(0,0,1,1)` → `0` but `(1,1,0,0)` → `1`;
+  `('b','b','a','a')` → `'b'`; `(5,3,9,1)` → `5`, not `1`. Stable across runs
+  including 1M-row parallel aggregation. NULLs ignored; all-NULL or empty → NULL,
+  which we already matched.
 
-- **Pinning it:** a corpus case needs a deterministic reference answer to
-  compare against, so check DuckDB's rule first — it may itself be
-  unspecified on ties, in which case the corpus is the wrong instrument and this
-  wants a Rust test asserting *stability* (same input, same answer) plus
-  whatever rule we choose. "Smallest value wins" is the obvious candidate: cheap,
-  total, and it makes both example files capturable.
+  So the rule is **earliest-seen wins**, per
+  [*follow the reference engine*](#where-the-standard-leaves-a-choice-open-follow-the-reference-engine).
+  Worth stating the trade-off plainly: earliest-seen is deterministic *given a
+  row order*, not a total order over values. That is weaker than "smallest wins"
+  would have been, and it is what the reference does.
 
-- **Related:** the same class as [P36](#p36) — behaviour that is unspecified
-  rather than wrong — but unlike P36 this one moves under you between runs.
+- **The filed location was the wrong one — a shadowed implementation.** This
+  entry named `ModeState` in `src/sql/aggregates/mod.rs`. Fixing it there changed
+  nothing: the repro was still `1 1 0 0 0 1 0 0` afterwards. There are **two**
+  aggregate registries, and `ArithmeticEvaluator` checks the newer one *first*
+  (`arithmetic_evaluator.rs:637`, `:769`), so the live `MODE` is
+  `CollectorState`/`CollectorFunction::Mode` in
+  `src/sql/aggregate_functions/mod.rs` — a completely separate tally, over
+  `f64::to_bits` keys, with the same missing tie-break. Both are fixed here; the
+  duplication itself is filed as [R12](ENGINE_REFACTORING.md#r12).
+
+  This is the [P28](#p28) lesson recurring in a new form. There the write-up
+  inherited its probe's blind spot; here it inherited a *grep's* — the struct
+  named `ModeState` is not the code that runs `MODE`. **Confirm a fix site by
+  changing it and watching the symptom move**, not by name.
+
+- **Payoff, as predicted by the entry:** both blocked example files are now
+  deterministic and have been promoted to FORMAL —
+  `examples/expectations/stats_examples.json` and
+  `statistical_analysis.json`, each verified stable over five consecutive runs.
+
+- **Spun off:** [P42](#p42) (`MODE` is numeric-only, which is why the corpus
+  cases here are all numeric — the string form is where the divergence is easiest
+  to see and is exactly what we cannot yet express) and [P43](#p43) (`RANGE`
+  endpoint semantics, found because the repro query above is a 25/25 tie for us
+  and would not be for DuckDB).
+
+---
+
+### P42 — `MODE` rejects non-numeric values, and returns a float for integers
+- **Status:** 🔴 OPEN — hard error, loudly signposted
+- **Corpus:** none yet. Deliberately: adding one means pinning a `GAP`, and the
+  decision below should be taken first.
+- **Observed:** `SELECT MODE(region) FROM international_sales` →
+  *"MODE currently only supports numeric values"*
+  (`aggregate_functions/mod.rs`, `CollectorState::accumulate`). DuckDB returns
+  `'Europe'`. The live implementation collects into a `Vec<f64>`, so any
+  non-numeric input is an error by construction, and the result is always
+  `DataValue::Float` — `MODE` over an integer column returns `50.0`, not `50`.
+- **Worse in the grouped form.** `SELECT region, MODE(product) FROM
+  international_sales GROUP BY region` does not error — it returns one row per
+  region with an **empty** `MODE` column. So the same defect is loud in one shape
+  and silent in the other, which is the [R3](ENGINE_REFACTORING.md#r3) pattern.
+- **Decision:** **Fix**, and note that the shadowed `ModeState` in
+  `src/sql/aggregates/mod.rs` already does the right thing — it keys on a string
+  rendering and returns the *original* `DataValue`, so it handles strings, dates
+  and booleans and preserves type. The fix is most likely to make the live path
+  do what the dead one already does, which makes this a natural companion to
+  [R12](ENGINE_REFACTORING.md#r12) rather than an independent piece of work.
+- **Why it matters beyond the error message:** MODE of a *category* is the common
+  use ("most frequent product"), far more so than MODE of a measure. And it
+  costs the corpus its best test: the discriminating tie-break case is much
+  clearer on strings (`'delta'` vs `'alpha'`) than on the integer column
+  `mode_tie_first_seen_not_smallest` had to fall back to.
+
+---
+
+### P43 — `RANGE(a, b)` is inclusive of `b`; DuckDB's is half-open
+- **Status:** 🔴 OPEN — silent, and it changes row counts
+- **Corpus:** none yet — `RANGE` appears nowhere in the corpus, which is how
+  this went unnoticed.
+- **Observed:** `SELECT COUNT(*), MIN(value), MAX(value) FROM RANGE(1,50)` gives
+  us `50, 1, 50`. DuckDB's `range(1,50)` yields **49** rows, `1`–`49`: the stop
+  bound is exclusive, matching Python's `range` and DuckDB's own documentation.
+  `generate_series` is the inclusive spelling there.
+- **Found:** 2026-09-06, while building the [P41](#p41) corpus cases. The P41
+  repro relies on `RANGE(1,50)` being a perfect 25/25 even/odd split — true for
+  us, false for the reference (25 odd, 24 even), so the query could not be
+  lifted into the corpus as written.
+- **Decision:** **Not yet taken.** Unlike most entries here this is not obviously
+  a fix: changing it is a breaking change for every existing query and example
+  that uses `RANGE`, and the off-by-one lands silently in each. Sequence it as a
+  decision — match the reference and sweep the examples, or diverge deliberately
+  and record it under *Deferred* — not as a quiet correction. Adding
+  `GENERATE_SERIES` as the inclusive spelling is the move that makes matching
+  the reference survivable.
+- **Related:** the same class as [P36](#p36) and [P39](#p39) — a defensible local
+  choice that only becomes a problem because it is undocumented and unpinned.
 
 ---
 
