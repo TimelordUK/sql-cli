@@ -53,19 +53,27 @@ dividing line is whether a correct engine would still leave the user annoyed.
 
 ## Where this effort is up to
 
-**Phase: groundwork done.** T1 fixed the text half of completion — which span
-gets replaced. T2 fixed the data half — what the completer knows about the
-columns it is completing. Between them the completer now has both primitives
-the remaining entries need: a byte span to splice over, and a typed schema.
+**Phase: the three primitives are in place.** T1 fixed which span gets
+replaced. T2 fixed what the completer knows about its columns. T9 fixed how it
+decides where the cursor is — from the token stream the lexer already produces,
+rather than from `rfind` and `split_whitespace` over uppercased text. Two
+near-identical string scanners went with it — 539 lines out of
+`recursive_parser.rs` — along with the full parse of the query that used to run
+on every keystroke. The third heuristic, `determine_context`, is now only
+reachable via `Unknown` and is T12's to remove.
 
-**Recommended order: T3 → T4 → T5**, with **T7** droppable anywhere — it is
-independent of the others and mostly deletion. **T8** is done: it was T1's bug
-in the other producer of column text, and it left behind
-`src/sql/identifier.rs` as the one place the quoting rule lives. T3 is mechanical but wants doing
-*before* T4, not as a retrofit. T4 is the first entry that consumes what T2
-captured (`ColumnInfo::cardinality`, `TableInfo::row_count`); those numbers are
-already flowing and pinned by tests, so the gate can be designed against real
-values rather than guessed at.
+What remains is mostly *content*: the completer now asks the right question in
+the right place and has nothing to say in some of them. `WHERE region = '<tab>'`
+is a recognised value position (`CursorContext::InStringLiteral`) that offers
+nothing, because nobody has captured the values yet.
+
+**Recommended order: T3 → T11 → T4 → T5**, with **T7** (deletion), **T10**
+(function lists from the registry) and **T12** (retire the `ParseState`
+fallback) droppable anywhere. T3 is mechanical but wants doing before T4 rather
+than as a retrofit. T11 is T4's data half and touches the loader rather than the
+parser, so the two can run in either order. **T8** is done: it was T1's bug in
+the other producer of column text, and it left `src/sql/identifier.rs` as the
+one place the quoting rule lives.
 
 ---
 
@@ -164,7 +172,7 @@ values rather than guessed at.
   the current behaviour so a change is visible.
 
 ### T3 — Suggestions are untyped strings
-- **Status:** 🔴 OPEN — **do this next**; prerequisite for T4
+- **Status:** 🔴 OPEN — prerequisite for T4; **T9 goes first** (see the order above)
 - **Where:** `ParseResult::suggestions: Vec<String>` and every site that builds
   one
 - **Observed:** A flat `Vec<String>` cannot express a display label distinct
@@ -178,11 +186,18 @@ values rather than guessed at.
   than retrofitting.
 
 ### T4 — No value completion for low-cardinality columns
-- **Status:** 🔴 OPEN — depends on T3; T2 has landed
+- **Status:** 🔴 OPEN — depends on **T9** and T3; T2 has landed
 - **Where:** `detect_cursor_context` in `src/sql/recursive_parser.rs`
 - **Observed:** `WHERE region = '<tab>'` offers nothing. There is
   `AfterComparisonOp(col, op)` for a cursor *after* an operator, but no context
   for a cursor *inside* a string literal.
+- **Correction (T9, 2026-09-08):** measured, it is worse than "offers nothing" —
+  typing the opening quote collapses the context to `WhereClause` and the
+  completer offers **all 100 column names inside the string literal**; type a
+  letter and they filter to nothing. The missing context is only half of it:
+  the cursor-position analysis is string scanning that cannot see a literal at
+  all. **T9 produces `CursorContext::InStringLiteral`; this entry fills it with
+  values.** Do not start here.
 - **Why it is worth doing:** on `countries.csv`, `region` has 5 distinct values
   and `independent` has 2. Typing those from memory — with exact spelling and
   case — is the single most common friction in filtering unfamiliar data.
@@ -194,7 +209,7 @@ values rather than guessed at.
     values, all unique) gets offered and the feature feels broken. Precedent
     exists: `advanced_csv_loader` already computes an `is_categorical` flag from
     a `cardinality_threshold` config (0.5).
-  - **Where the values come from — the real decision.** Snapshot distinct values
+  - **Where the values come from — now its own entry, T11.** Snapshot distinct values
     into the schema at load time for gated columns only, rather than giving the
     parser a live `DataView`. `infer_column_types()` already builds the distinct
     `HashSet` and throws it away, so capturing it is nearly free; memory is
@@ -206,7 +221,7 @@ values rather than guessed at.
   gate; the two should probably agree on what "low cardinality" means.
 
 ### T5 — `IN (...)` lists do not iterate
-- **Status:** 🔴 OPEN — depends on T4
+- **Status:** 🔴 OPEN — depends on T4, and through it on T9
 - **Where:** as T4
 - **Observed:** N/A — this is the feature T4 exists to enable, logged separately
   because it is a distinct slice with its own failure mode.
@@ -339,3 +354,155 @@ Older, non-living notes that still contain usable thinking:
   pre-existing formatter bug about *what* it quotes, not *when* — unchanged
   here, and it wants fixing where the field is retired rather than in the
   quoting rule.
+
+### T9 — Cursor context is decided by string scanning, not by the token stream
+- **Status:** 🟢 DONE 2026-09-08
+- **Where:** `src/sql/cursor_context.rs` (new),
+  `src/sql/recursive_parser.rs`, `src/sql/cursor_aware_parser.rs`,
+  `src/sql/parser/lexer.rs`, `src/sql/hybrid_parser.rs`
+- **Observed:** `analyze_partial` called `tokenize_all_with_positions()` and
+  then decided almost everything from raw text anyway — `trimmed.rfind('.')`,
+  `before_dot.split_whitespace().last()`, `before_dot.ends_with('"')`,
+  `extract_partial_at_end`'s `split_whitespace().last()`. The tokens it built
+  were consulted only for AND/OR, ORDER BY, WHERE, FROM and SELECT. A second,
+  near-identical scanner (`analyze_statement`) ran whenever the partial query
+  happened to parse, and a third heuristic (`determine_context`) ran when both
+  returned `Unknown`.
+
+  Measured against `data/countries.csv` through the ordinary loader, before and
+  after:
+
+  | Typed | Was | Now |
+  |---|---|---|
+  | `WHERE region = ` | `AfterComparison`, `''` | unchanged ✓ |
+  | `WHERE region = '` | `WhereClause`, **76 column names** | `InStringLiteral(region)`, nothing |
+  | `WHERE region = 'Am` | `WhereClause`, nothing | `InStringLiteral(region)`, partial `Am` |
+  | `WHERE region IN ('Asia', '` | `WhereClause`, 76 column names | `InStringLiteral(region, list)` |
+  | `WHERE "name.common" = ` | `WhereClause`, 76 column names | `AfterComparison(name.common =)`, `''` |
+  | `WHERE region=` | `WhereClause` | `AfterComparison(region =)` |
+  | `GROUP BY ` | `AfterTable`, `WHERE`/`ORDER BY` | `GroupByClause`, 76 columns |
+  | `LIMIT ` | `FromClause`, `countries` | `LimitClause`, nothing |
+  | `FROM countries ` | `countries` again | `WHERE`/`GROUP BY`/`ORDER BY`/`LIMIT` |
+
+- **Fixed by:** `src/sql/cursor_context.rs`, the one owner of *where is the
+  cursor*. The text is truncated at the cursor and tokenized once; context is
+  then a match on the **tail** of the token stream rather than a series of
+  backward scans. The last token says what kind of position this is; the token
+  before it disambiguates a bare word. Keywords are `Token` variants, so a
+  keyword the lexer learns the completer learns with it.
+
+  `analyze_statement`, `analyze_partial` and their private helpers are gone —
+  539 lines out of `recursive_parser.rs` against 13 in. The AST those 539 lines
+  went to the trouble of building was consulted only for
+  `stmt.where_clause.is_some()`-shaped questions the token stream answers
+  directly, so `detect_cursor_context` no longer parses the query at all: one
+  less full parse per keystroke.
+
+  Three defects fell out as consequences rather than as separate fixes:
+  - **Quoted and dotted columns reach their operator.** Columns come from
+    `Token::Identifier`/`QuotedIdentifier` joined across `Token::Dot`, not from
+    `chars().all(|c| c.is_alphanumeric() || c == '_')`.
+  - **Operators no longer need surrounding spaces.** `Token::Equal` is
+    `Token::Equal` whether or not it was typed as `" = "`.
+  - **Keywords inside a literal stay inside it.** `region = 'GROUP BY ` is a
+    value position, because the check for an unterminated `Token::StringLiteral`
+    happens before anything else looks at the stream.
+- **The char/byte trap, settled:** `tokenize_all_with_positions` returns indices
+  into the lexer's `Vec<char>`, while `cursor_pos` and T1's `replace_start` are
+  byte offsets — they agree only on ASCII. Rather than convert at each use,
+  the lexer gained `tokenize_all_with_byte_positions`, and the analyzer speaks
+  bytes throughout. Pinned by a test that puts `ö` in a value and one that
+  points the cursor at the second byte of it.
+- **What T4 now has to do:** `CursorContext::InStringLiteral { column, in_list,
+  value_start }` is produced, threaded through `ParseResult::replace_start`, and
+  exempted from identifier filtering. Resolving the column walks back over
+  values already in the list and over `NOT`, so `region NOT IN ('a', '<here>')`
+  reports `region` exactly as `region = '<here>'` does. The completer deliberately returns **no**
+  suggestions for it. T4 is now "put values in the empty vector" — it does not
+  need to touch the parser, the span logic, or the filter.
+- **Left standing, deliberately:** `determine_context` / `ParseState` in
+  `cursor_aware_parser.rs` remain as the `Unknown` fallback. `Unknown` is now
+  much harder to reach, but `ParseState` is also used by `src/completer.rs` and
+  `src/main.rs` validation, so removing the type is its own slice — see T12.
+- **Tests:** 19 unit tests in `src/sql/cursor_context.rs` for the analyzer, and
+  8 in `tests/completion_schema.rs` driving the real `get_completions` entry
+  point against `data/countries.csv` so the rows of the table above are pinned
+  as suggestions, not just as context enums. Full suite green (799 lib + 482
+  integration).
+- **One test changed rather than added:** `test_order_by_quoted_partial_completion`
+  asserted `partial_word == Some("\"Customer")`, with the opening quote, which
+  was an artefact of the deleted scanner. The partial now comes from the lexer,
+  which has consumed the quote. Nothing filters on `partial_word` — that is
+  `find_completion_token`'s job and it still sees the quote — so the test's two
+  substantive assertions are untouched.
+
+### T10 — Function suggestions are a hand-kept list, not the registry
+- **Status:** 🔴 OPEN — small and self-contained
+- **Where:** `src/sql/cursor_aware_parser.rs:105,149,250`
+- **Observed:** the same 20-entry block (`"ROUND("`, `"ABS("`, `"FLOOR("`, …)
+  is pasted three times, once per context. The function registry
+  (`src/sql/functions/mod.rs`) holds ~370 functions and already exposes
+  `all_functions() -> Vec<FunctionSignature>` and
+  `get_by_category(FunctionCategory)`.
+- **Impact:** CLAUDE.md's first principle — *all functions go through the
+  registry* — holds everywhere except the place a user actually discovers
+  functions. A newly registered function stays invisible to completion until
+  someone remembers to paste it into three lists. The lists are also
+  context-blind: aggregates get offered in WHERE.
+- **Design:** build from `all_functions()`, filtered by `FunctionCategory` per
+  context. `FunctionSignature.description` is the natural `detail` for T3's
+  `Suggestion`, so this is cheaper after T3 than before it — but it does not
+  block T9. Check the module direction first: `sql::functions` and
+  `sql::cursor_aware_parser` are siblings, so there should be no cycle.
+
+### T11 — Distinct values are computed at load and thrown away
+- **Status:** 🔴 OPEN — the data half of T4
+- **Where:** `DataTable::infer_column_types` (`src/data/datatable.rs:560`),
+  `DataColumn` (`:69`), `ColumnInfo::from_data_column`
+- **Observed:** `infer_column_types` builds a `HashSet<String>` of every
+  non-null value per column and keeps only `.len()`, into
+  `DataColumn::unique_values: Option<usize>`. The values themselves are dropped
+  on every load path.
+- **Design:** `DataColumn::distinct_values: Option<Vec<String>>`, populated only
+  for columns that pass the cardinality gate, sorted so Tab cycling is stable.
+  `ColumnInfo` carries them through the existing snapshot, so the completer
+  reads *schema* and never touches a `DataView` — T2's purity boundary is
+  preserved and the parser stays testable without a terminal.
+- **Why on the table rather than the view:** it is a property of the data, and
+  T2 already snapshots columns from the source table so that hiding a column in
+  the TUI does not make it uncompletable. The same argument applies to values.
+- **The gate:** absolute cap *and* ratio, or `name.common` (250 distinct across
+  250 rows) gets captured and the feature reads as broken. Prior art to
+  reconcile rather than reinvent: `advanced_csv_loader` has
+  `cardinality_threshold: 0.5` plus `is_likely_categorical`
+  (`cardinality < 100 && avg_length < 50`), and the nvim plugin has its own
+  notion in [`NVIM_SMART_COLUMN_COMPLETION.md`](NVIM_SMART_COLUMN_COMPLETION.md).
+  The three should agree on what "low cardinality" means.
+- **Cost:** bounded by the gate, and the `HashSet` is already being built — so
+  this is retention, not computation. At the working size that motivated it
+  (~10k rows of CI output) it is free.
+- **Note:** `unique_values` counts `value.to_string()` of non-null values, so
+  NULL is not a candidate value and the existing count is a lower bound on what
+  a NULL-aware gate would see.
+
+### T12 — Retire `ParseState` and the heuristic fallback
+- **Status:** 🔴 OPEN — small, and only possible now that T9 has landed
+- **Where:** `determine_context` / `get_suggestions_for_context` in
+  `src/sql/cursor_aware_parser.rs`; `ParseState` in `src/sql/parser/legacy.rs`;
+  `src/completer.rs`; `src/main.rs`
+- **Observed:** `determine_context` is the pre-T9 heuristic — uppercase the
+  query, `split_whitespace()`, match six keywords, then guess with
+  `query_upper.contains("SELECT")`. It survives as the fallback for
+  `CursorContext::Unknown`, which T9 made much harder to reach but did not
+  make unreachable.
+- **Why it was not done with T9:** the `ParseState` *type* has two other users
+  — `src/completer.rs` (the reedline REPL's completer) and `main.rs`'s query
+  validation — so deleting it is a different change from stopping the TUI
+  completer depending on it. Bundling them would have made T9's diff two
+  unrelated things at once.
+- **Design:** establish what still reaches `Unknown` (a test that asserts a
+  corpus of realistic partial queries never does), then delete
+  `determine_context` and `get_suggestions_for_context` and let `Unknown`
+  return no suggestions. Whether `ParseState` itself goes depends on what
+  `src/completer.rs` should become — which overlaps with the
+  `CompletionManager` question in *Notes on the current design*.

@@ -991,6 +991,32 @@ impl Lexer {
         tokens
     }
 
+    /// Same as [`Lexer::tokenize_all_with_positions`], but the spans are
+    /// **byte** offsets into the original input rather than indices into the
+    /// internal `Vec<char>`.
+    ///
+    /// The two agree only while the input is ASCII. Completion compares these
+    /// spans against a byte `cursor_pos` and splices replacement text at them,
+    /// so a char index there silently corrupts any query containing a
+    /// non-ASCII character — a column name, or a value being filtered on. T9
+    /// makes the completer token-driven, so it converts once, here, rather
+    /// than at each use.
+    pub fn tokenize_all_with_byte_positions(&mut self) -> Vec<(usize, usize, Token)> {
+        let mut byte_at: Vec<usize> = Vec::with_capacity(self.input.len() + 1);
+        let mut acc = 0usize;
+        for ch in &self.input {
+            byte_at.push(acc);
+            acc += ch.len_utf8();
+        }
+        byte_at.push(acc);
+        let last = byte_at.len() - 1;
+
+        self.tokenize_all_with_positions()
+            .into_iter()
+            .map(|(start, end, token)| (byte_at[start.min(last)], byte_at[end.min(last)], token))
+            .collect()
+    }
+
     /// Tokenize all tokens including comments
     /// This is useful for formatting tools that need to preserve comments
     pub fn tokenize_all_with_comments(&mut self) -> Vec<Token> {
