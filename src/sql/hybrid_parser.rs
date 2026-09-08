@@ -66,8 +66,19 @@ impl HybridParser {
         let recursive_context = match cursor_context {
             CursorContext::SelectClause => "SelectClause",
             CursorContext::FromClause => "FromClause",
+            CursorContext::AfterTable => "AfterTable",
             CursorContext::WhereClause => "WhereClause",
+            CursorContext::GroupByClause => "GroupByClause",
+            CursorContext::HavingClause => "HavingClause",
             CursorContext::OrderByClause => "OrderByClause",
+            CursorContext::LimitClause => "LimitClause",
+            CursorContext::InStringLiteral { in_list, .. } => {
+                if in_list {
+                    "InStringLiteral(list)"
+                } else {
+                    "InStringLiteral"
+                }
+            }
             CursorContext::AfterColumn(_) => "AfterColumn",
             CursorContext::AfterLogicalOp(LogicalOp::And) => "AfterAND",
             CursorContext::AfterLogicalOp(LogicalOp::Or) => "AfterOR",

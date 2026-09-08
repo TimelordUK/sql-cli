@@ -129,6 +129,7 @@ pub use ui::tui_app;
 // Re-export SQL modules for backward compatibility
 pub use sql::cache;
 pub use sql::cursor_aware_parser;
+pub use sql::cursor_context;
 pub use sql::hybrid_parser;
 pub use sql::parser;
 pub use sql::recursive_parser;

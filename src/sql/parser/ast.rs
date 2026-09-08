@@ -266,7 +266,7 @@ pub struct Condition {
     pub connector: Option<LogicalOp>, // AND/OR connecting to next condition
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum LogicalOp {
     And,
     Or,

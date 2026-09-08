@@ -132,3 +132,181 @@ fn snapshot_carries_cardinality_for_the_value_completion_gate() {
         "every country name is distinct, so the gate must exclude it"
     );
 }
+
+// ---------------------------------------------------------------------------
+// T9: cursor context from the token stream.
+//
+// Each case below is a row of the table in `docs/TUI_FEATURES.md`, measured
+// against this file before the change. They run through the same
+// `get_completions` entry point the TUI calls, so they pin the suggestions the
+// user actually sees, not just the context enum.
+// ---------------------------------------------------------------------------
+
+/// The headline case. Typing the opening quote used to collapse the context to
+/// `WhereClause`, which offered all 76 column names *inside the string
+/// literal*; typing a letter then filtered them to nothing.
+///
+/// Offering nothing is the correct answer until T4 supplies values — the point
+/// of this test is that a column name is never one of them.
+#[test]
+fn a_cursor_inside_a_string_literal_is_not_a_column_position() {
+    let table = countries();
+    let parser = parser_for(&table);
+
+    for query in [
+        "SELECT * FROM countries WHERE region = '",
+        "SELECT * FROM countries WHERE region = 'Am",
+        "SELECT * FROM countries WHERE region IN ('Asia', '",
+        // The literal's contents are text, not syntax.
+        "SELECT * FROM countries WHERE region = 'GROUP BY ",
+    ] {
+        let result = parser.get_completions(query, query.len());
+        assert!(
+            result.context.starts_with("InStringLiteral"),
+            "{query:?} should be a value position, got {}",
+            result.context
+        );
+        assert!(
+            result.suggestions.is_empty(),
+            "{query:?} should offer nothing inside the quotes, got {:?}",
+            result.suggestions
+        );
+    }
+}
+
+/// `IN (...)` is distinguished from `=` at the context level, which is what
+/// lets T5 iterate a list without T4 having to know about lists.
+#[test]
+fn an_in_list_is_distinguished_from_a_plain_comparison() {
+    let table = countries();
+    let parser = parser_for(&table);
+
+    let plain = "SELECT * FROM countries WHERE region = '";
+    assert!(parser
+        .get_completions(plain, plain.len())
+        .context
+        .contains("list=false"));
+
+    let list = "SELECT * FROM countries WHERE region IN ('Asia', '";
+    assert!(parser
+        .get_completions(list, list.len())
+        .context
+        .contains("list=true"));
+}
+
+/// The span an accepted value replaces is the text *between* the quotes.
+/// `find_completion_token` returns nothing useful there — a value is not an
+/// identifier — so the analyzer reports it, and T4 can splice without
+/// re-deriving anything.
+#[test]
+fn a_value_replaces_the_span_just_past_the_opening_quote() {
+    let table = countries();
+    let parser = parser_for(&table);
+
+    let query = "SELECT * FROM countries WHERE region = 'Am";
+    let result = parser.get_completions(query, query.len());
+    assert_eq!(&query[result.replace_start..], "Am");
+}
+
+/// Was `WhereClause`: the old check required the column to satisfy
+/// `chars().all(|c| c.is_alphanumeric() || c == '_')`, which excludes every
+/// column that has to be quoted — i.e. most of this file.
+#[test]
+fn a_quoted_column_reaches_its_comparison_operator() {
+    let table = countries();
+    let parser = parser_for(&table);
+
+    let query = r#"SELECT * FROM countries WHERE "name.common" = "#;
+    let result = parser.get_completions(query, query.len());
+    assert!(
+        result.context.starts_with("AfterComparison(name.common"),
+        "expected a value position for a quoted column, got {}",
+        result.context
+    );
+    // `name.common` is a string column, so the offer is an empty literal.
+    assert_eq!(result.suggestions, vec!["''".to_string()]);
+}
+
+/// The old operator list was `[" > ", " < ", " = ", …]` — the spaces were part
+/// of the pattern, so an operator typed without them was invisible.
+#[test]
+fn an_operator_without_surrounding_spaces_is_still_an_operator() {
+    let table = countries();
+    let parser = parser_for(&table);
+
+    let query = "SELECT * FROM countries WHERE region=";
+    let result = parser.get_completions(query, query.len());
+    assert!(
+        result.context.starts_with("AfterComparison(region"),
+        "got {}",
+        result.context
+    );
+}
+
+/// The completer knew six keywords and guessed at everything else, so clauses
+/// the lexer has always understood got confidently wrong answers.
+#[test]
+fn clauses_the_old_scanner_did_not_know_are_no_longer_guessed() {
+    let table = countries();
+    let parser = parser_for(&table);
+
+    // Was `AfterTable`, which suggested `WHERE` and `ORDER BY` *after* GROUP BY.
+    let group_by = "SELECT region FROM countries GROUP BY ";
+    let result = parser.get_completions(group_by, group_by.len());
+    assert!(result.context.starts_with("GroupByClause"));
+    assert!(
+        result.suggestions.iter().any(|s| s == "region"),
+        "GROUP BY should offer columns, got {:?}",
+        result.suggestions
+    );
+
+    // Was `FromClause`, which suggested the table name where a row count goes.
+    let limit = "SELECT * FROM countries LIMIT ";
+    let result = parser.get_completions(limit, limit.len());
+    assert!(result.context.starts_with("LimitClause"));
+    assert!(
+        result.suggestions.is_empty(),
+        "LIMIT takes a number, got {:?}",
+        result.suggestions
+    );
+}
+
+/// A named table means the next thing is a clause, not another table.
+#[test]
+fn a_completed_table_name_moves_on_to_clause_keywords() {
+    let table = countries();
+    let parser = parser_for(&table);
+
+    let query = "SELECT * FROM countries ";
+    let result = parser.get_completions(query, query.len());
+    assert!(result.suggestions.iter().any(|s| s == "WHERE"));
+    assert!(
+        !result.suggestions.iter().any(|s| s == "countries"),
+        "the table is already named, got {:?}",
+        result.suggestions
+    );
+}
+
+/// Column completion in the ordinary positions must be untouched by all of the
+/// above — this is the behaviour T1 and T2 established.
+#[test]
+fn ordinary_column_completion_still_works() {
+    let table = countries();
+    let parser = parser_for(&table);
+
+    for (query, expected) in [
+        ("SELECT * FROM countries WHERE reg", "region"),
+        (
+            "SELECT * FROM countries WHERE region = 'Asia' AND reg",
+            "region",
+        ),
+        ("SELECT nam", "\"name.common\""),
+    ] {
+        let result = parser.get_completions(query, query.len());
+        assert!(
+            result.suggestions.iter().any(|s| s == expected),
+            "{query:?} should still suggest {expected}, got {:?}",
+            result.suggestions
+        );
+    }
+}

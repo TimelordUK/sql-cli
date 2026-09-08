@@ -136,6 +136,50 @@ impl CursorAwareParser {
                 let tables = self.schema.get_table_names();
                 (tables, "FromClause".to_string())
             }
+            CursorContext::AfterTable => {
+                // The table name is complete, so what follows is a clause.
+                // Previously this position suggested the table name again.
+                (
+                    vec![
+                        "WHERE".to_string(),
+                        "GROUP BY".to_string(),
+                        "ORDER BY".to_string(),
+                        "LIMIT".to_string(),
+                    ],
+                    "AfterTable".to_string(),
+                )
+            }
+            CursorContext::GroupByClause => {
+                let cols = self.column_suggestions(&default_table);
+                (cols, "GroupByClause".to_string())
+            }
+            CursorContext::HavingClause => {
+                let mut cols = self.column_suggestions(&default_table);
+                // TODO(T10): from the function registry, filtered to aggregates.
+                cols.extend(
+                    ["COUNT(", "SUM(", "AVG(", "MIN(", "MAX("]
+                        .into_iter()
+                        .map(String::from),
+                );
+                (cols, "HavingClause".to_string())
+            }
+            CursorContext::LimitClause => {
+                // A row count. Nothing in the schema helps, and the old
+                // fallback offered a table name here.
+                (Vec::new(), "LimitClause".to_string())
+            }
+            CursorContext::InStringLiteral {
+                column, in_list, ..
+            } => {
+                // T4 fills this with the column's distinct values. Offering
+                // nothing is the correct answer until it does — before T9 this
+                // position offered every column name, inside the quotes.
+                let described = column.as_deref().unwrap_or("?");
+                (
+                    Vec::new(),
+                    format!("InStringLiteral({described}, list={in_list})"),
+                )
+            }
             CursorContext::WhereClause | CursorContext::AfterLogicalOp(_) => {
                 // We're in WHERE clause or after AND/OR - suggest columns
                 let mut suggestions = self
@@ -313,7 +357,10 @@ impl CursorAwareParser {
             cursor_context,
             CursorContext::AfterColumn(_) | CursorContext::InMethodCall(_, _)
         );
-        let is_value_context = matches!(cursor_context, CursorContext::AfterComparisonOp(_, _));
+        let is_value_context = matches!(
+            cursor_context,
+            CursorContext::AfterComparisonOp(_, _) | CursorContext::InStringLiteral { .. }
+        );
 
         // Method suggestions arrive pre-filtered against the partial method
         // name; everything else is filtered here. Suggestions may be quoted
@@ -339,12 +386,16 @@ impl CursorAwareParser {
         // `price.Contains('')`); everything else replaces the whole identifier.
         // After a quoted column the dot terminates the token, so the partial
         // method is already the whole token (`"name.common".Star` -> `Star`).
-        let replace_start = if is_method_context {
-            token.as_ref().map_or(cursor_pos, |t| {
+        let replace_start = match &cursor_context {
+            // Inside a literal the span to replace is the value text, which is
+            // not an identifier at all — `find_completion_token` returns
+            // nothing useful there. The analyzer knows where the quote is, so
+            // it says so directly.
+            CursorContext::InStringLiteral { value_start, .. } => *value_start,
+            _ if is_method_context => token.as_ref().map_or(cursor_pos, |t| {
                 t.last_segment().map_or(t.start, |(start, _)| start)
-            })
-        } else {
-            token.as_ref().map_or(cursor_pos, |t| t.start)
+            }),
+            _ => token.as_ref().map_or(cursor_pos, |t| t.start),
         };
 
         ParseResult {
@@ -353,6 +404,16 @@ impl CursorAwareParser {
             partial_word,
             replace_start,
         }
+    }
+
+    /// The loaded table's columns, quoted where the lexer would not read them
+    /// back as one identifier (T8).
+    fn column_suggestions(&self, table: &str) -> Vec<String> {
+        self.schema
+            .get_columns(table)
+            .into_iter()
+            .map(|col| quote_if_needed(&col))
+            .collect()
     }
 
     /// Suggest real column names when the text at the cursor prefixes one.
@@ -1229,11 +1290,16 @@ mod tests {
             r#"select City,Company,Country,"Customer Id" from customers order by City, "Customer"#;
         let result = parser.get_completions(query, query.len());
 
-        // The partial word should be "Customer
+        // The partial is the identifier's *text*. Before T9 it came from a
+        // string scanner and arrived as `"Customer`, opening quote included;
+        // it now comes from the lexer, which has already consumed the quote.
+        // Nothing filters on `partial_word` — that is `find_completion_token`'s
+        // job, and it still sees the quote — so the two asserts below are the
+        // ones with teeth.
         assert_eq!(
             result.partial_word,
-            Some("\"Customer".to_string()),
-            "Should extract '\"Customer' as partial"
+            Some("Customer".to_string()),
+            "Should extract 'Customer' as partial"
         );
 
         // Should suggest "Customer Id" with proper quotes
