@@ -1,28 +1,27 @@
-# SQL CLI v1.83.10
+# SQL CLI v1.84.0
 
-**Release Date:** September 06, 2026
+**Release Date:** September 08, 2026
 
 ## 📊 Release Overview
-- **Commits in this release:** 4
-- **Files updated:** 9
+- **Commits in this release:** 2
+- **Files updated:** 10
 
 ## ✨ Highlights
 
-### 🔍 Enhanced Debugging
-- **Better Diagnostics**: Improved error messages and state dumps
+### 💾 Data Protection
+- **History Recovery**: Automatic recovery from corrupted files
+- **Atomic Writes**: Safer file operations to prevent data loss
 
 ## 📝 Changes by Category
 
-### 🐛 Bug Fixes
-- say which failure a qualified column reference hit (P40 piece 1)
+### 🔧 Refactoring
+- drive cursor context from the token stream (T9)
 
 <details>
 <summary>📋 View all commits</summary>
 
-- Merge pull request #69 from TimelordUK/fix/p40-column-resolution-message (TimelordUK)
-- fix(errors): say which failure a qualified column reference hit (P40 piece 1) (TimelordUK)
-- Merge pull request #68 from TimelordUK/test/windows-python-suite-green (TimelordUK)
-- test: make the Python suite green on Windows (TimelordUK)
+- Merge pull request #70 from TimelordUK/refactor/t9-token-driven-cursor-context (TimelordUK)
+- refactor(tui): drive cursor context from the token stream (T9) (TimelordUK)
 
 </details>
 
