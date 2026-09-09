@@ -1922,6 +1922,42 @@ out of date.
 
 ---
 
+### P44 — `PARSE_DATETIME`'s explicit format parses `%z` but throws the offset away
+- **Status:** 🔴 OPEN — silent, and wrong by whole hours
+- **Corpus:** none yet — no corpus case parses an offset-bearing timestamp.
+- **Observed:** with an explicit format string the UTC offset is consumed by the
+  parser and then discarded, so every offset collapses to `+0000`. The one-arg
+  auto-detect path on the same value gets it right, so the two spellings of the
+  "same" parse disagree:
+
+  | Query | Ours | DuckDB `strptime` |
+  |---|---|---|
+  | `PARSE_DATETIME_UTC('20260909T143000+0000','%Y%m%dT%H%M%S%z')` | 1788964200 | 1788964200 ✅ |
+  | `PARSE_DATETIME_UTC('20260909T143000+0100','%Y%m%dT%H%M%S%z')` | **1788964200** 🚫 | 1788960600 |
+  | `PARSE_DATETIME_UTC('20260909T143000-0500','%Y%m%dT%H%M%S%z')` | **1788964200** 🚫 | 1788982200 |
+  | `PARSE_DATETIME_UTC('2026-09-09T14:30:00+01:00')` (auto-detect) | 1788960600 ✅ | — |
+
+  All three explicit-format spellings return the same instant. `+0100` should be
+  an hour *earlier* in UTC, `-0500` five hours later.
+- **Found:** 2026-09-09, sketching a TeamCity/Metricbeat correlation. TeamCity's
+  REST API stamps builds as `yyyyMMdd'T'HHmmssZ` **with a real offset**
+  (`+0100` through BST), while Metricbeat ships UTC. Joining the two on time is
+  the entire point of that analysis, and this bug shifts one side by an hour for
+  half the year — silently, with every row still present and plausible. It is a
+  good example of the class of divergence that does not announce itself: nothing
+  errors, nothing looks empty, the correlation is just quietly wrong.
+- **Why it bites harder than most:** the failure is seasonal. A query built and
+  checked in winter (`+0000`) is correct; the same query in summer is an hour
+  out. That is close to the worst possible shape for a data bug.
+- **Decision:** fix — apply the parsed offset, and make the one-arg and two-arg
+  paths agree. Worth pinning corpus cases for `%z` with positive, negative and
+  zero offsets at the same time, since none exist today.
+- **Workaround until then:** prefer the one-arg auto-detect on ISO-8601 input,
+  or normalise the source to UTC before parsing.
+- **Related:** same silent-wrong-answer family as [P39](#p39) and [P43](#p43).
+
+---
+
 ## Deferred / won't fix (intentional)
 
 ### D1 — Recursive CTEs (`WITH RECURSIVE`)
