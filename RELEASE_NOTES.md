@@ -1,27 +1,29 @@
-# SQL CLI v1.84.0
+# SQL CLI v1.84.1
 
-**Release Date:** September 08, 2026
+**Release Date:** September 09, 2026
 
 ## 📊 Release Overview
-- **Commits in this release:** 2
-- **Files updated:** 10
+- **Commits in this release:** 3
+- **Files updated:** 9
 
 ## ✨ Highlights
 
-### 💾 Data Protection
-- **History Recovery**: Automatic recovery from corrupted files
-- **Atomic Writes**: Safer file operations to prevent data loss
+### 🎨 Visual Improvements
+
+### 🔍 Enhanced Debugging
+- **Better Diagnostics**: Improved error messages and state dumps
 
 ## 📝 Changes by Category
 
-### 🔧 Refactoring
-- drive cursor context from the token stream (T9)
+### 🐛 Bug Fixes
+- truncate table cells to the column width
 
 <details>
 <summary>📋 View all commits</summary>
 
-- Merge pull request #70 from TimelordUK/refactor/t9-token-driven-cursor-context (TimelordUK)
-- refactor(tui): drive cursor context from the token stream (T9) (TimelordUK)
+- Merge pull request #71 from TimelordUK/fix/table-output-column-truncation (TimelordUK)
+- docs+examples: TeamCity agent capacity skeleton, and P44 (TimelordUK)
+- fix(output): truncate table cells to the column width (TimelordUK)
 
 </details>
 
