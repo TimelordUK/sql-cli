@@ -8,7 +8,7 @@ use sql_cli::data::data_view::DataView;
 use sql_cli::data::datatable::DataValue;
 use sql_cli::non_interactive::{OutputFormat, TableStyle};
 use sql_cli::utils::app_paths::AppPaths;
-use sql_cli::utils::string_utils::display_width;
+use sql_cli::utils::string_utils::{display_width, truncate_to_width};
 use std::io::Write;
 use std::{borrow::Cow, io};
 
@@ -1328,7 +1328,16 @@ fn output_table_helper<W: Write>(
 
     write!(writer, "|")?;
     for (i, col) in columns.iter().enumerate() {
-        write!(writer, " {:^width$} |", col, width = widths[i])?;
+        let header = truncate_to_width(col, widths[i]);
+        let padding = widths[i].saturating_sub(display_width(&header));
+        let left = padding / 2;
+        write!(
+            writer,
+            " {}{}{} |",
+            " ".repeat(left),
+            header,
+            " ".repeat(padding - left)
+        )?;
     }
     writeln!(writer)?;
 
@@ -1344,17 +1353,16 @@ fn output_table_helper<W: Write>(
             write!(writer, "|")?;
             for (i, value) in row.values.iter().enumerate() {
                 if i < widths.len() {
-                    let value_str = format_datavalue(value);
+                    // Truncate to the column width: without this, a value longer
+                    // than --max-col-width overflows its cell and the row no
+                    // longer lines up with the border.
+                    let value_str = truncate_to_width(&format_datavalue(value), widths[i]);
                     let display_len = display_width(&value_str);
 
                     // For ANSI-colored strings, manual padding is needed
                     // because format! uses byte length, not display width
                     write!(writer, " {}", value_str)?;
-                    let padding_needed = if display_len < widths[i] {
-                        widths[i] - display_len
-                    } else {
-                        0
-                    };
+                    let padding_needed = widths[i].saturating_sub(display_len);
                     write!(writer, "{} |", " ".repeat(padding_needed))?;
                 }
             }
