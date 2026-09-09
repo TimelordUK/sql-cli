@@ -17,7 +17,7 @@ use crate::services::query_execution_service::QueryExecutionService;
 use crate::sql::parser::ast::{CTEType, TableSource, CTE};
 use crate::sql::recursive_parser::Parser;
 use crate::sql::script_parser::{ScriptParser, ScriptResult};
-use crate::utils::string_utils::display_width;
+use crate::utils::string_utils::{display_width, truncate_to_width};
 
 /// Check if a query references temporary tables (starting with #)
 /// Temporary tables are only valid in script mode
@@ -1483,10 +1483,19 @@ fn output_table_old_style<W: Write>(
     }
     writeln!(writer)?;
 
-    // Print headers
+    // Print headers, centred by display width (so wide glyphs line up too)
     write!(writer, "|")?;
     for (i, col) in columns.iter().enumerate() {
-        write!(writer, " {:^width$} |", col, width = widths[i])?;
+        let header = truncate_to_width(col, widths[i]);
+        let padding = widths[i].saturating_sub(display_width(&header));
+        let left = padding / 2;
+        write!(
+            writer,
+            " {}{}{} |",
+            " ".repeat(left),
+            header,
+            " ".repeat(padding - left)
+        )?;
     }
     writeln!(writer)?;
 
@@ -1504,17 +1513,16 @@ fn output_table_old_style<W: Write>(
             write!(writer, "|")?;
             for (i, value) in row.values.iter().enumerate() {
                 if i < widths.len() {
-                    let value_str = format_value(value);
+                    // Truncate to the column width: without this, a value longer
+                    // than --max-col-width overflows its cell and the row no
+                    // longer lines up with the border.
+                    let value_str = truncate_to_width(&format_value(value), widths[i]);
                     let display_len = display_width(&value_str);
 
                     // For ANSI-colored strings, manual padding is needed
                     // because format! uses byte length, not display width
                     write!(writer, " {}", value_str)?;
-                    let padding_needed = if display_len < widths[i] {
-                        widths[i] - display_len
-                    } else {
-                        0
-                    };
+                    let padding_needed = widths[i].saturating_sub(display_len);
                     write!(writer, "{} |", " ".repeat(padding_needed))?;
                 }
             }
@@ -1621,14 +1629,9 @@ fn output_table<W: Write>(
                             .map(|v| {
                                 let s = format_value(v);
                                 // Apply max width truncation if specified
-                                if let Some(max_width) = max_col_width {
-                                    if s.len() > max_width {
-                                        format!("{}...", &s[..max_width.saturating_sub(3)])
-                                    } else {
-                                        s
-                                    }
-                                } else {
-                                    s
+                                match max_col_width {
+                                    Some(max_width) => truncate_to_width(&s, max_width),
+                                    None => s,
                                 }
                             })
                             .collect()
@@ -1653,14 +1656,9 @@ fn output_table<W: Write>(
                     .map(|v| {
                         let s = format_value(v);
                         // Apply max width truncation if specified
-                        if let Some(max_width) = max_col_width {
-                            if s.len() > max_width {
-                                format!("{}...", &s[..max_width.saturating_sub(3)])
-                            } else {
-                                s
-                            }
-                        } else {
-                            s
+                        match max_col_width {
+                            Some(max_width) => truncate_to_width(&s, max_width),
+                            None => s,
                         }
                     })
                     .collect();
