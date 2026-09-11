@@ -1562,6 +1562,7 @@ impl QueryEngine {
                 data_type: col.data_type.clone(),
                 nullable: col.nullable,
                 unique_values: col.unique_values,
+                distinct_values: None,
                 null_count: col.null_count,
                 metadata: col.metadata.clone(),
                 qualified_name: col.qualified_name.clone(), // Preserve qualified name

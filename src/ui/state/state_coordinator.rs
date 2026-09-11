@@ -31,8 +31,9 @@ pub struct StateCoordinator {
 
 /// Snapshot a loaded table's columns for the completer.
 ///
-/// The parser gets a bounded copy - names, inferred types, distinct counts -
-/// and never a handle to the `DataView`. Keeping completion a pure function of
+/// The parser gets a bounded copy - names, inferred types, distinct counts,
+/// and the values themselves for low-cardinality columns (T11) - and never a
+/// handle to the `DataView`. Keeping completion a pure function of
 /// `(query, cursor, schema)` is what makes its tests cheap to write, and the
 /// snapshot is what T2 needed: `infer_column_types()` has already computed all
 /// of this on every load path, and this wiring used to throw it away and pass

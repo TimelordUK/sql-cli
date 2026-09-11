@@ -3,7 +3,7 @@
 //! These types were previously defined in parser.rs and are needed
 //! by various parts of the codebase.
 
-use crate::data::datatable::{DataColumn, DataType};
+use crate::data::datatable::{DataColumn, DataType, ValueCount};
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum SqlToken {
@@ -170,6 +170,12 @@ pub struct ColumnInfo {
     /// is the denominator.
     pub cardinality: Option<usize>,
     pub nullable: bool,
+    /// The column's distinct values with their row counts, when the loader
+    /// kept them. That happens only for columns with at most
+    /// [`DISTINCT_VALUES_CAP`](crate::data::datatable::DISTINCT_VALUES_CAP)
+    /// values, which is what bounds the snapshot. The
+    /// data half of value completion (T11); T4 decides which to offer.
+    pub distinct_values: Option<Vec<ValueCount>>,
 }
 
 impl ColumnInfo {
@@ -182,6 +188,7 @@ impl ColumnInfo {
             data_type: ColumnType::String,
             cardinality: None,
             nullable: true,
+            distinct_values: None,
         }
     }
 
@@ -207,6 +214,7 @@ impl ColumnInfo {
             data_type: ColumnType::from(&column.data_type),
             cardinality: column.unique_values,
             nullable: column.nullable,
+            distinct_values: column.distinct_values.clone(),
         }
     }
 }
@@ -381,12 +389,17 @@ mod tests {
         let mut column = DataColumn::new("region").with_type(DataType::String);
         column.unique_values = Some(5);
         column.nullable = false;
+        column.distinct_values = Some(vec![ValueCount {
+            value: "Asia".to_string(),
+            count: 50,
+        }]);
 
         let info = ColumnInfo::from_data_column(&column);
         assert_eq!(info.name, "region");
         assert_eq!(info.data_type, ColumnType::String);
         assert_eq!(info.cardinality, Some(5));
         assert!(!info.nullable);
+        assert_eq!(info.distinct_values, column.distinct_values);
     }
 
     #[test]

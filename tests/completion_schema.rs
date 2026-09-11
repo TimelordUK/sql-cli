@@ -9,7 +9,7 @@
 //! `(query, cursor, schema)`, which is exactly the property the snapshot
 //! boundary exists to preserve.
 
-use sql_cli::data::datatable::DataTable;
+use sql_cli::data::datatable::{DataTable, DISTINCT_VALUES_CAP};
 use sql_cli::data::datatable_loaders::load_csv_to_datatable;
 use sql_cli::sql::cursor_aware_parser::CursorAwareParser;
 use sql_cli::sql::parser::{ColumnInfo, ColumnType, TableInfo};
@@ -95,9 +95,9 @@ fn string_columns_keep_their_methods() {
     assert!(result.suggestions.contains(&"StartsWith('')".to_string()));
 }
 
-/// The snapshot carries what T4's low-cardinality gate will need. It is not
-/// used yet - this pins down that the numbers arriving are the real ones, so
-/// the gate can be designed against them rather than against a guess.
+/// The snapshot carries what T4's low-cardinality gate will need, and pins
+/// down that the numbers arriving are the real ones, so the gate can be
+/// designed against them rather than against a guess.
 #[test]
 fn snapshot_carries_cardinality_for_the_value_completion_gate() {
     let table = countries();
@@ -130,6 +130,103 @@ fn snapshot_carries_cardinality_for_the_value_completion_gate() {
         cardinality("name.common"),
         rows,
         "every country name is distinct, so the gate must exclude it"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// T11: the values themselves, captured at load.
+//
+// `infer_column_types` used to build every column's distinct set and keep
+// only its size. It now keeps the values, with row counts, for columns under
+// `DISTINCT_VALUES_CAP`, and the snapshot carries them to the completer. T4
+// is what offers them; these tests pin that they arrive, and arrive right.
+// ---------------------------------------------------------------------------
+
+fn values_of(info: &TableInfo, name: &str) -> Option<Vec<(String, usize)>> {
+    info.find_column(name)
+        .unwrap_or_else(|| panic!("no column {name}"))
+        .distinct_values
+        .as_ref()
+        .map(|values| values.iter().map(|v| (v.value.clone(), v.count)).collect())
+}
+
+fn owned(pairs: &[(&str, usize)]) -> Vec<(String, usize)> {
+    pairs.iter().map(|(v, c)| ((*v).to_string(), *c)).collect()
+}
+
+#[test]
+fn low_cardinality_values_reach_the_snapshot_with_their_counts() {
+    let table = countries();
+    let info = snapshot(&table);
+
+    assert_eq!(
+        values_of(&info, "region"),
+        Some(owned(&[
+            ("Africa", 59),
+            ("Americas", 56),
+            ("Antarctic", 5),
+            ("Asia", 50),
+            ("Europe", 53),
+            ("Oceania", 27),
+        ]))
+    );
+
+    // A numeric flag keeps its values unquoted-looking; T4 decides whether
+    // they are inserted with quotes, from the column type.
+    assert_eq!(
+        values_of(&info, "unMember"),
+        Some(owned(&[("0", 56), ("1", 194)]))
+    );
+
+    // The type-inference wart from T2, visible from the other side: the one
+    // quoted-empty cell in `independent` is `String("")`, not NULL, so it is
+    // a distinct value in its own right. Pinned so a fix upstream shows here.
+    assert_eq!(
+        values_of(&info, "independent"),
+        Some(owned(&[("", 1), ("0", 55), ("1", 194)]))
+    );
+}
+
+#[test]
+fn high_cardinality_columns_keep_their_count_but_not_their_values() {
+    let table = countries();
+    let info = snapshot(&table);
+
+    let name = info.find_column("name.common").expect("name.common");
+    assert_eq!(name.cardinality, info.row_count);
+    assert_eq!(name.distinct_values, None);
+}
+
+/// The gate, checked against every column of a real file rather than a
+/// fixture: values are retained exactly when the count is within the cap,
+/// and when they are, they agree with the count and with the row total.
+#[test]
+fn values_are_retained_exactly_for_columns_within_the_cap() {
+    let table = countries();
+    let info = snapshot(&table);
+    let rows = info.row_count.expect("row count captured");
+
+    let mut retained = 0;
+    for column in &info.columns {
+        let cardinality = column.cardinality.expect("loader counts every column");
+        match &column.distinct_values {
+            Some(values) => {
+                retained += 1;
+                assert!(cardinality <= DISTINCT_VALUES_CAP, "{}", column.name);
+                assert_eq!(values.len(), cardinality, "{}", column.name);
+                let counted: usize = values.iter().map(|v| v.count).sum();
+                assert!(counted <= rows, "{}", column.name);
+            }
+            None => assert!(
+                cardinality > DISTINCT_VALUES_CAP,
+                "{} has {cardinality} values, within the cap, but none were kept",
+                column.name
+            ),
+        }
+    }
+    assert!(
+        retained >= 7,
+        "expected region, subregion, the flags and idd.root at least; got {retained}"
     );
 }
 

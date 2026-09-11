@@ -534,6 +534,7 @@ impl HashJoinExecutor {
                 data_type: col.data_type.clone(),
                 nullable: col.nullable,
                 unique_values: col.unique_values,
+                distinct_values: None,
                 null_count: col.null_count,
                 metadata: col.metadata.clone(),
                 qualified_name: col.qualified_name.clone(), // Preserve qualified name
@@ -554,6 +555,7 @@ impl HashJoinExecutor {
                     data_type: col.data_type.clone(),
                     nullable: col.nullable,
                     unique_values: col.unique_values,
+                    distinct_values: None,
                     null_count: col.null_count,
                     metadata: col.metadata.clone(),
                     qualified_name: col.qualified_name.clone(), // Preserve qualified name
@@ -576,6 +578,7 @@ impl HashJoinExecutor {
                     data_type: col.data_type.clone(),
                     nullable: col.nullable,
                     unique_values: col.unique_values,
+                    distinct_values: None,
                     null_count: col.null_count,
                     metadata: col.metadata.clone(),
                     qualified_name,
@@ -675,6 +678,7 @@ impl HashJoinExecutor {
                 data_type: col.data_type.clone(),
                 nullable: col.nullable,
                 unique_values: col.unique_values,
+                distinct_values: None,
                 null_count: col.null_count,
                 metadata: col.metadata.clone(),
                 qualified_name: col.qualified_name.clone(), // Preserve qualified name
@@ -695,6 +699,7 @@ impl HashJoinExecutor {
                     data_type: col.data_type.clone(),
                     nullable: true, // Always nullable for outer join
                     unique_values: col.unique_values,
+                    distinct_values: None,
                     null_count: col.null_count,
                     metadata: col.metadata.clone(),
                     qualified_name: col.qualified_name.clone(), // Preserve qualified name
@@ -717,6 +722,7 @@ impl HashJoinExecutor {
                     data_type: col.data_type.clone(),
                     nullable: true, // Always nullable for outer join
                     unique_values: col.unique_values,
+                    distinct_values: None,
                     null_count: col.null_count,
                     metadata: col.metadata.clone(),
                     qualified_name,
@@ -927,6 +933,7 @@ impl HashJoinExecutor {
                 data_type: col.data_type.clone(),
                 nullable: col.nullable,
                 unique_values: col.unique_values,
+                distinct_values: None,
                 null_count: col.null_count,
                 metadata: col.metadata.clone(),
                 qualified_name: col.qualified_name.clone(), // Preserve qualified name
@@ -946,6 +953,7 @@ impl HashJoinExecutor {
                     data_type: col.data_type.clone(),
                     nullable: col.nullable,
                     unique_values: col.unique_values,
+                    distinct_values: None,
                     null_count: col.null_count,
                     metadata: col.metadata.clone(),
                     qualified_name: col.qualified_name.clone(), // Preserve qualified name
@@ -967,6 +975,7 @@ impl HashJoinExecutor {
                     data_type: col.data_type.clone(),
                     nullable: col.nullable,
                     unique_values: col.unique_values,
+                    distinct_values: None,
                     null_count: col.null_count,
                     metadata: col.metadata.clone(),
                     qualified_name,
@@ -1030,6 +1039,7 @@ impl HashJoinExecutor {
                 data_type: col.data_type.clone(),
                 nullable: col.nullable,
                 unique_values: col.unique_values,
+                distinct_values: None,
                 null_count: col.null_count,
                 metadata: col.metadata.clone(),
                 qualified_name: col.qualified_name.clone(),
@@ -1049,6 +1059,7 @@ impl HashJoinExecutor {
                     data_type: col.data_type.clone(),
                     nullable: col.nullable,
                     unique_values: col.unique_values,
+                    distinct_values: None,
                     null_count: col.null_count,
                     metadata: col.metadata.clone(),
                     qualified_name: col.qualified_name.clone(),
@@ -1068,6 +1079,7 @@ impl HashJoinExecutor {
                     data_type: col.data_type.clone(),
                     nullable: col.nullable,
                     unique_values: col.unique_values,
+                    distinct_values: None,
                     null_count: col.null_count,
                     metadata: col.metadata.clone(),
                     qualified_name,
@@ -1180,6 +1192,7 @@ impl HashJoinExecutor {
                 data_type: col.data_type.clone(),
                 nullable: col.nullable,
                 unique_values: col.unique_values,
+                distinct_values: None,
                 null_count: col.null_count,
                 metadata: col.metadata.clone(),
                 qualified_name: col.qualified_name.clone(),
@@ -1199,6 +1212,7 @@ impl HashJoinExecutor {
                     data_type: col.data_type.clone(),
                     nullable: true, // Always nullable for outer join
                     unique_values: col.unique_values,
+                    distinct_values: None,
                     null_count: col.null_count,
                     metadata: col.metadata.clone(),
                     qualified_name: col.qualified_name.clone(),
@@ -1218,6 +1232,7 @@ impl HashJoinExecutor {
                     data_type: col.data_type.clone(),
                     nullable: true, // Always nullable for outer join
                     unique_values: col.unique_values,
+                    distinct_values: None,
                     null_count: col.null_count,
                     metadata: col.metadata.clone(),
                     qualified_name,
@@ -1362,6 +1377,7 @@ impl HashJoinExecutor {
                 data_type: col.data_type.clone(),
                 nullable: true, // Always nullable for outer join
                 unique_values: col.unique_values,
+                distinct_values: None,
                 null_count: col.null_count,
                 metadata: col.metadata.clone(),
                 qualified_name: col.qualified_name.clone(),
@@ -1382,6 +1398,7 @@ impl HashJoinExecutor {
                     data_type: col.data_type.clone(),
                     nullable: col.nullable,
                     unique_values: col.unique_values,
+                    distinct_values: None,
                     null_count: col.null_count,
                     metadata: col.metadata.clone(),
                     qualified_name: col.qualified_name.clone(),
@@ -1401,6 +1418,7 @@ impl HashJoinExecutor {
                     data_type: col.data_type.clone(),
                     nullable: col.nullable,
                     unique_values: col.unique_values,
+                    distinct_values: None,
                     null_count: col.null_count,
                     metadata: col.metadata.clone(),
                     qualified_name,
@@ -1538,6 +1556,7 @@ impl HashJoinExecutor {
                 data_type: col.data_type.clone(),
                 nullable: col.nullable,
                 unique_values: col.unique_values,
+                distinct_values: None,
                 null_count: col.null_count,
                 metadata: col.metadata.clone(),
                 qualified_name: col.qualified_name.clone(), // Preserve qualified name
@@ -1557,6 +1576,7 @@ impl HashJoinExecutor {
                     data_type: col.data_type.clone(),
                     nullable: true, // Always nullable for outer join
                     unique_values: col.unique_values,
+                    distinct_values: None,
                     null_count: col.null_count,
                     metadata: col.metadata.clone(),
                     qualified_name: col.qualified_name.clone(), // Preserve qualified name
@@ -1578,6 +1598,7 @@ impl HashJoinExecutor {
                     data_type: col.data_type.clone(),
                     nullable: true, // Always nullable for outer join
                     unique_values: col.unique_values,
+                    distinct_values: None,
                     null_count: col.null_count,
                     metadata: col.metadata.clone(),
                     qualified_name,
