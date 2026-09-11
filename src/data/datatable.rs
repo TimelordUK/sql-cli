@@ -64,6 +64,24 @@ impl DataType {
     }
 }
 
+/// The most distinct values a column may have and still have them kept.
+///
+/// A retention bound, not a policy: it caps what a column costs to remember,
+/// and whoever offers the values (TUI completion, T4) decides which of the
+/// retained columns are worth offering. 100 matches the cardinality bound in
+/// `AdvancedCsvLoader::is_likely_categorical`. On `data/countries.csv` every
+/// column is either at most 24 distinct or at least 135, so the exact number
+/// does not decide anything there.
+pub const DISTINCT_VALUES_CAP: usize = 100;
+
+/// One distinct value of a column, and how many rows hold it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ValueCount {
+    /// The value as `DataValue::to_string` renders it.
+    pub value: String,
+    pub count: usize,
+}
+
 /// Column metadata and definition
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DataColumn {
@@ -71,6 +89,16 @@ pub struct DataColumn {
     pub data_type: DataType,
     pub nullable: bool,
     pub unique_values: Option<usize>,
+    /// Every distinct non-null value with its row count, kept only when there
+    /// are at most [`DISTINCT_VALUES_CAP`] of them. Sorted numerically for a
+    /// numeric column and alphabetically otherwise, so cycling through them is
+    /// stable.
+    ///
+    /// Only `DataTable::infer_column_types` fills this in. A column built any
+    /// other way (a join, a projection, a generator) has `None`, meaning *not
+    /// captured*, and `Some(vec![])` means the column held no non-null values.
+    #[serde(default)]
+    pub distinct_values: Option<Vec<ValueCount>>,
     pub null_count: usize,
     pub metadata: HashMap<String, String>,
     /// Qualified name with table prefix (e.g., "messages.field_name")
@@ -86,6 +114,7 @@ impl DataColumn {
             data_type: DataType::String,
             nullable: true,
             unique_values: None,
+            distinct_values: None,
             null_count: 0,
             metadata: HashMap::new(),
             qualified_name: None,
@@ -117,6 +146,47 @@ impl DataColumn {
         self.nullable = nullable;
         self
     }
+}
+
+/// Keep a column's value counts if there are few enough of them, in a stable
+/// order. `data_type` is the column's merged type, so a numeric column sorts
+/// `9` before `10`.
+fn retain_distinct_values(
+    value_counts: HashMap<String, usize>,
+    data_type: &DataType,
+) -> Option<Vec<ValueCount>> {
+    if value_counts.len() > DISTINCT_VALUES_CAP {
+        return None;
+    }
+
+    let mut values: Vec<ValueCount> = value_counts
+        .into_iter()
+        .map(|(value, count)| ValueCount { value, count })
+        .collect();
+
+    if matches!(data_type, DataType::Integer | DataType::Float) {
+        // Anything that fails to parse sorts after the numbers. That should
+        // not happen in a column that merged to a numeric type, but the order
+        // has to stay total if it does.
+        values.sort_by(|a, b| {
+            match (a.value.parse::<f64>(), b.value.parse::<f64>()) {
+                (Ok(x), Ok(y)) => x.total_cmp(&y),
+                (Ok(_), Err(_)) => std::cmp::Ordering::Less,
+                (Err(_), Ok(_)) => std::cmp::Ordering::Greater,
+                (Err(_), Err(_)) => std::cmp::Ordering::Equal,
+            }
+            .then_with(|| a.value.cmp(&b.value))
+        });
+    } else {
+        values.sort_by(|a, b| {
+            a.value
+                .to_lowercase()
+                .cmp(&b.value.to_lowercase())
+                .then_with(|| a.value.cmp(&b.value))
+        });
+    }
+
+    Some(values)
 }
 
 /// A single cell value in the table
@@ -561,7 +631,7 @@ impl DataTable {
         for (col_idx, column) in self.columns.iter_mut().enumerate() {
             let mut inferred_type = DataType::Null;
             let mut null_count = 0;
-            let mut unique_values = std::collections::HashSet::new();
+            let mut value_counts: HashMap<String, usize> = HashMap::new();
 
             for row in &self.rows {
                 if let Some(value) = row.get(col_idx) {
@@ -570,15 +640,16 @@ impl DataTable {
                     } else {
                         let value_type = value.data_type();
                         inferred_type = inferred_type.merge(&value_type);
-                        unique_values.insert(value.to_string());
+                        *value_counts.entry(value.to_string()).or_insert(0) += 1;
                     }
                 }
             }
 
+            column.unique_values = Some(value_counts.len());
+            column.distinct_values = retain_distinct_values(value_counts, &inferred_type);
             column.data_type = inferred_type;
             column.null_count = null_count;
             column.nullable = null_count > 0;
-            column.unique_values = Some(unique_values.len());
         }
     }
 
@@ -1278,5 +1349,96 @@ mod tests {
 
         // Check null handling
         assert_eq!(table.get_value_by_name(2, "age"), Some(&DataValue::Null));
+    }
+
+    /// A one-column table holding `values`, with types inferred.
+    fn inferred_column(values: Vec<DataValue>) -> DataColumn {
+        let mut table = DataTable::new("t");
+        table.add_column(DataColumn::new("c"));
+        for value in values {
+            table.add_row(DataRow::new(vec![value])).unwrap();
+        }
+        table.infer_column_types();
+        table.columns.remove(0)
+    }
+
+    fn pairs(column: &DataColumn) -> Vec<(&str, usize)> {
+        column
+            .distinct_values
+            .as_ref()
+            .expect("values retained")
+            .iter()
+            .map(|v| (v.value.as_str(), v.count))
+            .collect()
+    }
+
+    #[test]
+    fn distinct_values_are_kept_with_counts_and_without_nulls() {
+        let s = |v: &str| DataValue::String(v.to_string());
+        let column = inferred_column(vec![
+            s("Asia"),
+            s("Europe"),
+            DataValue::Null,
+            s("Asia"),
+            DataValue::InternedString(Arc::new("Asia".to_string())),
+        ]);
+
+        // NULL is not a value you can type between quotes, so it is not
+        // offered; `IS NULL` is a different completion.
+        assert_eq!(pairs(&column), vec![("Asia", 3), ("Europe", 1)]);
+        assert_eq!(column.unique_values, Some(2));
+    }
+
+    #[test]
+    fn distinct_values_sort_numerically_in_a_numeric_column() {
+        let column = inferred_column(
+            [10, 9, 100, -1, 9]
+                .into_iter()
+                .map(DataValue::Integer)
+                .collect(),
+        );
+        assert_eq!(
+            pairs(&column),
+            vec![("-1", 1), ("9", 2), ("10", 1), ("100", 1)]
+        );
+    }
+
+    #[test]
+    fn distinct_values_sort_alphabetically_ignoring_case_in_a_text_column() {
+        let s = |v: &str| DataValue::String(v.to_string());
+        let column = inferred_column(vec![s("beta"), s("Alpha"), s("10"), s("9"), s("alpha")]);
+        // Text, so `10` sorts before `9`. Case is only a tie-break.
+        assert_eq!(
+            pairs(&column),
+            vec![("10", 1), ("9", 1), ("Alpha", 1), ("alpha", 1), ("beta", 1)]
+        );
+    }
+
+    #[test]
+    fn distinct_values_are_dropped_above_the_cap() {
+        let at_cap = inferred_column(
+            (0..DISTINCT_VALUES_CAP as i64)
+                .map(DataValue::Integer)
+                .collect(),
+        );
+        assert_eq!(
+            at_cap.distinct_values.as_ref().map(Vec::len),
+            Some(DISTINCT_VALUES_CAP)
+        );
+
+        let over_cap = inferred_column(
+            (0..=DISTINCT_VALUES_CAP as i64)
+                .map(DataValue::Integer)
+                .collect(),
+        );
+        assert_eq!(over_cap.distinct_values, None);
+        // The count is still exact: only the values are dropped.
+        assert_eq!(over_cap.unique_values, Some(DISTINCT_VALUES_CAP + 1));
+    }
+
+    #[test]
+    fn an_all_null_column_has_no_values_rather_than_unknown_values() {
+        let column = inferred_column(vec![DataValue::Null, DataValue::Null]);
+        assert_eq!(column.distinct_values, Some(Vec::new()));
     }
 }

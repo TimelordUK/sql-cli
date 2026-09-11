@@ -66,15 +66,16 @@ reachable via `Unknown` and is T12's to remove.
 What remains is mostly *content*: the completer now asks the right question in
 the right place and has nothing to say in some of them. `WHERE region = '<tab>'`
 is a recognised value position (`CursorContext::InStringLiteral`) that offers
-nothing, because nobody has captured the values yet.
+nothing. Since **T11** (2026-09-11) the values are captured and sit in the
+completer's schema, with row counts. Nothing offers them yet.
 
-**Recommended order: T3 → T11 → T4 → T5**, with **T7** (deletion), **T10**
+**Recommended order: T3 → T4 → T5**, with **T7** (deletion), **T10**
 (function lists from the registry) and **T12** (retire the `ParseState`
-fallback) droppable anywhere. T3 is mechanical but wants doing before T4 rather
-than as a retrofit. T11 is T4's data half and touches the loader rather than the
-parser, so the two can run in either order. **T8** is done: it was T1's bug in
-the other producer of column text, and it left `src/sql/identifier.rs` as the
-one place the quoting rule lives.
+fallback) droppable anywhere. T11 went ahead of T3 so that T3's `Suggestion`
+could be shaped by what values actually need: an inserted text that differs
+by position (see T4's table of three value positions) and a count for the
+label. **T8** is done: it was T1's bug in the other producer of column text,
+and it left `src/sql/identifier.rs` as the one place the quoting rule lives.
 
 ---
 
@@ -161,8 +162,9 @@ one place the quoting rule lives.
   named `tradeDate` must *not* be offered `DateTime(`); 5 unit tests in
   `legacy.rs`.
 - **Left for T4, already captured:** `cardinality` and `row_count` are
-  populated and pinned by test — on `countries.csv`, `region` has 5 distinct
-  values across 250 rows and `name.common` has 250. Nothing reads them yet.
+  populated and pinned by test — on `countries.csv`, `region` has 6 distinct
+  values across 250 rows (recorded here as 5 until T11 listed them) and
+  `name.common` has 250. Nothing reads them yet.
 - **Found on the way, not fixed here:** one quoted-empty cell (`""`) in an
   otherwise integer column makes the loader store `String("")` rather than
   `Null`, which merges the column to `DataType::Mixed`. `independent` in
@@ -173,7 +175,7 @@ one place the quoting rule lives.
   the current behaviour so a change is visible.
 
 ### T3 — Suggestions are untyped strings
-- **Status:** 🔴 OPEN — prerequisite for T4; **T9 goes first** (see the order above)
+- **Status:** 🔴 OPEN — next; the last prerequisite for T4
 - **Where:** `ParseResult::suggestions: Vec<String>` and every site that builds
   one
 - **Observed:** A flat `Vec<String>` cannot express a display label distinct
@@ -187,7 +189,7 @@ one place the quoting rule lives.
   than retrofitting.
 
 ### T4 — No value completion for low-cardinality columns
-- **Status:** 🔴 OPEN — depends on **T9** and T3; T2 has landed
+- **Status:** 🔴 OPEN — depends on T3; T2, T9 and T11 have landed
 - **Where:** `detect_cursor_context` in `src/sql/recursive_parser.rs`
 - **Observed:** `WHERE region = '<tab>'` offers nothing. There is
   `AfterComparisonOp(col, op)` for a cursor *after* an operator, but no context
@@ -199,22 +201,38 @@ one place the quoting rule lives.
   the cursor-position analysis is string scanning that cannot see a literal at
   all. **T9 produces `CursorContext::InStringLiteral`; this entry fills it with
   values.** Do not start here.
-- **Why it is worth doing:** on `countries.csv`, `region` has 5 distinct values
+- **Why it is worth doing:** on `countries.csv`, `region` has 6 distinct values
   and `independent` has 2. Typing those from memory — with exact spelling and
   case — is the single most common friction in filtering unfamiliar data.
+- **Three value positions, not one (added 2026-09-11).** The design below was
+  written for the cursor *inside* a quote. The user's own example was
+  `WHERE a = <tab>` with no quote typed, which is `AfterComparisonOp`, and that
+  arm currently offers `''` for text, `true`/`false` for booleans (T2), and
+  nothing for numbers. T4 covers all three:
+
+  | Position | Column | Offers | Inserted text | Span replaced |
+  |---|---|---|---|---|
+  | `region = <tab>` | text | retained values | `'Americas'`, quotes included | from the cursor |
+  | `region = 'Am<tab>` | text | values starting `Am` | `Americas`, bare | from `value_start` (T9) |
+  | `unMember = <tab>` | numeric | retained values | `1`, unquoted | from the cursor |
+
+  The value is the same in all three, but the inserted text depends on where
+  the cursor is. That is the argument for T3's `insert`/`label` split landing
+  first. The text form should embed a quote inside a value as `''`. Boolean
+  columns keep `true`/`false`. A column with no retained values falls back to
+  today's `''`.
 - **Design:**
   - New `CursorContext::InValueLiteral { column, in_list: bool }`.
   - `replace_start` = the byte after the opening quote. This is exactly what T1
     made expressible.
-  - **Cardinality gate:** an absolute cap *and* a ratio, or `name.common` (250
-    values, all unique) gets offered and the feature feels broken. Precedent
-    exists: `advanced_csv_loader` already computes an `is_categorical` flag from
-    a `cardinality_threshold` config (0.5).
-  - **Where the values come from — now its own entry, T11.** Snapshot distinct values
-    into the schema at load time for gated columns only, rather than giving the
-    parser a live `DataView`. `infer_column_types()` already builds the distinct
-    `HashSet` and throws it away, so capturing it is nearly free; memory is
-    bounded precisely by the gate; and it preserves the purity property in T2.
+  - **Cardinality gate:** T11 measured this and settled the load-time half:
+    a cap of 100, no ratio. `name.common` is already excluded. Any further
+    *offer* policy (a ratio, a tighter cap for unprefixed Tab) is T4's call,
+    from `ColumnInfo::cardinality` and `TableInfo::row_count`, and should be
+    decided by trying it on the TeamCity data rather than in advance.
+  - **Where the values come from: T11 (done).** `ColumnInfo::distinct_values`
+    holds `ValueCount { value, count }`, in sorted order, for every column with
+    at most 100 values.
 - **Prior art in-repo:** the nvim plugin already has a distinct-values /
   cardinality feature (`show_distinct_values()`, see
   [`NVIM_SMART_COLUMN_COMPLETION.md`](NVIM_SMART_COLUMN_COMPLETION.md) — which
@@ -457,34 +475,70 @@ Older, non-living notes that still contain usable thinking:
   `sql::cursor_aware_parser` are siblings, so there should be no cycle.
 
 ### T11 — Distinct values are computed at load and thrown away
-- **Status:** 🔴 OPEN — the data half of T4
-- **Where:** `DataTable::infer_column_types` (`src/data/datatable.rs:560`),
-  `DataColumn` (`:69`), `ColumnInfo::from_data_column`
-- **Observed:** `infer_column_types` builds a `HashSet<String>` of every
-  non-null value per column and keeps only `.len()`, into
-  `DataColumn::unique_values: Option<usize>`. The values themselves are dropped
+- **Status:** 🟢 DONE 2026-09-11
+- **Where:** `DataTable::infer_column_types` and `retain_distinct_values`
+  (`src/data/datatable.rs`), `DataColumn::distinct_values`, `ValueCount`,
+  `DISTINCT_VALUES_CAP`; `ColumnInfo::distinct_values`
+  (`src/sql/parser/legacy.rs`)
+- **Observed:** `infer_column_types` built a `HashSet<String>` of every
+  non-null value per column and kept only `.len()`, into
+  `DataColumn::unique_values: Option<usize>`. The values themselves were dropped
   on every load path.
-- **Design:** `DataColumn::distinct_values: Option<Vec<String>>`, populated only
-  for columns that pass the cardinality gate, sorted so Tab cycling is stable.
-  `ColumnInfo` carries them through the existing snapshot, so the completer
-  reads *schema* and never touches a `DataView` — T2's purity boundary is
-  preserved and the parser stays testable without a terminal.
-- **Why on the table rather than the view:** it is a property of the data, and
-  T2 already snapshots columns from the source table so that hiding a column in
-  the TUI does not make it uncompletable. The same argument applies to values.
-- **The gate:** absolute cap *and* ratio, or `name.common` (250 distinct across
-  250 rows) gets captured and the feature reads as broken. Prior art to
-  reconcile rather than reinvent: `advanced_csv_loader` has
-  `cardinality_threshold: 0.5` plus `is_likely_categorical`
-  (`cardinality < 100 && avg_length < 50`), and the nvim plugin has its own
-  notion in [`NVIM_SMART_COLUMN_COMPLETION.md`](NVIM_SMART_COLUMN_COMPLETION.md).
-  The three should agree on what "low cardinality" means.
-- **Cost:** bounded by the gate, and the `HashSet` is already being built — so
-  this is retention, not computation. At the working size that motivated it
-  (~10k rows of CI output) it is free.
-- **Note:** `unique_values` counts `value.to_string()` of non-null values, so
-  NULL is not a candidate value and the existing count is a lower bound on what
-  a NULL-aware gate would see.
+- **Fixed by:** the `HashSet` became a `HashMap<String, usize>` of value to row
+  count. `DataColumn::distinct_values: Option<Vec<ValueCount>>` keeps it for
+  columns with at most `DISTINCT_VALUES_CAP` (100) distinct values. Numeric
+  columns sort numerically (`9` before `10`); all others sort alphabetically
+  with case only as a tie-break, so Tab cycling is stable. `ColumnInfo` carries
+  the values through the existing snapshot, so the completer reads *schema* and
+  never touches a `DataView`. T2's purity boundary still holds.
+  - **Counts were not in the original design.** They cost one increment per
+    cell next to a hash insert that was already happening. They give T4 the
+    `Americas (56 rows)` detail for T3's `Suggestion`, and let it rank by
+    frequency if alphabetical turns out to be the wrong order to cycle in.
+  - **`None` means *not captured*, `Some(vec![])` means *no values*.** Only
+    `infer_column_types` fills the field in. The ~40 places that build a
+    `DataColumn` by hand (joins in `hash_join.rs`, `materialize_view`, the
+    generators) set `None`, because the rows under a derived column are not the
+    rows the values were counted over. The TUI snapshots on load and on buffer
+    switch (`StateCoordinator::update_parser_*`), which read the loaded table.
+- **The gate, decided against the data rather than in advance.** The design
+  above called for an absolute cap *and* a ratio. Measured per column:
+
+  | File | Rows | Distinct counts, sorted |
+  |---|---|---|
+  | `countries.csv` | 250 | 2, 2, 2, 2, 6, 9, 24, **then** 135, 141, 159, … 250 |
+  | `tc_builds_sample.csv` | 200 | 1, 1, 1, 1, 2, 3, 3, 7, 12, **then** 177, 199, 200, 200 |
+  | `teamcity_builds_sample.csv` | 46 | 4, 4, 6, 14, 24 (`agent`), 46 |
+
+  Real files split cleanly. A cap of 100 separates every column above, and
+  `name.common` (250) is excluded by the cap alone. A ratio would only bite on
+  small tables, and there it was wrong: on the 46-row TeamCity sample, `agent`
+  (24 of 46, ratio 0.52) is exactly a column you want to complete, and a 0.5
+  ratio rejects it. So **the load-time gate is a cap only, and its job is to
+  bound memory.** Whether a retained column is worth *offering* is a policy
+  decision that belongs to T4, which has `cardinality` and `row_count` in the
+  snapshot if it wants a ratio after all.
+- **Reconciling the prior art:** the three notions of "low cardinality" should
+  *not* all agree, because they answer different questions.
+  `advanced_csv_loader`'s `cardinality_threshold: 0.5` decides string
+  *interning*, which pays off with any repetition, so a ratio is right there.
+  Completion needs a list short enough to cycle. The cap of 100 is borrowed
+  from `is_likely_categorical` (`cardinality < 100`), which is the part of it
+  about list length. The nvim plugin has no gate: `--distinct-column` runs a
+  query on demand, which is what the in-memory snapshot replaces for the TUI.
+- **Cost:** memory is bounded by the cap. The hashing was already happening,
+  so this is retention plus a counter.
+- **Tests:** 5 unit tests in `datatable.rs` (counts with NULLs and interned
+  strings, numeric and text ordering, the cap boundary at 100/101, an all-NULL
+  column); the `legacy.rs` snapshot test now covers the field; 3 in
+  `tests/completion_schema.rs` against `countries.csv`: exact `region` and flag
+  values with counts, `name.common` kept as a count but not as values, and the
+  gate checked on all 76 columns.
+- **The T2 wart shows up here too:** `independent`'s values are `"", "0", "1"`.
+  The one quoted-empty cell is a value, not a NULL, so T4 would offer `''`.
+  Pinned in the test; the fix is still upstream type inference.
+- **Correction to T2/T4:** `region` has **6** distinct values (Antarctic, 5
+  rows, is the one missed), not 5.
 
 ### T12 — Retire `ParseState` and the heuristic fallback
 - **Status:** 🔴 OPEN — small, and only possible now that T9 has landed

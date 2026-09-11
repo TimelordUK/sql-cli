@@ -20,6 +20,7 @@ impl TableGenerator for Values {
             data_type: DataType::Float, // Use Float to handle both integers and decimals
             nullable: false,
             unique_values: Some(0),
+            distinct_values: None,
             null_count: 0,
             metadata: HashMap::new(),
             qualified_name: None,
@@ -97,6 +98,7 @@ impl TableGenerator for Array {
                 data_type: DataType::Integer,
                 nullable: false,
                 unique_values: Some(0),
+                distinct_values: None,
                 null_count: 0,
                 metadata: HashMap::new(),
                 qualified_name: None,
@@ -107,6 +109,7 @@ impl TableGenerator for Array {
                 data_type: DataType::Float,
                 nullable: false,
                 unique_values: Some(0),
+                distinct_values: None,
                 null_count: 0,
                 metadata: HashMap::new(),
                 qualified_name: None,
