@@ -154,7 +154,7 @@ fn print_help() {
         "--query-file".green()
     );
     println!(
-        "  {}, {} <format>   - Output format: csv, json, table, tsv (default: csv)",
+        "  {}, {} <format>   - Output format: csv, json, table, tsv, markdown (default: csv)",
         "-o".green(),
         "--output".green()
     );
@@ -999,13 +999,11 @@ fn handle_execute_statement(
         // Use the configured output format - build a NonInteractiveConfig to reuse execute_non_interactive logic
         // But we'll inline the output logic here since we already have the results
 
-        let output_format =
-            sql_cli::non_interactive::OutputFormat::from_str(&parsed_args.output_format_arg)
-                .map_err(io::Error::other)?;
-
-        let table_style =
-            sql_cli::non_interactive::TableStyle::from_str(&parsed_args.table_style_arg)
-                .map_err(io::Error::other)?;
+        let (output_format, table_style) = sql_cli::non_interactive::resolve_output_options(
+            &parsed_args.output_format_arg,
+            &parsed_args.table_style_arg,
+        )
+        .map_err(io::Error::other)?;
 
         // Output to file or stdout
         if let Some(ref output_file) = parsed_args.output_file_arg {
@@ -1614,13 +1612,16 @@ fn handle_non_interactive_query(
         }
     }
 
+    let (output_format, table_style) = sql_cli::non_interactive::resolve_output_options(
+        &parsed_args.output_format_arg,
+        &parsed_args.table_style_arg,
+    )
+    .map_err(io::Error::other)?;
+
     let config = sql_cli::non_interactive::NonInteractiveConfig {
         data_file,
         query,
-        output_format: sql_cli::non_interactive::OutputFormat::from_str(
-            &parsed_args.output_format_arg,
-        )
-        .map_err(io::Error::other)?,
+        output_format,
         output_file: parsed_args.output_file_arg,
         case_insensitive: args.contains(&"--case-insensitive".to_string()),
         auto_hide_empty: args.contains(&"--auto-hide-empty".to_string()),
@@ -1637,8 +1638,7 @@ fn handle_non_interactive_query(
         debug_trace: parsed_args.debug_arg,
         max_col_width,
         col_sample_rows,
-        table_style: sql_cli::non_interactive::TableStyle::from_str(&parsed_args.table_style_arg)
-            .map_err(io::Error::other)?,
+        table_style,
         styled: parsed_args.styled_arg,
         style_file: parsed_args.style_file_arg.clone(),
         no_where_expansion: parsed_args.no_where_expansion_arg,

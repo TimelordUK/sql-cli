@@ -31,8 +31,8 @@ def _display_width(text):
     return sum(2 if unicodedata.east_asian_width(ch) in ("W", "F") else 1 for ch in text)
 
 
-def render_table(csv_text, query, extra_args=(), tmp_path=None):
-    """Run a query with -o table and return the table's lines."""
+def render_table(csv_text, query, extra_args=(), tmp_path=None, output="table"):
+    """Run a query with -o table (or another -o value) and return the table's lines."""
     sql_cli = _sql_cli_binary()
     if not sql_cli.exists():
         pytest.skip(f"sql-cli not built at {sql_cli}")
@@ -40,7 +40,7 @@ def render_table(csv_text, query, extra_args=(), tmp_path=None):
     data_file = tmp_path / "projects.csv"
     data_file.write_text(csv_text, encoding="utf-8")
 
-    cmd = [str(sql_cli), str(data_file), "-q", query, "-o", "table"]
+    cmd = [str(sql_cli), str(data_file), "-q", query, "-o", output]
     cmd.extend(str(a) for a in extra_args)
 
     env = dict(os.environ, PYTHONIOENCODING="utf-8")
@@ -145,3 +145,70 @@ def test_markdown_style_is_also_aligned(tmp_path):
         tmp_path=tmp_path,
     )
     assert_lines_aligned(lines)
+
+
+# Markdown is a --table-style, but it reads as an output format, so `-o markdown`
+# used to be rejected outright. It is now shorthand for the table + markdown style.
+
+
+@pytest.mark.parametrize("output", ["markdown", "md", "MARKDOWN"])
+def test_markdown_is_accepted_as_an_output_format(tmp_path, output):
+    via_format = render_table(
+        PROJECTS_CSV,
+        "SELECT Project, sum(DurationSecs) as total_secs FROM projects GROUP BY Project",
+        tmp_path=tmp_path,
+        output=output,
+    )
+    via_style = render_table(
+        PROJECTS_CSV,
+        "SELECT Project, sum(DurationSecs) as total_secs FROM projects GROUP BY Project",
+        extra_args=["--table-style", "markdown"],
+        tmp_path=tmp_path,
+    )
+    assert via_format == via_style
+    assert via_format[1].startswith("|--"), "second line should be the markdown separator"
+
+
+def test_markdown_wins_over_an_explicit_table_style(tmp_path):
+    lines = render_table(
+        PROJECTS_CSV,
+        "SELECT Project FROM projects",
+        extra_args=["--table-style", "utf8"],
+        tmp_path=tmp_path,
+        output="markdown",
+    )
+    assert all(line.startswith("|") for line in lines)
+
+
+def _markdown_cells(line):
+    r"""Split a markdown row into cells, honouring `\|` escapes."""
+    placeholder = "\x00"
+    inner = line.strip().strip("|").replace(r"\|", placeholder)
+    return [cell.strip().replace(placeholder, "|") for cell in inner.split("|")]
+
+
+def test_markdown_escapes_pipes_in_values_and_headers(tmp_path):
+    csv_text = 'Project,Owner\n"a | b",team|x\n'
+    lines = render_table(
+        csv_text,
+        'SELECT Project AS "name|alias", Owner FROM projects',
+        tmp_path=tmp_path,
+        output="markdown",
+    )
+    assert_lines_aligned(lines)
+    # Every row still has exactly two cells once escapes are honoured
+    assert _markdown_cells(lines[0]) == ["name|alias", "Owner"]
+    assert _markdown_cells(lines[2]) == ["a | b", "team|x"]
+
+
+def test_markdown_keeps_multiline_values_on_one_row(tmp_path):
+    csv_text = 'Project,DurationSecs\n"line one\nline two",120\n'
+    lines = render_table(
+        csv_text,
+        "SELECT Project, DurationSecs FROM projects",
+        tmp_path=tmp_path,
+        output="markdown",
+    )
+    # header, separator, one data row -- the embedded newline must not split it
+    assert len(lines) == 3, "\n".join(lines)
+    assert "line one<br>line two" in lines[2]
