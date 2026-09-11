@@ -75,7 +75,7 @@ pub fn print_help() {
         "--query-file".green()
     );
     println!(
-        "  {}, {} <format>   - Output format: csv, json, table, tsv (default: csv)",
+        "  {}, {} <format>   - Output format: csv, json, table, tsv, markdown (default: csv)",
         "-o".green(),
         "--output".green()
     );

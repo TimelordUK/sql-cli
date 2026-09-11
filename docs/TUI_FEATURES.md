@@ -24,7 +24,8 @@ editor is annoying, it gets a T-number rather than a workaround.
 ## Scope
 
 **In:** the query editor and its completion, key handling, navigation
-ergonomics, what the status line says.
+ergonomics, what the status line says, and getting results out of the tool
+(copy, export; see T13).
 
 **Out:** anything about query *results* being wrong — that is a P-number. The
 dividing line is whether a correct engine would still leave the user annoyed.
@@ -506,3 +507,58 @@ Older, non-living notes that still contain usable thinking:
   return no suggestions. Whether `ParseState` itself goes depends on what
   `src/completer.rs` should become — which overlaps with the
   `CompletionManager` question in *Notes on the current design*.
+
+### T13 — Results cannot leave the tool as a grid
+- **Status:** 🟡 IN PROGRESS — CLI markdown fixed 2026-09-11; the clipboard half is open
+- **Where:** `src/non_interactive.rs` (`resolve_output_options`,
+  `output_table`); `src/ui/behaviors/export_behavior.rs:40`;
+  `src/widgets/help_widget.rs:520`; `src/yank_manager.rs` (`yank_all`)
+- **Scope note:** this is about getting results *out*, which sits just outside
+  the editor-and-completion scope above. It is logged here because it came from
+  daily use, not from wrong answers, and there is no better home for it.
+- **Observed:** the goal is to paste a result set into Microsoft Teams as a
+  readable table. Today that means `-o csv`, opening the file in Excel, and
+  copying from there. Things that looked like shortcuts, and why none of them work:
+  1. `-o markdown` was rejected with "Invalid output format". Markdown was only
+     reachable as `-o table --table-style markdown`, even though the help listed
+     it right next to `-o`.
+  2. A `|` in a value or header was not escaped, so `'a|b'` split its row into an
+     extra cell. An embedded newline split the row in two.
+  3. **Teams does not render markdown tables.** Confirmed by pasting one: it
+     arrives as literal pipes. So even a correct markdown table does not reach
+     the goal.
+  4. The TUI help (`help_widget.rs`) advertises `Ctrl+E, C/J/M/H` export chords.
+     No chord exists. Results mode binds plain `Ctrl+E` to CSV and `Ctrl+J` to
+     JSON (`enhanced_tui.rs`, `try_handle_results_export`). The Markdown and HTML
+     arms of `ExportFormat` return "not yet implemented" and are unreachable.
+- **Why Excel works:** Excel puts **HTML** on the clipboard alongside plain
+  text, and Teams renders the HTML as a real grid. That, not markdown, is the
+  thing to reproduce.
+- **Done (2026-09-11):** items 1 and 2. `-o markdown` / `-o md` are shorthand
+  for the table + markdown style, and they win over an explicit `--table-style`.
+  Markdown cells escape `|` as `\|` and newlines as `<br>`, and markdown never
+  uses comfy-table's dynamic arrangement: wrapping a cell onto a second line
+  would split the row. Tests are in
+  `tests/python_tests/test_table_output_alignment.py`.
+- **Design for the rest:** `arboard` (already a dependency, 3.6.1) supports
+  `Clipboard::set().html(html, Some(alt_text))` on Windows, macOS and X11/Wayland.
+  - **One HTML table builder** on `DataView`, next to `to_tsv()`: `<table>` with
+    `<th>` headers, every cell HTML-escaped, NULL as an empty cell. The same
+    builder serves the TUI and the CLI.
+  - **TUI:** a yank variant that sets HTML with the existing TSV as `alt_text`.
+    Pasting into Teams or Outlook gives a grid; pasting into a terminal or editor
+    still gives TSV. Whether this *replaces* `yank_all` or sits beside it needs
+    checking first. Excel prefers HTML when both formats are present and may
+    re-type cells differently (leading zeros, date-like strings) from the TSV it
+    gets today.
+  - **CLI:** `-o html` for files, plus a way to put the result straight on the
+    clipboard (`--copy`, say). `-o html | clip` is not enough: `clip.exe` only
+    ever sets plain text. On Linux, arboard's clipboard lives only as long as the
+    process that set it, so a CLI `--copy` there needs arboard's `wait`-until-
+    replaced mode or a note that it is Windows/macOS-first.
+  - **Help:** fix `help_widget.rs` to describe the keys that actually exist,
+    whichever way the export chords go. Aspirational help text is how item 4
+    went unnoticed.
+- **Loose end:** `--execute-statement` renders through `main.rs`'s
+  `output_table_helper`, which ignores `--table-style` entirely (`_style`). So
+  `-o markdown` there prints the default style. This predates T13.

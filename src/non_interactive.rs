@@ -108,10 +108,25 @@ impl OutputFormat {
             "table" => Ok(OutputFormat::Table),
             "tsv" => Ok(OutputFormat::Tsv),
             _ => Err(anyhow::anyhow!(
-                "Invalid output format: {}. Use csv, json, json-structured, table, or tsv",
+                "Invalid output format: {}. Use csv, json, json-structured, table, tsv, or markdown",
                 s
             )),
         }
+    }
+}
+
+/// Resolve `-o` and `--table-style` together.
+///
+/// Markdown is a table style, but it reads as a format, so `-o markdown` (or
+/// `-o md`) is accepted as shorthand for `-o table --table-style markdown`.
+/// An explicit request for markdown wins over whatever `--table-style` says.
+pub fn resolve_output_options(format: &str, style: &str) -> Result<(OutputFormat, TableStyle)> {
+    match format.to_lowercase().as_str() {
+        "markdown" | "md" => Ok((OutputFormat::Table, TableStyle::Markdown)),
+        _ => Ok((
+            OutputFormat::from_str(format)?,
+            TableStyle::from_str(style)?,
+        )),
     }
 }
 
@@ -1598,13 +1613,38 @@ fn output_table<W: Write>(
         }
     }
 
-    // Set content arrangement (automatic width adjustment)
-    if max_col_width.is_some() {
+    let markdown = matches!(style, TableStyle::Markdown);
+
+    // Set content arrangement (automatic width adjustment). Not for markdown:
+    // wrapping a cell onto a second line splits the row and breaks the table.
+    if max_col_width.is_some() && !markdown {
         table.set_content_arrangement(ContentArrangement::Dynamic);
     }
 
+    // Truncate to the column cap, then escape for markdown (escaping after
+    // truncating so the cut can never land between `\` and `|`)
+    let cell_text = |s: String| -> String {
+        let s = match max_col_width {
+            Some(max_width) => truncate_to_width(&s, max_width),
+            None => s,
+        };
+        if markdown {
+            escape_markdown_cell(&s)
+        } else {
+            s
+        }
+    };
+
     // Set column headers
-    let columns = dataview.column_names();
+    let columns: Vec<String> = if markdown {
+        dataview
+            .column_names()
+            .iter()
+            .map(|c| escape_markdown_cell(c))
+            .collect()
+    } else {
+        dataview.column_names()
+    };
 
     // Apply color styling if requested
     if styled {
@@ -1626,14 +1666,7 @@ fn output_table<W: Write>(
                     dataview.get_row(i).map(|row| {
                         row.values
                             .iter()
-                            .map(|v| {
-                                let s = format_value(v);
-                                // Apply max width truncation if specified
-                                match max_col_width {
-                                    Some(max_width) => truncate_to_width(&s, max_width),
-                                    None => s,
-                                }
-                            })
+                            .map(|v| cell_text(format_value(v)))
                             .collect()
                     })
                 })
@@ -1653,14 +1686,7 @@ fn output_table<W: Write>(
                 let row_strings: Vec<String> = row
                     .values
                     .iter()
-                    .map(|v| {
-                        let s = format_value(v);
-                        // Apply max width truncation if specified
-                        match max_col_width {
-                            Some(max_width) => truncate_to_width(&s, max_width),
-                            None => s,
-                        }
-                    })
+                    .map(|v| cell_text(format_value(v)))
                     .collect();
                 table.add_row(row_strings);
             }
@@ -1671,6 +1697,14 @@ fn output_table<W: Write>(
     writeln!(writer, "{}", table)?;
 
     Ok(())
+}
+
+/// Make a value safe inside a markdown table cell: a raw `|` ends the cell and
+/// a newline ends the row. GFM renders `\|` as a pipe and `<br>` as a break.
+fn escape_markdown_cell(s: &str) -> String {
+    s.replace('|', "\\|")
+        .replace("\r\n", "<br>")
+        .replace('\n', "<br>")
 }
 
 /// Format a `DataValue` for display
