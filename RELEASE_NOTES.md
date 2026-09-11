@@ -1,14 +1,12 @@
-# SQL CLI v1.84.1
+# SQL CLI v1.84.2
 
-**Release Date:** September 09, 2026
+**Release Date:** September 11, 2026
 
 ## 📊 Release Overview
-- **Commits in this release:** 3
-- **Files updated:** 9
+- **Commits in this release:** 2
+- **Files updated:** 5
 
 ## ✨ Highlights
-
-### 🎨 Visual Improvements
 
 ### 🔍 Enhanced Debugging
 - **Better Diagnostics**: Improved error messages and state dumps
@@ -16,14 +14,13 @@
 ## 📝 Changes by Category
 
 ### 🐛 Bug Fixes
-- truncate table cells to the column width
+- accept -o markdown, escape markdown cells; log T13
 
 <details>
 <summary>📋 View all commits</summary>
 
-- Merge pull request #71 from TimelordUK/fix/table-output-column-truncation (TimelordUK)
-- docs+examples: TeamCity agent capacity skeleton, and P44 (TimelordUK)
-- fix(output): truncate table cells to the column width (TimelordUK)
+- Merge pull request #72 from TimelordUK/fix/markdown-output-format (TimelordUK)
+- fix(output): accept -o markdown, escape markdown cells; log T13 (TimelordUK)
 
 </details>
 
