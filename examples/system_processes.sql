@@ -6,7 +6,10 @@
 -- pid, ppid, name, user, status, cpu_percent, memory_bytes, started, exe,
 -- command - with NULL wherever a platform declines to answer.
 --
--- Two things to know before reading any result:
+-- Three things to know before reading any result:
+--   * one row per process, never per thread - Linux offers its tasks alongside
+--     its processes and they are filtered out, because a thread reports its
+--     process's memory and would be counted again in every SUM below;
 --   * each call to processes() samples CPU twice, ~250ms, so a query with two
 --     CTEs over it takes about half a second;
 --   * the parser does not accept a table function directly after JOIN (P45),

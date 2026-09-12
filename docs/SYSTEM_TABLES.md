@@ -29,9 +29,13 @@ feature flag.
    `src/sql/generators/mod.rs` takes arguments and returns a `DataTable`. The
    parser, the executor and the TUI stay unaware that a table came from the OS
    rather than a file. `READ_CSV` and `GREP` are the precedent.
-2. **The columns are identical on every platform.** NULL where an OS cannot
-   answer or where privileges were refused — never a different shape per OS,
-   because a query written on Linux has to run on Windows.
+2. **The columns are identical on every platform, and so are the rows.** NULL
+   where an OS cannot answer or where privileges were refused — never a
+   different shape per OS, because a query written on Linux has to run on
+   Windows. "Rows" is not a pedantic addition: Linux offered threads as
+   processes and nearly shipped an inflated `SUM(memory_bytes)` with them (S1).
+   When a platform volunteers extra rows, ask whether they are the same *kind*
+   of thing before passing them on.
 3. **A generator returns a snapshot.** Re-running the query is the refresh;
    nothing here is live or subscribed.
 4. **Optional at build time.** Everything in this file sits behind the
@@ -119,6 +123,40 @@ recursive query. See S3.
   SELECT name, COUNT(*) AS n, SUM(memory_bytes)/1048576 AS mb
   FROM processes() GROUP BY name ORDER BY mb DESC LIMIT 8;
   ```
+- **Corrected 2026-09-12, from the first Linux run: threads were being listed
+  as processes.** Linux exposes every *task* — every thread — alongside the
+  processes, each with its own id and the process as its parent. Windows and
+  macOS do not. So the first Linux run of `processes()` returned seventeen
+  extra `sql-cli` rows, all children of the real one:
+
+  ```
+  name,pid,fn,pid_1
+  zsh,1932,sql-cli,40702
+  sql-cli,40702,sql-cli,40703      <- these seventeen are threads
+  sql-cli,40702,sql-cli,40704
+  ...
+  ```
+
+  Two reasons this had to be fixed rather than documented:
+  1. It breaks the rule this file exists to keep — the same query returned a
+     different shape on Linux than on Windows.
+  2. **It silently corrupted arithmetic.** A thread reports its *process's*
+     memory, so `SUM(memory_bytes) GROUP BY name` counted a 4 GB browser once
+     per thread. The example queries would have read plausibly and been wrong
+     by a large multiple, on Linux only — the worst shape of bug, and the same
+     family as P44's seasonal offset.
+
+  Fixed by skipping rows where `thread_kind()` is `Some`, which is `None` on
+  every platform but Linux, so the filter costs nothing elsewhere. If threads
+  are ever wanted they should be their own source (`threads()`), not a shape
+  change to this one.
+
+  **Verified on Linux, both ways.** `threads_are_not_listed_as_processes` is
+  `#[cfg(target_os = "linux")]` — the test binary spawns no child processes, so
+  any row naming it as parent is one of its own threads. Run under WSL with the
+  filter removed it fails and names all eighteen of them; with the filter it
+  passes. A platform-specific bug wants a test that runs on that platform and
+  has been seen to fail there.
 - **Two things Windows will not tell you, worth knowing before reading a
   result:**
   - **`status` is uniformly `Running`.** Windows does not expose per-process
