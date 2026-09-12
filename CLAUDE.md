@@ -390,6 +390,10 @@ The script parser is basic - it chunks on `GO` statements, so proper formatting 
   (*is it pleasant to use?*): completion, key handling, ergonomics. The TUI has
   no equivalent of the parity harness, so annoyances get logged here rather than
   worked around.
+- **`docs/SYSTEM_TABLES.md`** — S-numbered log for querying the running machine
+  (*what can we point the tool at?*): `processes()` and the family to follow.
+  Each source is one `TableGenerator` with a fixed, platform-independent column
+  set, behind the `system-tables` feature.
 
 ### Code
 - Function Registry: `src/sql/functions/mod.rs`

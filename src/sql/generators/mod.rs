@@ -10,6 +10,10 @@ pub mod prime_generators;
 pub mod random_generators;
 pub mod sequence_generators;
 pub mod string_generators;
+/// The running machine as a table. Optional, so a build can drop the
+/// OS-inspection dependencies entirely (`--no-default-features`).
+#[cfg(feature = "system-tables")]
+pub mod system;
 
 /// Trait for table-generating functions that produce rows dynamically
 pub trait TableGenerator: Send + Sync {
@@ -99,6 +103,10 @@ impl GeneratorRegistry {
         self.register(Box::new(AsciiArt));
         self.register(Box::new(BigText));
         self.register(Box::new(Banner));
+
+        // System tables
+        #[cfg(feature = "system-tables")]
+        self.register(Box::new(system::Processes));
     }
 
     pub fn register(&mut self, generator: Box<dyn TableGenerator>) {
