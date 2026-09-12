@@ -14,6 +14,7 @@ use sql_cli::data::datatable_loaders::load_csv_to_datatable;
 use sql_cli::sql::cursor_aware_parser::CursorAwareParser;
 use sql_cli::sql::parser::{ColumnInfo, ColumnType, TableInfo};
 use sql_cli::sql::suggestion::SuggestionKind;
+use sql_cli::ui::utils::text_operations::apply_completion_to_text;
 
 fn countries() -> DataTable {
     load_csv_to_datatable("data/countries.csv", "countries").expect("load data/countries.csv")
@@ -322,6 +323,128 @@ fn values_are_retained_exactly_for_columns_within_the_cap() {
 }
 
 // ---------------------------------------------------------------------------
+// T4: the values are offered between the quotes.
+//
+// The position T9 identified and left empty, and T11 captured the data for.
+// Scope is deliberately the quoted forms only — `= '<tab>'` and
+// `IN ('<tab>')` — so there is no quoting or number-formatting decision to
+// make: the value goes in exactly as the data reads it.
+// ---------------------------------------------------------------------------
+
+/// What the whole workstream has been for: six regions, in a stable order,
+/// each labelled with how many rows it covers.
+#[test]
+fn a_quoted_value_position_offers_the_columns_values() {
+    let table = countries();
+    let parser = parser_for(&table);
+
+    let query = "SELECT * FROM countries WHERE region = '";
+    let result = parser.get_completions(query, query.len());
+
+    let offered: Vec<(String, String)> = result
+        .suggestions
+        .iter()
+        .map(|s| (s.insert.clone(), s.display_text()))
+        .collect();
+
+    assert_eq!(
+        offered,
+        vec![
+            ("Africa".to_string(), "Africa (59 rows)".to_string()),
+            ("Americas".to_string(), "Americas (56 rows)".to_string()),
+            ("Antarctic".to_string(), "Antarctic (5 rows)".to_string()),
+            ("Asia".to_string(), "Asia (50 rows)".to_string()),
+            ("Europe".to_string(), "Europe (53 rows)".to_string()),
+            ("Oceania".to_string(), "Oceania (27 rows)".to_string()),
+        ]
+    );
+}
+
+/// Typing narrows, which is what makes a 100-value column usable.
+#[test]
+fn typing_inside_the_quotes_narrows_the_values() {
+    let table = countries();
+    let parser = parser_for(&table);
+
+    let query = "SELECT * FROM countries WHERE region = 'Am";
+    let result = parser.get_completions(query, query.len());
+    assert_eq!(result.insert_texts(), vec!["Americas".to_string()]);
+
+    // Case-insensitively, and the inserted text keeps the data's own case.
+    let query = "SELECT * FROM countries WHERE region = 'af";
+    let result = parser.get_completions(query, query.len());
+    assert_eq!(result.insert_texts(), vec!["Africa".to_string()]);
+}
+
+/// An `IN` list is the same position, so it gets the same values. Excluding
+/// the ones already in the list is T5.
+#[test]
+fn an_in_list_offers_values_too() {
+    let table = countries();
+    let parser = parser_for(&table);
+
+    let query = "SELECT * FROM countries WHERE region IN ('Asia', '";
+    let result = parser.get_completions(query, query.len());
+    assert!(result.insert_texts().contains(&"Europe".to_string()));
+}
+
+/// The gate, from the other end: a column whose values were not retained
+/// offers nothing rather than something misleading.
+#[test]
+fn a_high_cardinality_column_offers_no_values() {
+    let table = countries();
+    let parser = parser_for(&table);
+
+    let query = "SELECT * FROM countries WHERE \"name.common\" = '";
+    let result = parser.get_completions(query, query.len());
+    assert!(
+        result.context.starts_with("InStringLiteral"),
+        "got {}",
+        result.context
+    );
+    assert!(
+        result.suggestions.is_empty(),
+        "name.common has 250 values and none were kept, got {:?}",
+        result.insert_texts()
+    );
+}
+
+/// Accepting a value replaces the text between the quotes and nothing else.
+/// `replace_start` has pointed here since T9; this is the first thing to use it.
+#[test]
+fn accepting_a_value_splices_it_between_the_quotes() {
+    let table = countries();
+    let parser = parser_for(&table);
+
+    let query = "SELECT * FROM countries WHERE region = 'Am";
+    let result = parser.get_completions(query, query.len());
+    let accepted = &result.suggestions[0];
+
+    let spliced =
+        apply_completion_to_text(query, query.len(), result.replace_start, &accepted.insert);
+    assert_eq!(
+        spliced.new_text,
+        "SELECT * FROM countries WHERE region = 'Americas"
+    );
+}
+
+/// The blank cell in `independent` is a real value with a real count, but a
+/// zero-width suggestion is indistinguishable from Tab doing nothing, so it is
+/// not offered. The 0 and 1 around it are.
+#[test]
+fn an_empty_value_is_not_offered() {
+    let table = countries();
+    let parser = parser_for(&table);
+
+    let query = "SELECT * FROM countries WHERE independent = '";
+    let result = parser.get_completions(query, query.len());
+    assert_eq!(
+        result.insert_texts(),
+        vec!["0".to_string(), "1".to_string()]
+    );
+}
+
+// ---------------------------------------------------------------------------
 // T9: cursor context from the token stream.
 //
 // Each case below is a row of the table in `docs/TUI_FEATURES.md`, measured
@@ -334,8 +457,9 @@ fn values_are_retained_exactly_for_columns_within_the_cap() {
 /// `WhereClause`, which offered all 76 column names *inside the string
 /// literal*; typing a letter then filtered them to nothing.
 ///
-/// Offering nothing is the correct answer until T4 supplies values — the point
-/// of this test is that a column name is never one of them.
+/// T4 has since filled this position with the column's values, so what is
+/// pinned here is the part that must stay true either way: a column name is
+/// never offered inside the quotes, and everything offered is a Value.
 #[test]
 fn a_cursor_inside_a_string_literal_is_not_a_column_position() {
     let table = countries();
@@ -355,8 +479,11 @@ fn a_cursor_inside_a_string_literal_is_not_a_column_position() {
             result.context
         );
         assert!(
-            result.suggestions.is_empty(),
-            "{query:?} should offer nothing inside the quotes, got {:?}",
+            result
+                .suggestions
+                .iter()
+                .all(|s| s.kind == SuggestionKind::Value),
+            "{query:?} should offer values only, got {:?}",
             result.suggestions
         );
     }
