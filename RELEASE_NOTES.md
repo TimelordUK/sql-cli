@@ -1,33 +1,30 @@
-# SQL CLI v1.85.1
+# SQL CLI v1.85.2
 
 **Release Date:** September 12, 2026
 
 ## 📊 Release Overview
-- **Commits in this release:** 5
-- **Files updated:** 8
+- **Commits in this release:** 2
+- **Files updated:** 3
 
 ## ✨ Highlights
 
 ### 🔍 Enhanced Debugging
 - **Better Diagnostics**: Improved error messages and state dumps
 
+### 💾 Data Protection
+- **History Recovery**: Automatic recovery from corrupted files
+- **Atomic Writes**: Safer file operations to prevent data loss
+
 ## 📝 Changes by Category
 
-### 🚀 New Features
-- query the running machine with processes() (S1)
-
-### 📚 Documentation
-- expand the processes() examples (S1)
-- log T16 (column surgery) and T17 (schema-blind history)
+### 🐛 Bug Fixes
+- processes() listed Linux threads as processes (S1)
 
 <details>
 <summary>📋 View all commits</summary>
 
-- Merge pull request #77 from TimelordUK/feat/s1-processes-table (TimelordUK)
-- docs(system): expand the processes() examples (S1) (TimelordUK)
-- feat(system): query the running machine with processes() (S1) (TimelordUK)
-- Merge pull request #76 from TimelordUK/docs/t16-t17-tui-ergonomics (TimelordUK)
-- docs(tui): log T16 (column surgery) and T17 (schema-blind history) (TimelordUK)
+- Merge pull request #78 from TimelordUK/fix/s1-exclude-threads (TimelordUK)
+- fix(system): processes() listed Linux threads as processes (S1) (TimelordUK)
 
 </details>
 
