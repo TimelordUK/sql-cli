@@ -673,6 +673,78 @@ Older, non-living notes that still contain usable thinking:
   retained in full, and the "high-cardinality column offers nothing" case
   became "asks for a letter first".
 
+### T16 — Column surgery: what exists, and what is missing
+- **Status:** 🔴 OPEN — needs the user's list before it is designed
+- **Where:** `src/ui/input/actions.rs` (the `Action` enum),
+  `src/ui/key_handling/mapper.rs` (bindings),
+  `src/ui/input/action_handlers.rs`, `DataView` (`src/data/data_view.rs`)
+- **The ask:** *"not full blown vim like editing but ability to kill columns
+  etc or kill all columns — operations that allow fast changes"*. The working
+  pattern is TeamCity or Elastic output, small enough to chew through
+  interactively, where most of the work is discarding columns to see the few
+  that matter.
+- **What is already there** (worth knowing before adding anything):
+
+  | Key | Action |
+  |---|---|
+  | `-` | hide the current column |
+  | `+` / `=` | unhide all |
+  | `p` | pin / unpin the current column |
+  | `Ctrl+Shift+H` | hide empty columns |
+  | | move column left / right, clear all pins, sort, filter |
+
+  `DataView` also has `hide_all_columns`, `hide_column_by_name` and
+  `unhide_all_columns`, and `hide_all_columns` has **no action or binding** —
+  the "kill all columns" half of the ask may be a one-line mapping plus a way
+  back.
+- **The likely gaps**, to be confirmed rather than assumed:
+  - *Keep only this column* — hide all, then unhide the current one. With
+    `hide_all_columns` present this is a composition, not new machinery.
+  - *Kill several at once*: a range, a multi-select, or by pattern
+    (`translations.*` on `countries.csv` is 60 columns of noise).
+  - *Undo*. Hiding is cheap to do by accident and `+` is all-or-nothing, so
+    there is no way back to "what I had a moment ago".
+  - Whether any of this should be **expressible in the query** instead —
+    Ctrl+X already expands `SELECT *` to the column list, so hiding columns
+    and then editing the SELECT are two routes to the same place.
+- **Do not start by writing code.** The bindings exist; the question is which
+  operations are missing from daily use. Ask, then add the two or three that
+  matter.
+
+### T17 — History suggests queries that cannot run against the loaded data
+- **Status:** 🔴 OPEN
+- **Where:** `CommandHistory::search_with_schema` and
+  `calculate_schema_match_score` (`src/history.rs`),
+  `update_history_matches_in_container` (`src/ui/enhanced_tui.rs`)
+- **Observed:** *"the mcfly history whilst good it doesnt seem to tailor
+  itself very well to the query in hand — you're offered queries that don't
+  match the schema"*. Ctrl+R offers queries written against other datasets.
+- **What is already there:** more than the symptom suggests. `HistoryEntry`
+  records `schema_columns`, `data_source` and parsed `metadata`
+  (select/where/order-by columns); the TUI does pass the current columns and
+  table name down; and `calculate_schema_match_score` gives a bonus for a
+  matching source and matching columns. So this is not missing plumbing.
+- **Why it still feels wrong:** the schema is a **ranking bonus, never a
+  filter**. The bonus tops out around +100 while fuzzy match scores are
+  unbounded, so a good textual match against the wrong dataset still wins. And
+  with an empty query every entry scores `100 + bonus`, so the first thing you
+  see on Ctrl+R is recency across all datasets.
+- **The sharper signal available:** an entry whose `metadata.where_columns` or
+  `select_columns` name a column the loaded table does not have **cannot
+  execute**. That is a fact, not a preference, and it is already recorded.
+  Offering such a query first is always wrong.
+- **Design sketch:**
+  - Partition rather than score: runnable-here entries first, the rest below a
+    marker, or behind a toggle (McFly's own "context" modes are the precedent).
+  - Make the schema contribution dominant instead of additive — a multiplier,
+    or a sort key ahead of the fuzzy score.
+  - Watch the empty-query case separately; it is the one most often looked at.
+  - The history is shared across datasets on purpose. Nothing here should
+    *delete* an entry from view, only order it honestly.
+- **Note:** history predates T2, so it was written when nothing in the
+  editor knew a schema. This is the same correction T2 made to the completer,
+  arriving late for the other widget.
+
 ### T14 — The registry knows every signature and the editor never shows one
 - **Status:** 🔴 OPEN — opened 2026-09-12; the ergonomic half of T10
 - **Where:** `src/sql/cursor_context.rs` (a new context), the status line in
