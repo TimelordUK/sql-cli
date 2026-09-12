@@ -1958,6 +1958,37 @@ out of date.
 
 ---
 
+### P45 — A table function cannot appear after `JOIN`
+- **Status:** 🔴 OPEN — a parse error, so it is loud rather than silent
+- **Corpus:** none yet.
+- **Observed:** a table function is accepted in `FROM`, but not as the joined
+  side. The parser wants a plain name there and reports the failure as a
+  missing `ON`, which sends you looking in the wrong place:
+
+  | Query | Ours | DuckDB |
+  |---|---|---|
+  | `SELECT * FROM range(1,3)` | 1,2,3 ✅ | ✅ |
+  | `SELECT * FROM t JOIN range(1,3) ON t.id = value` | **Parse error: Expected ON keyword after JOIN table** 🚫 | joins |
+  | `WITH a AS (SELECT * FROM range(1,3)), b AS (...) SELECT * FROM a JOIN b ON a.value = b.value` | ✅ | ✅ |
+
+- **Found:** 2026-09-12, designing the system tables
+  ([`SYSTEM_TABLES.md`](SYSTEM_TABLES.md)). The motivating query for that work
+  is *which process holds that port*, which is `processes()` joined to
+  `sockets()` — exactly the shape that does not parse.
+- **Why it matters more than it used to:** generators were mostly standalone
+  sources (`range`, `read_csv`) where the CTE workaround is a minor
+  inconvenience. A family of system tables is specifically meant to be joined to
+  one another, so this becomes the common case rather than an edge.
+- **Workaround, and it is a decent one:** wrap each side in a CTE, which parses
+  and executes correctly today. `SYSTEM_TABLES.md` documents that form.
+- **Decision:** fix in the parser — the joined source should accept the same
+  productions as the `FROM` source, which is the general shape of the bug: two
+  places that should parse "a table source" and only one of them knows the full
+  grammar. Worth checking subqueries after `JOIN` at the same time.
+- **Related:** [P40](#p40), also about generator arguments in `FROM`.
+
+---
+
 ## Deferred / won't fix (intentional)
 
 ### D1 — Recursive CTEs (`WITH RECURSIVE`)

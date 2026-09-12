@@ -88,10 +88,15 @@ redis = { version = "0.23", optional = true }
 rmp-serde = "1.1"
 serde_yaml = "0.9"
 unicode-width = "0.1"
+# System tables (processes(), and the family to follow). Optional so a build
+# can drop the OS-inspection dependencies entirely.
+sysinfo = { version = "0.32", optional = true }
 
 [features]
-default = ["redis-cache"]
+default = ["redis-cache", "system-tables"]
 redis-cache = ["dep:redis"]
+# `processes()` and friends: OS inspection as table generators.
+system-tables = ["dep:sysinfo"]
 
 [dev-dependencies]
 tempfile = "3.8"
