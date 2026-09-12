@@ -279,14 +279,22 @@ fn low_cardinality_values_reach_the_snapshot_with_their_counts() {
     );
 }
 
+/// T11 capped retention at 100 values; T15 raised it to 10,000 after measuring
+/// that keeping *every* value of this file costs 207 KB. So `name.common` is
+/// now retained in full — what stops 250 names being offered at once is the
+/// offer policy, not the loader.
 #[test]
-fn high_cardinality_columns_keep_their_count_but_not_their_values() {
+fn a_column_with_one_value_per_row_is_still_retained() {
     let table = countries();
     let info = snapshot(&table);
 
     let name = info.find_column("name.common").expect("name.common");
     assert_eq!(name.cardinality, info.row_count);
-    assert_eq!(name.distinct_values, None);
+    assert_eq!(
+        name.distinct_values.as_ref().map(Vec::len),
+        info.row_count,
+        "every country name should be kept now the cap is 10,000"
+    );
 }
 
 /// The gate, checked against every column of a real file rather than a
@@ -388,15 +396,17 @@ fn an_in_list_offers_values_too() {
     assert!(result.insert_texts().contains(&"Europe".to_string()));
 }
 
-/// The gate, from the other end: a column whose values were not retained
-/// offers nothing rather than something misleading.
+/// A column with more values than are worth cycling waits for a letter, and
+/// says so, rather than reading as a dead end (T15). Found in real use: the
+/// first thing tried after T4 landed was `"name.common" = 'A` and the status
+/// line said "No completions available".
 #[test]
-fn a_high_cardinality_column_offers_no_values() {
+fn a_column_with_many_values_asks_for_a_letter_first() {
     let table = countries();
     let parser = parser_for(&table);
 
-    let query = "SELECT * FROM countries WHERE \"name.common\" = '";
-    let result = parser.get_completions(query, query.len());
+    let bare = "SELECT * FROM countries WHERE \"name.common\" = '";
+    let result = parser.get_completions(bare, bare.len());
     assert!(
         result.context.starts_with("InStringLiteral"),
         "got {}",
@@ -404,8 +414,43 @@ fn a_high_cardinality_column_offers_no_values() {
     );
     assert!(
         result.suggestions.is_empty(),
-        "name.common has 250 values and none were kept, got {:?}",
-        result.insert_texts()
+        "250 names is not a cycle anyone will sit through, got {} of them",
+        result.suggestions.len()
+    );
+    assert_eq!(
+        result.note.as_deref(),
+        Some("250 values in name.common - type a letter to narrow")
+    );
+
+    // One letter is all it takes.
+    let typed = "SELECT * FROM countries WHERE \"name.common\" = 'A";
+    let result = parser.get_completions(typed, typed.len());
+    assert_eq!(result.suggestions.len(), 15);
+    assert!(result.insert_texts().contains(&"Australia".to_string()));
+    assert!(result.note.is_none());
+
+    let typed = "SELECT * FROM countries WHERE \"name.common\" = 'Au";
+    let result = parser.get_completions(typed, typed.len());
+    assert_eq!(
+        result.insert_texts(),
+        vec!["Australia".to_string(), "Austria".to_string()]
+    );
+}
+
+/// The other note: a prefix that matches nothing is a fact about the data, not
+/// a broken completer.
+#[test]
+fn a_prefix_that_matches_no_value_says_so() {
+    let table = countries();
+    let parser = parser_for(&table);
+
+    let query = "SELECT * FROM countries WHERE region = 'Zz";
+    let result = parser.get_completions(query, query.len());
+
+    assert!(result.suggestions.is_empty());
+    assert_eq!(
+        result.note.as_deref(),
+        Some("no value in region starts with 'Zz'")
     );
 }
 

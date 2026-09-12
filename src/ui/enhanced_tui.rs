@@ -4069,8 +4069,14 @@ impl EnhancedTuiApp {
             // New completion context - get fresh suggestions
             let hybrid_result = self.hybrid_parser.get_completions(query, cursor_pos);
             if hybrid_result.suggestions.is_empty() {
-                self.state_container
-                    .set_status_message("No completions available".to_string());
+                // The completer sometimes knows *why* it has nothing - a column
+                // with more values than are worth cycling, say - and that is
+                // more use than "no completions" (T15).
+                self.state_container.set_status_message(
+                    hybrid_result
+                        .note
+                        .unwrap_or_else(|| "No completions available".to_string()),
+                );
                 return None;
             }
 

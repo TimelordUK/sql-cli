@@ -27,6 +27,8 @@ pub struct HybridResult {
     /// Byte offset where an accepted suggestion replaces text; see
     /// [`crate::sql::cursor_aware_parser::ParseResult::replace_start`].
     pub replace_start: usize,
+    /// Why the list is empty, when the completer knows (T15).
+    pub note: Option<String>,
 }
 
 impl Default for HybridParser {
@@ -97,6 +99,7 @@ impl HybridParser {
             cursor_position: cursor_pos,
             query_complexity: self.analyze_query_complexity(query),
             replace_start: result.replace_start,
+            note: result.note,
         }
     }
 

@@ -76,6 +76,11 @@ expressible, T9 made the position recognisable, T11 captured the values, T3
 let a suggestion show one thing and insert another — and the feature itself
 was twenty lines.
 
+T15 followed within hours, from using it: the loader's retention cap was also
+acting as an offer policy, so a column with 250 values offered nothing even
+with a prefix typed. That is the shape to watch for — a limit applied at a
+layer that cannot see the question being asked.
+
 **Recommended order from here: T14 → T10**, then T5. **T7** (deletion) and **T12**
 (retire the `ParseState` fallback) stay droppable anywhere.
 
@@ -320,10 +325,12 @@ Tab press between the user and what they wanted.
   change, no span logic — exactly what T9 predicted when it left the vector
   empty.
 - **Decisions made while doing it:**
-  - **No second cardinality gate.** T11's cap of 100 is the only limit, and
-    typing narrows from there. A column the user is filtering on is one whose
-    values they want; a ratio would only have removed columns they had already
-    asked about.
+  - ~~**No second cardinality gate.** T11's cap of 100 is the only limit, and
+    typing narrows from there.~~ **Wrong, and fixed the same day by T15**: with
+    no offer policy of its own, T4 inherited the loader's cap, so a column with
+    more than 100 values offered nothing at all — even with a prefix typed that
+    narrowed it to fifteen. The gate belonged here after all; what was wrong
+    was having it in the loader.
   - **An empty value is not offered.** The blank cell in `independent` is a
     real value with a real count, but a zero-width suggestion in a
     cycle-in-place UI is indistinguishable from Tab doing nothing. `= ''` is
@@ -616,6 +623,56 @@ Older, non-living notes that still contain usable thinking:
 - **Measure before and after**, as T9 did: what each context offers for
   ``, `m`, `co`, `a` on `countries.csv`.
 
+### T15 — Value completion stopped at the retention cap
+- **Status:** 🟢 DONE 2026-09-12 — found by using T4 the day it landed
+- **Where:** `DISTINCT_VALUES_CAP` / `DISTINCT_VALUES_BYTE_BUDGET` in
+  `src/data/datatable.rs`; `value_suggestions` and the two `VALUES_OFFERED_*`
+  constants in `src/sql/cursor_aware_parser.rs`; `ParseResult::note` through to
+  the status line
+- **Observed:** the first thing tried after T4 shipped was
+  `WHERE "name.common" = 'A<tab>` on `countries.csv`, and the status line said
+  **"No completions available"**. `name.common` has 250 distinct values, over
+  T11's cap of 100, so nothing had been retained — even though `A` narrows it
+  to 15 and `Au` to 2.
+- **Why the cap was wrong:** T11 justified 100 as bounding memory. Measured,
+  that was solving a problem that does not exist: retaining *every* distinct
+  value of all 76 columns of `countries.csv`, translations included, is
+  **207 KB**, and the `DataTable` already holds those strings per row, so
+  retention duplicates at most the size of the data and usually far less. The
+  real constraint was never memory — it was that **cycling 250 values in place
+  is useless**, which is an offer policy, not a retention bound. T11 enforced a
+  usability limit in the loader, where it also destroyed the data needed to
+  satisfy a typed prefix.
+- **Fixed by** separating the two properly:
+
+  | | Before (T11) | Now (T15) |
+  |---|---|---|
+  | Retention | ≤ 100 distinct values | ≤ 10,000 values **and** ≤ 1 MiB of them |
+  | Offer, nothing typed | all retained | all, up to 50 |
+  | Offer, prefix typed | all matching | matching, up to 100 |
+  | Over the offer limit | — | a note, not an empty list |
+
+- **The note (`ParseResult::note`):** a position that declines to offer can now
+  say why, and the TUI shows it instead of "No completions available":
+  - `250 values in name.common - type a letter to narrow`
+  - `no value in region starts with 'Zz'` — a fact about the data rather than
+    a broken completer
+  - `<column> has N distinct values - too many to complete`, for a column past
+    the retention bound
+  It is `Option<String>` on `ParseResult` and `HybridResult`, set only by the
+  value position, and read only when the suggestion list is empty.
+- **Why it is worth a number rather than a tweak:** the general fault is
+  **a usability limit applied at the wrong layer**. The loader cannot know
+  whether the user has typed a prefix, so a cap there answers a question only
+  the completer can ask. Worth checking for the same shape elsewhere before
+  adding a bound: is this limit about what we can afford to keep, or about what
+  is pleasant to show?
+- **Tests:** 2 in `tests/completion_schema.rs` (the letter-first note and the
+  15 `A` countries; the no-match note) and a byte-budget unit test in
+  `datatable.rs`. Two earlier tests changed side: `name.common` is now
+  retained in full, and the "high-cardinality column offers nothing" case
+  became "asks for a letter first".
+
 ### T14 — The registry knows every signature and the editor never shows one
 - **Status:** 🔴 OPEN — opened 2026-09-12; the ergonomic half of T10
 - **Where:** `src/sql/cursor_context.rs` (a new context), the status line in
@@ -670,6 +727,10 @@ Older, non-living notes that still contain usable thinking:
     generators) set `None`, because the rows under a derived column are not the
     rows the values were counted over. The TUI snapshots on load and on buffer
     switch (`StateCoordinator::update_parser_*`), which read the loaded table.
+- **Superseded in part by T15 (2026-09-12):** the cap below was raised from 100
+  to 10,000, plus a byte budget, once using T4 showed that a *retention* bound
+  was being asked to do an *offer policy's* job. The reasoning about ratios
+  still stands; the number does not.
 - **The gate, decided against the data rather than in advance.** The design
   above called for an absolute cap *and* a ratio. Measured per column:
 
