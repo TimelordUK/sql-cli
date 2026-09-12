@@ -204,6 +204,15 @@ impl ColumnInfo {
         self
     }
 
+    /// The column's values, as the loader would have captured them (T11).
+    /// For tests and for callers building a schema by hand.
+    #[must_use]
+    pub fn with_distinct_values(mut self, values: Vec<ValueCount>) -> Self {
+        self.cardinality = Some(values.len());
+        self.distinct_values = Some(values);
+        self
+    }
+
     /// Take the snapshot. `DataTable::infer_column_types()` already populates
     /// every field this reads, on every load path, so this is the whole of the
     /// data-side wiring.

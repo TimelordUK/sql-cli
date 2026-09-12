@@ -19,6 +19,10 @@ pub struct ParseResult {
     /// reference (`name.com` - replace all of it) or a method call on a column
     /// (`price.Con` - replace only `Con`).
     pub replace_start: usize,
+    /// Why there is nothing to offer, when the completer knows (T15).
+    /// `name.common has 250 distinct values - too many to complete` is a more
+    /// useful thing for the status line to say than "No completions available".
+    pub note: Option<String>,
 }
 
 impl ParseResult {
@@ -28,6 +32,24 @@ impl ParseResult {
     #[must_use]
     pub fn insert_texts(&self) -> Vec<String> {
         self.suggestions.iter().map(|s| s.insert.clone()).collect()
+    }
+}
+
+/// How many of a column's values are offered when nothing has been typed
+/// between the quotes yet. Above this the completer asks for a letter first
+/// rather than starting a cycle nobody will sit through (T15).
+const VALUES_OFFERED_UNPROMPTED: usize = 50;
+
+/// Never return more values than this, however specific the prefix. Typing one
+/// more character is a better way out of a long list than Tab is.
+const VALUES_OFFERED_MAX: usize = 100;
+
+/// How many rows hold a value, for the status line: `Americas (56 rows)`.
+fn rows_detail(count: usize) -> String {
+    if count == 1 {
+        "1 row".to_string()
+    } else {
+        format!("{count} rows")
     }
 }
 
@@ -92,6 +114,9 @@ impl CursorAwareParser {
             return result;
         }
 
+        // Set by the value position when it can explain an empty list.
+        let mut note = None;
+
         let (suggestions, context_str) = match &cursor_context {
             CursorContext::SelectClause => {
                 let mut cols = self.column_suggestions(&default_table);
@@ -139,14 +164,23 @@ impl CursorAwareParser {
                 (Vec::new(), "LimitClause".to_string())
             }
             CursorContext::InStringLiteral {
-                column, in_list, ..
+                column,
+                in_list,
+                value_start,
             } => {
-                // T4 fills this with the column's distinct values. Offering
-                // nothing is the correct answer until it does — before T9 this
-                // position offered every column name, inside the quotes.
+                // The cursor is between quotes, so what belongs here is one of
+                // the column's own values (T4), captured at load by T11 and
+                // filtered by whatever has been typed since the quote. A column
+                // with more values than are worth cycling returns a note
+                // instead of a list (T15).
+                let typed = query
+                    .get(*value_start..cursor_pos.min(query.len()))
+                    .unwrap_or_default();
+                let (suggestions, value_note) = self.value_suggestions(column.as_deref(), typed);
+                note = value_note;
                 let described = column.as_deref().unwrap_or("?");
                 (
-                    Vec::new(),
+                    suggestions,
                     format!("InStringLiteral({described}, list={in_list})"),
                 )
             }
@@ -279,6 +313,7 @@ impl CursorAwareParser {
                     context: format!("{context:?} (partial: {partial_word:?})"),
                     partial_word,
                     replace_start: token.as_ref().map_or(cursor_pos, |t| t.start),
+                    note: None,
                 };
             }
         };
@@ -328,6 +363,7 @@ impl CursorAwareParser {
             context: format!("{context_str} (partial: {partial_word:?})"),
             partial_word,
             replace_start,
+            note,
         }
     }
 
@@ -339,6 +375,73 @@ impl CursorAwareParser {
             .iter()
             .map(|col| Suggestion::column(col))
             .collect()
+    }
+
+    /// The values of `column` that continue what has been typed between the
+    /// quotes, in the order T11 captured them, and a note for the status line
+    /// when there is a reason for the list being empty (T15).
+    ///
+    /// The policy, not the retention bound, is what keeps this usable: a column
+    /// with few values offers all of them straight away, and a column with many
+    /// waits for a letter first. Cycling 250 country names is useless; cycling
+    /// the 15 that start with `A` is exactly what the feature is for.
+    fn value_suggestions(
+        &self,
+        column: Option<&str>,
+        typed: &str,
+    ) -> (Vec<Suggestion>, Option<String>) {
+        let Some(info) = column.and_then(|name| self.schema.find_column(name)) else {
+            return (Vec::new(), None);
+        };
+
+        let Some(values) = info.distinct_values.as_ref() else {
+            // Nothing was retained, so say so rather than let it read as "this
+            // column has no values".
+            let note = info.cardinality.map(|n| {
+                format!(
+                    "{} has {n} distinct values - too many to complete",
+                    info.name
+                )
+            });
+            return (Vec::new(), note);
+        };
+
+        // An empty value is a real one - a blank cell - but a zero-width
+        // suggestion is indistinguishable from Tab doing nothing, so it is
+        // never offered. `= ''` is typeable without help.
+        let candidates = || values.iter().filter(|v| !v.value.is_empty());
+        let total = candidates().count();
+
+        if typed.is_empty() && total > VALUES_OFFERED_UNPROMPTED {
+            return (
+                Vec::new(),
+                Some(format!(
+                    "{} values in {} - type a letter to narrow",
+                    total, info.name
+                )),
+            );
+        }
+
+        let needle = typed.to_lowercase();
+        let matches: Vec<Suggestion> = candidates()
+            .filter(|v| v.value.to_lowercase().starts_with(&needle))
+            .take(VALUES_OFFERED_MAX)
+            .map(|v| {
+                // The cursor is inside a literal, so a quote in the value has
+                // to be doubled on the way in; the label stays as the data
+                // reads.
+                Suggestion::value(v.value.replace('\'', "''"), v.value.clone())
+                    .with_detail(rows_detail(v.count))
+            })
+            .collect();
+
+        let note = if matches.is_empty() && !typed.is_empty() {
+            Some(format!("no value in {} starts with '{typed}'", info.name))
+        } else {
+            None
+        };
+
+        (matches, note)
     }
 
     /// The functions offered in a clause where a scalar expression can go.
@@ -409,6 +512,7 @@ impl CursorAwareParser {
             context: format!("DottedColumn (partial: {needle:?})"),
             partial_word: Some(token.text.clone()),
             replace_start: token.start,
+            note: None,
         })
     }
 
@@ -860,8 +964,44 @@ impl CursorAwareParser {
 mod tests {
     use super::*;
 
+    use crate::data::datatable::ValueCount;
     use crate::parser::ColumnInfo;
     use crate::parser::ColumnType;
+
+    /// `countries.csv` has no low-cardinality column containing a quote, so
+    /// the escaping case (T4) is built by hand.
+    #[test]
+    fn a_quote_inside_a_value_is_doubled_on_the_way_in() {
+        let mut parser = CursorAwareParser::new();
+        parser.update_single_table_info(TableInfo::new(
+            "people",
+            vec![ColumnInfo::new("owner")
+                .with_type(ColumnType::String)
+                .with_distinct_values(vec![
+                    ValueCount {
+                        value: "O'Brien".to_string(),
+                        count: 3,
+                    },
+                    ValueCount {
+                        value: "Smith".to_string(),
+                        count: 1,
+                    },
+                ])],
+        ));
+
+        let query = "SELECT * FROM people WHERE owner = '";
+        let result = parser.get_completions(query, query.len());
+
+        // The cursor is inside a literal, so the quote has to be doubled to
+        // survive being spliced in - but the user still reads the name.
+        let brien = &result.suggestions[0];
+        assert_eq!(brien.insert, "O''Brien");
+        assert_eq!(brien.label, "O'Brien");
+        assert_eq!(brien.display_text(), "O'Brien (3 rows)");
+
+        // And a value held by one row says so in the singular.
+        assert_eq!(result.suggestions[1].display_text(), "Smith (1 row)");
+    }
 
     /// The trade_deal schema these tests were written against. It used to be
     /// the *default* schema, which is exactly what T2 removed - a parser with

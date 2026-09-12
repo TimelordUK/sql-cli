@@ -66,13 +66,21 @@ impl DataType {
 
 /// The most distinct values a column may have and still have them kept.
 ///
-/// A retention bound, not a policy: it caps what a column costs to remember,
-/// and whoever offers the values (TUI completion, T4) decides which of the
-/// retained columns are worth offering. 100 matches the cardinality bound in
-/// `AdvancedCsvLoader::is_likely_categorical`. On `data/countries.csv` every
-/// column is either at most 24 distinct or at least 135, so the exact number
-/// does not decide anything there.
-pub const DISTINCT_VALUES_CAP: usize = 100;
+/// A retention bound, not a policy: whoever offers the values (TUI completion,
+/// T4) decides which retained columns are worth offering, and how many.
+///
+/// Raised from 100 to 10,000 by T15. The original number came from
+/// `AdvancedCsvLoader::is_likely_categorical` and was justified as bounding
+/// memory, which measurement did not support: retaining *every* distinct value
+/// of all 76 columns of `data/countries.csv` is 207 KB, and the table already
+/// holds those strings per row. The real limit was that cycling 250 values is
+/// useless — which is an offer policy, and is now enforced as one.
+pub const DISTINCT_VALUES_CAP: usize = 10_000;
+
+/// Ceiling on what one column's retained values may weigh, so that a free-text
+/// column in a very large file cannot quietly duplicate the file. A column over
+/// either this or [`DISTINCT_VALUES_CAP`] keeps its count and drops its values.
+pub const DISTINCT_VALUES_BYTE_BUDGET: usize = 1 << 20; // 1 MiB
 
 /// One distinct value of a column, and how many rows hold it.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -156,6 +164,9 @@ fn retain_distinct_values(
     data_type: &DataType,
 ) -> Option<Vec<ValueCount>> {
     if value_counts.len() > DISTINCT_VALUES_CAP {
+        return None;
+    }
+    if value_counts.keys().map(String::len).sum::<usize>() > DISTINCT_VALUES_BYTE_BUDGET {
         return None;
     }
 
@@ -1434,6 +1445,25 @@ mod tests {
         assert_eq!(over_cap.distinct_values, None);
         // The count is still exact: only the values are dropped.
         assert_eq!(over_cap.unique_values, Some(DISTINCT_VALUES_CAP + 1));
+    }
+
+    /// The count cap is not the only bound: a column of long free text can be
+    /// well under 10,000 distinct values and still be worth more than it costs
+    /// to keep (T15).
+    #[test]
+    fn distinct_values_are_dropped_above_the_byte_budget() {
+        let long = "x".repeat(2_000);
+        let column = inferred_column(
+            (0..600)
+                .map(|i| DataValue::String(format!("{long}{i}")))
+                .collect(),
+        );
+
+        assert_eq!(column.unique_values, Some(600));
+        assert_eq!(
+            column.distinct_values, None,
+            "600 values of 2 KB each is over the 1 MiB budget"
+        );
     }
 
     #[test]

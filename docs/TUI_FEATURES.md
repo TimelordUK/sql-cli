@@ -69,14 +69,38 @@ is a recognised value position (`CursorContext::InStringLiteral`) that offers
 nothing. Since **T11** (2026-09-11) the values are captured and sit in the
 completer's schema, with row counts. Nothing offers them yet.
 
-**T4 is now unblocked, and is next.** Both halves it was waiting on have
-landed: T11 captured the values, and T3 (2026-09-12) made a suggestion a value
-with `insert`, `label`, `kind` and `detail` — so `'Americas'` can go into the
-buffer while `Americas (56 rows)` goes to the status line. **T7** (deletion),
-**T10** (function lists from the registry) and **T12** (retire the `ParseState`
-fallback) remain droppable anywhere, and **T5** follows T4. **T8** is done: it
-was T1's bug in the other producer of column text, and it left
-`src/sql/identifier.rs` as the one place the quoting rule lives.
+**The thing this was all for now works.** T4 landed 2026-09-12:
+`WHERE region = '<tab>'` cycles `Africa (59 rows)`, `Americas (56 rows)`, … on
+`countries.csv`. It took four entries to get there — T1 made the span
+expressible, T9 made the position recognisable, T11 captured the values, T3
+let a suggestion show one thing and insert another — and the feature itself
+was twenty lines.
+
+T15 followed within hours, from using it: the loader's retention cap was also
+acting as an offer policy, so a column with 250 values offered nothing even
+with a prefix typed. That is the shape to watch for — a limit applied at a
+layer that cannot see the question being asked.
+
+**Recommended order from here: T14 → T10**, then T5. **T7** (deletion) and **T12**
+(retire the `ParseState` fallback) stay droppable anywhere.
+
+### What this editor is for (2026-09-12)
+
+Worth stating, because it decided the shape of T4, T10 and T14. Nobody writes
+a large query in this TUI — for that there is the nvim plugin, or a CSV and a
+second pass. What it is *for* is getting a simple filter right against
+unfamiliar data, and the four things that actually help are:
+
+1. **Column completion**, because you do not remember the names.
+2. **Method completion** on a column — `a.con<tab>` → `Contains('')`.
+3. **Knowing a function's arguments** once you have typed its name (T14).
+4. **Cycling a column's values** when there are ten of them and you remember
+   none exactly (T4).
+
+Everything is judged against that. It is why T4 stops at the quotes, why T10
+stopped being "offer all 370 functions", and why a suggestion list that grows
+is a cost rather than a feature: there is no popup, so every extra entry is a
+Tab press between the user and what they wanted.
 
 ---
 
@@ -225,8 +249,9 @@ was T1's bug in the other producer of column text, and it left
   `"nam` reach it, and that each context's suggestions carry the right kind.
 
 ### T4 — No value completion for low-cardinality columns
-- **Status:** 🔴 OPEN — **next**; every prerequisite (T2, T9, T11, T3) has landed
-- **Where:** `detect_cursor_context` in `src/sql/recursive_parser.rs`
+- **Status:** 🟢 DONE 2026-09-12
+- **Where:** `CursorAwareParser::value_suggestions` and the `InStringLiteral`
+  arm in `src/sql/cursor_aware_parser.rs`; `ColumnInfo::with_distinct_values`
 - **Observed:** `WHERE region = '<tab>'` offers nothing. There is
   `AfterComparisonOp(col, op)` for a cursor *after* an operator, but no context
   for a cursor *inside* a string literal.
@@ -240,27 +265,39 @@ was T1's bug in the other producer of column text, and it left
 - **Why it is worth doing:** on `countries.csv`, `region` has 6 distinct values
   and `independent` has 2. Typing those from memory — with exact spelling and
   case — is the single most common friction in filtering unfamiliar data.
-- **Three value positions, not one (added 2026-09-11).** The design below was
-  written for the cursor *inside* a quote. The user's own example was
-  `WHERE a = <tab>` with no quote typed, which is `AfterComparisonOp`, and that
-  arm currently offers `''` for text, `true`/`false` for booleans (T2), and
-  nothing for numbers. T4 covers all three:
+- **Scope: inside the quotes only (settled 2026-09-12).** An earlier draft of
+  this entry covered three positions, including `region = <tab>` with no quote
+  typed, where the completer would have inserted `'Americas'` with the quotes.
+  That is cut. T4 is **`region = '<tab>'` and `region IN ('<tab>', …)`**, the
+  two positions T9 already reports as `InStringLiteral`:
 
-  | Position | Column | Offers | Inserted text | Span replaced |
-  |---|---|---|---|---|
-  | `region = <tab>` | text | retained values | `'Americas'`, quotes included | from the cursor |
-  | `region = 'Am<tab>` | text | values starting `Am` | `Americas`, bare | from `value_start` (T9) |
-  | `unMember = <tab>` | numeric | retained values | `1`, unquoted | from the cursor |
+  | Position | Offers | Inserted | Span |
+  |---|---|---|---|
+  | `region = '<tab>` | the column's values | `Americas`, bare | `value_start` (T9) |
+  | `region = 'Am<tab>` | values starting `Am` | `Americas`, bare | `value_start` |
+  | `region IN ('Asia', '<tab>` | values not already listed (T5) | bare | `value_start` |
 
-  The value is the same in all three, but the inserted text depends on where
-  the cursor is. That is the argument for T3's `insert`/`label` split landing
-  first. The text form should embed a quote inside a value as `''`. Boolean
-  columns keep `true`/`false`. A column with no retained values falls back to
-  today's `''`.
+  **Why narrower is right here:** the quote is an unambiguous signal that a
+  value is wanted, so nothing has to be inferred from the column's type; the
+  span is already computed; and there is no quoting, escaping or
+  number-formatting decision to get wrong. The unquoted forms are deferred
+  rather than rejected — `= <tab>` keeps today's `''` for text and
+  `true`/`false` for booleans, and a numeric column keeps offering nothing.
+  If typing the opening quote turns out to be the friction, that is a
+  follow-up with its own number, not a reason to widen this slice.
 - **Design:**
-  - New `CursorContext::InValueLiteral { column, in_list: bool }`.
-  - `replace_start` = the byte after the opening quote. This is exactly what T1
-    made expressible.
+  - `CursorContext::InStringLiteral { column, in_list, value_start }` already
+    exists and is already threaded through `ParseResult::replace_start`. The
+    arm in `cursor_aware_parser.rs` returns an empty vector on purpose; this
+    entry fills it.
+  - Insert the value **bare** and label it bare. `Suggestion::value` (T3)
+    exists for the case where the two differ; here they do not, which is the
+    point of the narrower scope.
+  - **Detail:** the row count, as `Suggestion::with_detail("56 rows")`, so the
+    status line reads `Completed: Americas (56 rows) (2/6 - Tab for next)`.
+  - **An embedded quote** in a value (`O'Brien`) must be escaped as `''` when
+    inserted, since the cursor is inside a literal. Rare in practice, cheap to
+    do, and a test case.
   - **Cardinality gate:** T11 measured this and settled the load-time half:
     a cap of 100, no ratio. `name.common` is already excluded. Any further
     *offer* policy (a ratio, a tighter cap for unprefixed Tab) is T4's call,
@@ -274,6 +311,40 @@ was T1's bug in the other producer of column text, and it left
   [`NVIM_SMART_COLUMN_COMPLETION.md`](NVIM_SMART_COLUMN_COMPLETION.md) — which
   also records that its keybinding got lost). Worth reading before designing the
   gate; the two should probably agree on what "low cardinality" means.
+- **What it does now.** `WHERE region = '<tab>'` on `countries.csv` offers
+
+  ```
+  Africa (59 rows)  Americas (56 rows)  Antarctic (5 rows)
+  Asia (50 rows)    Europe (53 rows)    Oceania (27 rows)
+  ```
+
+  in that order, cycling in place; `'af` narrows to `Africa` and inserts the
+  data's own capitalisation. The whole of it is `value_suggestions`, ~20 lines:
+  look the column up in the schema, filter the retained values by what has been
+  typed since `value_start`, and build a `Suggestion` per value. No parser
+  change, no span logic — exactly what T9 predicted when it left the vector
+  empty.
+- **Decisions made while doing it:**
+  - ~~**No second cardinality gate.** T11's cap of 100 is the only limit, and
+    typing narrows from there.~~ **Wrong, and fixed the same day by T15**: with
+    no offer policy of its own, T4 inherited the loader's cap, so a column with
+    more than 100 values offered nothing at all — even with a prefix typed that
+    narrowed it to fifteen. The gate belonged here after all; what was wrong
+    was having it in the loader.
+  - **An empty value is not offered.** The blank cell in `independent` is a
+    real value with a real count, but a zero-width suggestion in a
+    cycle-in-place UI is indistinguishable from Tab doing nothing. `= ''` is
+    typeable without help.
+  - **A quote in a value is doubled** on the way in (`O'Brien` → `O''Brien`)
+    while the label stays readable — the first real use of T3's
+    `insert`/`label` split. `countries.csv` has no such value in a
+    low-cardinality column, so that case is a unit test with a hand-built
+    schema, which is what `ColumnInfo::with_distinct_values` was added for.
+- **Tests:** 6 in `tests/completion_schema.rs` — the exact six regions with
+  their counts, narrowing by typed text, an `IN` list, a high-cardinality
+  column offering nothing, the splice landing between the quotes, and the
+  empty value staying out — plus the quote-escaping unit test. T9's
+  "offers nothing inside the quotes" test became "offers only values".
 
 ### T5 — `IN (...)` lists do not iterate
 - **Status:** 🔴 OPEN — depends on T4, and through it on T9
@@ -491,24 +562,143 @@ Older, non-living notes that still contain usable thinking:
   `find_completion_token`'s job and it still sees the quote — so the test's two
   substantive assertions are untouched.
 
-### T10 — Function suggestions are a hand-kept list, not the registry
-- **Status:** 🔴 OPEN — small and self-contained
-- **Where:** `src/sql/cursor_aware_parser.rs:105,149,250`
-- **Observed:** the same 20-entry block (`"ROUND("`, `"ABS("`, `"FLOOR("`, …)
-  is pasted three times, once per context. The function registry
-  (`src/sql/functions/mod.rs`) holds ~370 functions and already exposes
-  `all_functions() -> Vec<FunctionSignature>` and
-  `get_by_category(FunctionCategory)`.
+### T10 — Function and method suggestions are hand-kept lists, not the registry
+- **Status:** 🔴 OPEN — re-scoped 2026-09-12; do after T4 and T14
+- **Where:** `Self::clause_function_suggestions` and the expression arm in
+  `src/sql/cursor_aware_parser.rs`; `get_string_method_suggestions` (three
+  lists, one per column type)
+- **Observed:** the same 20-entry function block was pasted three times before
+  T3 collected two of them; the method lists are still three hand-written
+  blocks. The registry (`src/sql/functions/mod.rs`) holds ~370 functions and
+  exposes `all_functions()` and `get_by_category`, and — less well known —
+  a **method** registry too: `register_method` / `get_method`, with
+  `string_methods.rs` registering Contains, StartsWith, EndsWith, ToUpper,
+  ToLower, Trim, TrimStart, TrimEnd, Length, Substring, Replace, IndexOf.
+  That is very nearly the completer's hand-kept list.
 - **Impact:** CLAUDE.md's first principle — *all functions go through the
   registry* — holds everywhere except the place a user actually discovers
-  functions. A newly registered function stays invisible to completion until
-  someone remembers to paste it into three lists. The lists are also
-  context-blind: aggregates get offered in WHERE.
-- **Design:** build from `all_functions()`, filtered by `FunctionCategory` per
-  context. `FunctionSignature.description` is the natural `detail` for T3's
-  `Suggestion`, so this is cheaper after T3 than before it — but it does not
-  block T9. Check the module direction first: `sql::functions` and
+  them. A newly registered function stays invisible to completion.
+- **Re-scope: the registry becomes the source of truth, not the offer list.**
+  The original design said "build from `all_functions()`, filtered by
+  category". Measured, that would make completion *worse*. `SELECT m<tab>`
+  matches 30 registry functions, and the first twelve are `MASS_EARTH`,
+  `MASS_JUPITER`, `MASS_MARS`, … — the curated list offers `MOD(` instead.
+  The distribution explains it:
+
+  | Category | Functions | | Category | Functions |
+  |---|---|---|---|---|
+  | Mathematical | 108 | | Date | 25 |
+  | String | 81 | | Bitwise | 21 |
+  | Astronomical | 39 | | BigNumber | 13 |
+  | Constant | 36 | | Statistical | 9 |
+  | Terminal | 27 | | Conversion | 8 |
+  | | | | Chemical | 5 |
+  | | | | **Aggregate** | **1** |
+
+  Note the last row: `MAX`/`MIN`/`SUM`/`COUNT` are in the registry only as
+  `MAX() OVER` window forms, so the HAVING list **cannot** come from
+  `get_by_category(Aggregate)`. That alone sinks the original plan.
+- **Design (what to build instead):**
+  1. **Nothing typed → columns and clause keywords only.** No functions at
+     all. On a 76-column file the 20 functions that follow the columns are
+     already unreachable by Tab, so this removes nothing in practice.
+  2. **Prefix typed → columns first, then functions, in two tiers.** Tier one
+     is Mathematical, String, Date, Statistical, Conversion; tier two
+     (Astronomical, Chemical, Constant, Terminal, Bitwise, BigNumber,
+     TableFunction) is offered only when tier one matches nothing. `m` then
+     gives `MOD(`, `MONTH(` …, and the planets stay reachable without being
+     in the way.
+  3. **After a dot → the method registry**, prefix-filtered, so `a.con<tab>`
+     still gives `Contains('')`. `arg_count` decides `()` versus `('')`,
+     which is also the answer to
+     [`feature_request_smart_function_completion.md`](feature_request_smart_function_completion.md)
+     and to T3's leftover about methods carrying their signature.
+  4. `FunctionSignature.description` becomes the `detail` on T3's
+     `Suggestion`.
+- **Why after T4 and T14:** as re-scoped, this is mostly *deletion* of curated
+  text, and its ranking decision (columns before functions, tier one before
+  tier two) is easier to settle once values are also competing for the same
+  positions. Check the module direction first: `sql::functions` and
   `sql::cursor_aware_parser` are siblings, so there should be no cycle.
+- **Measure before and after**, as T9 did: what each context offers for
+  ``, `m`, `co`, `a` on `countries.csv`.
+
+### T15 — Value completion stopped at the retention cap
+- **Status:** 🟢 DONE 2026-09-12 — found by using T4 the day it landed
+- **Where:** `DISTINCT_VALUES_CAP` / `DISTINCT_VALUES_BYTE_BUDGET` in
+  `src/data/datatable.rs`; `value_suggestions` and the two `VALUES_OFFERED_*`
+  constants in `src/sql/cursor_aware_parser.rs`; `ParseResult::note` through to
+  the status line
+- **Observed:** the first thing tried after T4 shipped was
+  `WHERE "name.common" = 'A<tab>` on `countries.csv`, and the status line said
+  **"No completions available"**. `name.common` has 250 distinct values, over
+  T11's cap of 100, so nothing had been retained — even though `A` narrows it
+  to 15 and `Au` to 2.
+- **Why the cap was wrong:** T11 justified 100 as bounding memory. Measured,
+  that was solving a problem that does not exist: retaining *every* distinct
+  value of all 76 columns of `countries.csv`, translations included, is
+  **207 KB**, and the `DataTable` already holds those strings per row, so
+  retention duplicates at most the size of the data and usually far less. The
+  real constraint was never memory — it was that **cycling 250 values in place
+  is useless**, which is an offer policy, not a retention bound. T11 enforced a
+  usability limit in the loader, where it also destroyed the data needed to
+  satisfy a typed prefix.
+- **Fixed by** separating the two properly:
+
+  | | Before (T11) | Now (T15) |
+  |---|---|---|
+  | Retention | ≤ 100 distinct values | ≤ 10,000 values **and** ≤ 1 MiB of them |
+  | Offer, nothing typed | all retained | all, up to 50 |
+  | Offer, prefix typed | all matching | matching, up to 100 |
+  | Over the offer limit | — | a note, not an empty list |
+
+- **The note (`ParseResult::note`):** a position that declines to offer can now
+  say why, and the TUI shows it instead of "No completions available":
+  - `250 values in name.common - type a letter to narrow`
+  - `no value in region starts with 'Zz'` — a fact about the data rather than
+    a broken completer
+  - `<column> has N distinct values - too many to complete`, for a column past
+    the retention bound
+  It is `Option<String>` on `ParseResult` and `HybridResult`, set only by the
+  value position, and read only when the suggestion list is empty.
+- **Why it is worth a number rather than a tweak:** the general fault is
+  **a usability limit applied at the wrong layer**. The loader cannot know
+  whether the user has typed a prefix, so a cap there answers a question only
+  the completer can ask. Worth checking for the same shape elsewhere before
+  adding a bound: is this limit about what we can afford to keep, or about what
+  is pleasant to show?
+- **Tests:** 2 in `tests/completion_schema.rs` (the letter-first note and the
+  15 `A` countries; the no-match note) and a byte-budget unit test in
+  `datatable.rs`. Two earlier tests changed side: `name.common` is now
+  retained in full, and the "high-cardinality column offers nothing" case
+  became "asks for a letter first".
+
+### T14 — The registry knows every signature and the editor never shows one
+- **Status:** 🔴 OPEN — opened 2026-09-12; the ergonomic half of T10
+- **Where:** `src/sql/cursor_context.rs` (a new context), the status line in
+  `src/ui/enhanced_tui.rs`
+- **Observed:** having typed `ROUND(`, nothing tells you what its arguments
+  are. The information exists — `FunctionSignature { name, arg_count,
+  description, returns, examples }` for ~370 functions — and completion never
+  surfaces it. Today the only way to see it is to leave the TUI and run
+  `--function-help ROUND`.
+- **Why it may beat T10's list work:** it answers *what are the arguments*
+  rather than *what functions exist*, which is the question a user who has
+  already typed `ROUND(` actually has. It adds nothing to the offer list, so
+  it cannot flood anything, and it is useful for all 370 functions at once
+  including the ones tier two hides.
+- **Design:** the token stream T9 produces already knows the cursor is inside
+  a call — a new `CursorContext::InFunctionArgs { name, arg_index }` from the
+  open parenthesis and the commas since. Render it Excel-style in the status
+  line: `ROUND(number, decimals) — Round a number to specified decimal
+  places`, with the current argument marked. No popup, no ghost text in the
+  buffer to start with; the status line is where the completer already talks.
+  If ghost text in the buffer is wanted later, it is a rendering change on top
+  of the same context.
+- **Open question:** `arg_count` is an `ArgCount` (fixed / range / variadic),
+  not named parameters, so the argument *names* have to come from
+  `examples` or be added to the signature. Check what `--function-help`
+  prints before designing the line.
 
 ### T11 — Distinct values are computed at load and thrown away
 - **Status:** 🟢 DONE 2026-09-11
@@ -537,6 +727,10 @@ Older, non-living notes that still contain usable thinking:
     generators) set `None`, because the rows under a derived column are not the
     rows the values were counted over. The TUI snapshots on load and on buffer
     switch (`StateCoordinator::update_parser_*`), which read the loaded table.
+- **Superseded in part by T15 (2026-09-12):** the cap below was raised from 100
+  to 10,000, plus a byte budget, once using T4 showed that a *retention* bound
+  was being asked to do an *offer policy's* job. The reasoning about ratios
+  still stands; the number does not.
 - **The gate, decided against the data rather than in advance.** The design
   above called for an absolute cap *and* a ratio. Measured per column:
 
