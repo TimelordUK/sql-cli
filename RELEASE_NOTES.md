@@ -1,26 +1,33 @@
-# SQL CLI v1.84.2
+# SQL CLI v1.85.0
 
-**Release Date:** September 11, 2026
+**Release Date:** September 12, 2026
 
 ## 📊 Release Overview
-- **Commits in this release:** 2
-- **Files updated:** 5
+- **Commits in this release:** 7
+- **Files updated:** 21
 
 ## ✨ Highlights
 
-### 🔍 Enhanced Debugging
-- **Better Diagnostics**: Improved error messages and state dumps
-
 ## 📝 Changes by Category
 
+### 🚀 New Features
+- complete a column's values inside quotes (T4)
+- make completion suggestions typed values (T3)
+- keep low-cardinality column values at load (T11)
+
 ### 🐛 Bug Fixes
-- accept -o markdown, escape markdown cells; log T13
+- let a prefix reach the values of a big column (T15)
 
 <details>
 <summary>📋 View all commits</summary>
 
-- Merge pull request #72 from TimelordUK/fix/markdown-output-format (TimelordUK)
-- fix(output): accept -o markdown, escape markdown cells; log T13 (TimelordUK)
+- Merge pull request #75 from TimelordUK/feat/t4-value-completion (TimelordUK)
+- fix(tui): let a prefix reach the values of a big column (T15) (TimelordUK)
+- feat(tui): complete a column's values inside quotes (T4) (TimelordUK)
+- Merge pull request #74 from TimelordUK/feat/t3-typed-suggestions (TimelordUK)
+- feat(tui): make completion suggestions typed values (T3) (TimelordUK)
+- Merge pull request #73 from TimelordUK/feat/t11-distinct-values (TimelordUK)
+- feat(tui): keep low-cardinality column values at load (T11) (TimelordUK)
 
 </details>
 
