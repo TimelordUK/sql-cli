@@ -10,6 +10,21 @@ INTO #countries
 FROM countries;
 go
 
+SELECT 
+    "name.common" AS name,
+    region,
+    cca3,
+    currencies,
+    capital,
+    latlng,
+    area,
+    callingCodes,
+    borders,
+    landlocked
+FROM #countries
+WHERE "name.common" = 'Russia';
+go
+
 WITH
     all AS (
         SELECT *
