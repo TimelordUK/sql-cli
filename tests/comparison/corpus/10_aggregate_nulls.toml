@@ -205,3 +205,37 @@ sql = "SELECT team, MODE(score) AS m FROM null_edges GROUP BY team ORDER BY team
 # Per-group state: each group must tally independently, and the all-NULL group
 # ('delta') must still produce its row with NULL. Catches a fix applied to the
 # ungrouped path only.
+
+# --- P47: MIN/MAX compare by type variant before value ---
+
+[[case]]
+id = "max_mixed_int_float"
+data = "null_edges.csv"
+sql = "WITH t AS (SELECT 1 AS v UNION ALL SELECT 2.5 AS v UNION ALL SELECT 10 AS v) SELECT MAX(v) AS mx FROM t"
+expect = "DIFFER"
+# P47, found 2026-09-12 writing examples/countries.sql. One column holding both
+# Integer and Float values: MAX returns 2.5 because DataValue's derived
+# PartialOrd ranks the Float variant above Integer regardless of the numbers.
+# DuckDB returns 10. The table is irrelevant to the query - the literal CTE is
+# the smallest shape that produces a mixed-type column deterministically.
+
+[[case]]
+id = "min_mixed_int_float"
+data = "null_edges.csv"
+sql = "WITH t AS (SELECT 5 AS v UNION ALL SELECT 2.5 AS v UNION ALL SELECT 10 AS v) SELECT MIN(v) AS mn FROM t"
+expect = "DIFFER"
+# The mirror of the case above, and it needs the true minimum to BE the float:
+# we return 5 (an Integer beats any Float for MIN), DuckDB returns 2.5. With
+# the values of the MAX case this would pass for the wrong reason.
+
+[[case]]
+id = "max_mixed_int_float_from_csv"
+data = "countries.csv"
+sql = "SELECT MAX(area) AS mx FROM countries"
+expect = "DIFFER"
+# P47 as it is actually met. Three of the 250 areas carry decimals (Monaco
+# 2.02, US Minor Outlying Islands 34.2, Vatican City 0.44) and they appear late
+# in the file, so CSV type inference leaves the column mixed Integer/Float.
+# MAX(area) is then 34.2 instead of 17098242 - the largest country in the world
+# by a factor of half a million. Keep this alongside the literal-CTE cases: a
+# fix that only handles literals would leave this one wrong.

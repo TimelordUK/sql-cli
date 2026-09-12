@@ -65,9 +65,9 @@ session apiece to fix properly, so **discovery is paused and the effort moves to
 picking them off**. Widen the corpus again when the open list is short, or
 opportunistically when a fix needs a case that doesn't exist yet.
 
-Corpus coverage today: tiers 01–10, **181 cases** (156 AGREE / 10 DIFFER /
-12 GAP / 1 OURS_ONLY / 2 BOTH_ERR as of 2026-09-06, after [P41](#p41) added four
-MODE cases). The largest single movement so far remains the 2026-09-05
+Corpus coverage today: tiers 01–10, **188 cases** (157 AGREE / 16 DIFFER /
+12 GAP / 1 OURS_ONLY / 2 BOTH_ERR as of 2026-09-12, after [P46](#p46)–[P48](#p48)
+added seven — six DIFFER and one AGREE anchor). The largest single movement so far remains the 2026-09-05
 NULL-ordering slice, which closed [P13](#p13) stage 2 and [P17](#p17) together —
 eleven cases in one change. **Tier 10 (aggregate & NULL edges) is still
 deliberately partial** — it holds the P14, P18–P20 and P41 cases and their
@@ -91,7 +91,8 @@ Suggested fix order, by silent blast radius:
 | ~~9c~~ | ~~[P17](#p17) + [P13](#p13) stage 2 — NULL ordering~~ | ✅ **Fixed 2026-09-05** — 141 → **152 AGREE**, eleven cases in one change. Both halves were the same comparator's NULL rule, so they were taken as one slice. The two sorts that disagreed with each other now *share* one function (`compare_for_order_by`), which is the part that stops the divergence recurring; the window site turned out to be sorting NULL as the **maximum** via a derived `PartialOrd`, not merely following a different rule |
 | ~~9d~~ | ~~[P37](#p37) window in `WHERE` returns 0 rows~~ | ✅ **Fixed 2026-09-05** — corpus count unchanged, and that is the finding: the case is `OURS_ONLY` before *and* after, so the harness cannot see this fix or a future regression of it (first entry of that kind — the regression test is a Rust module). The filed root cause was wrong: `ExpressionLifter` *does* lift from `WHERE`. The real defect was one arm in the WHERE evaluator answering FALSE for any bare value used as a predicate — `WHERE true` returned zero rows too. It did **not** close [P15](#p15), which needs the opposite change |
 | ~~9e~~ | ~~[P41](#p41) `MODE` tie-break is random per run~~ | ✅ **Fixed 2026-09-06** — 152 → **156 AGREE** (four new cases). Small, as predicted, but not where it was filed: the named `ModeState` was a *shadowed* implementation and fixing it moved nothing. Reference does specify a rule and it is **first-occurrence**, not the "smallest value wins" this row proposed. Unblocked both example files, now FORMAL. Spun off [P42](#p42), [P43](#p43), [R12](ENGINE_REFACTORING.md#r12) |
-| **NEXT** | [P14](#p14), [P20](#p20), [P23](#p23) | Smaller, self-contained, decisions already taken. Was row 9b |
+| **NEXT** | [P46](#p46) column-vs-column `WHERE` returns 0 rows, [P47](#p47) `MIN`/`MAX` ranked by type, [P48](#p48) NULL comparison projects `false` | All three found 2026-09-12 writing one examples file, all three silent. P46 is the [P30](#p30) disguise again — zero rows reads as "no data" — and P47 hands back a number wrong by a factor of half a million from an ordinary `GROUP BY`. Both are cheap: P47's correct comparator is already in the tree, and P48 is the [P18](#p18)/[P19](#p19) rule at one more site. P46 and P48 sit in neighbouring code, so take them together |
+| then | [P14](#p14), [P20](#p20), [P23](#p23) | Smaller, self-contained, decisions already taken. Was row 9b, then NEXT until the 2026-09-12 findings displaced it |
 | 9f | [P42](#p42) `MODE` is numeric-only | Companion to [R12](ENGINE_REFACTORING.md#r12), and cheap if taken with it: the shadowed implementation already handles non-numerics and preserves type, so the fix is largely to stop the live path throwing away what it knows. Also buys the corpus its clearest tie-break case |
 | 10 | [P22](#p22), [P25](#p25), [P26](#p26), [P15](#p15), [P32](#p32), [P38](#p38) | Hard errors — visible, so less urgent than any of the above |
 | 10b | [P39](#p39) `x/0` errors, voiding the whole statement | Hard error like row 10, but the only one whose blast radius is the *query* rather than the cell. Settle the four inconsistent call sites as one decision; it currently has no live probe (see the entry) |
@@ -117,6 +118,16 @@ plus the ordering lost. Re-probe a finding from a different angle before scoping
 the fix; the entry describes the symptom that was looked for, not necessarily the
 defect. The same session's sweep for other consumers of the same route turned up
 [P31](#p31), a live zero-rows bug in the `--limit` flag that nobody had reported.
+
+**A fourth, from P46–P48 (2026-09-12): writing examples is discovery.** Those
+three came out of one afternoon writing `examples/countries.sql` — not from the
+corpus, not from a fix, but from asking a real dataset ordinary questions
+("which borders cross a continent", "largest country per region"). Two were
+silent wrong answers in shapes the corpus did not cover, and the corpus grew by
+seven cases as a result. The examples directory is cheap discovery surface and
+worth mining deliberately when the open list runs short: unlike the corpus, it
+is written to be *interesting* rather than to be exhaustive, which is exactly how
+it wanders outside the tested envelope.
 
 **A fourth lesson, from closing P41 (2026-09-06): the entry named a fix site, and
 the fix site was dead code.** `ModeState` in `src/sql/aggregates/mod.rs` is
@@ -1762,8 +1773,33 @@ out of date.
   emits `value,index`, i.e. `WITH ORDINALITY` for free, which is worth keeping.
 
 - **What works today:** `SPLIT_PART(path,'/',n)` — scalar, resolves columns
-  normally, fine for fixed positions. There is no way to handle
-  arbitrary-depth paths.
+  normally, fine for fixed positions.
+
+- **A *bounded* explode also works today, and this entry undersold it
+  (added 2026-09-12).** `CROSS JOIN` a table of slot numbers onto the rows and
+  take one part per slot:
+
+  ```sql
+  WITH slots AS (SELECT value AS n FROM RANGE(1, 20)),
+       c     AS (SELECT * FROM #countries)
+  SELECT cca3, SPLIT_PART(borders, ',', n) AS neighbour
+  FROM c
+  CROSS JOIN slots
+  WHERE borders <> '' AND SPLIT_PART(borders, ',', n) <> '';
+  ```
+
+  That turns 250 country rows into 649 border pairs. Nothing here needs a
+  per-row generator call — the generator runs **once**, for the slot numbers,
+  and the *scalar* `SPLIT_PART` does the per-row work, so it sidesteps both
+  defects above rather than working around them. `examples/countries.sql` uses
+  it twice (`borders`, then `languages`) and it is the form to reach for until
+  piece 3 lands.
+
+  Two costs, which are why this is a workaround and not the feature: the bound
+  is hand-picked (20 slots for a real maximum of 16 — too few silently truncates,
+  too many just costs a scan), and the source is scanned once per slot. But
+  "there is no way to handle arbitrary-depth paths" overstated the gap: any
+  depth you are willing to bound is reachable today.
 
 - **Found:** 2026-09-04, from real use rather than the corpus — a TeamCity API
   response piped into `READ_JSON('-', …)`, wrapped in a CTE to extract an
@@ -1969,6 +2005,7 @@ out of date.
   |---|---|---|
   | `SELECT * FROM range(1,3)` | 1,2,3 ✅ | ✅ |
   | `SELECT * FROM t JOIN range(1,3) ON t.id = value` | **Parse error: Expected ON keyword after JOIN table** 🚫 | joins |
+  | `SELECT * FROM t CROSS JOIN range(1,3)` | **Parse error: Unexpected '(' after end of statement** 🚫 | joins |
   | `WITH a AS (SELECT * FROM range(1,3)), b AS (...) SELECT * FROM a JOIN b ON a.value = b.value` | ✅ | ✅ |
 
 - **Found:** 2026-09-12, designing the system tables
@@ -1980,12 +2017,175 @@ out of date.
   inconvenience. A family of system tables is specifically meant to be joined to
   one another, so this becomes the common case rather than an edge.
 - **Workaround, and it is a decent one:** wrap each side in a CTE, which parses
-  and executes correctly today. `SYSTEM_TABLES.md` documents that form.
+  and executes correctly today. `SYSTEM_TABLES.md` documents that form, and
+  `examples/countries.sql` leans on it — the bounded explode in
+  [P40](#p40) is `CROSS JOIN RANGE(1, 20)` with the generator wrapped in a CTE
+  for exactly this reason. Note the `CROSS JOIN` spelling fails with a *different*
+  message (the parser stops at the `(` and reports trailing tokens), which is
+  the same grammar hole seen from the other side.
 - **Decision:** fix in the parser — the joined source should accept the same
   productions as the `FROM` source, which is the general shape of the bug: two
   places that should parse "a table source" and only one of them knows the full
   grammar. Worth checking subqueries after `JOIN` at the same time.
 - **Related:** [P40](#p40), also about generator arguments in `FROM`.
+
+---
+
+### P46 — A column-to-column comparison in `WHERE` returns zero rows
+- **Status:** 🔴 OPEN — silent, and it returns the emptiest possible wrong answer
+- **Corpus:** `02_where.toml :: where_col_lt_col`, `where_col_eq_col_string`
+  (both `expect = "DIFFER"`); the contrast anchor is
+  `01_select.toml :: select_col_vs_col_projected`, which AGREEs.
+- **Observed:** if both sides of a comparison are columns, the predicate never
+  matches. Not one operator, not one type — the shape:
+
+  | Query | Ours | DuckDB 1.5.5 |
+  |---|---|---|
+  | `WHERE id < partner_id` (`null_edges.csv`) | **0 rows** 🚫 | ids 1, 4, 7, 9 |
+  | `WHERE currency = trading_currency` (`instruments.csv`) | **0 rows** 🚫 | 57 of 200 |
+  | `WHERE bid_price > ask_price` (`instruments.csv`) | **0 rows** 🚫 | 108 of 200 |
+  | `WHERE region = region` — *the same column on both sides* | **0 rows** 🚫 | every row |
+  | `SELECT id < partner_id AS lt` — same comparison, projected | ✅ correct | ✅ |
+
+  The `region = region` row is the tell: no data, no type, no NULL and no
+  coercion is involved. Any `Column op Column` predicate is false.
+- **Not the parser.** `--query-plan` shows the WHERE clause as
+  `BinaryOp { left: Column(region), op: "=", right: Column(subregion) }` — the
+  AST is exactly right, so this lives in the WHERE evaluator. And the same
+  comparison evaluated in the `SELECT` list is correct, which localises it
+  further: comparison works, *this site's* comparison does not.
+- **Found:** 2026-09-12, writing `examples/countries.sql`. "Which land borders
+  cross a continent boundary" is `WHERE region <> nb_region` after joining the
+  border pairs back to the countries, and it returned nothing. The shape is
+  ordinary in joined or staged data: bid against ask, claimed against settled,
+  this row's region against its neighbour's.
+- **Why it bites:** zero rows reads as *no such data*, the same disguise that
+  made [P30](#p30) dangerous — and the natural next move is to loosen the query
+  rather than to doubt the engine. It was only caught here because the answer was
+  known in advance (Russia borders China, so the result cannot be empty).
+- **Workaround, and it is the one `examples/countries.sql` uses:** do the
+  comparison in the `SELECT` list, where it works, and filter on *that* column
+  downstream — `CASE WHEN a = b THEN 'internal' ELSE 'cross' END AS frontier`
+  into a CTE or `#temp`, then `WHERE frontier = 'cross'`. Arithmetic serves the
+  same purpose when the columns are numeric: project
+  `COUNT('*') - SUM(flag) AS remainder`, then `WHERE remainder = 0`.
+- **Decision:** fix. While in there, check the other predicate sites for the
+  same hole — `JOIN ... ON` and `HAVING` both compare operands of their own —
+  and re-probe from a second angle first, per the [P28](#p28) lesson: this entry
+  was written from `WHERE` alone.
+- **Related:** [P30](#p30) (same zero-rows disguise), [P7](#p7) (a
+  multi-condition join evaluating two-column operands by position — possibly the
+  same root, worth checking together), [P48](#p48) (the NULL half of the same
+  comparison story, found while pinning this one).
+
+---
+
+### P47 — `MIN`/`MAX` compare by type variant before value, so one float outranks every integer
+- **Status:** 🔴 OPEN — silent, and wrong by orders of magnitude
+- **Corpus:** `10_aggregate_nulls.toml :: max_mixed_int_float`,
+  `min_mixed_int_float`, `max_mixed_int_float_from_csv` (all `expect = "DIFFER"`).
+- **Observed:** in a column holding both `Integer` and `Float` values, `MAX`
+  returns the largest *float* and `MIN` the smallest *integer*, whatever the
+  actual numbers are:
+
+  | Query | Ours | DuckDB 1.5.5 |
+  |---|---|---|
+  | `MAX(v)` over `1, 2.5, 10` | **2.5** 🚫 | 10 |
+  | `MIN(v)` over `5, 2.5, 10` | **5** 🚫 | 2.5 |
+  | `MAX(area)` over `countries.csv` | **34.2** 🚫 | 17098242 |
+  | `MAX(CAST(area AS FLOAT))` | 17098242 ✅ | ✅ |
+  | `ORDER BY area DESC LIMIT 1` | Russia ✅ | ✅ |
+  | `MAX(v) OVER (PARTITION BY g)` | 10 ✅ | 10 |
+  | the same window with `SQL_CLI_BATCH_WINDOW=0` | **2.5** 🚫 | 10 |
+
+  The third row is the one to feel: the largest country in the world, reported
+  as a 34 km² scattering of Pacific islets, by a `GROUP BY` that looks entirely
+  ordinary.
+- **Root cause, and it is small.** `DataValue` derives `PartialOrd`
+  (`src/data/datatable.rs:204`), so a comparison between two *different* variants
+  is decided by the variant order in the enum declaration —
+  `String < InternedString < Integer < Float < Boolean < DateTime < Vector < Null`
+  — before any value is looked at. `MinMaxState` then compares with bare `<`/`>`:
+  `src/sql/aggregate_functions/mod.rs:439` in the current registry,
+  `src/sql/aggregates/mod.rs:180` in the older one. So every `Float` beats every
+  `Integer` for `MAX`, and every `Integer` beats every `Float` for `MIN`.
+- **The correct comparator is already in the tree.** `compare_datavalues`
+  (`src/data/datavalue_compare.rs`) has explicit `Integer`↔`Float` arms that
+  compare `*i as f64` against the float — which is why `ORDER BY` and the batched
+  window path get this right while the aggregate does not. Same shape as
+  [P17](#p17): two sites that should share one rule, and only one of them knows
+  it.
+- **A performance flag changes the answer.** The row-wise window path
+  (`src/sql/window_functions/aggregates.rs:198,259`) carries the same bare
+  comparison, so `SQL_CLI_BATCH_WINDOW=0` — documented in `CLAUDE.md` as an
+  opt-out for a *speed* optimisation — silently switches window `MAX` from right
+  to wrong. Whatever else the fix does, it should leave the two window paths
+  agreeing.
+- **How a plain CSV ends up with a mixed column** (this is why the bug is
+  reachable without literals): type inference samples early rows. In
+  `countries.csv` only three of 250 areas carry decimals — Monaco 2.02, US Minor
+  Outlying Islands 34.2, Vatican City 0.44 — and they sit at rows 140, 233 and
+  237, so the column was typed `Integer` and those three stayed `Float`.
+- **Wider than numbers.** The same variant order puts every `Boolean` above
+  every `Float` and every `String` below every number, so `MIN`/`MAX` over any
+  mixed-type column ranks by type first. NULLs are not affected — the
+  accumulator skips them explicitly before comparing.
+- **Found:** 2026-09-12, writing `examples/countries.sql` — a per-region
+  `MAX(area)` gave Europe 2.02 (Monaco) and the Americas 34.2, which is the kind
+  of wrong that only stands out because the right answer happens to be famous.
+- **Decision:** fix by routing both `MinMaxState` implementations through
+  `compare_datavalues`, and sweep the other bare `DataValue` comparisons while
+  there — `src/data/arithmetic_evaluator.rs:1272,1311` and the two window sites
+  above are the same code shape. **Confirm which implementation is live before
+  changing it** ([P41](#p41)'s lesson: the named one was a shadow, and fixing it
+  moved nothing); there are two registries plus a third MIN/MAX path in the
+  evaluator.
+- **Workaround until then:** `CAST(col AS FLOAT)` inside the aggregate, which is
+  what `examples/countries.sql` does, with the reason in a comment so it does not
+  read as noise.
+- **Related:** [P17](#p17) (a derived `PartialOrd` at the window ORDER BY site —
+  same root class), [P41](#p41)/[R12](ENGINE_REFACTORING.md#r12) (shadowed
+  aggregate implementations), [P42](#p42) (`MODE`'s type handling).
+
+---
+
+### P48 — A comparison with a NULL operand projects `false` instead of NULL
+- **Status:** 🔴 OPEN — silent, and it disagrees with our own `WHERE` evaluator
+- **Corpus:** `01_select.toml :: select_col_vs_col_null_operand`
+  (`expect = "DIFFER"`).
+- **Observed:** a projected comparison coerces a NULL operand to a definite
+  answer:
+
+  | Query (`null_edges.csv`, row 3, where `partner_id` is NULL) | Ours | DuckDB 1.5.5 |
+  |---|---|---|
+  | `SELECT id < partner_id AS lt` | **false** 🚫 | NULL |
+  | `SELECT id = partner_id AS eq` | **false** 🚫 | NULL |
+  | `CASE WHEN id < partner_id THEN 'y' ELSE 'n' END` | 'n' ✅ | 'n' ✅ |
+  | `WHERE id < partner_id` (for contrast) | row excluded ✅ | excluded ✅ |
+
+  The `CASE` row is correct in both engines and for the same reason — UNKNOWN
+  takes the `ELSE` branch — so the defect is specifically the *value* a
+  comparison yields when it is projected rather than branched on.
+- **This is the [P18](#p18)/[P19](#p19) rule at a site that fix did not reach.**
+  That change (2026-08-22) gave the WHERE evaluator three-valued logic; a
+  projected comparison goes through the arithmetic evaluator instead, which still
+  returns a definite `false`. So the same predicate means two different things
+  depending on where it is written — and a flag projected in one statement then
+  filtered in the next (the [P46](#p46) workaround, a pattern the examples now
+  use deliberately) quietly turns "unknown" into "no".
+- **Found:** 2026-09-12, and worth a method note: this case was added as the
+  *anchor* for [P46](#p46) — the control that was supposed to AGREE and so prove
+  the comparison evaluator itself was fine. It came back DIFFER for an unrelated
+  reason. A case added to localise one bug found a second; the anchor was then
+  narrowed with `WHERE partner_id IS NOT NULL` so it can still do its original
+  job, and the unguarded form kept as this entry's case.
+- **Decision:** fix — the comparison arms of the arithmetic evaluator should
+  yield NULL when either operand is NULL, matching the WHERE evaluator rather
+  than diverging from it. Small, and it wants doing alongside [P46](#p46), which
+  is in neighbouring code.
+- **Related:** [P18](#p18), [P19](#p19), [P20](#p20) (`||` treating NULL as an
+  empty string — the same coercion instinct in the string operators),
+  [P46](#p46).
 
 ---
 

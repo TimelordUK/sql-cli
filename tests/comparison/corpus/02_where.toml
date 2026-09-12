@@ -178,3 +178,25 @@ expect = "GAP"
 # the same UNKNOWN-under-NOT rule as P19. So when the parse gap is closed, this
 # doubles as coverage that NOT LIKE inherits the fixed NULL semantics; the
 # evaluator side is already implemented and returns UNKNOWN for a NULL operand.
+
+# --- P46: a column-to-column comparison in WHERE returns zero rows ---
+
+[[case]]
+id = "where_col_lt_col"
+data = "null_edges.csv"
+sql = "SELECT id, partner_id FROM null_edges WHERE id < partner_id ORDER BY id"
+expect = "DIFFER"
+# P46, found 2026-09-12 writing examples/countries.sql. Both operands are
+# columns, and that alone is enough: we return NO rows, DuckDB returns
+# 1,4,7,9 (the NULL-partner rows are correctly excluded by both).
+# The same comparison in the SELECT list is right - see
+# 01_select.toml :: select_col_vs_col_projected.
+
+[[case]]
+id = "where_col_eq_col_string"
+data = "instruments.csv"
+sql = "SELECT instrument_id, currency, trading_currency FROM instruments WHERE currency = trading_currency ORDER BY instrument_id LIMIT 5"
+expect = "DIFFER"
+# P46 again, on strings and on equality, to pin that the defect is the
+# column-vs-column *shape* rather than one operator or one type. DuckDB matches
+# 57 of the 200 rows; we match none.
