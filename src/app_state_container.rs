@@ -10,6 +10,7 @@ use crate::help_widget::HelpWidget;
 use crate::history::CommandHistory;
 use crate::history_widget::HistoryWidget;
 use crate::search_modes_widget::SearchModesWidget;
+use crate::sql::suggestion::Suggestion;
 use crate::stats_widget::StatsWidget;
 // TODO: Add DebugWidget when it implements DebugInfoProvider
 // use crate::debug_widget::DebugWidget;
@@ -679,7 +680,9 @@ pub struct ColumnSearchHistoryEntry {
 /// State for tab completion functionality
 #[derive(Clone, Debug)]
 pub struct CompletionState {
-    pub suggestions: Vec<String>,
+    /// Held as typed suggestions (T3) rather than strings: cycling has to
+    /// insert `insert` into the buffer while the status line shows `label`.
+    pub suggestions: Vec<Suggestion>,
     pub current_index: usize,
     pub last_query: String,
     pub last_cursor_pos: usize,
@@ -723,7 +726,7 @@ impl CompletionState {
     }
 
     /// Set new suggestions along with the span they replace
-    pub fn set_suggestions(&mut self, suggestions: Vec<String>, replace_start: usize) {
+    pub fn set_suggestions(&mut self, suggestions: Vec<Suggestion>, replace_start: usize) {
         self.is_active = !suggestions.is_empty();
         self.suggestions = suggestions;
         self.current_index = 0;
@@ -743,7 +746,7 @@ impl CompletionState {
 
     /// Get current suggestion
     #[must_use]
-    pub fn current_suggestion(&self) -> Option<&String> {
+    pub fn current_suggestion(&self) -> Option<&Suggestion> {
         if self.is_active && !self.suggestions.is_empty() {
             self.suggestions.get(self.current_index)
         } else {
@@ -3521,7 +3524,7 @@ impl AppStateContainer {
         }
     }
 
-    pub fn set_completion_suggestions(&self, suggestions: Vec<String>, replace_start: usize) {
+    pub fn set_completion_suggestions(&self, suggestions: Vec<Suggestion>, replace_start: usize) {
         let mut completion = self.completion.borrow_mut();
         let count = suggestions.len();
         completion.set_suggestions(suggestions, replace_start);
@@ -3546,7 +3549,7 @@ impl AppStateContainer {
                             "Cycling to suggestion {}/{}: {}",
                             completion.current_index + 1,
                             completion.suggestions.len(),
-                            current
+                            current.display_text()
                         ),
                     );
                 }
@@ -3554,7 +3557,9 @@ impl AppStateContainer {
         }
     }
 
-    pub fn get_current_completion(&self) -> Option<String> {
+    /// The current suggestion, whole: the caller needs `insert` for the buffer
+    /// and `label`/`detail` for the status line.
+    pub fn get_current_completion(&self) -> Option<Suggestion> {
         self.completion.borrow().current_suggestion().cloned()
     }
 

@@ -21,6 +21,7 @@ use crate::debug_service::DebugService;
 use crate::help_text::HelpText;
 use crate::services::QueryOrchestrator;
 use crate::sql::hybrid_parser::HybridParser;
+use crate::sql::suggestion::Suggestion;
 use crate::sql_highlighter::SqlHighlighter;
 use crate::state::StateDispatcher;
 use crate::ui::debug::DebugContext;
@@ -4032,10 +4033,14 @@ impl EnhancedTuiApp {
 
         let hybrid_result = self.hybrid_parser.get_completions(query, cursor_pos);
         if !hybrid_result.suggestions.is_empty() {
-            self.state_container.set_status_message(format!(
-                "Suggestions: {}",
-                hybrid_result.suggestions.join(", ")
-            ));
+            let shown = hybrid_result
+                .suggestions
+                .iter()
+                .map(Suggestion::display_text)
+                .collect::<Vec<_>>()
+                .join(", ");
+            self.state_container
+                .set_status_message(format!("Suggestions: {shown}"));
         }
     }
 
@@ -4055,7 +4060,7 @@ impl EnhancedTuiApp {
 
     /// Get current completion or refresh if context changed
     /// Returns None if no completions available
-    fn get_or_refresh_completion(&mut self, query: &str, cursor_pos: usize) -> Option<String> {
+    fn get_or_refresh_completion(&mut self, query: &str, cursor_pos: usize) -> Option<Suggestion> {
         let is_same_context = self
             .state_container
             .is_same_completion_context(query, cursor_pos);
@@ -4095,7 +4100,12 @@ impl EnhancedTuiApp {
     /// The span to replace comes from the parser rather than being re-derived
     /// here: the two used to disagree over quotes and dots, which is how
     /// cycling past `"name.common"` produced `"name.commonname.official"`.
-    fn apply_completion_to_input(&mut self, query: &str, cursor_pos: usize, suggestion: &str) {
+    fn apply_completion_to_input(
+        &mut self,
+        query: &str,
+        cursor_pos: usize,
+        suggestion: &Suggestion,
+    ) {
         let replace_start = self.state_container.completion_replace_start();
 
         if replace_start < cursor_pos && query.is_char_boundary(replace_start) {
@@ -4111,14 +4121,14 @@ impl EnhancedTuiApp {
         query: &str,
         cursor_pos: usize,
         replace_start: usize,
-        suggestion: &str,
+        suggestion: &Suggestion,
     ) {
         // Use extracted completion logic
         let result = crate::ui::utils::text_operations::apply_completion_to_text(
             query,
             cursor_pos,
             replace_start,
-            suggestion,
+            &suggestion.insert,
         );
 
         // Use helper to set text and cursor together - this ensures sync
@@ -4128,35 +4138,38 @@ impl EnhancedTuiApp {
         self.state_container
             .update_completion_context(result.new_text.clone(), result.new_cursor_position);
 
-        // Generate status message
+        // Generate status message. What goes in the buffer is `insert`; what
+        // the user is told is the label, with whatever detail it carries.
+        let shown = suggestion.display_text();
         let completion = self.state_container.completion();
         let suggestion_info = if completion.suggestions.len() > 1 {
             format!(
                 "Completed: {} ({}/{} - Tab for next)",
-                suggestion,
+                shown,
                 completion.current_index + 1,
                 completion.suggestions.len()
             )
         } else {
-            format!("Completed: {suggestion}")
+            format!("Completed: {shown}")
         };
         drop(completion);
         self.state_container.set_status_message(suggestion_info);
     }
 
     /// Apply completion as a full insertion at cursor position
-    fn apply_full_insertion(&mut self, query: &str, cursor_pos: usize, suggestion: &str) {
+    fn apply_full_insertion(&mut self, query: &str, cursor_pos: usize, suggestion: &Suggestion) {
         // Just insert the suggestion at cursor position
+        let inserted = suggestion.insert.as_str();
         let before_cursor = &query[..cursor_pos];
         let after_cursor = &query[cursor_pos..];
-        let new_query = format!("{before_cursor}{suggestion}{after_cursor}");
+        let new_query = format!("{before_cursor}{inserted}{after_cursor}");
 
         // Special case: if we completed a string method like Contains(''), position cursor inside quotes
-        let cursor_pos_new = if suggestion.ends_with("('')") {
+        let cursor_pos_new = if inserted.ends_with("('')") {
             // Position cursor between the quotes
-            cursor_pos + suggestion.len() - 2
+            cursor_pos + inserted.len() - 2
         } else {
-            cursor_pos + suggestion.len()
+            cursor_pos + inserted.len()
         };
 
         // Use helper to set text through buffer
@@ -4174,7 +4187,7 @@ impl EnhancedTuiApp {
             .update_completion_context(new_query, cursor_pos_new);
 
         self.state_container
-            .set_status_message(format!("Inserted: {suggestion}"));
+            .set_status_message(format!("Inserted: {}", suggestion.display_text()));
     }
 
     // Note: expand_asterisk and get_table_columns removed - moved to Buffer and use hybrid_parser directly

@@ -13,6 +13,7 @@ use sql_cli::data::datatable::{DataTable, DISTINCT_VALUES_CAP};
 use sql_cli::data::datatable_loaders::load_csv_to_datatable;
 use sql_cli::sql::cursor_aware_parser::CursorAwareParser;
 use sql_cli::sql::parser::{ColumnInfo, ColumnType, TableInfo};
+use sql_cli::sql::suggestion::SuggestionKind;
 
 fn countries() -> DataTable {
     load_csv_to_datatable("data/countries.csv", "countries").expect("load data/countries.csv")
@@ -72,12 +73,12 @@ fn numeric_columns_no_longer_get_offered_string_only_methods() {
     let result = parser.get_completions(query, query.len());
 
     assert!(
-        result.suggestions.contains(&"ToString()".to_string()),
+        result.insert_texts().contains(&"ToString()".to_string()),
         "area is numeric, expected ToString(): {:?}",
         result.suggestions
     );
     assert!(
-        !result.suggestions.contains(&"Trim()".to_string()),
+        !result.insert_texts().contains(&"Trim()".to_string()),
         "area is numeric, Trim() is meaningless on it: {:?}",
         result.suggestions
     );
@@ -91,8 +92,10 @@ fn string_columns_keep_their_methods() {
     let query = "SELECT * FROM countries WHERE region.";
     let result = parser.get_completions(query, query.len());
 
-    assert!(result.suggestions.contains(&"Contains('')".to_string()));
-    assert!(result.suggestions.contains(&"StartsWith('')".to_string()));
+    assert!(result.insert_texts().contains(&"Contains('')".to_string()));
+    assert!(result
+        .insert_texts()
+        .contains(&"StartsWith('')".to_string()));
 }
 
 /// The snapshot carries what T4's low-cardinality gate will need, and pins
@@ -130,6 +133,94 @@ fn snapshot_carries_cardinality_for_the_value_completion_gate() {
         cardinality("name.common"),
         rows,
         "every country name is distinct, so the gate must exclude it"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// T3: suggestions are values, not strings.
+//
+// The inserted text and the shown text are now separate fields, and what the
+// user has typed is matched against the shown one. These tests pin the split
+// where it is load-bearing: a column that has to be quoted to be inserted,
+// but is read, typed and displayed without quotes.
+// ---------------------------------------------------------------------------
+
+#[test]
+fn a_column_is_inserted_quoted_and_displayed_plain() {
+    let table = countries();
+    let parser = parser_for(&table);
+
+    let query = "SELECT nam";
+    let result = parser.get_completions(query, query.len());
+    let dotted = result
+        .suggestions
+        .iter()
+        .find(|s| s.label == "name.common")
+        .expect("name.common should be offered for `nam`");
+
+    assert_eq!(dotted.insert, "\"name.common\"");
+    assert_eq!(dotted.display_text(), "name.common");
+    assert_eq!(dotted.kind, SuggestionKind::Column);
+}
+
+/// The old filter compared against the inserted text and had to strip the
+/// quotes back off to do it. Matching the label is the same rule stated once.
+#[test]
+fn typing_is_matched_against_the_displayed_name() {
+    let table = countries();
+    let parser = parser_for(&table);
+
+    for query in ["SELECT nam", "SELECT \"nam"] {
+        let result = parser.get_completions(query, query.len());
+        assert!(
+            result.suggestions.iter().any(|s| s.label == "name.common"),
+            "{query:?} should reach name.common, got {:?}",
+            result.insert_texts()
+        );
+    }
+}
+
+/// Kinds exist so that T4 can rank values against columns, and so the status
+/// line can say what it is offering. Each context contributes its own.
+#[test]
+fn suggestions_know_what_kind_of_thing_they_are() {
+    let table = countries();
+    let parser = parser_for(&table);
+
+    let kind_of = |query: &str, label: &str| {
+        let result = parser.get_completions(query, query.len());
+        result
+            .suggestions
+            .iter()
+            .find(|s| s.label == label)
+            .unwrap_or_else(|| {
+                panic!(
+                    "{query:?} did not offer {label:?}; got {:?}",
+                    result.insert_texts()
+                )
+            })
+            .kind
+    };
+
+    assert_eq!(kind_of("SELECT ", "region"), SuggestionKind::Column);
+    assert_eq!(kind_of("SELECT ", "ROUND("), SuggestionKind::Function);
+    assert_eq!(
+        kind_of("SELECT * FROM ", "countries"),
+        SuggestionKind::Table
+    );
+    assert_eq!(
+        kind_of("SELECT * FROM countries ", "WHERE"),
+        SuggestionKind::Keyword
+    );
+    assert_eq!(
+        kind_of("SELECT * FROM countries WHERE region.", "Contains('')"),
+        SuggestionKind::Method
+    );
+    // The empty literal a text comparison offers today is where T4's values
+    // will go, so it is already a Value.
+    assert_eq!(
+        kind_of("SELECT * FROM countries WHERE region = ", "''"),
+        SuggestionKind::Value
     );
 }
 
@@ -321,7 +412,7 @@ fn a_quoted_column_reaches_its_comparison_operator() {
         result.context
     );
     // `name.common` is a string column, so the offer is an empty literal.
-    assert_eq!(result.suggestions, vec!["''".to_string()]);
+    assert_eq!(result.insert_texts(), vec!["''".to_string()]);
 }
 
 /// The old operator list was `[" > ", " < ", " = ", …]` — the spaces were part
@@ -352,7 +443,7 @@ fn clauses_the_old_scanner_did_not_know_are_no_longer_guessed() {
     let result = parser.get_completions(group_by, group_by.len());
     assert!(result.context.starts_with("GroupByClause"));
     assert!(
-        result.suggestions.iter().any(|s| s == "region"),
+        result.insert_texts().iter().any(|s| s == "region"),
         "GROUP BY should offer columns, got {:?}",
         result.suggestions
     );
@@ -376,9 +467,9 @@ fn a_completed_table_name_moves_on_to_clause_keywords() {
 
     let query = "SELECT * FROM countries ";
     let result = parser.get_completions(query, query.len());
-    assert!(result.suggestions.iter().any(|s| s == "WHERE"));
+    assert!(result.insert_texts().iter().any(|s| s == "WHERE"));
     assert!(
-        !result.suggestions.iter().any(|s| s == "countries"),
+        !result.insert_texts().iter().any(|s| s == "countries"),
         "the table is already named, got {:?}",
         result.suggestions
     );
@@ -401,7 +492,7 @@ fn ordinary_column_completion_still_works() {
     ] {
         let result = parser.get_completions(query, query.len());
         assert!(
-            result.suggestions.iter().any(|s| s == expected),
+            result.insert_texts().iter().any(|s| s == expected),
             "{query:?} should still suggest {expected}, got {:?}",
             result.suggestions
         );

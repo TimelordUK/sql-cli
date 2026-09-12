@@ -1,7 +1,7 @@
-use crate::data::csv_fixes::quote_if_needed;
 use crate::parser::{ParseState, Schema, TableInfo};
 use crate::recursive_parser::{detect_cursor_context, CursorContext, LogicalOp};
 use crate::sql::completion_token::{find_completion_token, CompletionToken};
+use crate::sql::suggestion::{all, Suggestion, SuggestionKind};
 
 #[derive(Debug, Clone)]
 pub struct CursorAwareParser {
@@ -10,7 +10,7 @@ pub struct CursorAwareParser {
 
 #[derive(Debug)]
 pub struct ParseResult {
-    pub suggestions: Vec<String>,
+    pub suggestions: Vec<Suggestion>,
     pub context: String,
     pub partial_word: Option<String>,
     /// Byte offset in the query where an accepted suggestion should be spliced
@@ -21,12 +21,14 @@ pub struct ParseResult {
     pub replace_start: usize,
 }
 
-/// Strip the surrounding quotes from a quoted identifier so it can be compared
-/// against what the user typed.
-fn strip_identifier_quotes(suggestion: &str) -> &str {
-    suggestion
-        .strip_prefix('"')
-        .map_or(suggestion, |rest| rest.strip_suffix('"').unwrap_or(rest))
+impl ParseResult {
+    /// The text each suggestion would splice into the query. For tests and for
+    /// callers that only need the buffer side; anything user-facing wants
+    /// [`Suggestion::display_text`] instead.
+    #[must_use]
+    pub fn insert_texts(&self) -> Vec<String> {
+        self.suggestions.iter().map(|s| s.insert.clone()).collect()
+    }
 }
 
 impl Default for CursorAwareParser {
@@ -92,38 +94,9 @@ impl CursorAwareParser {
 
         let (suggestions, context_str) = match &cursor_context {
             CursorContext::SelectClause => {
-                // Apply quote_if_needed to column names
-                let mut cols = self
-                    .schema
-                    .get_columns(&default_table)
-                    .into_iter()
-                    .map(|col| quote_if_needed(&col))
-                    .collect::<Vec<_>>();
-                cols.push("*".to_string());
-
-                // Add math functions
-                cols.extend(vec![
-                    "ROUND(".to_string(),
-                    "ABS(".to_string(),
-                    "FLOOR(".to_string(),
-                    "CEILING(".to_string(),
-                    "CEIL(".to_string(),
-                    "MOD(".to_string(),
-                    "QUOTIENT(".to_string(),
-                    "POWER(".to_string(),
-                    "POW(".to_string(),
-                    "SQRT(".to_string(),
-                    "EXP(".to_string(),
-                    "LN(".to_string(),
-                    "LOG(".to_string(),
-                    "LOG10(".to_string(),
-                    "PI(".to_string(),
-                    "TEXTJOIN(".to_string(),
-                    "DATEDIFF(".to_string(),
-                    "DATEADD(".to_string(),
-                    "NOW(".to_string(),
-                    "TODAY(".to_string(),
-                ]);
+                let mut cols = self.column_suggestions(&default_table);
+                cols.push(Suggestion::new(SuggestionKind::Column, "*"));
+                cols.extend(Self::clause_function_suggestions());
 
                 // NOTE: We intentionally do NOT filter out already selected columns
                 // Users may want to select the same column multiple times, especially
@@ -133,19 +106,17 @@ impl CursorAwareParser {
                 (cols, "SelectClause".to_string())
             }
             CursorContext::FromClause => {
-                let tables = self.schema.get_table_names();
+                let tables = all(SuggestionKind::Table, self.schema.get_table_names());
                 (tables, "FromClause".to_string())
             }
             CursorContext::AfterTable => {
                 // The table name is complete, so what follows is a clause.
                 // Previously this position suggested the table name again.
                 (
-                    vec![
-                        "WHERE".to_string(),
-                        "GROUP BY".to_string(),
-                        "ORDER BY".to_string(),
-                        "LIMIT".to_string(),
-                    ],
+                    all(
+                        SuggestionKind::Keyword,
+                        ["WHERE", "GROUP BY", "ORDER BY", "LIMIT"],
+                    ),
                     "AfterTable".to_string(),
                 )
             }
@@ -156,11 +127,10 @@ impl CursorAwareParser {
             CursorContext::HavingClause => {
                 let mut cols = self.column_suggestions(&default_table);
                 // TODO(T10): from the function registry, filtered to aggregates.
-                cols.extend(
-                    ["COUNT(", "SUM(", "AVG(", "MIN(", "MAX("]
-                        .into_iter()
-                        .map(String::from),
-                );
+                cols.extend(all(
+                    SuggestionKind::Function,
+                    ["COUNT(", "SUM(", "AVG(", "MIN(", "MAX("],
+                ));
                 (cols, "HavingClause".to_string())
             }
             CursorContext::LimitClause => {
@@ -182,54 +152,23 @@ impl CursorAwareParser {
             }
             CursorContext::WhereClause | CursorContext::AfterLogicalOp(_) => {
                 // We're in WHERE clause or after AND/OR - suggest columns
-                let mut suggestions = self
-                    .schema
-                    .get_columns(&default_table)
-                    .into_iter()
-                    .map(|col| quote_if_needed(&col))
-                    .collect::<Vec<_>>();
+                let mut suggestions = self.column_suggestions(&default_table);
 
                 // Add math functions that can be used in WHERE
-                suggestions.extend(vec![
-                    "ROUND(".to_string(),
-                    "ABS(".to_string(),
-                    "FLOOR(".to_string(),
-                    "CEILING(".to_string(),
-                    "CEIL(".to_string(),
-                    "MOD(".to_string(),
-                    "QUOTIENT(".to_string(),
-                    "POWER(".to_string(),
-                    "POW(".to_string(),
-                    "SQRT(".to_string(),
-                    "EXP(".to_string(),
-                    "LN(".to_string(),
-                    "LOG(".to_string(),
-                    "LOG10(".to_string(),
-                    "PI(".to_string(),
-                    "TEXTJOIN(".to_string(),
-                    "DATEDIFF(".to_string(),
-                    "DATEADD(".to_string(),
-                    "NOW(".to_string(),
-                    "TODAY(".to_string(),
-                ]);
+                suggestions.extend(Self::clause_function_suggestions());
 
                 // Only add SQL keywords if no partial word or if partial doesn't match any columns
                 let add_keywords = if let Some(ref partial) = partial_word {
-                    let partial_lower = partial.to_lowercase();
-                    !suggestions
-                        .iter()
-                        .any(|col| col.to_lowercase().starts_with(&partial_lower))
+                    !suggestions.iter().any(|s| s.matches_prefix(partial))
                 } else {
                     true
                 };
 
                 if add_keywords {
-                    suggestions.extend(vec![
-                        "AND".to_string(),
-                        "OR".to_string(),
-                        "IN".to_string(),
-                        "ORDER BY".to_string(),
-                    ]);
+                    suggestions.extend(all(
+                        SuggestionKind::Keyword,
+                        ["AND", "OR", "IN", "ORDER BY"],
+                    ));
                 }
 
                 let ctx = match &cursor_context {
@@ -255,23 +194,18 @@ impl CursorAwareParser {
                 let suggestions = match property_type.as_str() {
                     "datetime" => {
                         // For datetime columns, suggest DateTime constructor
-                        let mut suggestions = vec!["DateTime(".to_string()];
-                        // Also suggest common date patterns
-                        suggestions.extend(vec![
-                            "DateTime.Today".to_string(),
-                            "DateTime.Now".to_string(),
-                        ]);
-                        suggestions
+                        // and common date patterns.
+                        all(
+                            SuggestionKind::Function,
+                            ["DateTime(", "DateTime.Today", "DateTime.Now"],
+                        )
                     }
-                    "string" => {
-                        // For strings, suggest string literals
-                        vec!["''".to_string()]
-                    }
-                    "numeric" => {
-                        // For numbers, no specific suggestions
-                        vec![]
-                    }
-                    "boolean" => vec!["true".to_string(), "false".to_string()],
+                    // For strings, an empty literal to type inside. T4 puts
+                    // the column's own values here.
+                    "string" => vec![Suggestion::value("''", "''")],
+                    // For numbers, no specific suggestions.
+                    "numeric" => vec![],
+                    "boolean" => all(SuggestionKind::Value, ["true", "false"]),
                     _ => vec![],
                 };
                 (suggestions, format!("AfterComparison({col_name} {op})"))
@@ -283,33 +217,30 @@ impl CursorAwareParser {
             }
             CursorContext::InExpression => {
                 // Generic expression context - could be anywhere
-                let mut suggestions = self
-                    .schema
-                    .get_columns(&default_table)
-                    .into_iter()
-                    .map(|col| quote_if_needed(&col))
-                    .collect::<Vec<_>>();
+                let mut suggestions = self.column_suggestions(&default_table);
 
                 // Add math functions
-                suggestions.extend(vec![
-                    "ROUND(".to_string(),
-                    "ABS(".to_string(),
-                    "FLOOR(".to_string(),
-                    "CEILING(".to_string(),
-                    "CEIL(".to_string(),
-                    "MOD(".to_string(),
-                    "QUOTIENT(".to_string(),
-                    "POWER(".to_string(),
-                    "POW(".to_string(),
-                    "SQRT(".to_string(),
-                    "EXP(".to_string(),
-                    "LN(".to_string(),
-                    "LOG(".to_string(),
-                    "LOG10(".to_string(),
-                    "PI(".to_string(),
-                    "AND".to_string(),
-                    "OR".to_string(),
-                ]);
+                suggestions.extend(all(
+                    SuggestionKind::Function,
+                    [
+                        "ROUND(",
+                        "ABS(",
+                        "FLOOR(",
+                        "CEILING(",
+                        "CEIL(",
+                        "MOD(",
+                        "QUOTIENT(",
+                        "POWER(",
+                        "POW(",
+                        "SQRT(",
+                        "EXP(",
+                        "LN(",
+                        "LOG(",
+                        "LOG10(",
+                        "PI(",
+                    ],
+                ));
+                suggestions.extend(all(SuggestionKind::Keyword, ["AND", "OR"]));
                 (suggestions, "InExpression".to_string())
             }
             CursorContext::OrderByClause => {
@@ -321,20 +252,19 @@ impl CursorAwareParser {
 
                 // If we have explicitly selected columns (not SELECT *), use those
                 if !selected_columns.is_empty() && !selected_columns.contains(&"*".to_string()) {
-                    suggestions.extend(selected_columns);
+                    // Text taken from the query, so it may already be quoted.
+                    suggestions.extend(
+                        selected_columns
+                            .iter()
+                            .map(|col| Suggestion::column_text(col)),
+                    );
                 } else {
                     // Fallback to all columns if SELECT * or no columns detected
-                    // Apply quote_if_needed to column names
-                    suggestions.extend(
-                        self.schema
-                            .get_columns(&default_table)
-                            .into_iter()
-                            .map(|col| quote_if_needed(&col)),
-                    );
+                    suggestions.extend(self.column_suggestions(&default_table));
                 }
 
                 // Always add ASC/DESC options
-                suggestions.extend(vec!["ASC".to_string(), "DESC".to_string()]);
+                suggestions.extend(all(SuggestionKind::Keyword, ["ASC", "DESC"]));
                 (suggestions, "OrderByClause".to_string())
             }
             CursorContext::Unknown => {
@@ -363,9 +293,9 @@ impl CursorAwareParser {
         );
 
         // Method suggestions arrive pre-filtered against the partial method
-        // name; everything else is filtered here. Suggestions may be quoted
-        // (`"name.common"`) while the user typed either `na` or `"na`, so both
-        // sides are compared with quotes stripped.
+        // name; everything else is filtered here. Matching is against the
+        // suggestion's label, which for a column is the unquoted name, so
+        // `na` and `"na` both reach `"name.common"` (T3).
         let mut final_suggestions = suggestions;
         if !is_method_context && !is_value_context {
             if let Some(needle) = token
@@ -373,12 +303,7 @@ impl CursorAwareParser {
                 .map(CompletionToken::unquoted)
                 .filter(|n| !n.is_empty())
             {
-                let needle = needle.to_lowercase();
-                final_suggestions.retain(|s| {
-                    strip_identifier_quotes(s)
-                        .to_lowercase()
-                        .starts_with(&needle)
-                });
+                final_suggestions.retain(|s| s.matches_prefix(&needle));
             }
         }
 
@@ -406,14 +331,47 @@ impl CursorAwareParser {
         }
     }
 
-    /// The loaded table's columns, quoted where the lexer would not read them
-    /// back as one identifier (T8).
-    fn column_suggestions(&self, table: &str) -> Vec<String> {
+    /// The loaded table's columns, quoted for insertion where the lexer would
+    /// not read them back as one identifier (T8).
+    fn column_suggestions(&self, table: &str) -> Vec<Suggestion> {
         self.schema
             .get_columns(table)
-            .into_iter()
-            .map(|col| quote_if_needed(&col))
+            .iter()
+            .map(|col| Suggestion::column(col))
             .collect()
+    }
+
+    /// The functions offered in a clause where a scalar expression can go.
+    ///
+    /// TODO(T10): the registry holds ~370 of these and exposes
+    /// `all_functions()`; this hand-kept list is pasted here and in the
+    /// expression context below.
+    fn clause_function_suggestions() -> Vec<Suggestion> {
+        all(
+            SuggestionKind::Function,
+            [
+                "ROUND(",
+                "ABS(",
+                "FLOOR(",
+                "CEILING(",
+                "CEIL(",
+                "MOD(",
+                "QUOTIENT(",
+                "POWER(",
+                "POW(",
+                "SQRT(",
+                "EXP(",
+                "LN(",
+                "LOG(",
+                "LOG10(",
+                "PI(",
+                "TEXTJOIN(",
+                "DATEDIFF(",
+                "DATEADD(",
+                "NOW(",
+                "TODAY(",
+            ],
+        )
     }
 
     /// Suggest real column names when the text at the cursor prefixes one.
@@ -433,12 +391,12 @@ impl CursorAwareParser {
         }
 
         let needle_lower = needle.to_lowercase();
-        let matches: Vec<String> = self
+        let matches: Vec<Suggestion> = self
             .schema
             .get_columns(table)
-            .into_iter()
+            .iter()
             .filter(|col| col.to_lowercase().starts_with(&needle_lower))
-            .map(|col| quote_if_needed(&col))
+            .map(|col| Suggestion::column(col))
             .collect();
 
         // No column by that name - leave it to the method-call handling.
@@ -627,65 +585,42 @@ impl CursorAwareParser {
         context: &ParseState,
         partial_word: &Option<String>,
         query: &str,
-    ) -> Vec<String> {
+    ) -> Vec<Suggestion> {
         let default_table = self
             .schema
             .get_first_table_name()
             .unwrap_or("trade_deal".to_string());
 
         let mut suggestions = match context {
-            ParseState::Start => vec!["SELECT".to_string()],
+            ParseState::Start => vec![Suggestion::keyword("SELECT")],
             ParseState::AfterSelect => {
-                let mut cols = self
-                    .schema
-                    .get_columns(&default_table)
-                    .into_iter()
-                    .map(|col| quote_if_needed(&col))
-                    .collect::<Vec<_>>();
-                cols.push("*".to_string());
+                let mut cols = self.column_suggestions(&default_table);
+                cols.push(Suggestion::new(SuggestionKind::Column, "*"));
                 cols
             }
             ParseState::InColumnList => {
-                let mut cols = self
-                    .schema
-                    .get_columns(&default_table)
-                    .into_iter()
-                    .map(|col| quote_if_needed(&col))
-                    .collect::<Vec<_>>();
-                cols.push("FROM".to_string());
+                let mut cols = self.column_suggestions(&default_table);
+                cols.push(Suggestion::keyword("FROM"));
                 cols
             }
-            ParseState::AfterFrom => self.schema.get_table_names(),
-            ParseState::AfterTable => {
-                vec!["WHERE".to_string(), "ORDER BY".to_string()]
-            }
+            ParseState::AfterFrom => all(SuggestionKind::Table, self.schema.get_table_names()),
+            ParseState::AfterTable => all(SuggestionKind::Keyword, ["WHERE", "ORDER BY"]),
             ParseState::InWhere => {
                 // Prioritize column names over SQL keywords in WHERE clauses
-                let mut suggestions = self
-                    .schema
-                    .get_columns(&default_table)
-                    .into_iter()
-                    .map(|col| quote_if_needed(&col))
-                    .collect::<Vec<_>>();
+                let mut suggestions = self.column_suggestions(&default_table);
 
                 // Only add SQL keywords if no partial word or if partial doesn't match any columns
                 let add_keywords = if let Some(partial) = partial_word {
-                    let partial_lower = partial.to_lowercase();
-                    let matching_columns = suggestions
-                        .iter()
-                        .any(|col| col.to_lowercase().starts_with(&partial_lower));
-                    !matching_columns // Only add keywords if no columns match
+                    !suggestions.iter().any(|s| s.matches_prefix(partial))
                 } else {
                     true // Add keywords when no partial word
                 };
 
                 if add_keywords {
-                    suggestions.extend(vec![
-                        "AND".to_string(),
-                        "OR".to_string(),
-                        "IN".to_string(),
-                        "ORDER BY".to_string(),
-                    ]);
+                    suggestions.extend(all(
+                        SuggestionKind::Keyword,
+                        ["AND", "OR", "IN", "ORDER BY"],
+                    ));
                 }
 
                 suggestions
@@ -698,19 +633,18 @@ impl CursorAwareParser {
 
                 // If we have explicitly selected columns (not SELECT *), use those
                 if !selected_columns.is_empty() && !selected_columns.contains(&"*".to_string()) {
-                    suggestions.extend(selected_columns);
+                    suggestions.extend(
+                        selected_columns
+                            .iter()
+                            .map(|col| Suggestion::column_text(col)),
+                    );
                 } else {
                     // Fallback to all columns if SELECT * or no columns detected
-                    suggestions.extend(
-                        self.schema
-                            .get_columns(&default_table)
-                            .into_iter()
-                            .map(|col| quote_if_needed(&col)),
-                    );
+                    suggestions.extend(self.column_suggestions(&default_table));
                 }
 
                 // Always add ASC/DESC options
-                suggestions.extend(vec!["ASC".to_string(), "DESC".to_string()]);
+                suggestions.extend(all(SuggestionKind::Keyword, ["ASC", "DESC"]));
                 suggestions
             }
             _ => vec![],
@@ -718,11 +652,7 @@ impl CursorAwareParser {
 
         // Filter by partial word if present
         if let Some(partial) = partial_word {
-            suggestions.retain(|suggestion| {
-                suggestion
-                    .to_lowercase()
-                    .starts_with(&partial.to_lowercase())
-            });
+            suggestions.retain(|suggestion| suggestion.matches_prefix(partial));
         }
 
         suggestions
@@ -821,8 +751,8 @@ impl CursorAwareParser {
         &self,
         property_type: &str,
         partial_word: &Option<String>,
-    ) -> Vec<String> {
-        let mut suggestions = Vec::new();
+    ) -> Vec<Suggestion> {
+        let mut suggestions: Vec<String> = Vec::new();
 
         match property_type {
             "string" => {
@@ -922,7 +852,7 @@ impl CursorAwareParser {
             }
         }
 
-        suggestions
+        all(SuggestionKind::Method, suggestions)
     }
 }
 
@@ -966,14 +896,14 @@ mod tests {
         // At the beginning
         let result = parser.get_completions("", 0);
         println!("Context for empty query: {}", result.context);
-        assert_eq!(result.suggestions, vec!["SELECT"]);
+        assert_eq!(result.insert_texts(), vec!["SELECT"]);
         assert!(result.context.contains("Start") || result.context.contains("Unknown"));
 
         // After SELECT
         let result = parser.get_completions("SELECT ", 7);
         println!("Context for 'SELECT ': {}", result.context);
-        assert!(result.suggestions.contains(&"*".to_string()));
-        assert!(result.suggestions.contains(&"dealId".to_string()));
+        assert!(result.insert_texts().contains(&"*".to_string()));
+        assert!(result.insert_texts().contains(&"dealId".to_string()));
         assert!(result.context.contains("AfterSelect") || result.context.contains("SelectClause"));
     }
 
@@ -985,8 +915,10 @@ mod tests {
         let query = "SELECT * FROM trade_deal WHERE ";
         let result = parser.get_completions(query, query.len());
         println!("Context for WHERE clause: {}", result.context);
-        assert!(result.suggestions.contains(&"dealId".to_string()));
-        assert!(result.suggestions.contains(&"platformOrderId".to_string()));
+        assert!(result.insert_texts().contains(&"dealId".to_string()));
+        assert!(result
+            .insert_texts()
+            .contains(&"platformOrderId".to_string()));
         assert!(result.context.contains("InWhere") || result.context.contains("WhereClause"));
     }
 
@@ -999,8 +931,10 @@ mod tests {
         let result = parser.get_completions(query, query.len());
         println!("Context for method call: {}", result.context);
         println!("Suggestions: {:?}", result.suggestions);
-        assert!(result.suggestions.contains(&"Contains('')".to_string()));
-        assert!(result.suggestions.contains(&"StartsWith('')".to_string()));
+        assert!(result.insert_texts().contains(&"Contains('')".to_string()));
+        assert!(result
+            .insert_texts()
+            .contains(&"StartsWith('')".to_string()));
         assert!(result.context.contains("MethodCall") || result.context.contains("AfterColumn"));
     }
 
@@ -1012,8 +946,10 @@ mod tests {
         let query = "SELECT * FROM trade_deal WHERE allocationStatus.Contains(\"All\") AND ";
         let result = parser.get_completions(query, query.len());
         println!("Context after AND: {}", result.context);
-        assert!(result.suggestions.contains(&"dealId".to_string()));
-        assert!(result.suggestions.contains(&"platformOrderId".to_string()));
+        assert!(result.insert_texts().contains(&"dealId".to_string()));
+        assert!(result
+            .insert_texts()
+            .contains(&"platformOrderId".to_string()));
         assert!(
             result.context.contains("InWhere")
                 || result.context.contains("AfterAND")
@@ -1031,13 +967,15 @@ mod tests {
         let result = parser.get_completions(query, query.len());
 
         // Should suggest columns starting with 'p'
-        assert!(result.suggestions.contains(&"platformOrderId".to_string()));
-        assert!(result.suggestions.contains(&"price".to_string()));
-        assert!(result.suggestions.contains(&"portfolio".to_string()));
+        assert!(result
+            .insert_texts()
+            .contains(&"platformOrderId".to_string()));
+        assert!(result.insert_texts().contains(&"price".to_string()));
+        assert!(result.insert_texts().contains(&"portfolio".to_string()));
 
         // Should NOT suggest columns that don't start with 'p'
-        assert!(!result.suggestions.contains(&"dealId".to_string()));
-        assert!(!result.suggestions.contains(&"quantity".to_string()));
+        assert!(!result.insert_texts().contains(&"dealId".to_string()));
+        assert!(!result.insert_texts().contains(&"quantity".to_string()));
 
         // Should be in WHERE context, not MethodCall
         assert!(
@@ -1059,7 +997,7 @@ mod tests {
         let query = "SELECT * FROM trade_deal WHERE price > 100 OR ";
         let result = parser.get_completions(query, query.len());
         println!("Context after OR: {}", result.context);
-        assert!(result.suggestions.contains(&"dealId".to_string()));
+        assert!(result.insert_texts().contains(&"dealId".to_string()));
         assert!(
             result.context.contains("InWhere")
                 || result.context.contains("AfterOR")
@@ -1098,7 +1036,7 @@ mod tests {
         let query = "SELECT * FROM trade_deal WHERE platformOrderId.StartsWith(\"ABC\") AND price > 100 AND ";
         let result = parser.get_completions(query, query.len());
         println!("Context for complex query: {}", result.context);
-        assert!(result.suggestions.contains(&"dealId".to_string()));
+        assert!(result.insert_texts().contains(&"dealId".to_string()));
         assert!(
             result.context.contains("InWhere")
                 || result.context.contains("AfterAND")
@@ -1138,8 +1076,10 @@ mod tests {
         assert!(result.context.contains("(partial: Some(\"Con\"))"));
 
         // Should suggest methods starting with "Con"
-        assert!(result.suggestions.contains(&"Contains('')".to_string()));
-        assert!(!result.suggestions.contains(&"StartsWith('')".to_string())); // Doesn't start with "Con"
+        assert!(result.insert_texts().contains(&"Contains('')".to_string()));
+        assert!(!result
+            .insert_texts()
+            .contains(&"StartsWith('')".to_string())); // Doesn't start with "Con"
     }
 
     #[test]
@@ -1163,7 +1103,7 @@ mod tests {
 
         // Should suggest "Customer Id" (quoted)
         assert!(
-            result.suggestions.iter().any(|s| s == "\"Customer Id\""),
+            result.insert_texts().iter().any(|s| s == "\"Customer Id\""),
             "Should suggest quoted Customer Id for partial \"customer\". Got: {:?}",
             result.suggestions
         );
@@ -1184,7 +1124,7 @@ mod tests {
 
         // Should suggest "Company" with proper case
         assert!(
-            result.suggestions.iter().any(|s| s == "Company"),
+            result.insert_texts().iter().any(|s| s == "Company"),
             "Should preserve case in ORDER BY suggestions. Got: {:?}",
             result.suggestions
         );
@@ -1225,15 +1165,15 @@ mod tests {
         let result = parser.get_completions(query, query.len());
 
         assert!(
-            result.suggestions.iter().any(|s| s == "Company"),
+            result.insert_texts().iter().any(|s| s == "Company"),
             "Should still suggest Company even though already selected"
         );
         assert!(
-            result.suggestions.iter().any(|s| s == "Country"),
+            result.insert_texts().iter().any(|s| s == "Country"),
             "Should suggest Country"
         );
         assert!(
-            result.suggestions.iter().any(|s| s == "\"Customer Id\""),
+            result.insert_texts().iter().any(|s| s == "\"Customer Id\""),
             "Should suggest Customer Id"
         );
     }
@@ -1265,7 +1205,7 @@ mod tests {
 
         // Should suggest Country
         assert!(
-            result.suggestions.iter().any(|s| s == "Country"),
+            result.insert_texts().iter().any(|s| s == "Country"),
             "Should suggest Country for partial 'coun'. Got: {:?}",
             result.suggestions
         );
@@ -1304,14 +1244,14 @@ mod tests {
 
         // Should suggest "Customer Id" with proper quotes
         assert!(
-            result.suggestions.iter().any(|s| s == "\"Customer Id\""),
+            result.insert_texts().iter().any(|s| s == "\"Customer Id\""),
             "Should suggest properly quoted 'Customer Id' for partial '\"Customer'. Got: {:?}",
             result.suggestions
         );
 
         // Should NOT have truncated suggestions like "Customer
         assert!(
-            !result.suggestions.iter().any(|s| s == "\"Customer"),
+            !result.insert_texts().iter().any(|s| s == "\"Customer"),
             "Should not have truncated suggestion '\"Customer'. Got: {:?}",
             result.suggestions
         );

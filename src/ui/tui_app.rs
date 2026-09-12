@@ -176,7 +176,7 @@ impl TuiApp {
     fn get_completions(&mut self, input: &str) -> Vec<String> {
         let cursor_pos = self.input.cursor(); // Get actual cursor position
         let result = self.cursor_parser.get_completions(input, cursor_pos);
-        result.suggestions
+        result.insert_texts()
     }
 
     fn handle_navigation(&mut self, key: KeyCode) {
