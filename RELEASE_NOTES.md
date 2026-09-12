@@ -1,33 +1,33 @@
-# SQL CLI v1.85.0
+# SQL CLI v1.85.1
 
 **Release Date:** September 12, 2026
 
 ## 📊 Release Overview
-- **Commits in this release:** 7
-- **Files updated:** 21
+- **Commits in this release:** 5
+- **Files updated:** 8
 
 ## ✨ Highlights
+
+### 🔍 Enhanced Debugging
+- **Better Diagnostics**: Improved error messages and state dumps
 
 ## 📝 Changes by Category
 
 ### 🚀 New Features
-- complete a column's values inside quotes (T4)
-- make completion suggestions typed values (T3)
-- keep low-cardinality column values at load (T11)
+- query the running machine with processes() (S1)
 
-### 🐛 Bug Fixes
-- let a prefix reach the values of a big column (T15)
+### 📚 Documentation
+- expand the processes() examples (S1)
+- log T16 (column surgery) and T17 (schema-blind history)
 
 <details>
 <summary>📋 View all commits</summary>
 
-- Merge pull request #75 from TimelordUK/feat/t4-value-completion (TimelordUK)
-- fix(tui): let a prefix reach the values of a big column (T15) (TimelordUK)
-- feat(tui): complete a column's values inside quotes (T4) (TimelordUK)
-- Merge pull request #74 from TimelordUK/feat/t3-typed-suggestions (TimelordUK)
-- feat(tui): make completion suggestions typed values (T3) (TimelordUK)
-- Merge pull request #73 from TimelordUK/feat/t11-distinct-values (TimelordUK)
-- feat(tui): keep low-cardinality column values at load (T11) (TimelordUK)
+- Merge pull request #77 from TimelordUK/feat/s1-processes-table (TimelordUK)
+- docs(system): expand the processes() examples (S1) (TimelordUK)
+- feat(system): query the running machine with processes() (S1) (TimelordUK)
+- Merge pull request #76 from TimelordUK/docs/t16-t17-tui-ergonomics (TimelordUK)
+- docs(tui): log T16 (column surgery) and T17 (schema-blind history) (TimelordUK)
 
 </details>
 
