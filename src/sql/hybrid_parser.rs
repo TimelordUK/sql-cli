@@ -1,6 +1,7 @@
 use crate::cursor_aware_parser::CursorAwareParser;
 use crate::parser::TableInfo;
 use crate::recursive_parser::{detect_cursor_context, tokenize_query, CursorContext, LogicalOp};
+use crate::sql::suggestion::Suggestion;
 
 #[derive(Clone)]
 pub struct HybridParser {
@@ -17,7 +18,7 @@ impl std::fmt::Debug for HybridParser {
 
 #[derive(Debug, Clone)]
 pub struct HybridResult {
-    pub suggestions: Vec<String>,
+    pub suggestions: Vec<Suggestion>,
     pub context: String,
     pub parser_used: String,
     pub recursive_context: String,
@@ -240,7 +241,7 @@ AST TREE:\n{}\n\
                     .suggestions
                     .iter()
                     .enumerate()
-                    .map(|(i, s)| format!("  {}: {}", i + 1, s))
+                    .map(|(i, s)| format!("  {}: {}", i + 1, s.display_text()))
                     .collect::<Vec<_>>()
                     .join("\n")
             },

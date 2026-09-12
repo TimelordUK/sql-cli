@@ -28,14 +28,14 @@ fn parser() -> CursorAwareParser {
 
 /// Suggestions for the cursor at the end of `query`.
 fn suggest(query: &str) -> Vec<String> {
-    parser().get_completions(query, query.len()).suggestions
+    parser().get_completions(query, query.len()).insert_texts()
 }
 
 /// Type `query`, press Tab, accept `suggestion`; returns the resulting text.
 fn complete(query: &str, suggestion: &str) -> String {
     let result = parser().get_completions(query, query.len());
     assert!(
-        result.suggestions.iter().any(|s| s == suggestion),
+        result.insert_texts().iter().any(|s| s == suggestion),
         "{suggestion:?} was not offered for {query:?}; got {:?}",
         result.suggestions
     );

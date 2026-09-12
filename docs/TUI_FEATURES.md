@@ -69,13 +69,14 @@ is a recognised value position (`CursorContext::InStringLiteral`) that offers
 nothing. Since **T11** (2026-09-11) the values are captured and sit in the
 completer's schema, with row counts. Nothing offers them yet.
 
-**Recommended order: T3 → T4 → T5**, with **T7** (deletion), **T10**
-(function lists from the registry) and **T12** (retire the `ParseState`
-fallback) droppable anywhere. T11 went ahead of T3 so that T3's `Suggestion`
-could be shaped by what values actually need: an inserted text that differs
-by position (see T4's table of three value positions) and a count for the
-label. **T8** is done: it was T1's bug in the other producer of column text,
-and it left `src/sql/identifier.rs` as the one place the quoting rule lives.
+**T4 is now unblocked, and is next.** Both halves it was waiting on have
+landed: T11 captured the values, and T3 (2026-09-12) made a suggestion a value
+with `insert`, `label`, `kind` and `detail` — so `'Americas'` can go into the
+buffer while `Americas (56 rows)` goes to the status line. **T7** (deletion),
+**T10** (function lists from the registry) and **T12** (retire the `ParseState`
+fallback) remain droppable anywhere, and **T5** follows T4. **T8** is done: it
+was T1's bug in the other producer of column text, and it left
+`src/sql/identifier.rs` as the one place the quoting rule lives.
 
 ---
 
@@ -175,21 +176,56 @@ and it left `src/sql/identifier.rs` as the one place the quoting rule lives.
   the current behaviour so a change is visible.
 
 ### T3 — Suggestions are untyped strings
-- **Status:** 🔴 OPEN — next; the last prerequisite for T4
-- **Where:** `ParseResult::suggestions: Vec<String>` and every site that builds
-  one
-- **Observed:** A flat `Vec<String>` cannot express a display label distinct
+- **Status:** 🟢 DONE 2026-09-12
+- **Where:** `src/sql/suggestion.rs` (new), `src/sql/cursor_aware_parser.rs`,
+  `src/sql/hybrid_parser.rs`, `AppStateContainer::CompletionState`,
+  `src/ui/enhanced_tui.rs`
+- **Observed:** A flat `Vec<String>` could not express a display label distinct
   from the inserted text, the kind of thing being suggested (column / function /
   keyword / value), or a rank.
 - **Impact:** T4 is the first feature that genuinely needs the split — you want
-  to insert `'Americas'` but *show* `Americas (23 rows)`. Without a `kind`,
+  to insert `'Americas'` but *show* `Americas (56 rows)`. Without a `kind`,
   values, columns and keywords also cannot be ranked against each other.
-- **Shape:** `Suggestion { insert: String, label: String, kind: SuggestionKind,
-  detail: Option<String> }`. Mechanical but wide; do it **before** T4 rather
-  than retrofitting.
+- **Fixed by:** `Suggestion { insert, label, kind, detail }` with
+  `SuggestionKind` of Column / Table / Function / Method / Keyword / Value.
+  `insert` goes into the buffer, `label` is what the user sees, `detail` is the
+  `(56 rows)` part and is never inserted. Constructors carry the rule that used
+  to be applied at each call site: `Suggestion::column` quotes for insertion
+  (T8) and labels plain, `column_text` takes text that is already quoted — the
+  SELECT list an ORDER BY completion echoes back — and strips for the label.
+- **The split paid for itself immediately, in the filter.** Matching what the
+  user has typed is now against the *label*, so `strip_identifier_quotes`
+  disappeared from the parser: `na` and `"na` both reach `"name.common"`
+  because the label is `name.common` either way. That rule was previously
+  spelled out at the filter and, separately and inconsistently, in the
+  `add_keywords` check in two WHERE arms, which compared against the quoted
+  text and so missed a quoted column that the partial did match.
+- **Where the type had to reach:** `ParseResult` → `HybridResult` →
+  `CompletionState` → the TUI. `CompletionState` holds suggestions across Tab
+  presses, so it had to hold the whole value: cycling splices `insert` while
+  the status line shows `display_text()`. That is the line `Completed: X (2/5 -
+  Tab for next)`, which is now the only place a label is rendered — enough for
+  T4, since there is still no popup.
+- **Kept deliberately:** `ParseResult::insert_texts()` for the buffer-only
+  callers (`tui_app.rs`'s reedline path) and for tests, which is most of the
+  diff. `src/completion_manager.rs` still has its own `Vec<String>`; it is
+  wired to nothing, and it is the *Notes* section's standing question rather
+  than T3's.
+- **Not done here:** ranking. `kind` exists and nothing sorts on it yet — T4 is
+  the first entry with two kinds competing in one position. Nor does this
+  settle [`feature_request_smart_function_completion.md`](feature_request_smart_function_completion.md),
+  which wants methods to *carry* their signature rather than be text with
+  parentheses baked in: `Suggestion` is the place that would now live
+  (`insert` vs `label` vs a cursor offset), but the method lists are still
+  hand-written strings. T10 does the same job for functions and should
+  probably take the methods with it.
+- **Tests:** 3 unit tests in `suggestion.rs` (quoting, label matching, detail
+  never inserted) and 3 in `tests/completion_schema.rs` against
+  `countries.csv`: the quoted/plain split on `name.common`, that both `nam` and
+  `"nam` reach it, and that each context's suggestions carry the right kind.
 
 ### T4 — No value completion for low-cardinality columns
-- **Status:** 🔴 OPEN — depends on T3; T2, T9 and T11 have landed
+- **Status:** 🔴 OPEN — **next**; every prerequisite (T2, T9, T11, T3) has landed
 - **Where:** `detect_cursor_context` in `src/sql/recursive_parser.rs`
 - **Observed:** `WHERE region = '<tab>'` offers nothing. There is
   `AfterComparisonOp(col, op)` for a cursor *after* an operator, but no context

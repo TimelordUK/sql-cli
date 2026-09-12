@@ -21,9 +21,11 @@ fn test_datetime_completion_after_comparison() {
     let result = parser.get_completions("SELECT * FROM trade_deal WHERE createdDate > ", 45);
 
     assert!(result.context.contains("AfterComparison"));
-    assert!(result.suggestions.contains(&"DateTime(".to_string()));
-    assert!(result.suggestions.contains(&"DateTime.Today".to_string()));
-    assert!(result.suggestions.contains(&"DateTime.Now".to_string()));
+    assert!(result.insert_texts().contains(&"DateTime(".to_string()));
+    assert!(result
+        .insert_texts()
+        .contains(&"DateTime.Today".to_string()));
+    assert!(result.insert_texts().contains(&"DateTime.Now".to_string()));
 }
 
 #[test]
@@ -37,9 +39,11 @@ fn test_datetime_completion_with_partial() {
 
     assert!(result.context.contains("AfterComparison"));
     // Should filter suggestions starting with "Date"
-    assert!(result.suggestions.contains(&"DateTime(".to_string()));
-    assert!(result.suggestions.contains(&"DateTime.Today".to_string()));
-    assert!(result.suggestions.contains(&"DateTime.Now".to_string()));
+    assert!(result.insert_texts().contains(&"DateTime(".to_string()));
+    assert!(result
+        .insert_texts()
+        .contains(&"DateTime.Today".to_string()));
+    assert!(result.insert_texts().contains(&"DateTime.Now".to_string()));
 }
 
 /// The other half of T2: a column that merely *looks* like a date is not one.
@@ -56,11 +60,11 @@ fn test_datetime_suggestions_follow_the_schema_not_the_name() {
 
     assert!(result.context.contains("AfterComparison"));
     assert!(
-        !result.suggestions.contains(&"DateTime(".to_string()),
+        !result.insert_texts().contains(&"DateTime(".to_string()),
         "a string column must not be offered a DateTime constructor: {:?}",
         result.suggestions
     );
-    assert!(result.suggestions.contains(&"''".to_string()));
+    assert!(result.insert_texts().contains(&"''".to_string()));
 }
 
 /// Numeric columns used to fall through the name list to `string`, so they
@@ -75,12 +79,12 @@ fn test_numeric_column_gets_numeric_methods() {
     let result = parser.get_completions(query, query.len());
 
     assert!(
-        result.suggestions.contains(&"ToString()".to_string()),
+        result.insert_texts().contains(&"ToString()".to_string()),
         "numeric columns should offer ToString(): {:?}",
         result.suggestions
     );
     assert!(
-        !result.suggestions.contains(&"Trim()".to_string()),
+        !result.insert_texts().contains(&"Trim()".to_string()),
         "numeric columns should not offer string-only methods: {:?}",
         result.suggestions
     );
@@ -99,7 +103,7 @@ fn test_boolean_column_suggests_literals() {
 
     assert!(result.context.contains("AfterComparison"));
     assert_eq!(
-        result.suggestions,
+        result.insert_texts(),
         vec!["true".to_string(), "false".to_string()]
     );
 }
@@ -114,7 +118,7 @@ fn test_unknown_column_falls_back_to_string_methods() {
     let result = parser.get_completions(query, query.len());
 
     assert!(
-        result.suggestions.contains(&"Contains('')".to_string()),
+        result.insert_texts().contains(&"Contains('')".to_string()),
         "unknown columns keep the safe string default: {:?}",
         result.suggestions
     );
