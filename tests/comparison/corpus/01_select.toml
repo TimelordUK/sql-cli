@@ -61,3 +61,25 @@ sql = "SELECT symbol, price FROM trades ORDER BY price DESC LIMIT 5"
 id = "order_by_expr"
 data = "trades.csv"
 sql = "SELECT symbol, price, volume FROM trades ORDER BY price * volume DESC"
+
+# --- P46 contrast: the comparison that fails in WHERE works in projection ---
+
+[[case]]
+id = "select_col_vs_col_projected"
+data = "null_edges.csv"
+sql = "SELECT id, partner_id, id < partner_id AS lt FROM null_edges WHERE partner_id IS NOT NULL ORDER BY id"
+# The anchor for P46. Column-vs-column is evaluated correctly HERE, which is
+# what localises that bug to the WHERE evaluator rather than to comparison in
+# general. If this case ever starts failing, P46 is bigger than filed.
+# The NULL rows are excluded on purpose - they are P48's business, not P46's,
+# and they are pinned separately as select_col_vs_col_null_operand below.
+
+[[case]]
+id = "select_col_vs_col_null_operand"
+data = "null_edges.csv"
+sql = "SELECT id, partner_id, id < partner_id AS lt FROM null_edges ORDER BY id"
+expect = "DIFFER"
+# P48, found 2026-09-12 while building the P46 anchor above. Same query without
+# the IS NOT NULL guard: for a NULL operand we project false, DuckDB projects
+# NULL. The three-valued-logic fix of P18/P19 landed in the WHERE evaluator;
+# this is the same rule missing at the projection site.
