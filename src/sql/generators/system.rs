@@ -83,7 +83,7 @@ impl TableGenerator for Processes {
     }
 
     fn description(&self) -> &str {
-        "Every running process: pid, parent, owner, status, CPU, memory, start time, command"
+        "Every running process (not its threads): pid, parent, owner, status, CPU, memory, start time, command"
     }
 
     fn arg_count(&self) -> usize {
@@ -137,6 +137,18 @@ impl TableGenerator for Processes {
         for pid in pids {
             let process = &system.processes()[pid];
 
+            // Linux lists every *task* - that is, every thread - alongside the
+            // processes, each with its own id and the process as its parent.
+            // Windows and macOS do not. Including them would break the rule
+            // this file exists to keep (the same query returns the same shape
+            // everywhere), and it would do real damage to arithmetic: a thread
+            // reports its process's memory, so `SUM(memory_bytes)` counts a
+            // 4 GB browser once per thread. `thread_kind()` is `None` on every
+            // platform but Linux, so this filter costs nothing elsewhere.
+            if process.thread_kind().is_some() {
+                continue;
+            }
+
             let user = process
                 .user_id()
                 .and_then(|uid| users.get_user_by_id(uid))
@@ -178,6 +190,30 @@ impl TableGenerator for Processes {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Linux is the only platform that lists threads alongside processes, so
+    /// this is the one assertion that has to be platform-specific. The test
+    /// binary runs several threads; before the `thread_kind` filter each of
+    /// them appeared as a row naming this process as its parent.
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn threads_are_not_listed_as_processes() {
+        let table = Processes.generate(Vec::new()).expect("read processes");
+        let me = std::process::id() as i64;
+
+        let claiming_to_be_our_children: Vec<i64> = (0..table.row_count())
+            .filter(|&row| table.get_value(row, 1) == Some(&DataValue::Integer(me)))
+            .filter_map(|row| match table.get_value(row, 0) {
+                Some(DataValue::Integer(pid)) => Some(*pid),
+                _ => None,
+            })
+            .collect();
+
+        assert!(
+            claiming_to_be_our_children.is_empty(),
+            "the test process spawns no children, so these are its threads: {claiming_to_be_our_children:?}"
+        );
+    }
 
     /// Generating is a real call into the OS, so this is one test that does
     /// everything rather than several that each pay the CPU sampling interval.
