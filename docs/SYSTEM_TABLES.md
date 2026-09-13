@@ -186,6 +186,21 @@ recursive query. See S3.
   appear with a NULL `pid`, since the socket itself is real.
 - **Joins to S1 on `pid`** through the CTE form above, which is the first real
   demonstration that these compose.
+- **Two row-shape decisions to take up front (added 2026-09-13):**
+  - **One socket can belong to several processes** — `netstat2` reports a list
+    of associated pids (a listener shared across a fork, an inherited handle).
+    One row per *(socket, pid)*, with a single NULL-pid row when the list is
+    empty, keeps `JOIN processes() ON pid` a plain equi-join. A socket with no
+    visible owner must still appear, per the NULL rule.
+  - **UDP has no remote end and no state.** Same columns for both protocols;
+    `remote_address`, `remote_port` and `state` are NULL for UDP rather than
+    `0.0.0.0` / `0` / an invented state.
+- **Columns, proposed:** `protocol` (`tcp`/`udp`), `family` (`ipv4`/`ipv6`),
+  `local_address`, `local_port`, `remote_address`, `remote_port`, `state`, `pid`.
+  TCP state names are standard (RFC 793), so normalise them to one spelling —
+  `LISTEN`, `ESTABLISHED`, `TIME_WAIT`… — the way S1 normalised `status`.
+- **Check the crate first:** confirm `netstat2` is maintained and builds on all
+  three targets with `--no-default-features` still compiling without it.
 
 ## S3 — Walking the process tree
 - **Status:** 🔴 OPEN
@@ -205,3 +220,109 @@ recursive query. See S3.
   needs the user list itself (uid, name, groups) rather than the name.
 - **Decide by use:** if `GROUP BY user` on `processes()` answers the question,
   do not add the table.
+
+## Candidates surveyed 2026-09-13
+
+A pass over what else fits the principles. Most of it needs **no new
+dependency**: `sysinfo` 0.32, already behind the feature for S1, exposes disks,
+network interfaces, CPUs and host facts. Suggested order after S2: **S5 and S6
+together** (small, same crate, no sampling delay), then the rest by demand.
+
+## S5 — `disks()`
+- **Status:** 🔴 OPEN
+- **Wanted:** *what is filling up* — a filter and a sort over a handful of rows.
+- **Columns, one row per mounted disk:** `name`, `mount_point`, `file_system`,
+  `kind` (`SSD`/`HDD`/`Unknown`), `total_bytes`, `available_bytes`, `removable`,
+  `read_only`. Derive `used_bytes` in SQL rather than as a column.
+- **Source:** `sysinfo::Disks` (`kind`, `name`, `file_system`, `mount_point`,
+  `total_space`, `available_space`, `is_removable`, `is_read_only`).
+- **Watch:** Linux reports pseudo and overlay mounts that Windows has no
+  equivalent of. Apply the S1 thread lesson — decide whether they are the *same
+  kind* of row before passing them through, and record the rule either way.
+
+## S6 — `system()`
+- **Status:** 🔴 OPEN
+- **Wanted:** one row of host facts, handy on its own and as a `CROSS JOIN` to
+  stamp other results with the machine they came from.
+- **Columns, exactly one row:** `host_name`, `os`, `os_version`,
+  `kernel_version`, `boot_time`, `uptime_seconds`, `logical_cores`,
+  `physical_cores`, `total_memory_bytes`, `used_memory_bytes`,
+  `total_swap_bytes`, `used_swap_bytes`, `load_1m`, `load_5m`, `load_15m`.
+- **Source:** `sysinfo::System` associated functions (`host_name`,
+  `long_os_version`, `kernel_version`, `boot_time`, `load_average`, …).
+- **Trap, the mirror of S1's:** `load_average()` returns **zeros on Windows**, not
+  an absence. Zero would read as an idle machine, so the three load columns must
+  be NULL there. S1's lesson was "a NULL must mean the platform declined"; this
+  is the other half — a platform declining must come out as NULL, not as a
+  plausible number.
+
+## S7 — `network_interfaces()`
+- **Status:** 🔴 OPEN
+- **Columns, one row per interface per IP address:** `name`, `mac_address`,
+  `address`, `prefix_length`, `family`, `bytes_received`, `bytes_sent`. An
+  interface with no address gets one row with the address columns NULL.
+- **Source:** `sysinfo::Networks` (`ip_networks`, `mac_address`,
+  `total_received`, `total_transmitted`).
+- **Watch:** byte counters are cumulative since boot or since interface up,
+  depending on platform. Name them as totals and say so; a rate would need S1's
+  two-sample delay and is not worth it here.
+
+## S8 — `files(path [, pattern])`
+- **Status:** 🔴 OPEN — the most generally useful of the candidates
+- **Wanted:** *largest files under here*, *what changed today* — the tool's
+  natural shape, and a sibling of `GREP` / `READ_TEXT` rather than of S1.
+- **Columns, one row per entry:** `path`, `name`, `extension`, `size_bytes`,
+  `modified`, `is_dir`. NULL `size_bytes` / `modified` where metadata is
+  unreadable; the entry still appears.
+- **Source:** `std::fs`; `walkdir` if recursion is wanted. Decide recursion by
+  argument, and whether it needs the `system-tables` feature at all — it is not
+  about the running machine, so it may belong with the file readers instead.
+- **Decide before building:** symlink following (off by default — loops),
+  a depth or row cap (principle 5 says no silent shortening, so a cap must be
+  an explicit argument, never a hidden default), and what a permission-denied
+  directory contributes (its own row with NULL metadata, not a query error).
+
+## S9 — `env()`
+- **Status:** 🔴 OPEN — tiny
+- **Columns:** `name`, `value`. `std::env::vars_os`; values that are not valid
+  UTF-8 come back lossily converted rather than dropped.
+- **Why:** checking `PATH` or configuration from a script, and `SPLIT` already
+  turns a `PATH` value into rows. Windows names are case-insensitive — document
+  that `WHERE name = 'Path'` versus `'PATH'` differs by platform.
+
+## S10 — `cpus()`
+- **Status:** 🔴 OPEN — least essential
+- **Columns, one row per logical core:** `core`, `brand`, `vendor`,
+  `frequency_mhz`, `usage_percent`.
+- **Cost:** usage needs the same two-sample delay as S1 (~200 ms per call).
+  Probably only worth it if a real question needs per-core usage; `system()`
+  covers core counts.
+
+## Deliberately not doing
+
+## S11 — Open files per process
+- **Status:** ⚪ ACCEPTED — not doing
+- **Why:** Linux reads `/proc/<pid>/fd`; Windows needs kernel handle
+  enumeration (`NtQuerySystemInformation`) or the Sysinternals `handle` tool;
+  macOS needs `libproc`. No crate gives the same rows everywhere, so it breaks
+  principle 2 or means hand-writing platform internals. S2 covers the most-asked
+  version of the question (who holds this *port*).
+
+## S12 — Services
+- **Status:** ⚪ ACCEPTED — not doing
+- **Why:** systemd units and the Windows Service Control Manager have different
+  models — states, start types, dependency graphs. A shared column set would be
+  mostly NULL on one side or the other, which is a different shape in all but
+  name.
+
+## S13 — Temperatures and sensors
+- **Status:** ⚪ ACCEPTED — not doing
+- **Why:** `sysinfo`'s components are usually **empty on Windows** without
+  elevation or vendor drivers. Same columns, but the same query returns rows on
+  Linux and nothing on Windows — principle 2 is about rows too.
+
+## S14 — Event logs, journald, scheduled tasks
+- **Status:** ⚪ ACCEPTED — not doing
+- **Why:** platform-specific formats and models with no common core. If a log is
+  wanted, export it to a file and use `READ_TEXT` / `READ_JSONL`, which already
+  work.
