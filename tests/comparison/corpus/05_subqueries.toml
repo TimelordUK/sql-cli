@@ -20,15 +20,22 @@ sql = "SELECT symbol, price FROM trades WHERE price IN (SELECT price FROM trades
 id = "in_subquery_correlated"
 data = "trades.csv"
 sql = "SELECT symbol, price FROM trades t WHERE price IN (SELECT price FROM trades x WHERE x.symbol = t.symbol AND x.price > 185)"
-# Correlation not applied: returns empty. See "correlated subqueries" in SQL_PARITY.md.
-expect = "DIFFER"
+# Correlation not applied (P3). AGREEs since 2026-09-13, BY COINCIDENCE: the
+# outer `t.symbol` now binds to the inner table's own `symbol` (P49), so the
+# subquery runs uncorrelated as "prices above 185", and no two symbols in
+# trades.csv share such a price. Before, the outer reference read as NULL and
+# the result was empty. Do not read this AGREE as P3 progress.
 
 [[case]]
 id = "scalar_subquery_correlated"
 data = "international_sales.csv"
 sql = "SELECT region, amount FROM international_sales s WHERE amount = (SELECT MAX(amount) FROM international_sales x WHERE x.region = s.region)"
-# Correlation not applied: inner sees 0 rows. See "correlated subqueries" in SQL_PARITY.md.
-expect = "GAP"
+# Correlation not applied (P3). Was GAP ("returned 0 rows") until 2026-09-13;
+# now DIFFER, because the outer `s.region` binds to the inner table's `region`
+# (P49), `x.region = x.region` holds for every row, and the subquery returns the
+# global MAX. A loud error became a wrong answer: see P49 for why that was
+# accepted rather than guarded in the P46 fix.
+expect = "DIFFER"
 
 [[case]]
 id = "exists_correlated"
@@ -48,5 +55,7 @@ expect = "GAP"
 id = "scalar_subquery_in_select_correlated"
 data = "international_sales.csv"
 sql = "SELECT region, country, (SELECT SUM(amount) FROM international_sales x WHERE x.region = s.region) AS region_total FROM international_sales s"
-# Correlation not applied in SELECT-list scalar subquery. See SQL_PARITY.md.
-expect = "GAP"
+# Correlation not applied in SELECT-list scalar subquery (P3). Was GAP until
+# 2026-09-13; now DIFFER for the same reason as scalar_subquery_correlated -
+# every row gets the grand total (P49).
+expect = "DIFFER"
