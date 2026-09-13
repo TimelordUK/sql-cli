@@ -228,3 +228,6 @@ mod dotted_column_completion;
 
 #[path = "asterisk_expansion.rs"]
 mod asterisk_expansion;
+
+#[path = "evaluator_matrix_tests.rs"]
+mod evaluator_matrix_tests;

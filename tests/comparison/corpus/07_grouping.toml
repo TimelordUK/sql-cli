@@ -62,3 +62,14 @@ sql = "SELECT region, COUNT(*) AS n FROM international_sales GROUP BY region HAV
 # Was P10: the aggregate IS rewritten here, but the arithmetic evaluator had no
 # arm for Not, so this errored. Fixed 2026-07-25 by adding the Not arm
 # (three-valued: NOT NULL -> NULL). Now AGREE.
+
+[[case]]
+id = "having_not_over_null"
+data = "null_edges.csv"
+sql = "SELECT team, COUNT(*) AS n FROM null_edges GROUP BY team HAVING NOT (MIN(score) > 40) ORDER BY team"
+expect = "DIFFER"
+# P50, found 2026-09-13 writing R13. The `delta` group's scores are all NULL, so
+# MIN(score) > 40 is UNKNOWN there and NOT of it stays UNKNOWN: DuckDB keeps
+# beta, gamma and the NULL team, and drops delta. HAVING runs on the value
+# evaluator, which answers the comparison false, negates it to TRUE, and admits
+# delta. The same predicate in WHERE is right - see tests/evaluator_matrix_tests.rs.
