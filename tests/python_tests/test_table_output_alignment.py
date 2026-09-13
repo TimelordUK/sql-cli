@@ -11,6 +11,7 @@ Every line of a rendered table must therefore have the same display width.
 """
 
 import os
+import re
 import subprocess
 import sys
 import unicodedata
@@ -26,8 +27,15 @@ def _sql_cli_binary():
     return base_dir / "target" / "release" / f"sql-cli{suffix}"
 
 
+ANSI_ESCAPE = re.compile(r"\x1b\[[0-9;]*[A-Za-z]")
+
+
 def _display_width(text):
-    """Column count of a string, matching the Rust side's unicode-width use."""
+    """Column count of a string, matching the Rust side's unicode-width use.
+
+    ANSI escapes (from ANSI_COLOR and friends) take no columns on a terminal.
+    """
+    text = ANSI_ESCAPE.sub("", text)
     return sum(2 if unicodedata.east_asian_width(ch) in ("W", "F") else 1 for ch in text)
 
 
@@ -142,6 +150,56 @@ def test_markdown_style_is_also_aligned(tmp_path):
         "SELECT Project, sum(DurationSecs) as total_secs, count(*) as n "
         "FROM projects GROUP BY Project ORDER BY total_secs DESC",
         extra_args=["--table-style", "markdown"],
+        tmp_path=tmp_path,
+    )
+    assert_lines_aligned(lines)
+
+
+# Coloured cells: the default renderer always sized columns by display width, but
+# the comfy-table styles counted the escape bytes, so a cell like
+# ANSI_COLOR('yellow', '3h') was padded as if it were 11 columns wide.
+
+ALL_TABLE_STYLES = [
+    "default",
+    "ascii",
+    "ascii-condensed",
+    "ascii-borders",
+    "ascii-horizontal",
+    "ascii-noborders",
+    "markdown",
+    "utf8",
+    "utf8-condensed",
+    "utf8-borders",
+    "utf8-horizontal",
+    "utf8-noborders",
+    "plain",
+]
+
+COLOURED_QUERY = (
+    "SELECT ANSI_COLOR('yellow', Project) AS project, "
+    "ANSI_COLOR('green', DurationSecs) AS secs, DurationSecs AS raw "
+    "FROM projects"
+)
+
+
+@pytest.mark.parametrize("style", ALL_TABLE_STYLES)
+def test_coloured_cells_are_aligned_in_every_style(tmp_path, style):
+    lines = render_table(
+        PROJECTS_CSV,
+        COLOURED_QUERY,
+        extra_args=["--table-style", style, "--max-col-width", "0"],
+        tmp_path=tmp_path,
+    )
+    assert any("\x1b[" in line for line in lines), "expected ANSI colour in the output"
+    assert_lines_aligned(lines)
+
+
+@pytest.mark.parametrize("style", ["default", "ascii", "utf8-noborders", "plain"])
+def test_coloured_cells_stay_aligned_when_truncated(tmp_path, style):
+    lines = render_table(
+        PROJECTS_CSV,
+        COLOURED_QUERY,
+        extra_args=["--table-style", style, "--max-col-width", "12"],
         tmp_path=tmp_path,
     )
     assert_lines_aligned(lines)
