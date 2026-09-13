@@ -176,6 +176,7 @@ feature work**, and so we can tell the difference between "this is awkward" and
   | [P15](SQL_PARITY.md) | An inline window function in `QUALIFY` is never lifted (the lifter walks the SELECT list only) → `Expected column name, got: WindowFunction` | hard error |
   | *(fixed, PR #33)* | `ILIKE` inside `OVER (ORDER BY ...)` left unrewritten, reaching the executor as an unknown operator | hard error |
   | *(fixed, PR #33)* | `INTO` inside `(a, b) IN (SELECT ...)` never removed | reaches executor |
+  | *(fixed 2026-09-13)* [P46](SQL_PARITY.md#p46) | The WHERE evaluator's literal reader ended `_ => Ok(Null)`, so every column, `CASE` or expression on the right of a comparison, in an `IN` list or as a `BETWEEN` bound read as NULL — **zero rows, no error**. Not a walker, but the same catch-all shape one layer down: the arm that should have been a compile-time gap was a value | **wrong results, no error** |
 
   P9 is the one that matters most: `HAVING COUNT(*) BETWEEN 1 AND 2` returned
   4 rows where DuckDB returns 1, with no error. A catch-all turned a missing

@@ -65,9 +65,9 @@ session apiece to fix properly, so **discovery is paused and the effort moves to
 picking them off**. Widen the corpus again when the open list is short, or
 opportunistically when a fix needs a case that doesn't exist yet.
 
-Corpus coverage today: tiers 01–10, **188 cases** (157 AGREE / 16 DIFFER /
-12 GAP / 1 OURS_ONLY / 2 BOTH_ERR as of 2026-09-12, after [P46](#p46)–[P48](#p48)
-added seven — six DIFFER and one AGREE anchor). The largest single movement so far remains the 2026-09-05
+Corpus coverage today: tiers 01–10, **197 cases** (168 AGREE / 15 DIFFER /
+11 GAP / 1 OURS_ONLY / 2 BOTH_ERR as of 2026-09-13, after the [P46](#p46) fix
+added nine and moved eleven — see that entry and [P49](#p49)). The largest single movement so far remains the 2026-09-05
 NULL-ordering slice, which closed [P13](#p13) stage 2 and [P17](#p17) together —
 eleven cases in one change. **Tier 10 (aggregate & NULL edges) is still
 deliberately partial** — it holds the P14, P18–P20 and P41 cases and their
@@ -91,7 +91,8 @@ Suggested fix order, by silent blast radius:
 | ~~9c~~ | ~~[P17](#p17) + [P13](#p13) stage 2 — NULL ordering~~ | ✅ **Fixed 2026-09-05** — 141 → **152 AGREE**, eleven cases in one change. Both halves were the same comparator's NULL rule, so they were taken as one slice. The two sorts that disagreed with each other now *share* one function (`compare_for_order_by`), which is the part that stops the divergence recurring; the window site turned out to be sorting NULL as the **maximum** via a derived `PartialOrd`, not merely following a different rule |
 | ~~9d~~ | ~~[P37](#p37) window in `WHERE` returns 0 rows~~ | ✅ **Fixed 2026-09-05** — corpus count unchanged, and that is the finding: the case is `OURS_ONLY` before *and* after, so the harness cannot see this fix or a future regression of it (first entry of that kind — the regression test is a Rust module). The filed root cause was wrong: `ExpressionLifter` *does* lift from `WHERE`. The real defect was one arm in the WHERE evaluator answering FALSE for any bare value used as a predicate — `WHERE true` returned zero rows too. It did **not** close [P15](#p15), which needs the opposite change |
 | ~~9e~~ | ~~[P41](#p41) `MODE` tie-break is random per run~~ | ✅ **Fixed 2026-09-06** — 152 → **156 AGREE** (four new cases). Small, as predicted, but not where it was filed: the named `ModeState` was a *shadowed* implementation and fixing it moved nothing. Reference does specify a rule and it is **first-occurrence**, not the "smallest value wins" this row proposed. Unblocked both example files, now FORMAL. Spun off [P42](#p42), [P43](#p43), [R12](ENGINE_REFACTORING.md#r12) |
-| **NEXT** | [P46](#p46) column-vs-column `WHERE` returns 0 rows, [P47](#p47) `MIN`/`MAX` ranked by type, [P48](#p48) NULL comparison projects `false` | All three found 2026-09-12 writing one examples file, all three silent. P46 is the [P30](#p30) disguise again — zero rows reads as "no data" — and P47 hands back a number wrong by a factor of half a million from an ordinary `GROUP BY`. Both are cheap: P47's correct comparator is already in the tree, and P48 is the [P18](#p18)/[P19](#p19) rule at one more site. P46 and P48 sit in neighbouring code, so take them together |
+| ~~9g~~ | ~~[P46](#p46) column-vs-column `WHERE` returns 0 rows~~ | ✅ **Fixed 2026-09-13** — 157 → **168 AGREE**. Wider than filed: *every* non-literal right-hand operand read as NULL (comparisons, `IN` items, `BETWEEN` bounds), and a literal on the left errored (`WHERE 1=0`). One resolver for all operands closed it. Did **not** need [P48](#p48) alongside, as this row predicted — the fix kept the comparison in the WHERE evaluator. Spun off [P49](#p49) (correlated outer refs bind to the inner table), accepted knowingly |
+| **NEXT** | [P47](#p47) `MIN`/`MAX` ranked by type, [P48](#p48) NULL comparison projects `false` | Both silent, both cheap. P47 hands back a number wrong by a factor of half a million from an ordinary `GROUP BY`, and its correct comparator is already in the tree. P48 is now projection-only and independent of P46 |
 | then | [P14](#p14), [P20](#p20), [P23](#p23) | Smaller, self-contained, decisions already taken. Was row 9b, then NEXT until the 2026-09-12 findings displaced it |
 | 9f | [P42](#p42) `MODE` is numeric-only | Companion to [R12](ENGINE_REFACTORING.md#r12), and cheap if taken with it: the shadowed implementation already handles non-numerics and preserves type, so the fix is largely to stop the live path throwing away what it knows. Also buys the corpus its clearest tie-break case |
 | 10 | [P22](#p22), [P25](#p25), [P26](#p26), [P15](#p15), [P32](#p32), [P38](#p38) | Hard errors — visible, so less urgent than any of the above |
@@ -128,6 +129,15 @@ seven cases as a result. The examples directory is cheap discovery surface and
 worth mining deliberately when the open list runs short: unlike the corpus, it
 is written to be *interesting* rather than to be exhaustive, which is exactly how
 it wanders outside the tested envelope.
+
+**A fifth, from fixing P46 (2026-09-13): a case moving the right way still has to
+be explained.** The `--check` contract flags *any* drift, and the easy reading of
+a GAP → AGREE is "bonus fix". Four cases moved that P46 did not target. One
+(`qualify_row_number`) was a wrong answer that happened to agree on a query with
+no WHERE; one (`in_subquery_correlated`) agreed by coincidence of the data; two
+went from a loud error to a silent wrong answer. Each unexpected move got its
+own probe against DuckDB before its `expect` was touched, and two of them
+changed the fix. Treat unexplained movement in either direction as a finding.
 
 **A fourth lesson, from closing P41 (2026-09-06): the entry named a fix site, and
 the fix site was dead code.** `ModeState` in `src/sql/aggregates/mod.rs` is
@@ -240,10 +250,13 @@ annotation be removed.
 
 ### P3 — Correlated subqueries do not apply the outer-row correlation
 - **Status:** 🔴 OPEN — **theme / root cause**, covers several corpus cases
-- **Corpus:** `05_subqueries.toml :: in_subquery_correlated` (DIFFER, returns empty),
-  `scalar_subquery_correlated` (GAP, "returned 0 rows"),
-  `scalar_subquery_in_select_correlated` (GAP),
-  `exists_correlated` (GAP), `not_exists_correlated` (GAP).
+- **Corpus:** `05_subqueries.toml :: in_subquery_correlated` (AGREE by
+  coincidence since 2026-09-13; was DIFFER, returned empty),
+  `scalar_subquery_correlated` (DIFFER since 2026-09-13; was GAP, "returned 0 rows"),
+  `scalar_subquery_in_select_correlated` (DIFFER since 2026-09-13; was GAP),
+  `exists_correlated` (GAP), `not_exists_correlated` (GAP). The 2026-09-13 moves
+  are [P49](#p49), not progress here: outer references now bind to the inner
+  table instead of reading as NULL.
 - **Observed:** A subquery referencing an outer column (`WHERE x.region = s.region`)
   does not see the outer row — it evaluates as if the outer reference is empty,
   so correlated scalar subqueries error ("0 rows"), correlated `IN` returns an
@@ -772,6 +785,14 @@ annotation be removed.
   QUALIFY to WHERE *first* and the WHERE lifting path, which works, picks it up
   for free. **Check the alias form against the swap before taking it**: the
   ordering was chosen for that case, and `WhereAliasExpander` runs after both.
+- **Do not fix this in the WHERE evaluator (learned 2026-09-13).** During the
+  [P46](#p46) fix, operands briefly resolved through the `ArithmeticEvaluator`,
+  which *can* compute a window — and `qualify_row_number` went AGREE. That is a
+  trap: the window is then computed over the rows the WHERE is still filtering,
+  so a QUALIFY combined with a WHERE ranks the unfiltered table (1 row where
+  DuckDB returns 3). The evaluator now refuses a raw window operand, and
+  `09_window.toml :: qualify_inline_with_where` (GAP) will turn DIFFER if anyone
+  takes that route again. The error message moved with it; the fix site did not.
 
 ### P16 — `ORDER BY <ordinal>` is silently ignored
 - **Status:** 🟢 FIXED 2026-08-31 — 134 → 139 AGREE (+2 fixed, +3 new coverage,
@@ -2032,11 +2053,17 @@ out of date.
 ---
 
 ### P46 — A column-to-column comparison in `WHERE` returns zero rows
-- **Status:** 🔴 OPEN — silent, and it returns the emptiest possible wrong answer
-- **Corpus:** `02_where.toml :: where_col_lt_col`, `where_col_eq_col_string`
-  (both `expect = "DIFFER"`); the contrast anchor is
-  `01_select.toml :: select_col_vs_col_projected`, which AGREEs.
-- **Observed:** if both sides of a comparison are columns, the predicate never
+- **Status:** 🟢 FIXED 2026-09-13 — 157 → **168 AGREE** over 197 cases (+8 fixed,
+  +2 new coverage, +1 coincidental — see [P49](#p49)). Spun off [P49](#p49).
+- **Corpus:** `02_where.toml :: where_col_lt_col`, `where_col_eq_col_string`,
+  and six added by the re-probe — `where_col_eq_same_col`,
+  `where_not_col_lt_col`, `where_not_expr_lt_col`, `where_col_lt_case`,
+  `where_between_col_bound`, `where_in_list_expr_item` (all were DIFFER, now
+  AGREE). Added with the fix: `where_literal_on_left`, `where_constant_true`
+  (AGREE); and in tier 09 `qualify_inline_with_where` (GAP, a guard for
+  [P15](#p15) — see below). The contrast anchor remains
+  `01_select.toml :: select_col_vs_col_projected`.
+- **Observed (was):** if both sides of a comparison are columns, the predicate never
   matches. Not one operator, not one type — the shape:
 
   | Query | Ours | DuckDB 1.5.5 |
@@ -2069,14 +2096,82 @@ out of date.
   into a CTE or `#temp`, then `WHERE frontier = 'cross'`. Arithmetic serves the
   same purpose when the columns are numeric: project
   `COUNT('*') - SUM(flag) AS remainder`, then `WHERE remainder = 0`.
-- **Decision:** fix. While in there, check the other predicate sites for the
+- **Decision (was):** fix. While in there, check the other predicate sites for the
   same hole — `JOIN ... ON` and `HAVING` both compare operands of their own —
   and re-probe from a second angle first, per the [P28](#p28) lesson: this entry
   was written from `WHERE` alone.
+- **The re-probe paid for itself: the filed shape was too narrow.** The defect
+  was not "column vs column" but *any right-hand operand that is not a literal*.
+  `RecursiveWhereEvaluator::extract_value` understood string, number, boolean
+  and date literals and ended in `_ => Ok(ExprValue::Null)` — so a column, a
+  `CASE` or an expression on the right read as NULL, the comparison was UNKNOWN
+  on every row, and every row was dropped. It served four sites, all broken the
+  same way:
+
+  | Shape | Was | DuckDB |
+  |---|---|---|
+  | `id < partner_id`, `team = team` | 0 rows 🚫 | 1, 4, 7, 9 / all non-NULL |
+  | `NOT (id < partner_id)` | 0 rows 🚫 | 2, 5, 8 |
+  | `score < CASE WHEN … END` | 0 rows 🚫 | 1, 2, 5, 8, 9 |
+  | `partner_id BETWEEN id AND 10` | 0 rows 🚫 | 1, 4, 7 |
+  | `partner_id IN (id + 2, 5)` | **4 only** 🚫 — the literal still matched | 1, 4, 9 |
+  | `NOT (id + 0 < partner_id)` | **8 rows** 🚫 — too many | 2, 5, 8 |
+  | `3 < id`, `WHERE 1=0` | hard error "Expected column name" | ✅ |
+
+  The last two rows are two more holes in the same function. An *arithmetic*
+  operand dodged `extract_value` by handing the whole comparison to the
+  `ArithmeticEvaluator`, whose comparison answers `false` for a NULL operand —
+  [P48](#p48) leaking into `WHERE`, visible only under `NOT`. And the **left**
+  operand had to be a column, so a literal there errored; `WHERE 1=0` being
+  rejected while `LIMIT 0` worked was reported from the same countries demo.
+  `JOIN ... ON` and `HAVING` were probed and are clean.
+- **Not the evaluator standing apart — one site that never got the shared
+  path.** The WHERE evaluator already delegated to the shared pieces: every
+  comparison goes through `compare_trilean` → `value_comparisons::compare_with_op`,
+  and `evaluate_operand_value` (added for [P11](#p11)) already resolved the
+  *left* of `IN`/`BETWEEN` as column-or-`ArithmeticEvaluator`. The right-hand
+  sides simply still used the older literal-only reader.
+- **Fix:** every operand — both sides of a comparison, each `IN` item, both
+  `BETWEEN` bounds — now resolves through `evaluate_operand_value`, and the
+  comparison always happens in `compare_trilean`, so the R10 NULL → UNKNOWN rule
+  holds whatever shape the operands take. `extract_value`, `ExprValue` and the
+  whole-comparison delegation branch are gone. Columns and literals keep a
+  direct path; everything else goes to the `ArithmeticEvaluator`. An operator
+  that yields no truth value (`WHERE a + b`) is a value used as a predicate, per
+  the [P37](#p37) rule.
+- **Two traps the fix walked into, recorded so the next change does not:**
+  1. **Performance.** `ArithmeticEvaluator::new` builds the function and both
+     aggregate registries, and the old branch built one *per row*:
+     `WHERE price + 0 > quantity` took 9.8 s over 100k rows. Worse, a window
+     function evaluated that way rebuilt its window context per row — inline
+     `QUALIFY` over just **2k** rows took 9.5 s. The evaluator now holds one
+     `ArithmeticEvaluator` for the whole evaluation: 2.9 s and 60 ms. (The
+     arithmetic operand still costs ~4× a bare column; not chased here.)
+  2. **A loud error nearly became a silent wrong answer.** Once operands could
+     be arbitrary expressions, a raw `WindowFunction` operand *evaluated* — which
+     made `09_window :: qualify_row_number` AGREE and looked like a free
+     [P15](#p15) fix. It is not: the window is computed over the rows the WHERE
+     is still filtering, so `WHERE amount < 3000 QUALIFY ROW_NUMBER() … = 1`
+     ranked the unfiltered table and returned 1 row where DuckDB returns 3. A raw
+     window operand is now refused, the same rule `evaluate_value_as_predicate`
+     already applied, and `qualify_inline_with_where` pins it as GAP.
+- **One trade accepted rather than guarded — [P49](#p49).** Resolving right-hand
+  columns exposed the resolver's unqualified fallback to correlated subqueries:
+  an outer reference now binds to the inner table's same-named column. Filed
+  separately; the reasoning is there.
+- **Harness note:** an empty result cannot currently be compared — our empty
+  JSON output carries no column list, so the diff reports
+  `column mismatch: ref-only cols=[…]` rather than agreeing on zero rows. That is
+  why `where_constant_true` pins the `1=1` form instead of `1=0`. Every P46
+  "0 rows" case showed as a column mismatch for the same reason.
+- **Tests:** `recursive_where_evaluator.rs :: operand_resolution_tests` — six
+  per-row `Trilean` assertions, including the NOT-over-NULL shapes and the
+  refused window operand, which no row count could distinguish.
 - **Related:** [P30](#p30) (same zero-rows disguise), [P7](#p7) (a
-  multi-condition join evaluating two-column operands by position — possibly the
-  same root, worth checking together), [P48](#p48) (the NULL half of the same
-  comparison story, found while pinning this one).
+  multi-condition join evaluating two-column operands by position — single-
+  condition `ON` probed clean here, multi-condition not re-checked),
+  [P48](#p48) (its WHERE leak closed by this fix; the projection half is still
+  open), [P15](#p15), [P37](#p37), [P49](#p49).
 
 ---
 
@@ -2181,11 +2276,67 @@ out of date.
   job, and the unguarded form kept as this entry's case.
 - **Decision:** fix — the comparison arms of the arithmetic evaluator should
   yield NULL when either operand is NULL, matching the WHERE evaluator rather
-  than diverging from it. Small, and it wants doing alongside [P46](#p46), which
-  is in neighbouring code.
+  than diverging from it. Small (`arithmetic_evaluator.rs`, the
+  `">" | "<" | …` arm of `evaluate_binary_op`).
+- **Update 2026-09-13 — no longer tied to [P46](#p46).** This was expected to
+  land alongside P46 because the obvious P46 fix routed WHERE comparisons
+  through this evaluator. The fix taken instead resolves only the *operands*
+  there and keeps the comparison in the WHERE evaluator's `compare_trilean`, so
+  the two became independent — and that also closed the one place this bug
+  leaked into `WHERE` (`NOT (id + 0 < partner_id)` returned 8 rows, DuckDB 3).
+  What remains is projection only. Check `CASE`, `AND`/`OR` and `to_bool` still
+  handle a NULL comparison result when taking it.
 - **Related:** [P18](#p18), [P19](#p19), [P20](#p20) (`||` treating NULL as an
   empty string — the same coercion instinct in the string operators),
   [P46](#p46).
+
+---
+
+### P49 — An unknown table prefix silently falls back to the unqualified column
+- **Status:** 🔴 OPEN — silent; accepted knowingly as the cost of the
+  [P46](#p46) fix
+- **Corpus:** `05_subqueries.toml :: scalar_subquery_correlated`,
+  `scalar_subquery_in_select_correlated` (both GAP → `expect = "DIFFER"`),
+  `in_subquery_correlated` (DIFFER → AGREE, **by coincidence**). All three are
+  [P3](#p3) cases; their comments say what moved them.
+- **Observed:** `ExecutionContext::resolve_column_index` (`src/data/query_engine.rs`)
+  resolves `prefix.col` by trying the qualified name and then, if that fails,
+  **the bare `col`** — whatever the prefix was. So `zz.symbol` against a table
+  with no `zz` in scope reads `symbol`. That fallback is deliberate (it is what
+  makes `trades.symbol` work against a table whose columns are unqualified) and
+  it predates P46: `WHERE zz.symbol = 'AAPL'` already answered on main.
+- **Why it surfaced now.** Correlated subqueries are not evaluated per outer row
+  ([P3](#p3) / [R7](ENGINE_REFACTORING.md#r7)), so in
+  `WHERE x.region = s.region` the outer `s.region` is resolved against the
+  *inner* table. Before P46 it sat on the right-hand side, which read as NULL —
+  the inner query saw no rows and the correlated scalar subqueries failed loudly
+  ("returned 0 rows"). With right-hand columns resolved, `s.region` binds to
+  `x`'s own `region`, `x.region = x.region` is true on every row, and the
+  subquery runs **uncorrelated**:
+
+  | Case | Before P46 fix | After | DuckDB |
+  |---|---|---|---|
+  | scalar `amount = (SELECT MAX(amount) … WHERE x.region = s.region)` | error | 1 row (global max) 🚫 | 4 rows |
+  | `(SELECT SUM(amount) … x.region = s.region)` in SELECT | error | grand total on every row 🚫 | per-region totals |
+  | `price IN (SELECT price … x.symbol = t.symbol AND x.price > 185)` | 0 rows 🚫 | ✅ matches | — only because no two symbols share such a price |
+
+- **Why it was accepted, not guarded (decided 2026-09-13).** Three options were
+  on the table: (1) ship and file this; (2) make the shared resolver reject a
+  prefix that is neither an alias, the table, nor a qualifier on its columns;
+  (3) apply that check only to WHERE right-hand operands. (3) would make the two
+  sides of one comparison resolve by different rules again — the exact
+  asymmetry P46 removed. (2) is the right shape but changes resolution for every
+  clause and wants its own probing (CTEs, joins, `#temp`, the generous
+  `column_resolution_error::prefix_is_in_scope`, which was built for *messages*
+  and says so). And the queries affected were already wrong — an error instead
+  of the answer. Option (1), keeping P46 a contained slice.
+- **Decision:** fix properly as part of [P3](#p3) — per-row correlation gives
+  outer references somewhere real to resolve, at which point an unmatched
+  prefix can be an error. If P3 stays deferred long, (2) is worth doing on its
+  own; a typo'd alias in a *non*-correlated query reads the wrong table's
+  column just as quietly.
+- **Related:** [P3](#p3), [P46](#p46), [R7](ENGINE_REFACTORING.md#r7),
+  [R11](ENGINE_REFACTORING.md#r11) (ORDER BY's own copy of the resolver).
 
 ---
 

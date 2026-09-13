@@ -6,7 +6,8 @@ use crate::data::trilean::Trilean;
 use crate::data::value_comparisons::compare_with_op;
 use crate::sql::recursive_parser::{Condition, LogicalOp, SqlExpression, WhereClause};
 use anyhow::{anyhow, Result};
-use chrono::{DateTime, Local, NaiveDate, NaiveDateTime, NaiveTime, TimeZone, Utc};
+use chrono::{Local, NaiveDate, NaiveDateTime, NaiveTime};
+use std::cell::RefCell;
 use tracing::debug;
 
 /// Evaluates WHERE clauses from `recursive_parser` directly against `DataTable`
@@ -15,6 +16,11 @@ pub struct RecursiveWhereEvaluator<'a, 'ctx, 'exec> {
     case_insensitive: bool,
     context: Option<&'ctx mut EvaluationContext>,
     exec_context: Option<&'exec ExecutionContext>,
+    /// One `ArithmeticEvaluator` for the whole evaluation, built on first use.
+    /// Constructing one builds the function and aggregate registries, and its
+    /// window-context cache only pays off if it outlives a single row -- a
+    /// fresh evaluator per row made an inline window predicate quadratic.
+    arithmetic: RefCell<Option<ArithmeticEvaluator<'a>>>,
 }
 
 impl<'a, 'ctx, 'exec> RecursiveWhereEvaluator<'a, 'ctx, 'exec> {
@@ -25,6 +31,7 @@ impl<'a, 'ctx, 'exec> RecursiveWhereEvaluator<'a, 'ctx, 'exec> {
             case_insensitive: false,
             context: None,
             exec_context: None,
+            arithmetic: RefCell::new(None),
         }
     }
 
@@ -36,6 +43,7 @@ impl<'a, 'ctx, 'exec> RecursiveWhereEvaluator<'a, 'ctx, 'exec> {
             case_insensitive,
             context: Some(context),
             exec_context: None,
+            arithmetic: RefCell::new(None),
         }
     }
 
@@ -50,6 +58,7 @@ impl<'a, 'ctx, 'exec> RecursiveWhereEvaluator<'a, 'ctx, 'exec> {
             case_insensitive,
             context: None,
             exec_context: Some(exec_context),
+            arithmetic: RefCell::new(None),
         }
     }
 
@@ -65,6 +74,7 @@ impl<'a, 'ctx, 'exec> RecursiveWhereEvaluator<'a, 'ctx, 'exec> {
             case_insensitive,
             context: Some(context),
             exec_context: Some(exec_context),
+            arithmetic: RefCell::new(None),
         }
     }
 
@@ -131,6 +141,7 @@ impl<'a, 'ctx, 'exec> RecursiveWhereEvaluator<'a, 'ctx, 'exec> {
             case_insensitive,
             context: None,
             exec_context: None,
+            arithmetic: RefCell::new(None),
         }
     }
 
@@ -145,6 +156,7 @@ impl<'a, 'ctx, 'exec> RecursiveWhereEvaluator<'a, 'ctx, 'exec> {
             case_insensitive,
             context: None,
             exec_context: None,
+            arithmetic: RefCell::new(None),
         }
     }
 
@@ -167,26 +179,6 @@ impl<'a, 'ctx, 'exec> RecursiveWhereEvaluator<'a, 'ctx, 'exec> {
             return Trilean::Unknown;
         }
         Trilean::from_bool(compare_with_op(left, right, op, self.case_insensitive))
-    }
-
-    /// Convert ExprValue to DataValue for centralized comparison
-    fn expr_value_to_data_value(&self, expr_value: &ExprValue) -> DataValue {
-        match expr_value {
-            ExprValue::String(s) => DataValue::String(s.clone()),
-            ExprValue::Number(n) => {
-                // Check if it's an integer or float
-                if n.fract() == 0.0 && *n >= i64::MIN as f64 && *n <= i64::MAX as f64 {
-                    DataValue::Integer(*n as i64)
-                } else {
-                    DataValue::Float(*n)
-                }
-            }
-            ExprValue::Boolean(b) => DataValue::Boolean(*b),
-            ExprValue::DateTime(dt) => {
-                DataValue::DateTime(dt.format("%Y-%m-%d %H:%M:%S%.3f").to_string())
-            }
-            ExprValue::Null => DataValue::Null,
-        }
     }
 
     /// Evaluate the `Length()` method on a column value
@@ -588,41 +580,35 @@ impl<'a, 'ctx, 'exec> RecursiveWhereEvaluator<'a, 'ctx, 'exec> {
             });
         }
 
-        // For complex expressions (arithmetic, functions), use ArithmeticEvaluator
-        if matches!(left, SqlExpression::BinaryOp { .. })
-            || matches!(left, SqlExpression::FunctionCall { .. })
-            || matches!(right, SqlExpression::BinaryOp { .. })
-            || matches!(right, SqlExpression::FunctionCall { .. })
-        {
-            let comparison_expr = SqlExpression::BinaryOp {
+        let op_upper = op.to_uppercase();
+
+        // An operator that does not yield a truth value (`WHERE a + b`,
+        // `WHERE x || y`) makes the whole expression a value used as a
+        // predicate -- the P37 rule, rather than a comparison under an
+        // operator `compare_with_op` would silently answer false for.
+        if !is_predicate_operator(&op_upper) {
+            let value_expr = SqlExpression::BinaryOp {
                 left: Box::new(left.clone()),
                 op: op.to_string(),
                 right: Box::new(right.clone()),
             };
-
-            let mut evaluator = ArithmeticEvaluator::new(self.table);
-            let result = evaluator.evaluate(&comparison_expr, row_index)?;
-
-            // Convert the result to a truth value. A NULL out of the
-            // arithmetic evaluator means a NULL propagated through the
-            // expression, so the comparison is UNKNOWN rather than false.
-            return match result {
-                DataValue::Boolean(b) => Ok(Trilean::from_bool(b)),
-                DataValue::Null => Ok(Trilean::Unknown),
-                _ => Err(anyhow!("Comparison did not return a boolean value")),
-            };
+            return self.evaluate_value_as_predicate(&value_expr, row_index);
         }
 
-        // For simple comparisons, use the original WHERE clause logic with improved date parsing
-        // Handle left side - could be a column or a method call
-        let (cell_value, column_name) = match left {
+        // Both operands are resolved to values here and compared below, so the
+        // NULL -> UNKNOWN rule in `compare_trilean` applies whatever shape the
+        // operands take. Comparisons with an arithmetic operand used to be
+        // handed whole to the ArithmeticEvaluator, whose comparison answers
+        // `false` for a NULL operand -- which `NOT` then flipped to TRUE.
+        // The left side can also be one of the legacy method calls.
+        let cell_value = match left {
             SqlExpression::MethodCall {
                 object,
                 method,
                 args,
             } => {
                 // Handle method calls that return values (like Length(), IndexOf())
-                match method.to_lowercase().as_str() {
+                let (value, _label) = match method.to_lowercase().as_str() {
                     "length" => {
                         if !args.is_empty() {
                             return Err(anyhow::anyhow!("Length() takes no arguments"));
@@ -660,56 +646,34 @@ impl<'a, 'ctx, 'exec> RecursiveWhereEvaluator<'a, 'ctx, 'exec> {
                             method
                         ));
                     }
-                }
+                };
+                value
             }
-            _ => {
-                // Regular column reference
-                let column_name = self.extract_column_name(left)?;
-                if row_index < 3 {
-                    debug!(
-                        "RecursiveWhereEvaluator: evaluate_binary_op() - column_name = '{}'",
-                        column_name
-                    );
-                }
-
-                let col_index = self.table.get_column_index(&column_name).ok_or_else(|| {
-                    let suggestion = self.find_similar_column(&column_name);
-                    match suggestion {
-                        Some(similar) => anyhow!(
-                            "Column '{}' not found. Did you mean '{}'?",
-                            column_name,
-                            similar
-                        ),
-                        None => anyhow!("Column '{}' not found", column_name),
-                    }
-                })?;
-
-                let cell_value = self.table.get_value(row_index, col_index).cloned();
-                (cell_value, column_name)
-            }
+            _ => self.evaluate_operand_value(left, row_index)?,
         };
+
+        let compare_value = self
+            .evaluate_operand_value(right, row_index)?
+            .unwrap_or(DataValue::Null);
 
         if row_index < 3 {
             debug!(
-                "RecursiveWhereEvaluator: evaluate_binary_op() - row {} column '{}' value = {:?}",
-                row_index, column_name, cell_value
+                "RecursiveWhereEvaluator: evaluate_binary_op() - row {} {:?} {} {:?}",
+                row_index, cell_value, op, compare_value
             );
         }
 
-        // Get comparison value from right side
-        let compare_value = self.extract_value(right)?;
-
         // Handle special operators that aren't standard comparisons
-        let op_upper = op.to_uppercase();
         match op_upper.as_str() {
             // LIKE operator - handle specially
             "LIKE" => {
                 let table_value = cell_value.unwrap_or(DataValue::Null);
                 let pattern = match compare_value {
-                    ExprValue::String(s) => s,
+                    DataValue::String(s) => s,
+                    DataValue::InternedString(s) => s.to_string(),
                     // A NULL pattern makes the whole predicate UNKNOWN; any
                     // other non-string pattern is simply not a match.
-                    ExprValue::Null => return Ok(Trilean::Unknown),
+                    DataValue::Null => return Ok(Trilean::Unknown),
                     _ => return Ok(Trilean::False),
                 };
 
@@ -747,39 +711,37 @@ impl<'a, 'ctx, 'exec> RecursiveWhereEvaluator<'a, 'ctx, 'exec> {
                 cell_value.is_some() && !matches!(cell_value, Some(DataValue::Null)),
             )),
 
-            // Handle IS / IS NOT with NULL explicitly
-            "IS" if matches!(compare_value, ExprValue::Null) => Ok(Trilean::from_bool(
+            // `x IS NULL` written with an explicit NULL operand. Matched on the
+            // expression, not the value: `a IS b` where b happens to be NULL on
+            // this row is not a NULL test.
+            "IS" if matches!(right, SqlExpression::Null) => Ok(Trilean::from_bool(
                 cell_value.is_none() || matches!(cell_value, Some(DataValue::Null)),
             )),
-            "IS NOT" if matches!(compare_value, ExprValue::Null) => Ok(Trilean::from_bool(
+            "IS NOT" if matches!(right, SqlExpression::Null) => Ok(Trilean::from_bool(
                 cell_value.is_some() && !matches!(cell_value, Some(DataValue::Null)),
             )),
 
             // Standard comparison operators - use centralized logic
             _ => {
                 let table_value = cell_value.unwrap_or(DataValue::Null);
-                let comparison_value = self.expr_value_to_data_value(&compare_value);
-
-                if row_index < 3 {
-                    debug!(
-                        "RecursiveWhereEvaluator: Using centralized comparison - table: {:?}, op: '{}', comparison: {:?}, case_insensitive: {}",
-                        table_value, op, comparison_value, self.case_insensitive
-                    );
-                }
-
-                Ok(self.compare_trilean(&table_value, &comparison_value, op))
+                Ok(self.compare_trilean(&table_value, &compare_value, op))
             }
         }
     }
 
-    /// Resolve the value of a WHERE operand that is expected to yield a scalar:
-    /// a plain column reference (looked up in the row) or an arbitrary
-    /// expression (evaluated with the `ArithmeticEvaluator`). IN / BETWEEN take
-    /// such an operand on their left; it is usually a bare column, but after an
-    /// IN-subquery is substituted into an IN-list the LHS keeps its original
-    /// expression form (e.g. `price * 2`), which the `InOperatorLifter` never
-    /// got to lift because that runs before subquery substitution. Mirrors the
-    /// arithmetic delegation `evaluate_binary_op` already does for its LHS.
+    /// Resolve the value of any WHERE operand -- either side of a comparison,
+    /// the probe and items of an IN list, the value and bounds of BETWEEN.
+    ///
+    /// Columns and literals are read directly; anything else (arithmetic, a
+    /// function, a CASE) is evaluated by the `ArithmeticEvaluator`. The direct
+    /// arms are a fast path, not a semantic difference: constructing an
+    /// `ArithmeticEvaluator` builds the function and aggregate registries, and
+    /// `WHERE x = 5` evaluates its literal once per row.
+    ///
+    /// This replaced a literal-only reader that answered NULL for every other
+    /// shape, which made `WHERE a < b` UNKNOWN on every row (P46). There is
+    /// deliberately no catch-all that invents a value: an operand the
+    /// evaluator cannot handle is an error.
     fn evaluate_operand_value(
         &self,
         expr: &SqlExpression,
@@ -788,17 +750,75 @@ impl<'a, 'ctx, 'exec> RecursiveWhereEvaluator<'a, 'ctx, 'exec> {
         match expr {
             SqlExpression::Column(_) => {
                 let column_name = self.extract_column_name(expr)?;
-                let col_index = self
-                    .table
-                    .get_column_index(&column_name)
-                    .ok_or_else(|| anyhow::anyhow!("Column '{}' not found", column_name))?;
+                let col_index =
+                    self.table.get_column_index(&column_name).ok_or_else(|| {
+                        match self.find_similar_column(&column_name) {
+                            Some(similar) => anyhow!(
+                                "Column '{}' not found. Did you mean '{}'?",
+                                column_name,
+                                similar
+                            ),
+                            None => anyhow!("Column '{}' not found", column_name),
+                        }
+                    })?;
                 Ok(self.table.get_value(row_index, col_index).cloned())
             }
-            _ => {
-                let mut evaluator = ArithmeticEvaluator::new(self.table);
-                Ok(Some(evaluator.evaluate(expr, row_index)?))
+            SqlExpression::StringLiteral(s) => Ok(Some(DataValue::String(s.clone()))),
+            SqlExpression::BooleanLiteral(b) => Ok(Some(DataValue::Boolean(*b))),
+            SqlExpression::Null => Ok(Some(DataValue::Null)),
+            SqlExpression::NumberLiteral(n) => Ok(Some(number_literal_value(n))),
+            SqlExpression::DateTimeConstructor {
+                year,
+                month,
+                day,
+                hour,
+                minute,
+                second,
+            } => {
+                let naive_date = NaiveDate::from_ymd_opt(*year, *month, *day)
+                    .ok_or_else(|| anyhow::anyhow!("Invalid date: {}-{}-{}", year, month, day))?;
+                let naive_time = NaiveTime::from_hms_opt(
+                    hour.unwrap_or(0),
+                    minute.unwrap_or(0),
+                    second.unwrap_or(0),
+                )
+                .ok_or_else(|| anyhow::anyhow!("Invalid time"))?;
+                Ok(Some(datetime_value(NaiveDateTime::new(
+                    naive_date, naive_time,
+                ))))
             }
+            SqlExpression::DateTimeToday {
+                hour,
+                minute,
+                second,
+            } => {
+                let today = Local::now().date_naive();
+                let time = NaiveTime::from_hms_opt(
+                    hour.unwrap_or(0),
+                    minute.unwrap_or(0),
+                    second.unwrap_or(0),
+                )
+                .ok_or_else(|| anyhow::anyhow!("Invalid time"))?;
+                Ok(Some(datetime_value(NaiveDateTime::new(today, time))))
+            }
+            // Same rule as `evaluate_value_as_predicate`: a raw window function
+            // here was not lifted to a CTE column. Evaluating it would compute
+            // the window over the rows the WHERE is still filtering, so an
+            // inline `QUALIFY ROW_NUMBER() OVER (...) = 1` combined with a WHERE
+            // would silently rank the unfiltered table (P15).
+            SqlExpression::WindowFunction { name, .. } => Err(anyhow!(
+                "Window function {name} cannot be used directly in a comparison (the expression was not lifted to a CTE column)"
+            )),
+            _ => Ok(Some(self.evaluate_arithmetic(expr, row_index)?)),
         }
+    }
+
+    /// Evaluate a value expression with the evaluation's shared
+    /// `ArithmeticEvaluator` (see the `arithmetic` field for why it is shared).
+    fn evaluate_arithmetic(&self, expr: &SqlExpression, row_index: usize) -> Result<DataValue> {
+        let mut slot = self.arithmetic.borrow_mut();
+        slot.get_or_insert_with(|| ArithmeticEvaluator::new(self.table))
+            .evaluate(expr, row_index)
     }
 
     fn evaluate_in_list(
@@ -818,10 +838,11 @@ impl<'a, 'ctx, 'exec> RecursiveWhereEvaluator<'a, 'ctx, 'exec> {
         // TRUE and admit the NULL rows.
         let mut saw_unknown = false;
 
+        let table_value = cell_value.as_ref().unwrap_or(&DataValue::Null);
         for value_expr in values {
-            let compare_value = self.extract_value(value_expr)?;
-            let table_value = cell_value.as_ref().unwrap_or(&DataValue::Null);
-            let comparison_value = self.expr_value_to_data_value(&compare_value);
+            let comparison_value = self
+                .evaluate_operand_value(value_expr, row_index)?
+                .unwrap_or(DataValue::Null);
 
             match self.compare_trilean(table_value, &comparison_value, "=") {
                 Trilean::True => return Ok(Trilean::True),
@@ -845,12 +866,14 @@ impl<'a, 'ctx, 'exec> RecursiveWhereEvaluator<'a, 'ctx, 'exec> {
         row_index: usize,
     ) -> Result<Trilean> {
         let cell_value = self.evaluate_operand_value(expr, row_index)?;
-        let lower_value = self.extract_value(lower)?;
-        let upper_value = self.extract_value(upper)?;
+        let lower_data_value = self
+            .evaluate_operand_value(lower, row_index)?
+            .unwrap_or(DataValue::Null);
+        let upper_data_value = self
+            .evaluate_operand_value(upper, row_index)?
+            .unwrap_or(DataValue::Null);
 
         let table_value = cell_value.unwrap_or(DataValue::Null);
-        let lower_data_value = self.expr_value_to_data_value(&lower_value);
-        let upper_data_value = self.expr_value_to_data_value(&upper_value);
 
         // BETWEEN is defined as `value >= lower AND value <= upper`, so it takes
         // AND's truth table too: FALSE on either side still wins outright (a
@@ -1058,59 +1081,6 @@ impl<'a, 'ctx, 'exec> RecursiveWhereEvaluator<'a, 'ctx, 'exec> {
         }
     }
 
-    fn extract_value(&self, expr: &SqlExpression) -> Result<ExprValue> {
-        match expr {
-            SqlExpression::StringLiteral(s) => Ok(ExprValue::String(s.clone())),
-            SqlExpression::BooleanLiteral(b) => Ok(ExprValue::Boolean(*b)),
-            SqlExpression::NumberLiteral(n) => {
-                if let Ok(num) = n.parse::<f64>() {
-                    Ok(ExprValue::Number(num))
-                } else {
-                    Ok(ExprValue::String(n.clone()))
-                }
-            }
-            SqlExpression::DateTimeConstructor {
-                year,
-                month,
-                day,
-                hour,
-                minute,
-                second,
-            } => {
-                // Create a DateTime from the constructor
-                let naive_date = NaiveDate::from_ymd_opt(*year, *month, *day)
-                    .ok_or_else(|| anyhow::anyhow!("Invalid date: {}-{}-{}", year, month, day))?;
-                let naive_time = NaiveTime::from_hms_opt(
-                    hour.unwrap_or(0),
-                    minute.unwrap_or(0),
-                    second.unwrap_or(0),
-                )
-                .ok_or_else(|| anyhow::anyhow!("Invalid time"))?;
-                let naive_datetime = NaiveDateTime::new(naive_date, naive_time);
-                let datetime = Utc.from_utc_datetime(&naive_datetime);
-                Ok(ExprValue::DateTime(datetime))
-            }
-            SqlExpression::DateTimeToday {
-                hour,
-                minute,
-                second,
-            } => {
-                // Get today's date with optional time
-                let today = Local::now().date_naive();
-                let time = NaiveTime::from_hms_opt(
-                    hour.unwrap_or(0),
-                    minute.unwrap_or(0),
-                    second.unwrap_or(0),
-                )
-                .ok_or_else(|| anyhow::anyhow!("Invalid time"))?;
-                let naive_datetime = NaiveDateTime::new(today, time);
-                let datetime = Utc.from_utc_datetime(&naive_datetime);
-                Ok(ExprValue::DateTime(datetime))
-            }
-            _ => Ok(ExprValue::Null),
-        }
-    }
-
     /// Evaluate a CASE expression as a boolean (for WHERE clauses)
     fn evaluate_case_expression_as_bool(
         &mut self,
@@ -1171,8 +1141,7 @@ impl<'a, 'ctx, 'exec> RecursiveWhereEvaluator<'a, 'ctx, 'exec> {
             ));
         }
 
-        let mut evaluator = crate::data::arithmetic_evaluator::ArithmeticEvaluator::new(self.table);
-        let value = evaluator.evaluate(expr, row_index)?;
+        let value = self.evaluate_arithmetic(expr, row_index)?;
 
         use crate::data::datatable::DataValue;
         Ok(match value {
@@ -1216,12 +1185,40 @@ impl<'a, 'ctx, 'exec> RecursiveWhereEvaluator<'a, 'ctx, 'exec> {
     }
 }
 
-enum ExprValue {
-    String(String),
-    Number(f64),
-    Boolean(bool),
-    DateTime(DateTime<Utc>),
-    Null,
+/// Operators whose result is a truth value, handled by `evaluate_binary_op`'s
+/// comparison arms. Expects the operator already upper-cased.
+fn is_predicate_operator(op_upper: &str) -> bool {
+    matches!(
+        op_upper,
+        "=" | "=="
+            | "!="
+            | "<>"
+            | "<"
+            | "<="
+            | ">"
+            | ">="
+            | "LIKE"
+            | "IS"
+            | "IS NOT"
+            | "IS NULL"
+            | "IS NOT NULL"
+    )
+}
+
+/// A numeric literal as the WHERE path has always read it: whole numbers as
+/// `Integer`, others as `Float`, and text that does not parse as a string.
+fn number_literal_value(n: &str) -> DataValue {
+    match n.parse::<f64>() {
+        Ok(num) if num.fract() == 0.0 && num >= i64::MIN as f64 && num <= i64::MAX as f64 => {
+            DataValue::Integer(num as i64)
+        }
+        Ok(num) => DataValue::Float(num),
+        Err(_) => DataValue::String(n.to_string()),
+    }
+}
+
+fn datetime_value(naive: NaiveDateTime) -> DataValue {
+    DataValue::DateTime(naive.format("%Y-%m-%d %H:%M:%S%.3f").to_string())
 }
 
 #[cfg(test)]
@@ -1552,5 +1549,104 @@ mod bare_value_predicate_tests {
             err.to_string().contains("ROW_NUMBER"),
             "error should name the function, got: {err}"
         );
+    }
+}
+
+#[cfg(test)]
+mod operand_resolution_tests {
+    //! Regression tests for P46 -- every WHERE operand resolves to its real
+    //! value. The right-hand side used to go through a literal-only reader that
+    //! answered NULL for a column, a CASE or an expression, so any such
+    //! predicate was UNKNOWN on every row. Asserting the `Trilean` per row keeps
+    //! UNKNOWN and FALSE apart, which a row count could not.
+
+    use super::*;
+    use crate::data::datatable::{DataColumn, DataRow};
+    use crate::sql::recursive_parser::Parser;
+
+    /// Rows: 0 = (1, 3), 1 = (5, 4), 2 = (6, NULL).
+    fn pairs() -> DataTable {
+        let mut table = DataTable::new("t");
+        table.add_column(DataColumn::new("a"));
+        table.add_column(DataColumn::new("b"));
+        for (a, b) in [(1, Some(3)), (5, Some(4)), (6, None)] {
+            table
+                .add_row(DataRow::new(vec![
+                    DataValue::Integer(a),
+                    b.map_or(DataValue::Null, DataValue::Integer),
+                ]))
+                .unwrap();
+        }
+        table
+    }
+
+    fn try_eval(table: &DataTable, predicate: &str, row: usize) -> Result<Trilean> {
+        let sql = format!("SELECT * FROM t WHERE {predicate}");
+        let statement = Parser::new(&sql).parse().expect("failed to parse");
+        let where_clause = statement.where_clause.expect("expected a WHERE clause");
+        RecursiveWhereEvaluator::new(table).evaluate(&where_clause, row)
+    }
+
+    fn eval(table: &DataTable, predicate: &str, row: usize) -> Trilean {
+        try_eval(table, predicate, row).expect("evaluation failed")
+    }
+
+    #[test]
+    fn column_against_column() {
+        let t = pairs();
+        assert_eq!(eval(&t, "a < b", 0), Trilean::True);
+        assert_eq!(eval(&t, "a < b", 1), Trilean::False);
+        assert_eq!(eval(&t, "a = a", 1), Trilean::True);
+    }
+
+    #[test]
+    fn column_against_null_column_stays_unknown_under_not() {
+        // The fix must not land as FALSE for a NULL operand: NOT would flip it.
+        let t = pairs();
+        assert_eq!(eval(&t, "a < b", 2), Trilean::Unknown);
+        assert_eq!(eval(&t, "NOT (a < b)", 2), Trilean::Unknown);
+        // The arithmetic-operand shape used to answer FALSE here (P48 leaking
+        // into WHERE through the ArithmeticEvaluator's comparison).
+        assert_eq!(eval(&t, "NOT (a + 0 < b)", 2), Trilean::Unknown);
+    }
+
+    #[test]
+    fn case_and_expression_operands() {
+        let t = pairs();
+        assert_eq!(
+            eval(&t, "a < CASE WHEN b > 3 THEN 10 ELSE 0 END", 0),
+            Trilean::False
+        );
+        assert_eq!(
+            eval(&t, "a < CASE WHEN b > 3 THEN 10 ELSE 0 END", 1),
+            Trilean::True
+        );
+        assert_eq!(eval(&t, "b = a + 2", 0), Trilean::True);
+    }
+
+    #[test]
+    fn between_bounds_and_in_items_resolve_columns() {
+        let t = pairs();
+        assert_eq!(eval(&t, "b BETWEEN a AND 10", 0), Trilean::True);
+        assert_eq!(eval(&t, "b BETWEEN a AND 10", 1), Trilean::False);
+        assert_eq!(eval(&t, "b IN (a + 2, 99)", 0), Trilean::True);
+        assert_eq!(eval(&t, "b IN (a + 2, 99)", 2), Trilean::Unknown);
+    }
+
+    #[test]
+    fn a_literal_on_the_left_resolves_too() {
+        let t = pairs();
+        assert_eq!(eval(&t, "3 < a", 1), Trilean::True);
+        assert_eq!(eval(&t, "3 < a", 0), Trilean::False);
+    }
+
+    #[test]
+    fn a_raw_window_operand_errors_rather_than_ranking_unfiltered_rows() {
+        // An inline QUALIFY reaches here unlifted (P15). Evaluating it would
+        // rank the rows the WHERE has not yet filtered -- a silent wrong answer.
+        let t = pairs();
+        let err = try_eval(&t, "ROW_NUMBER() OVER (ORDER BY a) = 1", 0)
+            .expect_err("a raw window operand must not evaluate quietly");
+        assert!(err.to_string().contains("ROW_NUMBER"), "got: {err}");
     }
 }

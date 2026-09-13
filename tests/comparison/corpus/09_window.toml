@@ -287,6 +287,19 @@ expect = "GAP"
 # as a raw WindowFunction. Fix site is `expression_lifter`, not QUALIFY.
 
 [[case]]
+id = "qualify_inline_with_where"
+data = "international_sales.csv"
+sql = "SELECT region, amount FROM international_sales WHERE amount < 3000 QUALIFY ROW_NUMBER() OVER (PARTITION BY region ORDER BY amount DESC) = 1 ORDER BY region"
+expect = "GAP"
+# P15, added 2026-09-13 as a guard. QUALIFY must rank the rows the WHERE kept:
+# DuckDB returns Europe 2799.99, North America 2499.99, Oceania 2199.5. During
+# the P46 fix the WHERE evaluator briefly learned to evaluate a raw window
+# function operand, which made qualify_row_number above AGREE - but ranked the
+# UNFILTERED table, so this query returned Oceania alone. The evaluator now
+# refuses a raw window operand. If P15 is ever "fixed" by evaluating the window
+# inside the WHERE instead of lifting it, this case moves to DIFFER.
+
+[[case]]
 id = "window_in_where_inline"
 data = "international_sales.csv"
 sql = "SELECT region, amount FROM international_sales WHERE ROW_NUMBER() OVER (PARTITION BY region ORDER BY amount DESC) <= 2 ORDER BY region, amount"
