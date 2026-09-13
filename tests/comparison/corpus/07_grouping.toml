@@ -67,7 +67,7 @@ sql = "SELECT region, COUNT(*) AS n FROM international_sales GROUP BY region HAV
 id = "having_not_over_null"
 data = "null_edges.csv"
 sql = "SELECT team, COUNT(*) AS n FROM null_edges GROUP BY team HAVING NOT (MIN(score) > 40) ORDER BY team"
-expect = "DIFFER"
+# FIXED 2026-09-13 by R13 slice 2 (value evaluator made three-valued); was DIFFER.
 # P50, found 2026-09-13 writing R13. The `delta` group's scores are all NULL, so
 # MIN(score) > 40 is UNKNOWN there and NOT of it stays UNKNOWN: DuckDB keeps
 # beta, gamma and the NULL team, and drops delta. HAVING runs on the value

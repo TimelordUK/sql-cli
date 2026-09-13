@@ -11,9 +11,11 @@
 //! not be represented at all and `NOT` / `NOT IN` flipped it into `TRUE` —
 //! producing extra rows. See findings P18/P19 in `docs/SQL_PARITY.md`.
 //!
-//! This module is deliberately standalone: it defines the truth tables and
-//! proves them with tests, ahead of the evaluator being converted to use it.
+//! Both evaluators now use it: the WHERE evaluator returns `Trilean` directly
+//! (R10), and the value evaluator computes predicates as `DataValue`s with NULL
+//! standing for UNKNOWN, crossing over through `from_value` / `to_value` (R13).
 
+use crate::data::datatable::DataValue;
 use std::fmt;
 use std::ops::{BitAnd, BitOr, Not};
 
@@ -96,6 +98,32 @@ impl Trilean {
     /// always two-valued: they never yield `UNKNOWN`.
     pub fn is_predicate(self, expected: Trilean) -> Trilean {
         Trilean::from_bool(self == expected)
+    }
+
+    /// Read a truth value out of an evaluated expression, where NULL is how the
+    /// value evaluator spells UNKNOWN. Numbers keep their long-standing
+    /// zero/non-zero reading. `None` means the value has no truth value at all
+    /// (a string, a date), which callers report as an error rather than guess.
+    ///
+    /// This is the value-evaluator side of the R13 boundary: predicates are
+    /// evaluated as `DataValue`s, and this is where they become `Trilean`.
+    pub fn from_value(value: &DataValue) -> Option<Trilean> {
+        match value {
+            DataValue::Boolean(b) => Some(Trilean::from_bool(*b)),
+            DataValue::Null => Some(Trilean::Unknown),
+            DataValue::Integer(i) => Some(Trilean::from_bool(*i != 0)),
+            DataValue::Float(f) => Some(Trilean::from_bool(*f != 0.0)),
+            _ => None,
+        }
+    }
+
+    /// The value a predicate evaluates to: `UNKNOWN` is NULL.
+    pub fn to_value(self) -> DataValue {
+        match self {
+            Trilean::True => DataValue::Boolean(true),
+            Trilean::False => DataValue::Boolean(false),
+            Trilean::Unknown => DataValue::Null,
+        }
     }
 }
 
@@ -189,6 +217,24 @@ mod tests {
             assert_eq!(a.or(b), expected, "{a} OR {b}");
             assert_eq!(a | b, expected, "{a} | {b}");
         }
+    }
+
+    #[test]
+    fn value_round_trip_spells_unknown_as_null() {
+        // The R13 boundary: the value evaluator carries UNKNOWN as NULL, so the
+        // conversion must never turn NULL into FALSE in either direction.
+        for t in ALL {
+            assert_eq!(Trilean::from_value(&t.to_value()), Some(t), "{t}");
+        }
+        assert_eq!(Unknown.to_value(), DataValue::Null);
+        assert_eq!(Trilean::from_value(&DataValue::Null), Some(Unknown));
+        assert_eq!(Trilean::from_value(&DataValue::Integer(0)), Some(False));
+        assert_eq!(Trilean::from_value(&DataValue::Float(2.5)), Some(True));
+        assert_eq!(
+            Trilean::from_value(&DataValue::String("yes".to_string())),
+            None,
+            "a string has no truth value; callers must error, not guess"
+        );
     }
 
     #[test]
