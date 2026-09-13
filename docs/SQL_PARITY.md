@@ -65,9 +65,9 @@ session apiece to fix properly, so **discovery is paused and the effort moves to
 picking them off**. Widen the corpus again when the open list is short, or
 opportunistically when a fix needs a case that doesn't exist yet.
 
-Corpus coverage today: tiers 01–10, **197 cases** (168 AGREE / 15 DIFFER /
-11 GAP / 1 OURS_ONLY / 2 BOTH_ERR as of 2026-09-13, after the [P46](#p46) fix
-added nine and moved eleven — see that entry and [P49](#p49)). The largest single movement so far remains the 2026-09-05
+Corpus coverage today: tiers 01–10, **203 cases** (168 AGREE / 20 DIFFER /
+12 GAP / 1 OURS_ONLY / 2 BOTH_ERR as of 2026-09-13, after R13 slice 1 pinned
+six — [P48](#p48) widened, [P50](#p50)–[P52](#p52) filed). The largest single movement so far remains the 2026-09-05
 NULL-ordering slice, which closed [P13](#p13) stage 2 and [P17](#p17) together —
 eleven cases in one change. **Tier 10 (aggregate & NULL edges) is still
 deliberately partial** — it holds the P14, P18–P20 and P41 cases and their
@@ -2245,10 +2245,32 @@ out of date.
 
 ---
 
-### P48 — A comparison with a NULL operand projects `false` instead of NULL
-- **Status:** 🔴 OPEN — silent, and it disagrees with our own `WHERE` evaluator
-- **Corpus:** `01_select.toml :: select_col_vs_col_null_operand`
-  (`expect = "DIFFER"`).
+### P48 — The value evaluator is two-valued: a NULL operand projects `false` (or `true`) instead of NULL
+- **Status:** 🔴 OPEN — silent, and it disagrees with our own `WHERE` evaluator.
+  **This is [R13](ENGINE_REFACTORING.md#r13) slice 2.**
+- **Corpus:** `01_select.toml :: select_col_vs_col_null_operand`,
+  `select_eq_null_literal`, `select_in_list_with_null`, `select_and_with_null`
+  (all `expect = "DIFFER"`). Per operator: `tests/evaluator_matrix_tests.rs`.
+- **Widened 2026-09-13 by the R13 matrix — filed as one comparison, it is the
+  whole evaluator.** 36 predicates, each run through both evaluators over a
+  five-row table with NULL in every operand position, expected answers taken
+  from DuckDB. The WHERE evaluator agrees on **36 of 36**; the value evaluator
+  (SELECT, HAVING, join conditions) on **4** — `IS NULL`, `IS NOT NULL` and the
+  two `CASE` rows. Six faults, one evaluator:
+
+  | Fault | Example | Value evaluator | SQL |
+  |---|---|---|---|
+  | NULL vs a value is false | `a < b`, `a` NULL | `false` | NULL |
+  | **NULL vs NULL compares equal** | `a = NULL`, `a = b` both NULL | **`true`** | NULL |
+  | `NOT` negates that false to true | `NOT (a < b)`, `a` NULL | **`true`** | NULL |
+  | `IN`/`NOT IN` two-valued, NULL matches NULL | `a IN (1, NULL)`, `a` NULL | **`true`** | NULL |
+  | `BETWEEN`, `LIKE` two-valued | `a BETWEEN 1 AND b`, `b` NULL | `false` | NULL |
+  | `AND`/`OR` collapse through `to_bool` | `a > 5 AND b > 5`, both NULL | `false` | NULL |
+
+  The second row is [P18](#p18) exactly — `= NULL` behaving like `IS NULL` — the
+  bug [R10](ENGINE_REFACTORING.md#r10) fixed in WHERE in 2026-08, still live
+  wherever the value evaluator runs. The third is how it escapes projection and
+  becomes a wrong *filter*: see [P50](#p50).
 - **Observed:** a projected comparison coerces a NULL operand to a definite
   answer:
 
@@ -2343,6 +2365,81 @@ out of date.
   column just as quietly.
 - **Related:** [P3](#p3), [P46](#p46), [R7](ENGINE_REFACTORING.md#r7),
   [R11](ENGINE_REFACTORING.md#r11) (ORDER BY's own copy of the resolver).
+
+---
+
+### P50 — `HAVING` admits a group whose predicate is UNKNOWN under `NOT`
+- **Status:** 🔴 OPEN — silent, too many rows. [R13](ENGINE_REFACTORING.md#r13) slice 2.
+- **Corpus:** `07_grouping.toml :: having_not_over_null` (`expect = "DIFFER"`).
+- **Observed:** `GROUP BY team HAVING NOT (MIN(score) > 40)` on `null_edges.csv`
+  returns **4** groups; DuckDB returns **3**. The `delta` group's scores are all
+  NULL, so `MIN(score) > 40` is UNKNOWN and `NOT` of it stays UNKNOWN — the group
+  must drop. We keep it.
+- **Cause:** HAVING runs on the value evaluator ([P48](#p48)), which answers the
+  comparison `false`; its `NOT` arm is three-valued but receives `false`, not
+  NULL, and negates it to `true`. HAVING then collapses with its own
+  `group_by_expressions::is_truthy` — a third "is this true?" rule, beside
+  WHERE's `Trilean::is_true` and the evaluator's `to_bool`.
+- **Why a separate entry from P48:** P48 is a wrong *value*; this is a wrong
+  *row set*, and the same predicate is correct in WHERE. It is the
+  [P19](#p19) shape — UNKNOWN turned TRUE under negation — at the clause R10 did
+  not reach.
+- **Found:** 2026-09-13, writing R13 — probed directly, then pinned. The first
+  draft of the case used `bonus` (all NULL), which DuckDB types as VARCHAR and
+  refuses to compare; `score` with one all-NULL group discriminates cleanly.
+- **Decision:** fix as R13 slice 2 (the value evaluator becomes three-valued), with
+  slice 6 replacing `is_truthy` with the single sanctioned collapse. No spot fix.
+- **Related:** [P48](#p48), [P19](#p19), [P9](#p9)/[P10](#p10) (earlier HAVING
+  findings from the same evaluator).
+
+---
+
+### P51 — `AND` / `OR` are not accepted in a `SELECT` item unless parenthesised
+- **Status:** 🔴 OPEN — hard error
+- **Corpus:** `01_select.toml :: select_and_unparenthesised` (`expect = "GAP"`);
+  the parenthesised form is `select_and_with_null` (parses, DIFFER on P48).
+- **Observed:** `SELECT id, score > 40 AND team = 'alpha' AS both FROM t` →
+  *"Unexpected keyword 'AND' after end of statement"*. `SELECT id, (score > 40
+  AND team = 'alpha') AS both` parses and evaluates. `NOT (…)` and
+  `CASE WHEN a AND b …` are fine.
+- **Cause, likely:** the select-item parser enters the expression grammar below
+  the logical-operator level, so it stops at `AND` and hands the rest back to the
+  statement parser. Not yet confirmed in `recursive_parser.rs`.
+- **Found:** 2026-09-13, by the R13 matrix itself — its first run could not parse
+  `SELECT a > 0 AND b > 1 AS v`. The matrix now parenthesises its SELECT form.
+- **Decision:** fix; a parser change, independent of R13's evaluator work. Loud,
+  so it queues behind the silent findings.
+- **Related:** [P29](#p29)/[P30](#p30) (where `IN` sat relative to the AND/OR
+  hierarchy — the same class of precedence placement).
+
+---
+
+### P52 — A join on NULL keys pairs the NULL rows with each other
+- **Status:** 🔴 OPEN — silent, too many rows. [R13](ENGINE_REFACTORING.md#r13) slice 6.
+- **Corpus:** `10_aggregate_nulls.toml :: join_on_null_key_both_sides`
+  (`expect = "DIFFER"`). Its neighbour `join_on_null_key` AGREEs and could not
+  see this: it has NULL on only one side.
+- **Observed:** `null_edges a JOIN null_edges b ON a.label = b.label` returns
+  **32** rows; DuckDB **7**. Seven distinct non-NULL labels match themselves;
+  the five NULL-label rows then pair with each other, 5 × 5 = 25.
+- **Cause — both join paths:**
+  - **Hash path** (single-column equi-join, which this is):
+    `hash_join::canonical_join_key` passes `DataValue::Null` through as an
+    ordinary `HashMap` key, so a NULL probe finds the NULL build rows.
+  - **Nested-loop path:** `compare_values` defers to `compare_with_op`, and
+    `value_comparisons::compare_values` reports `(Null, Null)` as `Equal` — by
+    design, because `ORDER BY` needs NULLs to group (see R10 1c).
+- **Why it matters beyond this table:** joining two extracts on an optional key
+  (a missing counterparty id, an unset parent) silently multiplies every
+  keyless row by every other — and a `SUM` over the join inherits the inflation.
+- **Found:** 2026-09-13, writing R13.
+- **Decision:** fix in R13 slice 6, where join matching moves onto the single
+  predicate collapse; the hash path must skip NULL keys on build *and* probe (a
+  `LEFT JOIN` still emits the left row, unmatched). Check both paths against the
+  corpus case — only one of them is exercised by it today.
+- **Related:** [P18](#p18) (the same `NULL = NULL` answer, fixed in WHERE by
+  testing for NULL at the predicate layer rather than in the comparator),
+  [P48](#p48).
 
 ---
 
