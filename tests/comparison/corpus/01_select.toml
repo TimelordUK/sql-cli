@@ -123,3 +123,13 @@ expect = "GAP"
 # P51, found 2026-09-13 building the R13 matrix. AND/OR are not accepted in a
 # SELECT item: "Unexpected keyword 'AND' after end of statement". The
 # parenthesised form above parses. A parser gap, not an evaluator one.
+
+[[case]]
+id = "simple_case_when_null"
+data = "null_edges.csv"
+sql = "SELECT id, CASE score WHEN NULL THEN 'matched null' ELSE 'other' END AS k FROM null_edges ORDER BY id"
+expect = "DIFFER"
+# P48, pinned 2026-09-13 at the start of R13 slice 2. A simple CASE compares the
+# operand to each WHEN value with `=`, so `CASE x WHEN NULL` never matches - every
+# row is 'other'. Ours compares (Null, Null) as equal and the NULL-scored rows
+# report 'matched null'. Not a predicate, so the evaluator matrix cannot see it.
