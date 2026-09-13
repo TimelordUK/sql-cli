@@ -200,3 +200,61 @@ expect = "DIFFER"
 # P46 again, on strings and on equality, to pin that the defect is the
 # column-vs-column *shape* rather than one operator or one type. DuckDB matches
 # 57 of the 200 rows; we match none.
+
+# The cases below were added 2026-09-13 when P46 was re-probed from a second
+# angle. The cause turned out wider than "column vs column": every right-hand
+# operand of a WHERE predicate went through a literal-only reader that answered
+# NULL for anything else - a column, a CASE, an expression - so the predicate
+# was UNKNOWN on every row. These pin each site that reader served.
+
+[[case]]
+id = "where_col_eq_same_col"
+data = "null_edges.csv"
+sql = "SELECT id FROM null_edges WHERE team = team ORDER BY id"
+expect = "DIFFER"
+# The tell from the P46 entry: the same column on both sides. No type, no
+# coercion, no data involved. DuckDB keeps every non-NULL team (all but 7, 8).
+
+[[case]]
+id = "where_not_col_lt_col"
+data = "null_edges.csv"
+sql = "SELECT id FROM null_edges WHERE NOT (id < partner_id) ORDER BY id"
+expect = "DIFFER"
+# P46 under NOT. DuckDB: 2, 5, 8 - the NULL-partner rows stay out, because
+# NOT UNKNOWN is UNKNOWN. Guards the fix against landing as "false" for NULL.
+
+[[case]]
+id = "where_not_expr_lt_col"
+data = "null_edges.csv"
+sql = "SELECT id FROM null_edges WHERE NOT (id + 0 < partner_id) ORDER BY id"
+expect = "DIFFER"
+# The one P46-adjacent shape that did NOT return zero rows: an arithmetic
+# operand sent the whole comparison to the ArithmeticEvaluator, which answers
+# false (not NULL) for a NULL operand - P48 leaking into WHERE. Under NOT that
+# admits the NULL-partner rows: we returned 8 rows, DuckDB 2, 5, 8.
+
+[[case]]
+id = "where_col_lt_case"
+data = "null_edges.csv"
+sql = "SELECT id FROM null_edges WHERE score < CASE WHEN team = 'alpha' THEN 60 ELSE 40 END ORDER BY id"
+expect = "DIFFER"
+# Not a column at all on the right - a CASE - and the same zero rows. DuckDB:
+# 1, 2, 5, 8, 9 (rows 7/8 have a NULL team, so the WHEN is UNKNOWN and they
+# take the ELSE bound of 40).
+
+[[case]]
+id = "where_between_col_bound"
+data = "null_edges.csv"
+sql = "SELECT id FROM null_edges WHERE partner_id BETWEEN id AND 10 ORDER BY id"
+expect = "DIFFER"
+# BETWEEN's bounds used the same literal-only reader. DuckDB: 1, 4, 7
+# (row 9's partner 11 is above the literal upper bound).
+
+[[case]]
+id = "where_in_list_expr_item"
+data = "null_edges.csv"
+sql = "SELECT id FROM null_edges WHERE partner_id IN (id + 2, 5) ORDER BY id"
+expect = "DIFFER"
+# And IN-list items. The literal 5 still matched, so this one hid as a
+# too-few-rows answer rather than an empty one: we returned only 4, DuckDB
+# 1, 4, 9.
