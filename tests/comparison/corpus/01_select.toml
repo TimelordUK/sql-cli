@@ -78,7 +78,7 @@ sql = "SELECT id, partner_id, id < partner_id AS lt FROM null_edges WHERE partne
 id = "select_col_vs_col_null_operand"
 data = "null_edges.csv"
 sql = "SELECT id, partner_id, id < partner_id AS lt FROM null_edges ORDER BY id"
-expect = "DIFFER"
+# FIXED 2026-09-13 by R13 slice 2 (value evaluator made three-valued); was DIFFER.
 # P48, found 2026-09-12 while building the P46 anchor above. Same query without
 # the IS NOT NULL guard: for a NULL operand we project false, DuckDB projects
 # NULL. The three-valued-logic fix of P18/P19 landed in the WHERE evaluator;
@@ -93,7 +93,7 @@ expect = "DIFFER"
 id = "select_eq_null_literal"
 data = "null_edges.csv"
 sql = "SELECT id, score = NULL AS eq FROM null_edges ORDER BY id"
-expect = "DIFFER"
+# FIXED 2026-09-13 by R13 slice 2 (value evaluator made three-valued); was DIFFER.
 # P48. `= NULL` is UNKNOWN for every row. The value evaluator compares NULL to
 # NULL as *equal*, so the NULL-scored rows project TRUE - P18, the bug R10 fixed
 # in WHERE, still live in SELECT.
@@ -102,7 +102,7 @@ expect = "DIFFER"
 id = "select_in_list_with_null"
 data = "null_edges.csv"
 sql = "SELECT id, score IN (50, NULL) AS hit FROM null_edges ORDER BY id"
-expect = "DIFFER"
+# FIXED 2026-09-13 by R13 slice 2 (value evaluator made three-valued); was DIFFER.
 # P48. A NULL probe matches the NULL item (TRUE, should be NULL), and a
 # non-matching score against a list holding NULL is FALSE (should be NULL).
 
@@ -110,7 +110,7 @@ expect = "DIFFER"
 id = "select_and_with_null"
 data = "null_edges.csv"
 sql = "SELECT id, (score > 40 AND team = 'alpha') AS both FROM null_edges ORDER BY id"
-expect = "DIFFER"
+# FIXED 2026-09-13 by R13 slice 2 (value evaluator made three-valued); was DIFFER.
 # P48. AND collapses each side through to_bool (NULL -> false), so TRUE AND
 # UNKNOWN projects false instead of NULL. Parenthesised because the bare form
 # does not parse: see select_and_unparenthesised (P51).
@@ -123,3 +123,13 @@ expect = "GAP"
 # P51, found 2026-09-13 building the R13 matrix. AND/OR are not accepted in a
 # SELECT item: "Unexpected keyword 'AND' after end of statement". The
 # parenthesised form above parses. A parser gap, not an evaluator one.
+
+[[case]]
+id = "simple_case_when_null"
+data = "null_edges.csv"
+sql = "SELECT id, CASE score WHEN NULL THEN 'matched null' ELSE 'other' END AS k FROM null_edges ORDER BY id"
+# FIXED 2026-09-13 by R13 slice 2 (value evaluator made three-valued); was DIFFER.
+# P48, pinned 2026-09-13 at the start of R13 slice 2. A simple CASE compares the
+# operand to each WHEN value with `=`, so `CASE x WHEN NULL` never matches - every
+# row is 'other'. Ours compares (Null, Null) as equal and the NULL-scored rows
+# report 'matched null'. Not a predicate, so the evaluator matrix cannot see it.

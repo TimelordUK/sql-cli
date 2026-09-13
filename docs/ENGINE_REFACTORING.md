@@ -472,7 +472,7 @@ feature work**, and so we can tell the difference between "this is awkward" and
 
 ### R13 — Two expression evaluators, every boolean operator implemented twice
 - **Status:** 🟡 IN PROGRESS — filed 2026-09-13 out of [P46](SQL_PARITY.md#p46);
-  **slice 1 done 2026-09-13**, slice 2 next.
+  **slices 1 and 2 done 2026-09-13**, slice 3 next.
   **The active workstream:** parity fixes that touch expression evaluation land
   as slices of this entry, not as patches.
 - **Where:** `src/data/arithmetic_evaluator.rs` (`ArithmeticEvaluator`, value →
@@ -549,6 +549,22 @@ feature work**, and so we can tell the difference between "this is awkward" and
   [P52](SQL_PARITY.md#p52) NULL join keys on both join paths.
   **Slice 2's acceptance test is now concrete:** every `KNOWN` entry for the
   value evaluator disappears, and the corpus moves by exactly the P48/P50 cases.
+- **Slice 2 result (2026-09-13).** Every boolean-producing arm of
+  `ArithmeticEvaluator` now answers in three-valued logic, NULL for UNKNOWN:
+  a predicate-layer `compare_trilean` for comparisons (the shared comparator keeps
+  `NULL = NULL` equal for ORDER BY), `Trilean`'s tables for `AND`/`OR`/`NOT`
+  (`to_bool` deleted), OR's table for `IN`/`NOT IN`, AND's for `BETWEEN`, NULL
+  from `LIKE`, and simple `CASE x WHEN NULL` no longer matching (found and pinned
+  at the start of the slice). `Trilean::from_value`/`to_value` became the one
+  crossing between `DataValue` and the truth tables. **The acceptance slice 1
+  set held exactly:** all 32 value-evaluator `KNOWN` entries went FIXED in one
+  change with the WHERE column unmoved, and parity moved by exactly the six
+  P48/P50 cases (168 → 174 AGREE over 204). No FORMAL example churn. Scoping
+  first paid off here too: the only external consumers of predicate output were
+  the WHERE evaluator (already NULL → UNKNOWN), HAVING's `is_truthy` and `IIF`
+  (both NULL → not-true, already correct), so nothing downstream had to change.
+  **Two evaluators now agree on all 36 predicates, but there are still two** —
+  slices 3–6 are what make that agreement structural rather than coincidental.
 - **Slices, in the R10 pattern — no-op slices kept apart from the one that
   changes answers:**
   1. ✅ **Pin the divergences, no engine change.** *(Done 2026-09-13.)* A per-operator matrix run through
@@ -557,7 +573,7 @@ feature work**, and so we can tell the difference between "this is awkward" and
      agree, with today's disagreements marked. Plus corpus cases for the
      clause-level shapes above (HAVING, SELECT, JOIN ON), filed as P-findings.
      Acceptance: parity buckets move only by the new cases.
-  2. **Make `ArithmeticEvaluator` three-valued.** The one semantic slice:
+  2. ✅ **Make `ArithmeticEvaluator` three-valued.** *(Done 2026-09-13 — see result below.)* The one semantic slice:
      comparisons, `IN`/`NOT IN`, `BETWEEN`, `LIKE` yield NULL for a NULL operand;
      `AND`/`OR`/`NOT` follow the truth tables; `to_bool` stops mapping NULL to
      false for predicates. Closes [P48](SQL_PARITY.md#p48) and the HAVING / SELECT
@@ -614,7 +630,7 @@ R8 legacy WHERE ──── independent; stage 2 is self-contained, do it in a 
 R10 Trilean ──────── DONE; closed P18/P19 (parity 125 → 129)
 R11 ORDER BY resolver ─ independent; small, but a behaviour change — wants its own parity run
 R12 aggregate registries ─ independent; step 1 is a provable no-op, do it before the next aggregate fix
-R13 one evaluator ─── ACTIVE from 2026-09-13; slice 1 (pin) → 2 (3VL, = P48) → 3 (construction) → 4–6 (retire WHERE arms)
+R13 one evaluator ─── ACTIVE from 2026-09-13; slices 1 (pin) and 2 (3VL) DONE → 3 (construction) → 4–6 (retire WHERE arms)
 ```
 
 **A note on ordering, from the P18/P19 work being next.** The WHERE evaluator
@@ -653,3 +669,4 @@ AGREE count — which makes it safe to land well before the semantics change.
 | 2026-09-13 | P46 fixed: all WHERE operands resolve through one path, one `ArithmeticEvaluator` per evaluation. Parity 157 → **168 AGREE**; P49 filed | #80 |
 | 2026-09-13 | R13 filed and made the active workstream: two evaluators with divergent NULL semantics, three truth collapses. Probing found four live clause-dependent divergences (HAVING, SELECT `IN`, JOIN NULL keys, P48) | — |
 | 2026-09-13 | R13 slice 1: evaluator matrix (36 predicates × both evaluators × 5 NULL-bearing rows, DuckDB-derived expectations). WHERE 36/36, value evaluator 4/36. P48 widened; P50–P52 filed; six corpus cases, AGREE unchanged | — |
+| 2026-09-13 | R13 slice 2: value evaluator three-valued; `Trilean::from_value`/`to_value`; `to_bool` removed. Matrix value column 4/36 → 36/36 in one change. Closes P48, P50 — 168 → **174 AGREE** | — |

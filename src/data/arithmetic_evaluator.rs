@@ -1,6 +1,7 @@
 use crate::config::global::get_date_notation;
 use crate::data::data_view::DataView;
 use crate::data::datatable::{DataTable, DataValue};
+use crate::data::trilean::Trilean;
 use crate::data::value_comparisons::compare_with_op;
 use crate::sql::aggregate_functions::AggregateFunctionRegistry; // New registry
 use crate::sql::aggregates::AggregateRegistry; // Old registry (for migration)
@@ -159,49 +160,34 @@ impl<'a> ArithmeticEvaluator<'a> {
                 let base_value = self.evaluate(base, row_index)?;
                 self.evaluate_method_on_value(&base_value, method, args, row_index)
             }
+            // BETWEEN is `value >= lower AND value <= upper`, so it takes AND's
+            // truth table: FALSE on either side wins even over UNKNOWN.
             SqlExpression::Between { expr, lower, upper } => {
                 let val = self.evaluate(expr, row_index)?;
                 let lo = self.evaluate(lower, row_index)?;
                 let hi = self.evaluate(upper, row_index)?;
-                let ge = compare_with_op(&val, &lo, ">=", false);
-                let le = compare_with_op(&val, &hi, "<=", false);
-                Ok(DataValue::Boolean(ge && le))
+                let ge = compare_trilean(&val, &lo, ">=");
+                let le = compare_trilean(&val, &hi, "<=");
+                Ok(ge.and(le).to_value())
             }
             // Logical negation as a value-producing expression. Reached, e.g., by
             // a post-aggregation `HAVING NOT (COUNT(*) > 2)` predicate (P10).
-            // Three-valued logic: NOT NULL is NULL; otherwise negate the boolean.
+            // NOT UNKNOWN is UNKNOWN - which only holds if the operand arrives
+            // as NULL, hence the three-valued comparison arms above.
             SqlExpression::Not { expr } => {
                 let inner = self.evaluate(expr, row_index)?;
-                match inner {
-                    DataValue::Null => Ok(DataValue::Null),
-                    other => Ok(DataValue::Boolean(!self.to_bool(&other)?)),
-                }
+                Ok(truth_of(&inner)?.negate().to_value())
             }
-            // IN / NOT IN as a value-producing expression — needed when they
-            // appear inside CASE branches or other arithmetic contexts. The
-            // WHERE path has its own evaluator; this mirrors its equality
-            // semantics via compare_with_op. After subquery rewriting, an
-            // `x IN (SELECT ...)` arrives here as an InList of literals.
+            // IN / NOT IN as a value-producing expression — used by SELECT,
+            // HAVING and CASE. After subquery rewriting, an `x IN (SELECT ...)`
+            // arrives here as an InList of literals.
             SqlExpression::InList { expr, values } => {
-                let val = self.evaluate(expr, row_index)?;
-                for v in values {
-                    let item = self.evaluate(v, row_index)?;
-                    if compare_with_op(&val, &item, "=", false) {
-                        return Ok(DataValue::Boolean(true));
-                    }
-                }
-                Ok(DataValue::Boolean(false))
+                Ok(self.evaluate_in_list(expr, values, row_index)?.to_value())
             }
-            SqlExpression::NotInList { expr, values } => {
-                let val = self.evaluate(expr, row_index)?;
-                for v in values {
-                    let item = self.evaluate(v, row_index)?;
-                    if compare_with_op(&val, &item, "=", false) {
-                        return Ok(DataValue::Boolean(false));
-                    }
-                }
-                Ok(DataValue::Boolean(true))
-            }
+            SqlExpression::NotInList { expr, values } => Ok(self
+                .evaluate_in_list(expr, values, row_index)?
+                .negate()
+                .to_value()),
             SqlExpression::CaseExpression {
                 when_branches,
                 else_branch,
@@ -395,28 +381,22 @@ impl<'a> ArithmeticEvaluator<'a> {
                 let args = vec![left.clone(), right.clone()];
                 self.evaluate_function("MOD", &args, row_index)
             }
-            // Comparison operators (return boolean results)
-            // Use centralized comparison logic for consistency
+            // Predicates are three-valued: UNKNOWN is returned as NULL, and only
+            // the clause that filters on the result collapses it (R13). See
+            // tests/evaluator_matrix_tests.rs for the per-operator contract.
             ">" | "<" | ">=" | "<=" | "=" | "!=" | "<>" => {
-                let result = compare_with_op(&left_val, &right_val, op, false);
-                Ok(DataValue::Boolean(result))
+                Ok(compare_trilean(&left_val, &right_val, op).to_value())
             }
-            // IS NULL / IS NOT NULL operators
+            // IS NULL / IS NOT NULL are the sanctioned NULL tests, so two-valued.
             "IS NULL" => Ok(DataValue::Boolean(matches!(left_val, DataValue::Null))),
             "IS NOT NULL" => Ok(DataValue::Boolean(!matches!(left_val, DataValue::Null))),
-            // Logical operators
-            "AND" => {
-                let left_bool = self.to_bool(&left_val)?;
-                let right_bool = self.to_bool(&right_val)?;
-                Ok(DataValue::Boolean(left_bool && right_bool))
-            }
-            "OR" => {
-                let left_bool = self.to_bool(&left_val)?;
-                let right_bool = self.to_bool(&right_val)?;
-                Ok(DataValue::Boolean(left_bool || right_bool))
-            }
+            "AND" => Ok(truth_of(&left_val)?.and(truth_of(&right_val)?).to_value()),
+            "OR" => Ok(truth_of(&left_val)?.or(truth_of(&right_val)?).to_value()),
             // LIKE operator - SQL pattern matching
             "LIKE" => {
+                if matches!(left_val, DataValue::Null) || matches!(right_val, DataValue::Null) {
+                    return Ok(DataValue::Null);
+                }
                 let text = self.value_to_string(&left_val);
                 let pattern = self.value_to_string(&right_val);
                 let matches = self.sql_like_match(&text, &pattern);
@@ -515,17 +495,6 @@ impl<'a> ArithmeticEvaluator<'a> {
             DataValue::Float(f) => f.to_string(),
             DataValue::String(s) => format!("'{s}'"),
             _ => format!("{value:?}"),
-        }
-    }
-
-    /// Convert a DataValue to boolean for logical operations
-    fn to_bool(&self, value: &DataValue) -> Result<bool> {
-        match value {
-            DataValue::Boolean(b) => Ok(*b),
-            DataValue::Integer(i) => Ok(*i != 0),
-            DataValue::Float(f) => Ok(*f != 0.0),
-            DataValue::Null => Ok(false),
-            _ => Err(anyhow!("Cannot convert {:?} to boolean", value)),
         }
     }
 
@@ -1562,10 +1531,33 @@ impl<'a> ArithmeticEvaluator<'a> {
         }
     }
 
-    /// Check if two DataValues are equal
+    /// `x IN (a, b, ...)` is `x = a OR x = b OR ...`, so it takes OR's truth
+    /// table: a match anywhere is TRUE, otherwise any UNKNOWN comparison (a NULL
+    /// probe, or a NULL in the list) makes the answer UNKNOWN rather than FALSE.
+    /// `NOT IN` is the negation, which is what keeps NULL rows out of it.
+    fn evaluate_in_list(
+        &mut self,
+        expr: &SqlExpression,
+        values: &[SqlExpression],
+        row_index: usize,
+    ) -> Result<Trilean> {
+        let val = self.evaluate(expr, row_index)?;
+        let mut result = Trilean::False;
+        for v in values {
+            let item = self.evaluate(v, row_index)?;
+            result = result.or(compare_trilean(&val, &item, "="));
+            if result.is_true() {
+                break;
+            }
+        }
+        Ok(result)
+    }
+
+    /// Check if two DataValues are equal, for simple `CASE x WHEN v`. The WHEN
+    /// test is `x = v`, so a NULL on either side is not a match - including
+    /// `CASE NULL WHEN NULL`.
     fn values_equal(&self, left: &DataValue, right: &DataValue) -> Result<bool> {
         match (left, right) {
-            (DataValue::Null, DataValue::Null) => Ok(true),
             (DataValue::Null, _) | (_, DataValue::Null) => Ok(false),
             (DataValue::Integer(a), DataValue::Integer(b)) => Ok(a == b),
             (DataValue::Float(a), DataValue::Float(b)) => Ok((a - b).abs() < f64::EPSILON),
@@ -1663,6 +1655,28 @@ impl<'a> ArithmeticEvaluator<'a> {
         let datetime_str = datetime.format("%Y-%m-%d %H:%M:%S%.3f").to_string();
         Ok(DataValue::String(datetime_str))
     }
+}
+
+/// A comparison under SQL three-valued logic: NULL on either side is UNKNOWN.
+///
+/// The NULL test belongs here, at the predicate layer, and must not move into
+/// `compare_with_op`: the `compare_values` beneath it reports `NULL = NULL` as
+/// equal on purpose, because ORDER BY needs NULLs to group. Reusing that answer
+/// for predicates is what made `SELECT x = NULL` TRUE for NULL rows (P48, the
+/// value-evaluator twin of P18). Same rule as the WHERE evaluator's
+/// `compare_trilean`, which R13 slice 4 will make the only copy.
+fn compare_trilean(left: &DataValue, right: &DataValue, op: &str) -> Trilean {
+    if matches!(left, DataValue::Null) || matches!(right, DataValue::Null) {
+        return Trilean::Unknown;
+    }
+    // Case sensitivity is not yet threaded into this evaluator - R13 slice 3.
+    Trilean::from_bool(compare_with_op(left, right, op, false))
+}
+
+/// The truth value of an operand of AND / OR / NOT. A value with no truth value
+/// (a string, a date) is an error, as it was before three-valued logic.
+fn truth_of(value: &DataValue) -> Result<Trilean> {
+    Trilean::from_value(value).ok_or_else(|| anyhow!("Cannot convert {:?} to boolean", value))
 }
 
 #[cfg(test)]
