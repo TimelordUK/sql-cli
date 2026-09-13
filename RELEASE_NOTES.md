@@ -1,10 +1,10 @@
-# SQL CLI v1.85.3
+# SQL CLI v1.85.4
 
 **Release Date:** September 13, 2026
 
 ## 📊 Release Overview
-- **Commits in this release:** 13
-- **Files updated:** 10
+- **Commits in this release:** 7
+- **Files updated:** 9
 
 ## ✨ Highlights
 
@@ -14,31 +14,22 @@
 ## 📝 Changes by Category
 
 ### 🐛 Bug Fixes
-- resolve every WHERE operand through one path (P46)
+- make the value evaluator three-valued (R13 slice 2; P48, P50)
 
 ### 📚 Documentation
-- survey candidates S5-S14 and settle S2's row shape
-- file R13 — one expression evaluator, the active workstream
-- close P46, file P49, decouple P48
-- generalise the countries border explosion
-- log P46-P48, found writing the countries examples
+- close P48 and P50; record R13 slice 2
+- widen P48, file P50-P52; record R13 slice 1
 
 <details>
 <summary>📋 View all commits</summary>
 
-- Merge pull request #82 from TimelordUK/docs/system-tables-candidates (TimelordUK)
-- Merge pull request #81 from TimelordUK/refactor/r13-one-expression-evaluator (TimelordUK)
-- Merge pull request #80 from TimelordUK/fix/p46-where-rhs-operand (TimelordUK)
-- docs(system-tables): survey candidates S5-S14 and settle S2's row shape (TimelordUK)
-- docs(refactor): file R13 — one expression evaluator, the active workstream (TimelordUK)
-- docs(parity): close P46, file P49, decouple P48 (TimelordUK)
-- fix(parity): resolve every WHERE operand through one path (P46) (TimelordUK)
-- test(parity): pin every site of the P46 right-hand-operand hole (TimelordUK)
-- Merge pull request #79 from TimelordUK/docs/p46-p48-parity-findings (TimelordUK)
-- docs(examples): generalise the countries border explosion (TimelordUK)
-- docs(parity): log P46-P48, found writing the countries examples (TimelordUK)
-- countries (TimelordUK)
-- add county example (TimelordUK)
+- Merge pull request #84 from TimelordUK/refactor/r13-slice2-three-valued-value-evaluator (TimelordUK)
+- Merge pull request #83 from TimelordUK/test/r13-slice1-evaluator-matrix (TimelordUK)
+- docs(parity): close P48 and P50; record R13 slice 2 (TimelordUK)
+- fix(r13): make the value evaluator three-valued (R13 slice 2; P48, P50) (TimelordUK)
+- test(parity): pin simple CASE WHEN NULL matching NULL (P48, R13 slice 2) (TimelordUK)
+- docs(parity): widen P48, file P50-P52; record R13 slice 1 (TimelordUK)
+- test(r13): evaluator matrix and clause-level corpus cases (R13 slice 1) (TimelordUK)
 
 </details>
 
