@@ -83,3 +83,43 @@ expect = "DIFFER"
 # the IS NOT NULL guard: for a NULL operand we project false, DuckDB projects
 # NULL. The three-valued-logic fix of P18/P19 landed in the WHERE evaluator;
 # this is the same rule missing at the projection site.
+
+# --- R13 slice 1 (2026-09-13): the value evaluator is two-valued ---
+# tests/evaluator_matrix_tests.rs runs 36 predicates through both evaluators;
+# the WHERE evaluator agrees with DuckDB on all 36 and the value evaluator on 4.
+# These pin the projection-visible faults end to end. All are R13 slice 2.
+
+[[case]]
+id = "select_eq_null_literal"
+data = "null_edges.csv"
+sql = "SELECT id, score = NULL AS eq FROM null_edges ORDER BY id"
+expect = "DIFFER"
+# P48. `= NULL` is UNKNOWN for every row. The value evaluator compares NULL to
+# NULL as *equal*, so the NULL-scored rows project TRUE - P18, the bug R10 fixed
+# in WHERE, still live in SELECT.
+
+[[case]]
+id = "select_in_list_with_null"
+data = "null_edges.csv"
+sql = "SELECT id, score IN (50, NULL) AS hit FROM null_edges ORDER BY id"
+expect = "DIFFER"
+# P48. A NULL probe matches the NULL item (TRUE, should be NULL), and a
+# non-matching score against a list holding NULL is FALSE (should be NULL).
+
+[[case]]
+id = "select_and_with_null"
+data = "null_edges.csv"
+sql = "SELECT id, (score > 40 AND team = 'alpha') AS both FROM null_edges ORDER BY id"
+expect = "DIFFER"
+# P48. AND collapses each side through to_bool (NULL -> false), so TRUE AND
+# UNKNOWN projects false instead of NULL. Parenthesised because the bare form
+# does not parse: see select_and_unparenthesised (P51).
+
+[[case]]
+id = "select_and_unparenthesised"
+data = "null_edges.csv"
+sql = "SELECT id, score > 40 AND team = 'alpha' AS both FROM null_edges ORDER BY id"
+expect = "GAP"
+# P51, found 2026-09-13 building the R13 matrix. AND/OR are not accepted in a
+# SELECT item: "Unexpected keyword 'AND' after end of statement". The
+# parenthesised form above parses. A parser gap, not an evaluator one.

@@ -104,6 +104,19 @@ sql = "SELECT a.id AS aid, b.id AS bid FROM null_edges a JOIN null_edges b ON a.
 # NULL never equals NULL in a join key, so the 5 NULL partner_id rows drop out.
 
 [[case]]
+id = "join_on_null_key_both_sides"
+data = "null_edges.csv"
+sql = "SELECT a.id AS aid, b.id AS bid FROM null_edges a JOIN null_edges b ON a.label = b.label ORDER BY a.id, b.id"
+expect = "DIFFER"
+# P52, found 2026-09-13 writing R13. The case above only has NULL on ONE side
+# (partner_id against the never-NULL id), so it cannot see this: with NULL keys
+# on both sides, the 5 NULL-label rows pair with each other. We return 32 rows
+# (7 + 5x5), DuckDB 7. Both join paths do it: this equi-join takes the hash
+# path, where `canonical_join_key` passes NULL through as an ordinary HashMap
+# key, so a NULL probe finds the NULL build rows; the nested-loop path uses
+# compare_with_op, which also reports NULL = NULL as equal. R13 slice 6.
+
+[[case]]
 id = "null_arithmetic"
 data = "null_edges.csv"
 sql = "SELECT id, score + 1 AS plus FROM null_edges ORDER BY id"
