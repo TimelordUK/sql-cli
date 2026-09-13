@@ -470,6 +470,100 @@ feature work**, and so we can tell the difference between "this is awkward" and
   [P42](SQL_PARITY.md#p42) is the natural companion to step 2 — porting `MODE`'s
   type handling from the dead implementation to the live one is most of that fix.
 
+### R13 — Two expression evaluators, every boolean operator implemented twice
+- **Status:** 🔴 OPEN — filed 2026-09-13 out of [P46](SQL_PARITY.md#p46).
+  **The active workstream:** parity fixes that touch expression evaluation land
+  as slices of this entry, not as patches.
+- **Where:** `src/data/arithmetic_evaluator.rs` (`ArithmeticEvaluator`, value →
+  `DataValue`, 1.8k lines) and `src/data/recursive_where_evaluator.rs`
+  (`RecursiveWhereEvaluator`, predicate → `Trilean`, 1.6k lines). Callers in
+  `query_engine.rs`, `group_by_expressions.rs` and `hash_join.rs`.
+- **Observed:** the engine began with one evaluator per clause and never
+  converged. Both walk the same `SqlExpression` tree and each has its own arms
+  for the same operators:
+
+  | | `ArithmeticEvaluator` | `RecursiveWhereEvaluator` |
+  |---|---|---|
+  | Serves | SELECT, GROUP BY, HAVING, JOIN conditions, generator args — and, since P46, WHERE *operands* | WHERE only (one construction site, `query_engine.rs`) |
+  | Own arms for | `IN`, `NOT IN`, `BETWEEN`, `NOT`, `AND`/`OR`, `LIKE`, `IS NULL`, `CASE`, method calls | the same set again, plus `CASE`-as-predicate |
+  | Logic | two-valued: comparisons/`IN`/`BETWEEN` answer `false`, `AND`/`OR` go through `to_bool` (NULL → false) | three-valued ([R10](#r10)) |
+  | Method calls | map `.Contains()` etc. onto registry functions | hand-rolled `contains`/`startswith`/`endswith`/`trim*`/`length` |
+  | Case-insensitive | hard-coded `false` in its `compare_with_op` calls | honoured |
+
+  And three different "is this true?" collapses: `Trilean::is_true`
+  (WHERE), `ArithmeticEvaluator::to_bool` (inside the value evaluator), and
+  `group_by_expressions::is_truthy` (HAVING). JOIN compares with bare
+  `compare_with_op`, which answers `NULL = NULL` as equal.
+- **Impact: one predicate means different things depending on the clause it is
+  written in.** Probed 2026-09-13 on `null_edges.csv`, none of it filed yet:
+
+  | Shape | Where | Ours | SQL / DuckDB |
+  |---|---|---|---|
+  | `NOT (score > bonus)`, bonus all NULL | WHERE | no rows ✅ | no rows |
+  | `NOT (MAX(score) > MIN(bonus))` | HAVING | **all 5 groups** 🚫 | none |
+  | `score IN (50, NULL)` for a NULL score | SELECT | **true** 🚫 | NULL |
+  | `a.label = b.label` self-join, 5 NULL labels | JOIN ON | **32 rows** 🚫 (NULLs pair up, 7 + 5×5) | 7 |
+  | `id < partner_id` for a NULL partner | SELECT | **false** 🚫 | NULL — [P48](SQL_PARITY.md#p48) |
+
+  [P46](SQL_PARITY.md#p46) was the same split from the other side: WHERE lagging
+  on operand resolution the value evaluator already had. So every operator fix
+  is two fixes, and the history says they drift — R10 fixed NULL logic in one
+  evaluator and none of the others. This is the finding that makes future
+  semantics work ad hoc by construction.
+- **Also:** evaluator construction is scattered — 16 construction sites outside
+  the evaluator's own file, each `ArithmeticEvaluator::new` rebuilding the
+  function registry and both aggregate registries. P46 showed the per-row form
+  of this costing 9.8 s over 100k rows.
+- **Target shape — one decision tree.** A single expression evaluator: every
+  expression evaluates to a `DataValue`, with `Null` standing for UNKNOWN when
+  the expression is a predicate. The R10 truth tables become its `AND`/`OR`/`NOT`
+  arms. Every filtering site — WHERE, HAVING, JOIN ON, QUALIFY, CASE WHEN —
+  evaluates the same way and collapses exactly once, at its own boundary, with
+  one sanctioned function (`Trilean::from` a value, then `is_true`).
+  `RecursiveWhereEvaluator` shrinks to that adapter plus the LIKE regex cache,
+  then goes. This is the evaluation counterpart of [R2](#r2): R2 gave traversal
+  one shape; R13 gives *meaning* one place.
+- **Slices, in the R10 pattern — no-op slices kept apart from the one that
+  changes answers:**
+  1. **Pin the divergences, no engine change.** A per-operator matrix run through
+     both evaluators — `=`, `<>`, `IN`, `NOT IN`, `BETWEEN`, `LIKE`, `NOT`,
+     `AND`/`OR`, `CASE WHEN` — each with NULL on either side, asserting the two
+     agree, with today's disagreements marked. Plus corpus cases for the
+     clause-level shapes above (HAVING, SELECT, JOIN ON), filed as P-findings.
+     Acceptance: parity buckets move only by the new cases.
+  2. **Make `ArithmeticEvaluator` three-valued.** The one semantic slice:
+     comparisons, `IN`/`NOT IN`, `BETWEEN`, `LIKE` yield NULL for a NULL operand;
+     `AND`/`OR`/`NOT` follow the truth tables; `to_bool` stops mapping NULL to
+     false for predicates. Closes [P48](SQL_PARITY.md#p48) and the HAVING / SELECT
+     rows above. Check `CASE WHEN` (UNKNOWN takes ELSE) and every `to_bool` /
+     `is_truthy` caller. Acceptance: exactly the slice-1 cases flip, nothing else.
+  3. **One construction path.** Registries built once and shared (`Arc`), context
+     — case sensitivity, date notation, table aliases — passed in rather than
+     defaulted per site. No-op; acceptance is parity *exactly* unchanged, and it
+     fixes the case-insensitivity gap as a side effect only if slice 1 pinned it.
+  4. **Retire WHERE's duplicate arms, one operator per commit.** Each arm of
+     `RecursiveWhereEvaluator` delegates to the value evaluator and collapses;
+     the hand-written arm is deleted. After slice 2 the rules already agree, so
+     each commit is a provable no-op — parity exactly unchanged, and the slice-1
+     matrix still green.
+  5. **Method calls:** WHERE's hand-rolled `Contains`/`StartsWith`/`Trim`… move
+     onto the registry mapping the value evaluator already uses.
+  6. **Collapse sites converge:** HAVING's `is_truthy` and JOIN's bare comparison
+     go through the same collapse. JOIN NULL keys need care on the *hash* path
+     too, not only the nested loop. [R8](#r8) stage 2 (the legacy WHERE stack) is
+     a natural lull task alongside.
+- **Explicitly not in scope:** window evaluation (`BatchWindowEvaluator`),
+  aggregate registries ([R12](#r12)), correlated scoping ([R7](#r7) /
+  [P3](SQL_PARITY.md#p3), [P49](SQL_PARITY.md#p49)). And [P15](SQL_PARITY.md#p15)
+  stays a lifter fix — a single evaluator must still refuse a raw window
+  function in a filter.
+- **Guard rails:** the FORMAL examples capture our own output, so slice 2 may
+  churn expectations — review each diff as a potential [P21](SQL_PARITY.md#p21)-
+  style capture of a wrong answer, never re-capture blind. Watch the per-row
+  cost when WHERE arms start delegating (slice 4): the P46 benchmarks
+  (`price > quantity`, `price + 0 > quantity` over `trades_100000.csv`, inline
+  QUALIFY) are the baseline.
+
 ---
 
 ## Sequencing
@@ -494,6 +588,7 @@ R8 legacy WHERE ──── independent; stage 2 is self-contained, do it in a 
 R10 Trilean ──────── DONE; closed P18/P19 (parity 125 → 129)
 R11 ORDER BY resolver ─ independent; small, but a behaviour change — wants its own parity run
 R12 aggregate registries ─ independent; step 1 is a provable no-op, do it before the next aggregate fix
+R13 one evaluator ─── ACTIVE from 2026-09-13; slice 1 (pin) → 2 (3VL, = P48) → 3 (construction) → 4–6 (retire WHERE arms)
 ```
 
 **A note on ordering, from the P18/P19 work being next.** The WHERE evaluator
@@ -529,3 +624,5 @@ AGREE count — which makes it safe to land well before the semantics change.
 | 2026-08-30 | P34 fixed: `ORDER BY "col.with.dot"` no longer strips a quoted identifier at the dot. R11 filed — ORDER BY still resolves columns with its own copy of `resolve_column_index` rather than the canonical one | — |
 | 2026-09-04 | P40 filed from field use: a generator's args are evaluated against DUAL (`statement_executor.rs` has no `from_function` case), so no column reference resolves in `FROM SPLIT(col, …)`. Cross-linked here — R1's missing table-function variant is the reason generators sit on the legacy path | — |
 | 2026-09-06 | R12 filed by parity P41: two aggregate registries, nine functions implemented twice with the newer one shadowing the older. P41's fix was written against the dead copy first and changed nothing — the entry records the disjointness assertion as step 1 | — |
+| 2026-09-13 | P46 fixed: all WHERE operands resolve through one path, one `ArithmeticEvaluator` per evaluation. Parity 157 → **168 AGREE**; P49 filed | #80 |
+| 2026-09-13 | R13 filed and made the active workstream: two evaluators with divergent NULL semantics, three truth collapses. Probing found four live clause-dependent divergences (HAVING, SELECT `IN`, JOIN NULL keys, P48) | — |
