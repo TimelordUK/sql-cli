@@ -29,6 +29,21 @@ FROM #countries
 WHERE "name.common" = 'Russia';
 go
 
+SELECT
+  "name.common" as name, 
+  region, cca3 as iso, 
+  capital, 
+  languages, 
+  currencies, 
+  split_part(latlng,',',1) as lat, 
+  split_part(latlng,',',2) as lon, 
+  borders, 
+  area, 
+  landlocked 
+FROM #countries 
+order by area desc;
+go
+
 -- for Russia inflate borders join back to countries
 
 WITH
