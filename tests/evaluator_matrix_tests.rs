@@ -23,10 +23,12 @@
 
 use sql_cli::data::arithmetic_evaluator::ArithmeticEvaluator;
 use sql_cli::data::datatable::{DataColumn, DataRow, DataTable, DataValue};
+use sql_cli::data::query_engine::QueryEngine;
 use sql_cli::data::recursive_where_evaluator::RecursiveWhereEvaluator;
 use sql_cli::data::trilean::Trilean;
 use sql_cli::sql::parser::ast::SelectItem;
 use sql_cli::sql::recursive_parser::Parser;
+use std::sync::Arc;
 
 /// Rows chosen so every binary shape sees a non-NULL pair both ways round, NULL
 /// on the left, NULL on the right, and NULL on both.
@@ -110,6 +112,23 @@ const EXPECTED: &[(&str, &str)] = &[
     ("CASE WHEN a < b THEN true ELSE false END", "TFFFF"),
 ];
 
+/// The same shapes under the engine's case-insensitive mode
+/// (`--case-insensitive`), over the string column. DuckDB has no such mode, so
+/// these were generated with each string comparison collated `NOCASE` (and
+/// `LIKE` as `ILIKE`), e.g. `s COLLATE NOCASE < 'B'`.
+const EXPECTED_CASE_INSENSITIVE: &[(&str, &str)] = &[
+    ("s = 'ABC'", "TFUTU"),
+    ("s <> 'ABC'", "FTUFU"),
+    ("s < 'B'", "TFUTU"),
+    ("s IN ('ABC', 'Q')", "TFUTU"),
+    ("s NOT IN ('XYZ')", "TFUTU"),
+    ("s BETWEEN 'ABC' AND 'M'", "TFUTU"),
+    ("s LIKE 'A%'", "TFUTU"),
+    ("NOT (s = 'ABC')", "FTUFU"),
+    ("CASE WHEN s = 'ABC' THEN 1 ELSE 0 END = 1", "TFFTF"),
+    ("UPPER(s) = 'abc'", "TFUTU"),
+];
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Evaluator {
     /// `RecursiveWhereEvaluator`, as `WHERE <predicate>`.
@@ -135,6 +154,79 @@ struct Known {
 // here, with its finding, rather than left failing.
 const KNOWN: &[Known] = &[];
 
+// Recorded by R13 slice 3b (2026-09-14). The WHERE evaluator honours the
+// engine's case-insensitive mode; the value evaluator has no such mode and
+// always compares case-sensitively, so under `--case-insensitive` a SELECT,
+// HAVING or CASE WHEN answers differently from the same predicate in WHERE.
+const KNOWN_CASE_INSENSITIVE: &[Known] = &[
+    Known {
+        evaluator: Evaluator::Value,
+        predicate: "s = 'ABC'",
+        observed: "FFUFU",
+        why: "value evaluator has no case-insensitive mode",
+    },
+    Known {
+        evaluator: Evaluator::Value,
+        predicate: "s <> 'ABC'",
+        observed: "TTUTU",
+        why: "value evaluator has no case-insensitive mode",
+    },
+    Known {
+        evaluator: Evaluator::Value,
+        predicate: "s < 'B'",
+        observed: "FFUFU",
+        why: "value evaluator has no case-insensitive mode",
+    },
+    Known {
+        evaluator: Evaluator::Value,
+        predicate: "s IN ('ABC', 'Q')",
+        observed: "FFUFU",
+        why: "value evaluator has no case-insensitive mode",
+    },
+    Known {
+        evaluator: Evaluator::Value,
+        predicate: "s NOT IN ('XYZ')",
+        observed: "TTUTU",
+        why: "value evaluator has no case-insensitive mode",
+    },
+    Known {
+        evaluator: Evaluator::Value,
+        predicate: "s BETWEEN 'ABC' AND 'M'",
+        observed: "FFUFU",
+        why: "value evaluator has no case-insensitive mode",
+    },
+    Known {
+        evaluator: Evaluator::Value,
+        predicate: "s LIKE 'A%'",
+        observed: "FFUFU",
+        why: "value evaluator has no case-insensitive mode",
+    },
+    Known {
+        evaluator: Evaluator::Value,
+        predicate: "NOT (s = 'ABC')",
+        observed: "TTUTU",
+        why: "value evaluator has no case-insensitive mode",
+    },
+    Known {
+        evaluator: Evaluator::Where,
+        predicate: "CASE WHEN s = 'ABC' THEN 1 ELSE 0 END = 1",
+        observed: "FFFFF",
+        why: "WHERE hands CASE to an inner value evaluator built without the mode",
+    },
+    Known {
+        evaluator: Evaluator::Value,
+        predicate: "CASE WHEN s = 'ABC' THEN 1 ELSE 0 END = 1",
+        observed: "FFFFF",
+        why: "value evaluator has no case-insensitive mode",
+    },
+    Known {
+        evaluator: Evaluator::Value,
+        predicate: "UPPER(s) = 'abc'",
+        observed: "FFUFU",
+        why: "value evaluator has no case-insensitive mode",
+    },
+];
+
 fn trilean_char(t: Trilean) -> char {
     match t {
         Trilean::True => 'T',
@@ -143,13 +235,13 @@ fn trilean_char(t: Trilean) -> char {
     }
 }
 
-fn observe_where(table: &DataTable, predicate: &str) -> String {
+fn observe_where(table: &DataTable, predicate: &str, case_insensitive: bool) -> String {
     let sql = format!("SELECT * FROM t WHERE {predicate}");
     let statement = Parser::new(&sql)
         .parse()
         .unwrap_or_else(|e| panic!("parse failed for {sql}: {e}"));
     let where_clause = statement.where_clause.expect("expected a WHERE clause");
-    let mut evaluator = RecursiveWhereEvaluator::new(table);
+    let mut evaluator = RecursiveWhereEvaluator::with_case_insensitive(table, case_insensitive);
     (0..ROWS)
         .map(|row| match evaluator.evaluate(&where_clause, row) {
             Ok(t) => trilean_char(t),
@@ -158,7 +250,7 @@ fn observe_where(table: &DataTable, predicate: &str) -> String {
         .collect()
 }
 
-fn observe_value(table: &DataTable, predicate: &str) -> String {
+fn observe_value(table: &DataTable, predicate: &str, case_insensitive: bool) -> String {
     // Parenthesised, because a bare `SELECT a AND b` does not parse (logged as
     // a parity gap of its own); the parentheses do not change the expression.
     let sql = format!("SELECT ({predicate}) AS v FROM t");
@@ -169,6 +261,8 @@ fn observe_value(table: &DataTable, predicate: &str) -> String {
         Some(SelectItem::Expression { expr, .. }) => expr.clone(),
         other => panic!("expected one expression select item for {sql}, got {other:?}"),
     };
+    // No case-insensitive mode to ask for: see KNOWN_CASE_INSENSITIVE.
+    let _ = case_insensitive;
     let mut evaluator = ArithmeticEvaluator::new(table);
     (0..ROWS)
         .map(|row| match evaluator.evaluate(&expr, row) {
@@ -183,13 +277,22 @@ fn observe_value(table: &DataTable, predicate: &str) -> String {
 
 #[test]
 fn every_predicate_through_both_evaluators() {
+    check_matrix(EXPECTED, KNOWN, false);
+}
+
+#[test]
+fn every_predicate_through_both_evaluators_case_insensitive() {
+    check_matrix(EXPECTED_CASE_INSENSITIVE, KNOWN_CASE_INSENSITIVE, true);
+}
+
+fn check_matrix(expected_answers: &[(&str, &str)], known: &[Known], case_insensitive: bool) {
     let t = table();
     let mut problems = Vec::new();
     let mut matrix = Vec::new();
 
-    for &(predicate, expected) in EXPECTED {
-        let where_got = observe_where(&t, predicate);
-        let value_got = observe_value(&t, predicate);
+    for &(predicate, expected) in expected_answers {
+        let where_got = observe_where(&t, predicate, case_insensitive);
+        let value_got = observe_value(&t, predicate, case_insensitive);
         matrix.push(format!(
             "{predicate:<44} expected {expected}  where {where_got}  value {value_got}"
         ));
@@ -198,7 +301,7 @@ fn every_predicate_through_both_evaluators() {
             (Evaluator::Where, &where_got),
             (Evaluator::Value, &value_got),
         ] {
-            let known = KNOWN
+            let known = known
                 .iter()
                 .find(|k| k.evaluator == evaluator && k.predicate == predicate);
             match known {
@@ -222,8 +325,8 @@ fn every_predicate_through_both_evaluators() {
     }
 
     // Every KNOWN entry must name a predicate that is still in the matrix.
-    for k in KNOWN {
-        if !EXPECTED.iter().any(|(p, _)| *p == k.predicate) {
+    for k in known {
+        if !expected_answers.iter().any(|(p, _)| *p == k.predicate) {
             problems.push(format!(
                 "ORPHAN      {:?} `{}` is in KNOWN but not in EXPECTED",
                 k.evaluator, k.predicate
@@ -237,4 +340,85 @@ fn every_predicate_through_both_evaluators() {
         problems.join("\n"),
         matrix.join("\n")
     );
+}
+
+/// Clause-level forms of the case-insensitive rows, run through
+/// `QueryEngine::with_case_insensitive(true)`. The matrix above builds each
+/// evaluator directly; these catch the engine's own construction sites (SELECT,
+/// HAVING, aggregate arguments, WHERE operands), which is where the mode has to
+/// be handed in. `(sql, DuckDB answer with s collated NOCASE, what we return
+/// today if it differs)`. Rows are `|`-separated, cells `,`-separated.
+const CLAUSES_CASE_INSENSITIVE: &[(&str, &str, Option<&str>)] = &[
+    (
+        "SELECT (s = 'ABC') AS v FROM t",
+        "true|false|NULL|true|NULL",
+        Some("false|false|NULL|false|NULL"),
+    ),
+    (
+        "SELECT s, COUNT(*) AS n FROM t GROUP BY s HAVING s = 'ABC'",
+        "abc,2",
+        Some(""),
+    ),
+    (
+        // Not COUNT(*): an empty ungrouped aggregate returns no row (P14).
+        "SELECT a FROM t WHERE CASE WHEN s = 'ABC' THEN 1 ELSE 0 END = 1",
+        "1|1",
+        Some(""),
+    ),
+    (
+        "SELECT SUM(CASE WHEN s = 'ABC' THEN 1 ELSE 0 END) AS n FROM t",
+        "2",
+        Some("0"),
+    ),
+    (
+        "SELECT a, SUM(CASE WHEN s = 'ABC' THEN 1 ELSE 0 END) AS n FROM t \
+         WHERE a IS NOT NULL GROUP BY a ORDER BY a",
+        "1,2|2,0",
+        Some("1,0|2,0"),
+    ),
+];
+
+fn render(value: &DataValue) -> String {
+    match value {
+        DataValue::Null => "NULL".to_string(),
+        DataValue::Boolean(b) => b.to_string(),
+        DataValue::Integer(i) => i.to_string(),
+        DataValue::Float(f) => f.to_string(),
+        DataValue::String(s) => s.clone(),
+        other => format!("{other:?}"),
+    }
+}
+
+#[test]
+fn clause_level_case_insensitive() {
+    let engine = QueryEngine::with_case_insensitive(true);
+    let t = Arc::new(table());
+    let mut problems = Vec::new();
+
+    for &(sql, expected, observed) in CLAUSES_CASE_INSENSITIVE {
+        let got = match engine.execute(Arc::clone(&t), sql) {
+            Ok(view) => (0..view.row_count())
+                .map(|i| {
+                    let row = view.get_row(i).expect("row in range");
+                    row.values.iter().map(render).collect::<Vec<_>>().join(",")
+                })
+                .collect::<Vec<_>>()
+                .join("|"),
+            Err(e) => format!("ERROR: {e}"),
+        };
+        match observed {
+            None if got != expected => problems.push(format!(
+                "UNRECORDED  `{sql}`: expected {expected}, got {got}"
+            )),
+            Some(_) if got == expected => problems.push(format!(
+                "FIXED       `{sql}` now agrees ({expected}); drop its observed answer"
+            )),
+            Some(o) if got != o => problems.push(format!(
+                "CHANGED     `{sql}`: recorded {o}, now {got} (expected {expected})"
+            )),
+            _ => {}
+        }
+    }
+
+    assert!(problems.is_empty(), "\n{}\n", problems.join("\n"));
 }
