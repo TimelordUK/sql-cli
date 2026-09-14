@@ -817,8 +817,10 @@ impl<'a, 'ctx, 'exec> RecursiveWhereEvaluator<'a, 'ctx, 'exec> {
     /// `ArithmeticEvaluator` (see the `arithmetic` field for why it is shared).
     fn evaluate_arithmetic(&self, expr: &SqlExpression, row_index: usize) -> Result<DataValue> {
         let mut slot = self.arithmetic.borrow_mut();
-        slot.get_or_insert_with(|| ArithmeticEvaluator::new(self.table))
-            .evaluate(expr, row_index)
+        slot.get_or_insert_with(|| {
+            ArithmeticEvaluator::new(self.table).with_case_insensitive(self.case_insensitive)
+        })
+        .evaluate(expr, row_index)
     }
 
     fn evaluate_in_list(

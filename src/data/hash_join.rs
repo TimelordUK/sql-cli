@@ -1089,8 +1089,10 @@ impl HashJoinExecutor {
         }
 
         // Create evaluators for both sides
-        let mut left_evaluator = ArithmeticEvaluator::new(&left_table);
-        let mut right_evaluator = ArithmeticEvaluator::new(&right_table);
+        let mut left_evaluator =
+            ArithmeticEvaluator::new(&left_table).with_case_insensitive(self.case_insensitive);
+        let mut right_evaluator =
+            ArithmeticEvaluator::new(&right_table).with_case_insensitive(self.case_insensitive);
 
         // Nested loop join with multiple conditions
         let mut match_count = 0;
@@ -1242,8 +1244,10 @@ impl HashJoinExecutor {
         }
 
         // Create evaluators for both sides
-        let mut left_evaluator = ArithmeticEvaluator::new(&left_table);
-        let mut right_evaluator = ArithmeticEvaluator::new(&right_table);
+        let mut left_evaluator =
+            ArithmeticEvaluator::new(&left_table).with_case_insensitive(self.case_insensitive);
+        let mut right_evaluator =
+            ArithmeticEvaluator::new(&right_table).with_case_insensitive(self.case_insensitive);
 
         // Nested loop join with multiple conditions
         let mut match_count = 0;
@@ -1429,8 +1433,10 @@ impl HashJoinExecutor {
 
         // Create evaluators for both sides. The join-alias (joined) table is the
         // "right" evaluator, so alias-qualified operands route correctly (P7).
-        let mut from_evaluator = ArithmeticEvaluator::new(&from_table);
-        let mut joined_evaluator = ArithmeticEvaluator::new(&joined_table);
+        let mut from_evaluator =
+            ArithmeticEvaluator::new(&from_table).with_case_insensitive(self.case_insensitive);
+        let mut joined_evaluator =
+            ArithmeticEvaluator::new(&joined_table).with_case_insensitive(self.case_insensitive);
 
         // Outer loop over the joined table so every joined row is kept in order.
         let mut match_count = 0;

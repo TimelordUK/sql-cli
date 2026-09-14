@@ -472,7 +472,8 @@ feature work**, and so we can tell the difference between "this is awkward" and
 
 ### R13 — Two expression evaluators, every boolean operator implemented twice
 - **Status:** 🟡 IN PROGRESS — filed 2026-09-13 out of [P46](SQL_PARITY.md#p46);
-  **slices 1 and 2 done 2026-09-13**, slice 3 next.
+  **slices 1 and 2 done 2026-09-13, slice 3 (with 3b) done 2026-09-14**, slice 4
+  next.
   **The active workstream:** parity fixes that touch expression evaluation land
   as slices of this entry, not as patches.
 - **Where:** `src/data/arithmetic_evaluator.rs` (`ArithmeticEvaluator`, value →
@@ -565,6 +566,37 @@ feature work**, and so we can tell the difference between "this is awkward" and
   (both NULL → not-true, already correct), so nothing downstream had to change.
   **Two evaluators now agree on all 36 predicates, but there are still two** —
   slices 3–6 are what make that agreement structural rather than coincidental.
+- **Slice 3 result (2026-09-14).** Two no-op commits, then a pinned semantic
+  one (3b), each checked against a byte-identical parity report.
+  - *Registries built once.* The function, both aggregate and the window
+    registries are immutable after construction, so a process-wide `OnceLock`
+    builds them and every `ArithmeticEvaluator` takes `Arc` clones. GROUP BY was
+    paying for it per group and per aggregate: over `trades_100000.csv`, net of
+    ~3 s load, a high-cardinality GROUP BY went 3.4 s → 1.9 s and GROUP BY +
+    HAVING 2.5 s → 0.8 s. `estimate_group_cardinality` also built one per row.
+  - *One constructor.* `new` / `with_date_notation` /
+    `with_date_notation_and_registry` differed only by a date-notation string
+    stored in a field **nothing read** — dates parse through the global
+    notation. So "pass date notation in" turned out to be "delete it": the
+    field, the constructors, `apply_group_by_expressions`' parameter and
+    `QueryEngine`'s own unread field went. Table aliases needed nothing:
+    alias-qualified operands already resolve in every clause probed.
+  - *3b — case-insensitivity.* The one context gap with a visible answer: under
+    `--case-insensitive`, `WHERE status = 'ACTIVE'` matched `Active` but
+    `SELECT status = 'ACTIVE'`, HAVING, aggregate arguments and CASE WHEN did
+    not — nor WHERE itself once the predicate sat under a CASE, which WHERE
+    hands to its inner value evaluator. Slice 1 had not pinned it (the parity
+    harness cannot: DuckDB has no such mode), so 3b pinned first — a
+    case-insensitive run of the matrix (10 predicates, expectations from DuckDB
+    with `COLLATE NOCASE` / `ILIKE`) plus five clause-level cases through
+    `QueryEngine::with_case_insensitive(true)` — recording 11 + 5 divergences.
+    The fix, `ArithmeticEvaluator::with_case_insensitive` handed in at all 16
+    construction sites (comparisons, `IN`, `BETWEEN`, `LIKE`), flipped exactly
+    those and nothing else; parity report byte-identical.
+  - *Still case-sensitive outside WHERE, not pinned:* simple
+    `CASE x WHEN 'v'` (its own `values_equal`, with its own numeric rules — goes
+    with slice 4) and method calls such as `.Contains()` routed to registry
+    functions (slice 5).
 - **Slices, in the R10 pattern — no-op slices kept apart from the one that
   changes answers:**
   1. ✅ **Pin the divergences, no engine change.** *(Done 2026-09-13.)* A per-operator matrix run through
@@ -579,7 +611,7 @@ feature work**, and so we can tell the difference between "this is awkward" and
      false for predicates. Closes [P48](SQL_PARITY.md#p48) and the HAVING / SELECT
      rows above. Check `CASE WHEN` (UNKNOWN takes ELSE) and every `to_bool` /
      `is_truthy` caller. Acceptance: exactly the slice-1 cases flip, nothing else.
-  3. **One construction path.** Registries built once and shared (`Arc`), context
+  3. ✅ **One construction path.** *(Done 2026-09-14 — see result above.)* Registries built once and shared (`Arc`), context
      — case sensitivity, date notation, table aliases — passed in rather than
      defaulted per site. No-op; acceptance is parity *exactly* unchanged, and it
      fixes the case-insensitivity gap as a side effect only if slice 1 pinned it.
@@ -630,7 +662,7 @@ R8 legacy WHERE ──── independent; stage 2 is self-contained, do it in a 
 R10 Trilean ──────── DONE; closed P18/P19 (parity 125 → 129)
 R11 ORDER BY resolver ─ independent; small, but a behaviour change — wants its own parity run
 R12 aggregate registries ─ independent; step 1 is a provable no-op, do it before the next aggregate fix
-R13 one evaluator ─── ACTIVE from 2026-09-13; slices 1 (pin) and 2 (3VL) DONE → 3 (construction) → 4–6 (retire WHERE arms)
+R13 one evaluator ─── ACTIVE from 2026-09-13; slices 1 (pin), 2 (3VL), 3 (construction + case mode) DONE → 4–6 (retire WHERE arms)
 ```
 
 **A note on ordering, from the P18/P19 work being next.** The WHERE evaluator
@@ -670,3 +702,4 @@ AGREE count — which makes it safe to land well before the semantics change.
 | 2026-09-13 | R13 filed and made the active workstream: two evaluators with divergent NULL semantics, three truth collapses. Probing found four live clause-dependent divergences (HAVING, SELECT `IN`, JOIN NULL keys, P48) | — |
 | 2026-09-13 | R13 slice 1: evaluator matrix (36 predicates × both evaluators × 5 NULL-bearing rows, DuckDB-derived expectations). WHERE 36/36, value evaluator 4/36. P48 widened; P50–P52 filed; six corpus cases, AGREE unchanged | — |
 | 2026-09-13 | R13 slice 2: value evaluator three-valued; `Trilean::from_value`/`to_value`; `to_bool` removed. Matrix value column 4/36 → 36/36 in one change. Closes P48, P50 — 168 → **174 AGREE** | — |
+| 2026-09-14 | R13 slice 3: registries built once per process; one `ArithmeticEvaluator` constructor, dead date-notation plumbing deleted — parity byte-identical, high-cardinality GROUP BY ~2× faster. 3b: case-insensitive mode pinned (11 matrix + 5 clause cases) then handed in at every construction site; all flipped, parity byte-identical | — |

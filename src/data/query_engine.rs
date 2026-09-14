@@ -7,7 +7,6 @@ use std::time::{Duration, Instant};
 use tracing::{debug, info};
 
 use crate::config::config::BehaviorConfig;
-use crate::config::global::get_date_notation;
 use crate::data::arithmetic_evaluator::ArithmeticEvaluator;
 use crate::data::data_view::DataView;
 use crate::data::datatable::{DataColumn, DataRow, DataTable, DataValue};
@@ -246,7 +245,6 @@ fn edit_distance(a: &str, b: &str) -> usize {
 #[derive(Clone)]
 pub struct QueryEngine {
     case_insensitive: bool,
-    date_notation: String,
     _behavior_config: Option<BehaviorConfig>,
 }
 
@@ -261,7 +259,6 @@ impl QueryEngine {
     pub fn new() -> Self {
         Self {
             case_insensitive: false,
-            date_notation: get_date_notation(),
             _behavior_config: None,
         }
     }
@@ -269,11 +266,8 @@ impl QueryEngine {
     #[must_use]
     pub fn with_behavior_config(config: BehaviorConfig) -> Self {
         let case_insensitive = config.case_insensitive_default;
-        // Use get_date_notation() to respect environment variable override
-        let date_notation = get_date_notation();
         Self {
             case_insensitive,
-            date_notation,
             _behavior_config: Some(config),
         }
     }
@@ -282,7 +276,6 @@ impl QueryEngine {
     pub fn with_date_notation(_date_notation: String) -> Self {
         Self {
             case_insensitive: false,
-            date_notation: get_date_notation(), // Always use the global function
             _behavior_config: None,
         }
     }
@@ -291,7 +284,6 @@ impl QueryEngine {
     pub fn with_case_insensitive(case_insensitive: bool) -> Self {
         Self {
             case_insensitive,
-            date_notation: get_date_notation(),
             _behavior_config: None,
         }
     }
@@ -299,13 +291,18 @@ impl QueryEngine {
     #[must_use]
     pub fn with_case_insensitive_and_date_notation(
         case_insensitive: bool,
-        _date_notation: String, // Keep parameter for compatibility but use get_date_notation()
+        _date_notation: String, // Kept for compatibility; date parsing reads the global notation
     ) -> Self {
         Self {
             case_insensitive,
-            date_notation: get_date_notation(), // Always use the global function
             _behavior_config: None,
         }
+    }
+
+    /// Whether string comparisons ignore case (`--case-insensitive`).
+    #[must_use]
+    pub fn is_case_insensitive(&self) -> bool {
+        self.case_insensitive
     }
 
     /// Find a column name similar to the given name using edit distance
@@ -1302,10 +1299,8 @@ impl QueryEngine {
 
                         if let Some(generator) = registry.get(name) {
                             // Evaluate arguments
-                            let mut evaluator = ArithmeticEvaluator::with_date_notation(
-                                &table,
-                                self.date_notation.clone(),
-                            );
+                            let mut evaluator = ArithmeticEvaluator::new(&table)
+                                .with_case_insensitive(self.case_insensitive);
                             let dummy_row = 0;
 
                             let mut evaluated_args = Vec::new();
@@ -2320,9 +2315,9 @@ impl QueryEngine {
         // partition over the FILTERED set. Without this the evaluator sees the whole
         // source table and a WHERE clause has no effect on any window (P21): partition
         // counts, rank slots and frames all include rows the query excluded.
-        let mut evaluator =
-            ArithmeticEvaluator::with_date_notation(source_table, self.date_notation.clone())
-                .with_visible_rows(view.visible_row_indices().to_vec());
+        let mut evaluator = ArithmeticEvaluator::new(source_table)
+            .with_case_insensitive(self.case_insensitive)
+            .with_visible_rows(view.visible_row_indices().to_vec());
 
         // Populate table aliases from exec_context if available
         if let Some(exec_ctx) = exec_context {
@@ -2755,7 +2750,7 @@ impl QueryEngine {
 
         // Process each input row
         let mut evaluator =
-            ArithmeticEvaluator::with_date_notation(source_table, self.date_notation.clone());
+            ArithmeticEvaluator::new(source_table).with_case_insensitive(self.case_insensitive);
 
         for &row_idx in visible_rows {
             // First pass: identify UNNEST expressions and collect their expansion arrays
@@ -2932,9 +2927,9 @@ impl QueryEngine {
 
         // Create evaluator with visible rows from the view (for filtered aggregates)
         let visible_rows = view.visible_row_indices().to_vec();
-        let mut evaluator =
-            ArithmeticEvaluator::with_date_notation(source_table, self.date_notation.clone())
-                .with_visible_rows(visible_rows);
+        let mut evaluator = ArithmeticEvaluator::new(source_table)
+            .with_case_insensitive(self.case_insensitive)
+            .with_visible_rows(visible_rows);
 
         // Evaluate each aggregate expression once (they handle all rows internally)
         let mut row_values = Vec::new();
@@ -3300,7 +3295,6 @@ impl QueryEngine {
             select_items,
             having,
             self.case_insensitive,
-            self.date_notation.clone(),
         )?;
 
         // Add detailed phase information to the execution plan
@@ -3351,6 +3345,8 @@ impl QueryEngine {
         // Sample first 1000 rows or 10% of data, whichever is smaller
         let sample_size = min(1000, row_count / 10).max(100);
         let mut seen = FxHashSet::default();
+        let mut evaluator =
+            ArithmeticEvaluator::new(view.source()).with_case_insensitive(self.case_insensitive);
 
         let visible_rows = view.get_visible_rows();
         for (i, &row_idx) in visible_rows.iter().enumerate() {
@@ -3361,7 +3357,6 @@ impl QueryEngine {
             // Evaluate GROUP BY expressions for this row
             let mut key_values = Vec::new();
             for expr in group_by_exprs {
-                let mut evaluator = ArithmeticEvaluator::new(view.source());
                 let value = evaluator.evaluate(expr, row_idx).unwrap_or(DataValue::Null);
                 key_values.push(value);
             }
