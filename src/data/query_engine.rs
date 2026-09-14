@@ -299,6 +299,12 @@ impl QueryEngine {
         }
     }
 
+    /// Whether string comparisons ignore case (`--case-insensitive`).
+    #[must_use]
+    pub fn is_case_insensitive(&self) -> bool {
+        self.case_insensitive
+    }
+
     /// Find a column name similar to the given name using edit distance
     fn find_similar_column(&self, table: &DataTable, name: &str) -> Option<String> {
         let columns = table.column_names();
@@ -1293,7 +1299,8 @@ impl QueryEngine {
 
                         if let Some(generator) = registry.get(name) {
                             // Evaluate arguments
-                            let mut evaluator = ArithmeticEvaluator::new(&table);
+                            let mut evaluator = ArithmeticEvaluator::new(&table)
+                                .with_case_insensitive(self.case_insensitive);
                             let dummy_row = 0;
 
                             let mut evaluated_args = Vec::new();
@@ -2309,6 +2316,7 @@ impl QueryEngine {
         // source table and a WHERE clause has no effect on any window (P21): partition
         // counts, rank slots and frames all include rows the query excluded.
         let mut evaluator = ArithmeticEvaluator::new(source_table)
+            .with_case_insensitive(self.case_insensitive)
             .with_visible_rows(view.visible_row_indices().to_vec());
 
         // Populate table aliases from exec_context if available
@@ -2741,7 +2749,8 @@ impl QueryEngine {
         }
 
         // Process each input row
-        let mut evaluator = ArithmeticEvaluator::new(source_table);
+        let mut evaluator =
+            ArithmeticEvaluator::new(source_table).with_case_insensitive(self.case_insensitive);
 
         for &row_idx in visible_rows {
             // First pass: identify UNNEST expressions and collect their expansion arrays
@@ -2918,7 +2927,9 @@ impl QueryEngine {
 
         // Create evaluator with visible rows from the view (for filtered aggregates)
         let visible_rows = view.visible_row_indices().to_vec();
-        let mut evaluator = ArithmeticEvaluator::new(source_table).with_visible_rows(visible_rows);
+        let mut evaluator = ArithmeticEvaluator::new(source_table)
+            .with_case_insensitive(self.case_insensitive)
+            .with_visible_rows(visible_rows);
 
         // Evaluate each aggregate expression once (they handle all rows internally)
         let mut row_values = Vec::new();
@@ -3334,7 +3345,8 @@ impl QueryEngine {
         // Sample first 1000 rows or 10% of data, whichever is smaller
         let sample_size = min(1000, row_count / 10).max(100);
         let mut seen = FxHashSet::default();
-        let mut evaluator = ArithmeticEvaluator::new(view.source());
+        let mut evaluator =
+            ArithmeticEvaluator::new(view.source()).with_case_insensitive(self.case_insensitive);
 
         let visible_rows = view.get_visible_rows();
         for (i, &row_idx) in visible_rows.iter().enumerate() {

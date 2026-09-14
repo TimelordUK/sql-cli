@@ -154,78 +154,12 @@ struct Known {
 // here, with its finding, rather than left failing.
 const KNOWN: &[Known] = &[];
 
-// Recorded by R13 slice 3b (2026-09-14). The WHERE evaluator honours the
-// engine's case-insensitive mode; the value evaluator has no such mode and
-// always compares case-sensitively, so under `--case-insensitive` a SELECT,
-// HAVING or CASE WHEN answers differently from the same predicate in WHERE.
-const KNOWN_CASE_INSENSITIVE: &[Known] = &[
-    Known {
-        evaluator: Evaluator::Value,
-        predicate: "s = 'ABC'",
-        observed: "FFUFU",
-        why: "value evaluator has no case-insensitive mode",
-    },
-    Known {
-        evaluator: Evaluator::Value,
-        predicate: "s <> 'ABC'",
-        observed: "TTUTU",
-        why: "value evaluator has no case-insensitive mode",
-    },
-    Known {
-        evaluator: Evaluator::Value,
-        predicate: "s < 'B'",
-        observed: "FFUFU",
-        why: "value evaluator has no case-insensitive mode",
-    },
-    Known {
-        evaluator: Evaluator::Value,
-        predicate: "s IN ('ABC', 'Q')",
-        observed: "FFUFU",
-        why: "value evaluator has no case-insensitive mode",
-    },
-    Known {
-        evaluator: Evaluator::Value,
-        predicate: "s NOT IN ('XYZ')",
-        observed: "TTUTU",
-        why: "value evaluator has no case-insensitive mode",
-    },
-    Known {
-        evaluator: Evaluator::Value,
-        predicate: "s BETWEEN 'ABC' AND 'M'",
-        observed: "FFUFU",
-        why: "value evaluator has no case-insensitive mode",
-    },
-    Known {
-        evaluator: Evaluator::Value,
-        predicate: "s LIKE 'A%'",
-        observed: "FFUFU",
-        why: "value evaluator has no case-insensitive mode",
-    },
-    Known {
-        evaluator: Evaluator::Value,
-        predicate: "NOT (s = 'ABC')",
-        observed: "TTUTU",
-        why: "value evaluator has no case-insensitive mode",
-    },
-    Known {
-        evaluator: Evaluator::Where,
-        predicate: "CASE WHEN s = 'ABC' THEN 1 ELSE 0 END = 1",
-        observed: "FFFFF",
-        why: "WHERE hands CASE to an inner value evaluator built without the mode",
-    },
-    Known {
-        evaluator: Evaluator::Value,
-        predicate: "CASE WHEN s = 'ABC' THEN 1 ELSE 0 END = 1",
-        observed: "FFFFF",
-        why: "value evaluator has no case-insensitive mode",
-    },
-    Known {
-        evaluator: Evaluator::Value,
-        predicate: "UPPER(s) = 'abc'",
-        observed: "FFUFU",
-        why: "value evaluator has no case-insensitive mode",
-    },
-];
+// Empty since R13 slice 3b (2026-09-14). Slice 3b recorded 11 divergences:
+// the value evaluator had no case-insensitive mode, so every string predicate
+// here compared case-sensitively outside WHERE - and inside WHERE under a CASE,
+// which WHERE hands to an inner value evaluator. The mode is now handed in at
+// every construction site, and all 11 went FIXED in one change.
+const KNOWN_CASE_INSENSITIVE: &[Known] = &[];
 
 fn trilean_char(t: Trilean) -> char {
     match t {
@@ -261,9 +195,7 @@ fn observe_value(table: &DataTable, predicate: &str, case_insensitive: bool) -> 
         Some(SelectItem::Expression { expr, .. }) => expr.clone(),
         other => panic!("expected one expression select item for {sql}, got {other:?}"),
     };
-    // No case-insensitive mode to ask for: see KNOWN_CASE_INSENSITIVE.
-    let _ = case_insensitive;
-    let mut evaluator = ArithmeticEvaluator::new(table);
+    let mut evaluator = ArithmeticEvaluator::new(table).with_case_insensitive(case_insensitive);
     (0..ROWS)
         .map(|row| match evaluator.evaluate(&expr, row) {
             Ok(DataValue::Boolean(true)) => 'T',
@@ -347,34 +279,35 @@ fn check_matrix(expected_answers: &[(&str, &str)], known: &[Known], case_insensi
 /// evaluator directly; these catch the engine's own construction sites (SELECT,
 /// HAVING, aggregate arguments, WHERE operands), which is where the mode has to
 /// be handed in. `(sql, DuckDB answer with s collated NOCASE, what we return
-/// today if it differs)`. Rows are `|`-separated, cells `,`-separated.
+/// if it differs)` - all agree since slice 3b. Rows are `|`-separated, cells
+/// `,`-separated.
 const CLAUSES_CASE_INSENSITIVE: &[(&str, &str, Option<&str>)] = &[
     (
         "SELECT (s = 'ABC') AS v FROM t",
         "true|false|NULL|true|NULL",
-        Some("false|false|NULL|false|NULL"),
+        None,
     ),
     (
         "SELECT s, COUNT(*) AS n FROM t GROUP BY s HAVING s = 'ABC'",
         "abc,2",
-        Some(""),
+        None,
     ),
     (
         // Not COUNT(*): an empty ungrouped aggregate returns no row (P14).
         "SELECT a FROM t WHERE CASE WHEN s = 'ABC' THEN 1 ELSE 0 END = 1",
         "1|1",
-        Some(""),
+        None,
     ),
     (
         "SELECT SUM(CASE WHEN s = 'ABC' THEN 1 ELSE 0 END) AS n FROM t",
         "2",
-        Some("0"),
+        None,
     ),
     (
         "SELECT a, SUM(CASE WHEN s = 'ABC' THEN 1 ELSE 0 END) AS n FROM t \
          WHERE a IS NOT NULL GROUP BY a ORDER BY a",
         "1,2|2,0",
-        Some("1,0|2,0"),
+        None,
     ),
 ];
 

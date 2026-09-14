@@ -46,6 +46,7 @@ pub struct ArithmeticEvaluator<'a> {
     visible_rows: Option<Vec<usize>>, // For aggregate functions on filtered views
     window_contexts: HashMap<u64, Arc<WindowContext>>, // Cache window contexts by hash
     table_aliases: HashMap<String, String>, // Map alias -> table name for qualified columns
+    case_insensitive: bool,           // The engine's string-comparison mode, as WHERE honours it
 }
 
 impl<'a> ArithmeticEvaluator<'a> {
@@ -61,6 +62,7 @@ impl<'a> ArithmeticEvaluator<'a> {
             visible_rows: None,
             window_contexts: HashMap::new(),
             table_aliases: HashMap::new(),
+            case_insensitive: false,
         }
     }
 
@@ -68,6 +70,14 @@ impl<'a> ArithmeticEvaluator<'a> {
     #[must_use]
     pub fn with_visible_rows(mut self, rows: Vec<usize>) -> Self {
         self.visible_rows = Some(rows);
+        self
+    }
+
+    /// Compare strings case-insensitively, as the engine's case-insensitive
+    /// mode does for WHERE: comparisons, IN, BETWEEN and LIKE.
+    #[must_use]
+    pub fn with_case_insensitive(mut self, case_insensitive: bool) -> Self {
+        self.case_insensitive = case_insensitive;
         self
     }
 
@@ -150,8 +160,8 @@ impl<'a> ArithmeticEvaluator<'a> {
                 let val = self.evaluate(expr, row_index)?;
                 let lo = self.evaluate(lower, row_index)?;
                 let hi = self.evaluate(upper, row_index)?;
-                let ge = compare_trilean(&val, &lo, ">=");
-                let le = compare_trilean(&val, &hi, "<=");
+                let ge = compare_trilean(&val, &lo, ">=", self.case_insensitive);
+                let le = compare_trilean(&val, &hi, "<=", self.case_insensitive);
                 Ok(ge.and(le).to_value())
             }
             // Logical negation as a value-producing expression. Reached, e.g., by
@@ -369,7 +379,7 @@ impl<'a> ArithmeticEvaluator<'a> {
             // the clause that filters on the result collapses it (R13). See
             // tests/evaluator_matrix_tests.rs for the per-operator contract.
             ">" | "<" | ">=" | "<=" | "=" | "!=" | "<>" => {
-                Ok(compare_trilean(&left_val, &right_val, op).to_value())
+                Ok(compare_trilean(&left_val, &right_val, op, self.case_insensitive).to_value())
             }
             // IS NULL / IS NOT NULL are the sanctioned NULL tests, so two-valued.
             "IS NULL" => Ok(DataValue::Boolean(matches!(left_val, DataValue::Null))),
@@ -381,8 +391,12 @@ impl<'a> ArithmeticEvaluator<'a> {
                 if matches!(left_val, DataValue::Null) || matches!(right_val, DataValue::Null) {
                     return Ok(DataValue::Null);
                 }
-                let text = self.value_to_string(&left_val);
-                let pattern = self.value_to_string(&right_val);
+                let mut text = self.value_to_string(&left_val);
+                let mut pattern = self.value_to_string(&right_val);
+                if self.case_insensitive {
+                    text = text.to_lowercase();
+                    pattern = pattern.to_lowercase();
+                }
                 let matches = self.sql_like_match(&text, &pattern);
                 Ok(DataValue::Boolean(matches))
             }
@@ -1529,7 +1543,7 @@ impl<'a> ArithmeticEvaluator<'a> {
         let mut result = Trilean::False;
         for v in values {
             let item = self.evaluate(v, row_index)?;
-            result = result.or(compare_trilean(&val, &item, "="));
+            result = result.or(compare_trilean(&val, &item, "=", self.case_insensitive));
             if result.is_true() {
                 break;
             }
@@ -1649,12 +1663,16 @@ impl<'a> ArithmeticEvaluator<'a> {
 /// for predicates is what made `SELECT x = NULL` TRUE for NULL rows (P48, the
 /// value-evaluator twin of P18). Same rule as the WHERE evaluator's
 /// `compare_trilean`, which R13 slice 4 will make the only copy.
-fn compare_trilean(left: &DataValue, right: &DataValue, op: &str) -> Trilean {
+fn compare_trilean(
+    left: &DataValue,
+    right: &DataValue,
+    op: &str,
+    case_insensitive: bool,
+) -> Trilean {
     if matches!(left, DataValue::Null) || matches!(right, DataValue::Null) {
         return Trilean::Unknown;
     }
-    // Case sensitivity is not yet threaded into this evaluator - R13 slice 3.
-    Trilean::from_bool(compare_with_op(left, right, op, false))
+    Trilean::from_bool(compare_with_op(left, right, op, case_insensitive))
 }
 
 /// The truth value of an operand of AND / OR / NOT. A value with no truth value
