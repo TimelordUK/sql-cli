@@ -1,35 +1,44 @@
-# SQL CLI v1.85.4
+# SQL CLI v1.85.5
 
-**Release Date:** September 13, 2026
+**Release Date:** September 14, 2026
 
 ## 📊 Release Overview
-- **Commits in this release:** 7
-- **Files updated:** 9
+- **Commits in this release:** 10
+- **Files updated:** 12
 
 ## ✨ Highlights
 
-### 🔍 Enhanced Debugging
-- **Better Diagnostics**: Improved error messages and state dumps
+### 🎨 Visual Improvements
 
 ## 📝 Changes by Category
 
+### 🚀 New Features
+- add lrt, an ls -alrt built on sql-cli
+
 ### 🐛 Bug Fixes
-- make the value evaluator three-valued (R13 slice 2; P48, P50)
+- honour case-insensitive mode in the value evaluator (R13 slice 3b)
+- align ANSI-coloured cells under --table-style
+
+### 🔧 Refactoring
+- one ArithmeticEvaluator constructor (R13 slice 3)
+- build evaluator registries once and share them (R13 slice 3)
 
 ### 📚 Documentation
-- close P48 and P50; record R13 slice 2
-- widen P48, file P50-P52; record R13 slice 1
+- record slice 3 and 3b
 
 <details>
 <summary>📋 View all commits</summary>
 
-- Merge pull request #84 from TimelordUK/refactor/r13-slice2-three-valued-value-evaluator (TimelordUK)
-- Merge pull request #83 from TimelordUK/test/r13-slice1-evaluator-matrix (TimelordUK)
-- docs(parity): close P48 and P50; record R13 slice 2 (TimelordUK)
-- fix(r13): make the value evaluator three-valued (R13 slice 2; P48, P50) (TimelordUK)
-- test(parity): pin simple CASE WHEN NULL matching NULL (P48, R13 slice 2) (TimelordUK)
-- docs(parity): widen P48, file P50-P52; record R13 slice 1 (TimelordUK)
-- test(r13): evaluator matrix and clause-level corpus cases (R13 slice 1) (TimelordUK)
+- Merge pull request #86 from TimelordUK/refactor/r13-slice3-one-construction-path (TimelordUK)
+- docs(r13): record slice 3 and 3b (TimelordUK)
+- fix(r13): honour case-insensitive mode in the value evaluator (R13 slice 3b) (TimelordUK)
+- test(r13): pin case-insensitive divergence between evaluators (R13 slice 3b) (TimelordUK)
+- refactor(r13): one ArithmeticEvaluator constructor (R13 slice 3) (TimelordUK)
+- refactor(r13): build evaluator registries once and share them (R13 slice 3) (TimelordUK)
+- Merge pull request #85 from TimelordUK/fix/table-style-ansi-width (TimelordUK)
+- feat(scripts): add lrt, an ls -alrt built on sql-cli (TimelordUK)
+- fix(output): align ANSI-coloured cells under --table-style (TimelordUK)
+- tweak example (stephen james)
 
 </details>
 
