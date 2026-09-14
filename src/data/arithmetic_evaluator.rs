@@ -12,9 +12,29 @@ use crate::sql::window_context::WindowContext;
 use crate::sql::window_functions::{ExpressionEvaluator, WindowFunctionRegistry};
 use anyhow::{anyhow, Result};
 use std::collections::{HashMap, HashSet};
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 use std::time::Instant;
 use tracing::{debug, info};
+
+/// The registries every evaluator reads. None of them change after
+/// construction, so the process builds them once and every evaluator shares
+/// them, rather than each construction site rebuilding all four (R13 slice 3).
+struct EvaluatorRegistries {
+    function: Arc<FunctionRegistry>,
+    aggregate: Arc<AggregateRegistry>,
+    new_aggregate: Arc<AggregateFunctionRegistry>,
+    window: Arc<WindowFunctionRegistry>,
+}
+
+fn shared_registries() -> &'static EvaluatorRegistries {
+    static REGISTRIES: OnceLock<EvaluatorRegistries> = OnceLock::new();
+    REGISTRIES.get_or_init(|| EvaluatorRegistries {
+        function: Arc::new(FunctionRegistry::new()),
+        aggregate: Arc::new(AggregateRegistry::new()),
+        new_aggregate: Arc::new(AggregateFunctionRegistry::new()),
+        window: Arc::new(WindowFunctionRegistry::new()),
+    })
+}
 
 /// Evaluates SQL expressions to compute `DataValues` (for SELECT clauses)
 /// This is different from `RecursiveWhereEvaluator` which returns boolean
@@ -33,28 +53,19 @@ pub struct ArithmeticEvaluator<'a> {
 impl<'a> ArithmeticEvaluator<'a> {
     #[must_use]
     pub fn new(table: &'a DataTable) -> Self {
-        Self {
-            table,
-            _date_notation: get_date_notation(),
-            function_registry: Arc::new(FunctionRegistry::new()),
-            aggregate_registry: Arc::new(AggregateRegistry::new()),
-            new_aggregate_registry: Arc::new(AggregateFunctionRegistry::new()),
-            window_function_registry: Arc::new(WindowFunctionRegistry::new()),
-            visible_rows: None,
-            window_contexts: HashMap::new(),
-            table_aliases: HashMap::new(),
-        }
+        Self::with_date_notation(table, get_date_notation())
     }
 
     #[must_use]
     pub fn with_date_notation(table: &'a DataTable, date_notation: String) -> Self {
+        let registries = shared_registries();
         Self {
             table,
             _date_notation: date_notation,
-            function_registry: Arc::new(FunctionRegistry::new()),
-            aggregate_registry: Arc::new(AggregateRegistry::new()),
-            new_aggregate_registry: Arc::new(AggregateFunctionRegistry::new()),
-            window_function_registry: Arc::new(WindowFunctionRegistry::new()),
+            function_registry: Arc::clone(&registries.function),
+            aggregate_registry: Arc::clone(&registries.aggregate),
+            new_aggregate_registry: Arc::clone(&registries.new_aggregate),
+            window_function_registry: Arc::clone(&registries.window),
             visible_rows: None,
             window_contexts: HashMap::new(),
             table_aliases: HashMap::new(),
@@ -82,15 +93,8 @@ impl<'a> ArithmeticEvaluator<'a> {
         function_registry: Arc<FunctionRegistry>,
     ) -> Self {
         Self {
-            table,
-            _date_notation: date_notation,
             function_registry,
-            aggregate_registry: Arc::new(AggregateRegistry::new()),
-            new_aggregate_registry: Arc::new(AggregateFunctionRegistry::new()),
-            window_function_registry: Arc::new(WindowFunctionRegistry::new()),
-            visible_rows: None,
-            window_contexts: HashMap::new(),
-            table_aliases: HashMap::new(),
+            ..Self::with_date_notation(table, date_notation)
         }
     }
 
