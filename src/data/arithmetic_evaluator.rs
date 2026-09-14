@@ -1,4 +1,3 @@
-use crate::config::global::get_date_notation;
 use crate::data::data_view::DataView;
 use crate::data::datatable::{DataTable, DataValue};
 use crate::data::trilean::Trilean;
@@ -40,7 +39,6 @@ fn shared_registries() -> &'static EvaluatorRegistries {
 /// This is different from `RecursiveWhereEvaluator` which returns boolean
 pub struct ArithmeticEvaluator<'a> {
     table: &'a DataTable,
-    _date_notation: String,
     function_registry: Arc<FunctionRegistry>,
     aggregate_registry: Arc<AggregateRegistry>, // Old registry (being phased out)
     new_aggregate_registry: Arc<AggregateFunctionRegistry>, // New registry
@@ -53,15 +51,9 @@ pub struct ArithmeticEvaluator<'a> {
 impl<'a> ArithmeticEvaluator<'a> {
     #[must_use]
     pub fn new(table: &'a DataTable) -> Self {
-        Self::with_date_notation(table, get_date_notation())
-    }
-
-    #[must_use]
-    pub fn with_date_notation(table: &'a DataTable, date_notation: String) -> Self {
         let registries = shared_registries();
         Self {
             table,
-            _date_notation: date_notation,
             function_registry: Arc::clone(&registries.function),
             aggregate_registry: Arc::clone(&registries.aggregate),
             new_aggregate_registry: Arc::clone(&registries.new_aggregate),
@@ -84,18 +76,6 @@ impl<'a> ArithmeticEvaluator<'a> {
     pub fn with_table_aliases(mut self, aliases: HashMap<String, String>) -> Self {
         self.table_aliases = aliases;
         self
-    }
-
-    #[must_use]
-    pub fn with_date_notation_and_registry(
-        table: &'a DataTable,
-        date_notation: String,
-        function_registry: Arc<FunctionRegistry>,
-    ) -> Self {
-        Self {
-            function_registry,
-            ..Self::with_date_notation(table, date_notation)
-        }
     }
 
     /// Find a column name similar to the given name using edit distance

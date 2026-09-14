@@ -50,7 +50,6 @@ pub trait GroupByExpressions {
         select_items: &[SelectItem],
         having: Option<&SqlExpression>,
         _case_insensitive: bool,
-        date_notation: String,
     ) -> Result<(DataView, GroupByPhaseInfo)>;
 }
 
@@ -133,7 +132,6 @@ impl GroupByExpressions for QueryEngine {
         select_items: &[SelectItem],
         having: Option<&SqlExpression>,
         _case_insensitive: bool,
-        date_notation: String,
     ) -> Result<(DataView, GroupByPhaseInfo)> {
         use std::time::Instant;
         let start = Instant::now();
@@ -282,11 +280,8 @@ impl GroupByExpressions for QueryEngine {
             let agg_start = Instant::now();
             for (expr, _col_name) in &aggregate_columns {
                 let group_rows = group_view.get_visible_rows();
-                let mut evaluator = ArithmeticEvaluator::with_date_notation(
-                    group_view.source(),
-                    date_notation.clone(),
-                )
-                .with_visible_rows(group_rows.clone());
+                let mut evaluator = ArithmeticEvaluator::new(group_view.source())
+                    .with_visible_rows(group_rows.clone());
 
                 let value = if group_view.row_count() > 0 && !group_rows.is_empty() {
                     evaluator
@@ -305,10 +300,7 @@ impl GroupByExpressions for QueryEngine {
             for (expr, _alias) in &derived_grouped_exprs {
                 let group_rows = group_view.get_visible_rows();
                 let value = if !group_rows.is_empty() {
-                    let mut evaluator = ArithmeticEvaluator::with_date_notation(
-                        group_view.source(),
-                        date_notation.clone(),
-                    );
+                    let mut evaluator = ArithmeticEvaluator::new(group_view.source());
                     evaluator
                         .evaluate(expr, group_rows[0])
                         .unwrap_or(DataValue::Null)
@@ -341,8 +333,7 @@ impl GroupByExpressions for QueryEngine {
                     .map_err(|e| anyhow!("Failed to create temp table for HAVING: {}", e))?;
 
                 // Evaluate HAVING expression
-                let mut evaluator =
-                    ArithmeticEvaluator::with_date_notation(&temp_table, date_notation.clone());
+                let mut evaluator = ArithmeticEvaluator::new(&temp_table);
                 let having_result = evaluator.evaluate(having_expr, 0)?;
 
                 // Skip this group if HAVING condition is not met
