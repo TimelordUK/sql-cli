@@ -1651,4 +1651,83 @@ mod operand_resolution_tests {
             .expect_err("a raw window operand must not evaluate quietly");
         assert!(err.to_string().contains("ROW_NUMBER"), "got: {err}");
     }
+
+    #[test]
+    fn a_raw_window_operand_errors_in_between_and_in_too() {
+        // Same P15 rule in every operand position, so it has to survive these
+        // arms delegating to the value evaluator (R13 slice 4), which would
+        // otherwise evaluate the window function over the unfiltered rows.
+        let t = pairs();
+        for predicate in [
+            "ROW_NUMBER() OVER (ORDER BY a) BETWEEN 1 AND 2",
+            "a BETWEEN ROW_NUMBER() OVER (ORDER BY a) AND 10",
+            "ROW_NUMBER() OVER (ORDER BY a) IN (1, 2)",
+            "a IN (ROW_NUMBER() OVER (ORDER BY a), 2)",
+            "ROW_NUMBER() OVER (ORDER BY a) NOT IN (1, 2)",
+        ] {
+            let err = try_eval(&t, predicate, 0)
+                .expect_err("a raw window operand must not evaluate quietly");
+            assert!(
+                err.to_string().contains("ROW_NUMBER"),
+                "{predicate}: got {err}"
+            );
+        }
+    }
+
+    /// Two source tables joined, both with a column `a`, qualified by table
+    /// name: row 0 = (orders.a 1, items.a 7), row 1 = (2, 9).
+    fn joined() -> DataTable {
+        let mut table = DataTable::new("joined");
+        table.add_column(DataColumn::new("a").with_qualified_name("orders"));
+        table.add_column(DataColumn::new("a").with_qualified_name("items"));
+        for (o, i) in [(1, 7), (2, 9)] {
+            table
+                .add_row(DataRow::new(vec![
+                    DataValue::Integer(o),
+                    DataValue::Integer(i),
+                ]))
+                .unwrap();
+        }
+        table
+    }
+
+    #[test]
+    fn alias_qualified_operands_resolve_through_the_execution_context() {
+        // `i` is an alias for `items`. The unqualified fallback would find
+        // `orders.a` first, so a wrong resolution shows as a wrong answer.
+        //
+        // Latent, not reachable from SQL as probed: join output already
+        // disambiguates duplicate names before WHERE sees them. But WHERE's
+        // column fast path resolves the alias to an index and then looks the
+        // bare name up again, and the inner value evaluator is given no
+        // aliases at all -- so both answer from `orders.a` here.
+        let t = joined();
+        let mut ctx = ExecutionContext::new();
+        ctx.register_alias("i".to_string(), "items".to_string());
+        let eval = |predicate: &str, row: usize| {
+            let sql = format!("SELECT * FROM joined WHERE {predicate}");
+            let statement = Parser::new(&sql).parse().expect("failed to parse");
+            let where_clause = statement.where_clause.expect("expected a WHERE clause");
+            RecursiveWhereEvaluator::with_exec_context(&t, &ctx, false)
+                .evaluate(&where_clause, row)
+                .expect("evaluation failed")
+        };
+        // (predicate, correct answer for row 0, answer today if it differs)
+        for (predicate, correct, known) in [
+            ("i.a = 7", Trilean::True, Some(Trilean::False)),
+            ("i.a BETWEEN 5 AND 8", Trilean::True, Some(Trilean::False)),
+            ("i.a IN (7, 99)", Trilean::True, Some(Trilean::False)),
+            ("i.a NOT IN (7, 99)", Trilean::False, Some(Trilean::True)),
+            ("i.a + 0 = 7", Trilean::True, Some(Trilean::False)),
+        ] {
+            let observed = eval(predicate, 0);
+            match known {
+                Some(today) => assert_eq!(
+                    observed, today,
+                    "{predicate}: recorded divergence changed -- if fixed, drop it"
+                ),
+                None => assert_eq!(observed, correct, "{predicate}"),
+            }
+        }
+    }
 }
