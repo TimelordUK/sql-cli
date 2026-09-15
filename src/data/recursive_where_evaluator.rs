@@ -506,8 +506,15 @@ impl<'a, 'ctx, 'exec> RecursiveWhereEvaluator<'a, 'ctx, 'exec> {
                 // stay UNKNOWN rather than flip to TRUE. That flip is P19.
                 Ok(in_result.negate())
             }
-            SqlExpression::Between { expr, lower, upper } => {
-                self.evaluate_between(expr, lower, upper, row_index)
+            SqlExpression::Between {
+                expr: value,
+                lower,
+                upper,
+            } => {
+                for operand in [value, lower, upper] {
+                    reject_unlifted_window(operand)?;
+                }
+                self.evaluate_delegated(expr, row_index)
             }
             SqlExpression::Not { expr } => {
                 let inner_result = self.evaluate_expression(expr, row_index)?;
@@ -791,15 +798,10 @@ impl<'a, 'ctx, 'exec> RecursiveWhereEvaluator<'a, 'ctx, 'exec> {
                 .ok_or_else(|| anyhow::anyhow!("Invalid time"))?;
                 Ok(Some(datetime_value(NaiveDateTime::new(today, time))))
             }
-            // Same rule as `evaluate_value_as_predicate`: a raw window function
-            // here was not lifted to a CTE column. Evaluating it would compute
-            // the window over the rows the WHERE is still filtering, so an
-            // inline `QUALIFY ROW_NUMBER() OVER (...) = 1` combined with a WHERE
-            // would silently rank the unfiltered table (P15).
-            SqlExpression::WindowFunction { name, .. } => Err(anyhow!(
-                "Window function {name} cannot be used directly in a comparison (the expression was not lifted to a CTE column)"
-            )),
-            _ => Ok(Some(self.evaluate_arithmetic(expr, row_index)?)),
+            _ => {
+                reject_unlifted_window(expr)?;
+                Ok(Some(self.evaluate_arithmetic(expr, row_index)?))
+            }
         }
     }
 
@@ -857,31 +859,15 @@ impl<'a, 'ctx, 'exec> RecursiveWhereEvaluator<'a, 'ctx, 'exec> {
         })
     }
 
-    fn evaluate_between(
-        &self,
-        expr: &SqlExpression,
-        lower: &SqlExpression,
-        upper: &SqlExpression,
-        row_index: usize,
-    ) -> Result<Trilean> {
-        let cell_value = self.evaluate_operand_value(expr, row_index)?;
-        let lower_data_value = self
-            .evaluate_operand_value(lower, row_index)?
-            .unwrap_or(DataValue::Null);
-        let upper_data_value = self
-            .evaluate_operand_value(upper, row_index)?
-            .unwrap_or(DataValue::Null);
-
-        let table_value = cell_value.unwrap_or(DataValue::Null);
-
-        // BETWEEN is defined as `value >= lower AND value <= upper`, so it takes
-        // AND's truth table too: FALSE on either side still wins outright (a
-        // value below `lower` is not between, whatever `upper` is), and UNKNOWN
-        // only survives when the other side is TRUE or UNKNOWN.
-        let ge_lower = self.compare_trilean(&table_value, &lower_data_value, ">=");
-        let le_upper = self.compare_trilean(&table_value, &upper_data_value, "<=");
-
-        Ok(ge_lower.and(le_upper))
+    /// Evaluate a predicate with the value evaluator and read its truth value
+    /// back, NULL as UNKNOWN (R13 slice 4). An arm that delegates here has no
+    /// rules of its own left in this file: the value evaluator's arm is the
+    /// only implementation, and this is the one place its answer crosses back
+    /// into a `Trilean`.
+    fn evaluate_delegated(&self, expr: &SqlExpression, row_index: usize) -> Result<Trilean> {
+        let value = self.evaluate_arithmetic(expr, row_index)?;
+        Trilean::from_value(&value)
+            .ok_or_else(|| anyhow!("Predicate did not evaluate to a truth value: {value:?}"))
     }
 
     fn evaluate_method_call(
@@ -1181,6 +1167,21 @@ impl<'a, 'ctx, 'exec> RecursiveWhereEvaluator<'a, 'ctx, 'exec> {
             // and coerce -- the same rule the WHERE predicate path uses.
             _ => self.evaluate_value_as_predicate(expr, row_index),
         }
+    }
+}
+
+/// A raw window function in a WHERE operand was not lifted to a CTE column.
+/// Evaluating it would compute the window over the rows the WHERE is still
+/// filtering, so an inline `QUALIFY ROW_NUMBER() OVER (...) = 1` combined with
+/// a WHERE would silently rank the unfiltered table (P15). The value evaluator
+/// would evaluate one quietly, so this check stays on WHERE's side of every arm
+/// that delegates to it.
+fn reject_unlifted_window(expr: &SqlExpression) -> Result<()> {
+    match expr {
+        SqlExpression::WindowFunction { name, .. } => Err(anyhow!(
+            "Window function {name} cannot be used directly in a comparison (the expression was not lifted to a CTE column)"
+        )),
+        _ => Ok(()),
     }
 }
 
