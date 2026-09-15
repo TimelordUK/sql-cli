@@ -119,12 +119,12 @@ impl<'a> ArithmeticEvaluator<'a> {
     }
 
     /// Evaluate an SQL expression to produce a `DataValue`
+    ///
+    /// No logging on this path: it runs once per expression node per row, and
+    /// non-interactive mode records TRACE to a file, so a `debug!` formatting
+    /// the expression here cost more than evaluating it (2.5 s of a 5 s
+    /// `WHERE price + 0 > quantity` over 100k rows).
     pub fn evaluate(&mut self, expr: &SqlExpression, row_index: usize) -> Result<DataValue> {
-        debug!(
-            "ArithmeticEvaluator: evaluating {:?} for row {}",
-            expr, row_index
-        );
-
         match expr {
             SqlExpression::Column(column_ref) => self.evaluate_column_ref(column_ref, row_index),
             SqlExpression::StringLiteral(s) => Ok(DataValue::String(s.clone())),
@@ -225,10 +225,6 @@ impl<'a> ArithmeticEvaluator<'a> {
             let qualified_name = format!("{}.{}", actual_table, column_ref.name);
 
             if let Some(col_idx) = self.table.find_column_by_qualified_name(&qualified_name) {
-                debug!(
-                    "Resolved {}.{} -> '{}' at index {}",
-                    table_prefix, column_ref.name, qualified_name, col_idx
-                );
                 return self
                     .table
                     .get_value(row_index, col_idx)
@@ -238,10 +234,6 @@ impl<'a> ArithmeticEvaluator<'a> {
 
             // Fallback: try unqualified lookup
             if let Some(col_idx) = self.table.get_column_index(&column_ref.name) {
-                debug!(
-                    "Resolved {}.{} -> unqualified '{}' at index {}",
-                    table_prefix, column_ref.name, column_ref.name, col_idx
-                );
                 return self
                     .table
                     .get_value(row_index, col_idx)
@@ -275,10 +267,6 @@ impl<'a> ArithmeticEvaluator<'a> {
 
                 // For now, just use the column name part
                 // In the future, we could validate the table/alias part
-                debug!(
-                    "Resolving qualified column: {} -> {}",
-                    column_name, col_name
-                );
                 col_name.to_string()
             } else {
                 column_name.to_string()
@@ -357,13 +345,6 @@ impl<'a> ArithmeticEvaluator<'a> {
     ) -> Result<DataValue> {
         let left_val = self.evaluate(left, row_index)?;
         let right_val = self.evaluate(right, row_index)?;
-
-        debug!(
-            "ArithmeticEvaluator: {} {} {}",
-            self.format_value(&left_val),
-            op,
-            self.format_value(&right_val)
-        );
 
         match op {
             "+" => self.add_values(&left_val, &right_val),
@@ -483,16 +464,6 @@ impl<'a> ArithmeticEvaluator<'a> {
             (DataValue::Float(a), DataValue::Integer(b)) => Ok(DataValue::Float(a / *b as f64)),
             (DataValue::Float(a), DataValue::Float(b)) => Ok(DataValue::Float(a / b)),
             _ => Err(anyhow!("Cannot divide {:?} and {:?}", left, right)),
-        }
-    }
-
-    /// Format a `DataValue` for debug output
-    fn format_value(&self, value: &DataValue) -> String {
-        match value {
-            DataValue::Integer(i) => i.to_string(),
-            DataValue::Float(f) => f.to_string(),
-            DataValue::String(s) => format!("'{s}'"),
-            _ => format!("{value:?}"),
         }
     }
 
@@ -1431,11 +1402,6 @@ impl<'a> ArithmeticEvaluator<'a> {
 
         // Check if we have this function in the registry
         if self.function_registry.get(function_name).is_some() {
-            debug!(
-                "Proxying method '{}' through function registry as '{}'",
-                method, function_name
-            );
-
             // Prepare arguments: receiver is the first argument, followed by method args
             let mut func_args = vec![value.clone()];
 
@@ -1464,28 +1430,20 @@ impl<'a> ArithmeticEvaluator<'a> {
         else_branch: &Option<Box<SqlExpression>>,
         row_index: usize,
     ) -> Result<DataValue> {
-        debug!(
-            "ArithmeticEvaluator: evaluating CASE expression for row {}",
-            row_index
-        );
-
         // Evaluate each WHEN condition in order
         for branch in when_branches {
             // Evaluate the condition as a boolean
             let condition_result = self.evaluate_condition_as_bool(&branch.condition, row_index)?;
 
             if condition_result {
-                debug!("CASE: WHEN condition matched, evaluating result expression");
                 return self.evaluate(&branch.result, row_index);
             }
         }
 
         // If no WHEN condition matched, evaluate ELSE clause (or return NULL)
         if let Some(else_expr) = else_branch {
-            debug!("CASE: No WHEN matched, evaluating ELSE expression");
             self.evaluate(else_expr, row_index)
         } else {
-            debug!("CASE: No WHEN matched and no ELSE, returning NULL");
             Ok(DataValue::Null)
         }
     }
@@ -1498,14 +1456,8 @@ impl<'a> ArithmeticEvaluator<'a> {
         else_branch: &Option<Box<SqlExpression>>,
         row_index: usize,
     ) -> Result<DataValue> {
-        debug!(
-            "ArithmeticEvaluator: evaluating simple CASE expression for row {}",
-            row_index
-        );
-
         // Evaluate the main expression once
         let case_value = self.evaluate(expr, row_index)?;
-        debug!("Simple CASE: evaluated expression to {:?}", case_value);
 
         // Compare against each WHEN value in order
         for branch in when_branches {
@@ -1514,17 +1466,14 @@ impl<'a> ArithmeticEvaluator<'a> {
 
             // Check for equality
             if self.values_equal(&case_value, &when_value)? {
-                debug!("Simple CASE: WHEN value matched, evaluating result expression");
                 return self.evaluate(&branch.result, row_index);
             }
         }
 
         // If no WHEN value matched, evaluate ELSE clause (or return NULL)
         if let Some(else_expr) = else_branch {
-            debug!("Simple CASE: No WHEN matched, evaluating ELSE expression");
             self.evaluate(else_expr, row_index)
         } else {
-            debug!("Simple CASE: No WHEN matched and no ELSE, returning NULL");
             Ok(DataValue::Null)
         }
     }
