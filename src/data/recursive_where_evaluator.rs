@@ -496,15 +496,19 @@ impl<'a, 'ctx, 'exec> RecursiveWhereEvaluator<'a, 'ctx, 'exec> {
             SqlExpression::BinaryOp { left, op, right } => {
                 self.evaluate_binary_op(left, op, right, row_index)
             }
-            SqlExpression::InList { expr, values } => {
-                self.evaluate_in_list(expr, values, row_index, false)
+            SqlExpression::InList {
+                expr: probe,
+                values,
             }
-            SqlExpression::NotInList { expr, values } => {
-                let in_result = self.evaluate_in_list(expr, values, row_index, false)?;
-                // Three-valued negation: once `evaluate_in_list` can return
-                // UNKNOWN (a NULL operand, or a NULL in the list), this must
-                // stay UNKNOWN rather than flip to TRUE. That flip is P19.
-                Ok(in_result.negate())
+            | SqlExpression::NotInList {
+                expr: probe,
+                values,
+            } => {
+                reject_unlifted_window(probe)?;
+                for item in values {
+                    reject_unlifted_window(item)?;
+                }
+                self.evaluate_delegated(expr, row_index)
             }
             SqlExpression::Between {
                 expr: value,
@@ -820,43 +824,6 @@ impl<'a, 'ctx, 'exec> RecursiveWhereEvaluator<'a, 'ctx, 'exec> {
             }
         })
         .evaluate(expr, row_index)
-    }
-
-    fn evaluate_in_list(
-        &self,
-        expr: &SqlExpression,
-        values: &[SqlExpression],
-        row_index: usize,
-        _ignore_case: bool,
-    ) -> Result<Trilean> {
-        let cell_value = self.evaluate_operand_value(expr, row_index)?;
-
-        // `x IN (a, b, ...)` is `x = a OR x = b OR ...`, so it inherits OR's
-        // truth table: a TRUE anywhere wins outright, but if nothing matched
-        // and any comparison was UNKNOWN, the answer is UNKNOWN — not FALSE.
-        // That distinction is invisible under `IN` (both drop the row) and is
-        // the whole of P19 under `NOT IN`, where FALSE would wrongly negate to
-        // TRUE and admit the NULL rows.
-        let mut saw_unknown = false;
-
-        let table_value = cell_value.as_ref().unwrap_or(&DataValue::Null);
-        for value_expr in values {
-            let comparison_value = self
-                .evaluate_operand_value(value_expr, row_index)?
-                .unwrap_or(DataValue::Null);
-
-            match self.compare_trilean(table_value, &comparison_value, "=") {
-                Trilean::True => return Ok(Trilean::True),
-                Trilean::Unknown => saw_unknown = true,
-                Trilean::False => {}
-            }
-        }
-
-        Ok(if saw_unknown {
-            Trilean::Unknown
-        } else {
-            Trilean::False
-        })
     }
 
     /// Evaluate a predicate with the value evaluator and read its truth value
