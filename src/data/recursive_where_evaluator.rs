@@ -4,6 +4,7 @@ use crate::data::evaluation_context::EvaluationContext;
 use crate::data::query_engine::ExecutionContext;
 use crate::data::trilean::Trilean;
 use crate::data::value_comparisons::compare_with_op;
+use crate::sql::parser::ast::ColumnRef;
 use crate::sql::recursive_parser::{Condition, LogicalOp, SqlExpression, WhereClause};
 use anyhow::{anyhow, Result};
 use chrono::{Local, NaiveDate, NaiveDateTime, NaiveTime};
@@ -748,19 +749,8 @@ impl<'a, 'ctx, 'exec> RecursiveWhereEvaluator<'a, 'ctx, 'exec> {
         row_index: usize,
     ) -> Result<Option<DataValue>> {
         match expr {
-            SqlExpression::Column(_) => {
-                let column_name = self.extract_column_name(expr)?;
-                let col_index =
-                    self.table.get_column_index(&column_name).ok_or_else(|| {
-                        match self.find_similar_column(&column_name) {
-                            Some(similar) => anyhow!(
-                                "Column '{}' not found. Did you mean '{}'?",
-                                column_name,
-                                similar
-                            ),
-                            None => anyhow!("Column '{}' not found", column_name),
-                        }
-                    })?;
+            SqlExpression::Column(column_ref) => {
+                let col_index = self.resolve_column_index(column_ref)?;
                 Ok(self.table.get_value(row_index, col_index).cloned())
             }
             SqlExpression::StringLiteral(s) => Ok(Some(DataValue::String(s.clone()))),
@@ -818,7 +808,14 @@ impl<'a, 'ctx, 'exec> RecursiveWhereEvaluator<'a, 'ctx, 'exec> {
     fn evaluate_arithmetic(&self, expr: &SqlExpression, row_index: usize) -> Result<DataValue> {
         let mut slot = self.arithmetic.borrow_mut();
         slot.get_or_insert_with(|| {
-            ArithmeticEvaluator::new(self.table).with_case_insensitive(self.case_insensitive)
+            let evaluator =
+                ArithmeticEvaluator::new(self.table).with_case_insensitive(self.case_insensitive);
+            // The same aliases WHERE's own column operands resolve through,
+            // so `i.a` means the same column inside an expression operand.
+            match self.exec_context {
+                Some(exec_ctx) => evaluator.with_table_aliases(exec_ctx.get_aliases()),
+                None => evaluator,
+            }
         })
         .evaluate(expr, row_index)
     }
@@ -1050,30 +1047,30 @@ impl<'a, 'ctx, 'exec> RecursiveWhereEvaluator<'a, 'ctx, 'exec> {
         }
     }
 
-    fn extract_column_name(&self, expr: &SqlExpression) -> Result<String> {
-        match expr {
-            SqlExpression::Column(column_ref) => {
-                // Use ExecutionContext for proper alias resolution if available
-                if let Some(exec_ctx) = self.exec_context {
-                    // Use the unified column resolution
-                    let col_idx = exec_ctx.resolve_column_index(self.table, column_ref)?;
-                    // Return the actual column name (not the qualified one)
-                    Ok(self.table.column_names()[col_idx].clone())
-                } else {
-                    // Fallback: Handle qualified column names the old way (for backward compatibility)
-                    if column_ref.name.contains('.') {
-                        if let Some(dot_pos) = column_ref.name.rfind('.') {
-                            Ok(column_ref.name[dot_pos + 1..].to_string())
-                        } else {
-                            Ok(column_ref.name.clone())
-                        }
-                    } else {
-                        Ok(column_ref.name.clone())
-                    }
-                }
-            }
-            _ => Err(anyhow::anyhow!("Expected column name, got: {:?}", expr)),
+    /// The index of a column operand. With an `ExecutionContext` this is the
+    /// unified alias-aware resolution, and its answer is the index itself: it
+    /// used to be turned back into a bare name and looked up again, which
+    /// finds the first column of that name rather than the one the qualifier
+    /// picked.
+    fn resolve_column_index(&self, column_ref: &ColumnRef) -> Result<usize> {
+        if let Some(exec_ctx) = self.exec_context {
+            return exec_ctx.resolve_column_index(self.table, column_ref);
         }
+        // Without a context: a dotted name is read as its last segment.
+        let column_name = match column_ref.name.rfind('.') {
+            Some(dot_pos) => &column_ref.name[dot_pos + 1..],
+            None => column_ref.name.as_str(),
+        };
+        self.table.get_column_index(column_name).ok_or_else(|| {
+            match self.find_similar_column(column_name) {
+                Some(similar) => anyhow!(
+                    "Column '{}' not found. Did you mean '{}'?",
+                    column_name,
+                    similar
+                ),
+                None => anyhow!("Column '{}' not found", column_name),
+            }
+        })
     }
 
     fn extract_string_value(&self, expr: &SqlExpression) -> Result<String> {
@@ -1697,10 +1694,10 @@ mod operand_resolution_tests {
         // `orders.a` first, so a wrong resolution shows as a wrong answer.
         //
         // Latent, not reachable from SQL as probed: join output already
-        // disambiguates duplicate names before WHERE sees them. But WHERE's
-        // column fast path resolves the alias to an index and then looks the
-        // bare name up again, and the inner value evaluator is given no
-        // aliases at all -- so both answer from `orders.a` here.
+        // disambiguates duplicate names before WHERE sees them. WHERE's column
+        // fast path used to resolve the alias to an index and then look the
+        // bare name up again, and the inner value evaluator was given no
+        // aliases -- so both answered from `orders.a` here.
         let t = joined();
         let mut ctx = ExecutionContext::new();
         ctx.register_alias("i".to_string(), "items".to_string());
@@ -1714,11 +1711,11 @@ mod operand_resolution_tests {
         };
         // (predicate, correct answer for row 0, answer today if it differs)
         for (predicate, correct, known) in [
-            ("i.a = 7", Trilean::True, Some(Trilean::False)),
-            ("i.a BETWEEN 5 AND 8", Trilean::True, Some(Trilean::False)),
-            ("i.a IN (7, 99)", Trilean::True, Some(Trilean::False)),
-            ("i.a NOT IN (7, 99)", Trilean::False, Some(Trilean::True)),
-            ("i.a + 0 = 7", Trilean::True, Some(Trilean::False)),
+            ("i.a = 7", Trilean::True, None),
+            ("i.a BETWEEN 5 AND 8", Trilean::True, None),
+            ("i.a IN (7, 99)", Trilean::True, None),
+            ("i.a NOT IN (7, 99)", Trilean::False, None),
+            ("i.a + 0 = 7", Trilean::True, None),
         ] {
             let observed = eval(predicate, 0);
             match known {
