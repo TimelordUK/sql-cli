@@ -473,7 +473,7 @@ feature work**, and so we can tell the difference between "this is awkward" and
 ### R13 — Two expression evaluators, every boolean operator implemented twice
 - **Status:** 🟡 IN PROGRESS — filed 2026-09-13 out of [P46](SQL_PARITY.md#p46);
   **slices 1 and 2 done 2026-09-13, slice 3 (with 3b) done 2026-09-14**, slice 4
-  next.
+  in progress (`BETWEEN`, `IN`, `NOT IN` delegated 2026-09-15).
   **The active workstream:** parity fixes that touch expression evaluation land
   as slices of this entry, not as patches.
 - **Where:** `src/data/arithmetic_evaluator.rs` (`ArithmeticEvaluator`, value →
@@ -597,6 +597,44 @@ feature work**, and so we can tell the difference between "this is awkward" and
     `CASE x WHEN 'v'` (its own `values_equal`, with its own numeric rules — goes
     with slice 4) and method calls such as `.Contains()` routed to registry
     functions (slice 5).
+- **Slice 4, first part (2026-09-15).** `BETWEEN`, `IN` and `NOT IN` in WHERE
+  now evaluate through the value evaluator and cross back once, in
+  `evaluate_delegated` (`Trilean::from_value`); WHERE's own copies of the
+  AND/OR-over-comparisons rules are deleted. The P15 raw-window-operand check
+  stays on WHERE's side of the delegation (`reject_unlifted_window`) — the value
+  evaluator would evaluate one quietly. Five commits, parity report
+  byte-identical after each, matrix green in both runs:
+  - *Pin, then fix, alias resolution.* Delegating moves column resolution onto
+    the value evaluator, so both resolvers were probed first. Both were wrong
+    for an alias-qualified operand over two columns sharing a name: WHERE's fast
+    path resolved `i.a` to an index through the `ExecutionContext`, turned it
+    back into the bare name and looked *that* up (finding the first `a`), and
+    the inner value evaluator was built with no aliases. Latent — join output
+    disambiguates duplicate names before WHERE sees them, so no SQL probe
+    reached it — but pinned as five recorded divergences, then fixed by using
+    the index directly and handing the context's aliases in.
+  - *Logging was the cost.* The first delegation (BETWEEN) looked like a 6×
+    per-row regression. It was not the evaluator: non-interactive mode records
+    TRACE to a ring buffer and a log file, and `ArithmeticEvaluator::evaluate`
+    formatted the expression with `{:?}` at every node of every row. Removed —
+    and every existing value-evaluator path got faster with it (over
+    `trades_100000.csv`, ~2.4 s load: `WHERE price + 0 > quantity` 5.5 → 3.0 s,
+    `SELECT price * quantity` 4.8 → 2.6 s, `GROUP BY UPPER(trader)` 4.3 →
+    2.6 s). Delegated BETWEEN / IN / NOT IN each ended *faster* than the arm
+    they replaced.
+  - *Still ahead for the comparison arms* — each needs its own pin, since the
+    operand readers are not quite the same: WHERE reads `DATETIME(...)` as a
+    `DateTime` and `TODAY` in **local** time, the value evaluator as a `String`
+    and in **UTC** (the two disagree near midnight); WHERE reads `5.0` as
+    `Integer`, the value evaluator as `Float`; a comparison's left side may be a
+    legacy method call (`Length()`, `IndexOf()`, `Trim*()`) with no registry
+    twin yet (slice 5). `LIKE` has a regex cache in `EvaluationContext` that the
+    value evaluator's matcher does not use. `AND` / `OR` / `NOT` / `CASE` stay
+    recursive until their children can be WHERE-only method calls no longer.
+  - *Noticed, not done:* `WHERE price > quantity` (WHERE's own path) still runs
+    ~1 s over load where the delegated shapes do not — likely more per-row
+    logging in or around the WHERE loop; and window evaluation logs `info!`
+    timings per row (out of R13's scope).
 - **Slices, in the R10 pattern — no-op slices kept apart from the one that
   changes answers:**
   1. ✅ **Pin the divergences, no engine change.** *(Done 2026-09-13.)* A per-operator matrix run through
@@ -662,7 +700,7 @@ R8 legacy WHERE ──── independent; stage 2 is self-contained, do it in a 
 R10 Trilean ──────── DONE; closed P18/P19 (parity 125 → 129)
 R11 ORDER BY resolver ─ independent; small, but a behaviour change — wants its own parity run
 R12 aggregate registries ─ independent; step 1 is a provable no-op, do it before the next aggregate fix
-R13 one evaluator ─── ACTIVE from 2026-09-13; slices 1 (pin), 2 (3VL), 3 (construction + case mode) DONE → 4–6 (retire WHERE arms)
+R13 one evaluator ─── ACTIVE from 2026-09-13; slices 1 (pin), 2 (3VL), 3 (construction + case mode) DONE; 4 IN PROGRESS (BETWEEN/IN done) → 5–6
 ```
 
 **A note on ordering, from the P18/P19 work being next.** The WHERE evaluator
@@ -703,3 +741,4 @@ AGREE count — which makes it safe to land well before the semantics change.
 | 2026-09-13 | R13 slice 1: evaluator matrix (36 predicates × both evaluators × 5 NULL-bearing rows, DuckDB-derived expectations). WHERE 36/36, value evaluator 4/36. P48 widened; P50–P52 filed; six corpus cases, AGREE unchanged | — |
 | 2026-09-13 | R13 slice 2: value evaluator three-valued; `Trilean::from_value`/`to_value`; `to_bool` removed. Matrix value column 4/36 → 36/36 in one change. Closes P48, P50 — 168 → **174 AGREE** | — |
 | 2026-09-14 | R13 slice 3: registries built once per process; one `ArithmeticEvaluator` constructor, dead date-notation plumbing deleted — parity byte-identical, high-cardinality GROUP BY ~2× faster. 3b: case-insensitive mode pinned (11 matrix + 5 clause cases) then handed in at every construction site; all flipped, parity byte-identical | — |
+| 2026-09-15 | R13 slice 4 (first part): WHERE's `BETWEEN`, `IN`, `NOT IN` delegate to the value evaluator. Latent alias-resolution fault pinned and fixed first; per-node TRACE logging found to be most of the value evaluator's cost and removed (SELECT/GROUP BY expressions ~2 s faster over 100k rows). Parity byte-identical at every commit | — |

@@ -4,6 +4,7 @@ use crate::data::evaluation_context::EvaluationContext;
 use crate::data::query_engine::ExecutionContext;
 use crate::data::trilean::Trilean;
 use crate::data::value_comparisons::compare_with_op;
+use crate::sql::parser::ast::ColumnRef;
 use crate::sql::recursive_parser::{Condition, LogicalOp, SqlExpression, WhereClause};
 use anyhow::{anyhow, Result};
 use chrono::{Local, NaiveDate, NaiveDateTime, NaiveTime};
@@ -495,18 +496,29 @@ impl<'a, 'ctx, 'exec> RecursiveWhereEvaluator<'a, 'ctx, 'exec> {
             SqlExpression::BinaryOp { left, op, right } => {
                 self.evaluate_binary_op(left, op, right, row_index)
             }
-            SqlExpression::InList { expr, values } => {
-                self.evaluate_in_list(expr, values, row_index, false)
+            SqlExpression::InList {
+                expr: probe,
+                values,
             }
-            SqlExpression::NotInList { expr, values } => {
-                let in_result = self.evaluate_in_list(expr, values, row_index, false)?;
-                // Three-valued negation: once `evaluate_in_list` can return
-                // UNKNOWN (a NULL operand, or a NULL in the list), this must
-                // stay UNKNOWN rather than flip to TRUE. That flip is P19.
-                Ok(in_result.negate())
+            | SqlExpression::NotInList {
+                expr: probe,
+                values,
+            } => {
+                reject_unlifted_window(probe)?;
+                for item in values {
+                    reject_unlifted_window(item)?;
+                }
+                self.evaluate_delegated(expr, row_index)
             }
-            SqlExpression::Between { expr, lower, upper } => {
-                self.evaluate_between(expr, lower, upper, row_index)
+            SqlExpression::Between {
+                expr: value,
+                lower,
+                upper,
+            } => {
+                for operand in [value, lower, upper] {
+                    reject_unlifted_window(operand)?;
+                }
+                self.evaluate_delegated(expr, row_index)
             }
             SqlExpression::Not { expr } => {
                 let inner_result = self.evaluate_expression(expr, row_index)?;
@@ -748,19 +760,8 @@ impl<'a, 'ctx, 'exec> RecursiveWhereEvaluator<'a, 'ctx, 'exec> {
         row_index: usize,
     ) -> Result<Option<DataValue>> {
         match expr {
-            SqlExpression::Column(_) => {
-                let column_name = self.extract_column_name(expr)?;
-                let col_index =
-                    self.table.get_column_index(&column_name).ok_or_else(|| {
-                        match self.find_similar_column(&column_name) {
-                            Some(similar) => anyhow!(
-                                "Column '{}' not found. Did you mean '{}'?",
-                                column_name,
-                                similar
-                            ),
-                            None => anyhow!("Column '{}' not found", column_name),
-                        }
-                    })?;
+            SqlExpression::Column(column_ref) => {
+                let col_index = self.resolve_column_index(column_ref)?;
                 Ok(self.table.get_value(row_index, col_index).cloned())
             }
             SqlExpression::StringLiteral(s) => Ok(Some(DataValue::String(s.clone()))),
@@ -801,15 +802,10 @@ impl<'a, 'ctx, 'exec> RecursiveWhereEvaluator<'a, 'ctx, 'exec> {
                 .ok_or_else(|| anyhow::anyhow!("Invalid time"))?;
                 Ok(Some(datetime_value(NaiveDateTime::new(today, time))))
             }
-            // Same rule as `evaluate_value_as_predicate`: a raw window function
-            // here was not lifted to a CTE column. Evaluating it would compute
-            // the window over the rows the WHERE is still filtering, so an
-            // inline `QUALIFY ROW_NUMBER() OVER (...) = 1` combined with a WHERE
-            // would silently rank the unfiltered table (P15).
-            SqlExpression::WindowFunction { name, .. } => Err(anyhow!(
-                "Window function {name} cannot be used directly in a comparison (the expression was not lifted to a CTE column)"
-            )),
-            _ => Ok(Some(self.evaluate_arithmetic(expr, row_index)?)),
+            _ => {
+                reject_unlifted_window(expr)?;
+                Ok(Some(self.evaluate_arithmetic(expr, row_index)?))
+            }
         }
     }
 
@@ -818,73 +814,27 @@ impl<'a, 'ctx, 'exec> RecursiveWhereEvaluator<'a, 'ctx, 'exec> {
     fn evaluate_arithmetic(&self, expr: &SqlExpression, row_index: usize) -> Result<DataValue> {
         let mut slot = self.arithmetic.borrow_mut();
         slot.get_or_insert_with(|| {
-            ArithmeticEvaluator::new(self.table).with_case_insensitive(self.case_insensitive)
+            let evaluator =
+                ArithmeticEvaluator::new(self.table).with_case_insensitive(self.case_insensitive);
+            // The same aliases WHERE's own column operands resolve through,
+            // so `i.a` means the same column inside an expression operand.
+            match self.exec_context {
+                Some(exec_ctx) => evaluator.with_table_aliases(exec_ctx.get_aliases()),
+                None => evaluator,
+            }
         })
         .evaluate(expr, row_index)
     }
 
-    fn evaluate_in_list(
-        &self,
-        expr: &SqlExpression,
-        values: &[SqlExpression],
-        row_index: usize,
-        _ignore_case: bool,
-    ) -> Result<Trilean> {
-        let cell_value = self.evaluate_operand_value(expr, row_index)?;
-
-        // `x IN (a, b, ...)` is `x = a OR x = b OR ...`, so it inherits OR's
-        // truth table: a TRUE anywhere wins outright, but if nothing matched
-        // and any comparison was UNKNOWN, the answer is UNKNOWN — not FALSE.
-        // That distinction is invisible under `IN` (both drop the row) and is
-        // the whole of P19 under `NOT IN`, where FALSE would wrongly negate to
-        // TRUE and admit the NULL rows.
-        let mut saw_unknown = false;
-
-        let table_value = cell_value.as_ref().unwrap_or(&DataValue::Null);
-        for value_expr in values {
-            let comparison_value = self
-                .evaluate_operand_value(value_expr, row_index)?
-                .unwrap_or(DataValue::Null);
-
-            match self.compare_trilean(table_value, &comparison_value, "=") {
-                Trilean::True => return Ok(Trilean::True),
-                Trilean::Unknown => saw_unknown = true,
-                Trilean::False => {}
-            }
-        }
-
-        Ok(if saw_unknown {
-            Trilean::Unknown
-        } else {
-            Trilean::False
-        })
-    }
-
-    fn evaluate_between(
-        &self,
-        expr: &SqlExpression,
-        lower: &SqlExpression,
-        upper: &SqlExpression,
-        row_index: usize,
-    ) -> Result<Trilean> {
-        let cell_value = self.evaluate_operand_value(expr, row_index)?;
-        let lower_data_value = self
-            .evaluate_operand_value(lower, row_index)?
-            .unwrap_or(DataValue::Null);
-        let upper_data_value = self
-            .evaluate_operand_value(upper, row_index)?
-            .unwrap_or(DataValue::Null);
-
-        let table_value = cell_value.unwrap_or(DataValue::Null);
-
-        // BETWEEN is defined as `value >= lower AND value <= upper`, so it takes
-        // AND's truth table too: FALSE on either side still wins outright (a
-        // value below `lower` is not between, whatever `upper` is), and UNKNOWN
-        // only survives when the other side is TRUE or UNKNOWN.
-        let ge_lower = self.compare_trilean(&table_value, &lower_data_value, ">=");
-        let le_upper = self.compare_trilean(&table_value, &upper_data_value, "<=");
-
-        Ok(ge_lower.and(le_upper))
+    /// Evaluate a predicate with the value evaluator and read its truth value
+    /// back, NULL as UNKNOWN (R13 slice 4). An arm that delegates here has no
+    /// rules of its own left in this file: the value evaluator's arm is the
+    /// only implementation, and this is the one place its answer crosses back
+    /// into a `Trilean`.
+    fn evaluate_delegated(&self, expr: &SqlExpression, row_index: usize) -> Result<Trilean> {
+        let value = self.evaluate_arithmetic(expr, row_index)?;
+        Trilean::from_value(&value)
+            .ok_or_else(|| anyhow!("Predicate did not evaluate to a truth value: {value:?}"))
     }
 
     fn evaluate_method_call(
@@ -1050,30 +1000,30 @@ impl<'a, 'ctx, 'exec> RecursiveWhereEvaluator<'a, 'ctx, 'exec> {
         }
     }
 
-    fn extract_column_name(&self, expr: &SqlExpression) -> Result<String> {
-        match expr {
-            SqlExpression::Column(column_ref) => {
-                // Use ExecutionContext for proper alias resolution if available
-                if let Some(exec_ctx) = self.exec_context {
-                    // Use the unified column resolution
-                    let col_idx = exec_ctx.resolve_column_index(self.table, column_ref)?;
-                    // Return the actual column name (not the qualified one)
-                    Ok(self.table.column_names()[col_idx].clone())
-                } else {
-                    // Fallback: Handle qualified column names the old way (for backward compatibility)
-                    if column_ref.name.contains('.') {
-                        if let Some(dot_pos) = column_ref.name.rfind('.') {
-                            Ok(column_ref.name[dot_pos + 1..].to_string())
-                        } else {
-                            Ok(column_ref.name.clone())
-                        }
-                    } else {
-                        Ok(column_ref.name.clone())
-                    }
-                }
-            }
-            _ => Err(anyhow::anyhow!("Expected column name, got: {:?}", expr)),
+    /// The index of a column operand. With an `ExecutionContext` this is the
+    /// unified alias-aware resolution, and its answer is the index itself: it
+    /// used to be turned back into a bare name and looked up again, which
+    /// finds the first column of that name rather than the one the qualifier
+    /// picked.
+    fn resolve_column_index(&self, column_ref: &ColumnRef) -> Result<usize> {
+        if let Some(exec_ctx) = self.exec_context {
+            return exec_ctx.resolve_column_index(self.table, column_ref);
         }
+        // Without a context: a dotted name is read as its last segment.
+        let column_name = match column_ref.name.rfind('.') {
+            Some(dot_pos) => &column_ref.name[dot_pos + 1..],
+            None => column_ref.name.as_str(),
+        };
+        self.table.get_column_index(column_name).ok_or_else(|| {
+            match self.find_similar_column(column_name) {
+                Some(similar) => anyhow!(
+                    "Column '{}' not found. Did you mean '{}'?",
+                    column_name,
+                    similar
+                ),
+                None => anyhow!("Column '{}' not found", column_name),
+            }
+        })
     }
 
     fn extract_string_value(&self, expr: &SqlExpression) -> Result<String> {
@@ -1184,6 +1134,21 @@ impl<'a, 'ctx, 'exec> RecursiveWhereEvaluator<'a, 'ctx, 'exec> {
             // and coerce -- the same rule the WHERE predicate path uses.
             _ => self.evaluate_value_as_predicate(expr, row_index),
         }
+    }
+}
+
+/// A raw window function in a WHERE operand was not lifted to a CTE column.
+/// Evaluating it would compute the window over the rows the WHERE is still
+/// filtering, so an inline `QUALIFY ROW_NUMBER() OVER (...) = 1` combined with
+/// a WHERE would silently rank the unfiltered table (P15). The value evaluator
+/// would evaluate one quietly, so this check stays on WHERE's side of every arm
+/// that delegates to it.
+fn reject_unlifted_window(expr: &SqlExpression) -> Result<()> {
+    match expr {
+        SqlExpression::WindowFunction { name, .. } => Err(anyhow!(
+            "Window function {name} cannot be used directly in a comparison (the expression was not lifted to a CTE column)"
+        )),
+        _ => Ok(()),
     }
 }
 
@@ -1650,5 +1615,84 @@ mod operand_resolution_tests {
         let err = try_eval(&t, "ROW_NUMBER() OVER (ORDER BY a) = 1", 0)
             .expect_err("a raw window operand must not evaluate quietly");
         assert!(err.to_string().contains("ROW_NUMBER"), "got: {err}");
+    }
+
+    #[test]
+    fn a_raw_window_operand_errors_in_between_and_in_too() {
+        // Same P15 rule in every operand position, so it has to survive these
+        // arms delegating to the value evaluator (R13 slice 4), which would
+        // otherwise evaluate the window function over the unfiltered rows.
+        let t = pairs();
+        for predicate in [
+            "ROW_NUMBER() OVER (ORDER BY a) BETWEEN 1 AND 2",
+            "a BETWEEN ROW_NUMBER() OVER (ORDER BY a) AND 10",
+            "ROW_NUMBER() OVER (ORDER BY a) IN (1, 2)",
+            "a IN (ROW_NUMBER() OVER (ORDER BY a), 2)",
+            "ROW_NUMBER() OVER (ORDER BY a) NOT IN (1, 2)",
+        ] {
+            let err = try_eval(&t, predicate, 0)
+                .expect_err("a raw window operand must not evaluate quietly");
+            assert!(
+                err.to_string().contains("ROW_NUMBER"),
+                "{predicate}: got {err}"
+            );
+        }
+    }
+
+    /// Two source tables joined, both with a column `a`, qualified by table
+    /// name: row 0 = (orders.a 1, items.a 7), row 1 = (2, 9).
+    fn joined() -> DataTable {
+        let mut table = DataTable::new("joined");
+        table.add_column(DataColumn::new("a").with_qualified_name("orders"));
+        table.add_column(DataColumn::new("a").with_qualified_name("items"));
+        for (o, i) in [(1, 7), (2, 9)] {
+            table
+                .add_row(DataRow::new(vec![
+                    DataValue::Integer(o),
+                    DataValue::Integer(i),
+                ]))
+                .unwrap();
+        }
+        table
+    }
+
+    #[test]
+    fn alias_qualified_operands_resolve_through_the_execution_context() {
+        // `i` is an alias for `items`. The unqualified fallback would find
+        // `orders.a` first, so a wrong resolution shows as a wrong answer.
+        //
+        // Latent, not reachable from SQL as probed: join output already
+        // disambiguates duplicate names before WHERE sees them. WHERE's column
+        // fast path used to resolve the alias to an index and then look the
+        // bare name up again, and the inner value evaluator was given no
+        // aliases -- so both answered from `orders.a` here.
+        let t = joined();
+        let mut ctx = ExecutionContext::new();
+        ctx.register_alias("i".to_string(), "items".to_string());
+        let eval = |predicate: &str, row: usize| {
+            let sql = format!("SELECT * FROM joined WHERE {predicate}");
+            let statement = Parser::new(&sql).parse().expect("failed to parse");
+            let where_clause = statement.where_clause.expect("expected a WHERE clause");
+            RecursiveWhereEvaluator::with_exec_context(&t, &ctx, false)
+                .evaluate(&where_clause, row)
+                .expect("evaluation failed")
+        };
+        // (predicate, correct answer for row 0, answer today if it differs)
+        for (predicate, correct, known) in [
+            ("i.a = 7", Trilean::True, None),
+            ("i.a BETWEEN 5 AND 8", Trilean::True, None),
+            ("i.a IN (7, 99)", Trilean::True, None),
+            ("i.a NOT IN (7, 99)", Trilean::False, None),
+            ("i.a + 0 = 7", Trilean::True, None),
+        ] {
+            let observed = eval(predicate, 0);
+            match known {
+                Some(today) => assert_eq!(
+                    observed, today,
+                    "{predicate}: recorded divergence changed -- if fixed, drop it"
+                ),
+                None => assert_eq!(observed, correct, "{predicate}"),
+            }
+        }
     }
 }
