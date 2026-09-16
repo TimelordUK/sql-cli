@@ -102,6 +102,11 @@ impl ExecutionContext {
     /// 2. If column_ref has no prefix:
     ///    a. Try simple column name lookup: "amount"
     ///    b. Try as qualified name if it contains a dot: "table.column"
+    ///
+    /// No logging on the success paths: WHERE resolves every column operand of
+    /// every row through here, and non-interactive mode records TRACE to a
+    /// file, so a `debug!` per resolution cost ~470 ms per column operand over
+    /// 100k rows -- more than the comparison it was resolving for.
     pub fn resolve_column_index(&self, table: &DataTable, column_ref: &ColumnRef) -> Result<usize> {
         if let Some(table_prefix) = &column_ref.table_prefix {
             // Qualified column reference: resolve the alias first
@@ -110,19 +115,11 @@ impl ExecutionContext {
             // Try qualified lookup: "actual_table.column"
             let qualified_name = format!("{}.{}", actual_table, column_ref.name);
             if let Some(idx) = table.find_column_by_qualified_name(&qualified_name) {
-                debug!(
-                    "Resolved {}.{} -> qualified column '{}' at index {}",
-                    table_prefix, column_ref.name, qualified_name, idx
-                );
                 return Ok(idx);
             }
 
             // Fall back to unqualified lookup
             if let Some(idx) = table.get_column_index(&column_ref.name) {
-                debug!(
-                    "Resolved {}.{} -> unqualified column '{}' at index {}",
-                    table_prefix, column_ref.name, column_ref.name, idx
-                );
                 return Ok(idx);
             }
 
@@ -138,20 +135,12 @@ impl ExecutionContext {
         } else {
             // Unqualified column reference
             if let Some(idx) = table.get_column_index(&column_ref.name) {
-                debug!(
-                    "Resolved unqualified column '{}' at index {}",
-                    column_ref.name, idx
-                );
                 return Ok(idx);
             }
 
             // If the column name contains a dot, try it as a qualified name
             if column_ref.name.contains('.') {
                 if let Some(idx) = table.find_column_by_qualified_name(&column_ref.name) {
-                    debug!(
-                        "Resolved '{}' as qualified column at index {}",
-                        column_ref.name, idx
-                    );
                     return Ok(idx);
                 }
             }

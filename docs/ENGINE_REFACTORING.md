@@ -631,10 +631,14 @@ feature work**, and so we can tell the difference between "this is awkward" and
     twin yet (slice 5). `LIKE` has a regex cache in `EvaluationContext` that the
     value evaluator's matcher does not use. `AND` / `OR` / `NOT` / `CASE` stay
     recursive until their children can be WHERE-only method calls no longer.
-  - *Noticed, not done:* `WHERE price > quantity` (WHERE's own path) still runs
-    ~1 s over load where the delegated shapes do not — likely more per-row
-    logging in or around the WHERE loop; and window evaluation logs `info!`
-    timings per row (out of R13's scope).
+  - *The same finding, once more (2026-09-16).* `WHERE price > quantity` still
+    carried ~1 s over load after the above. Same cause, one level down:
+    `ExecutionContext::resolve_column_index` logged every successful
+    resolution, and WHERE resolves each column operand of each row through it —
+    ~470 ms per column operand over 100k rows. Removed; col-col 3.34 → 2.42 s,
+    `price > 100` 2.83 → 2.42 s, `LIKE` 2.87 → 2.43 s, all now at load time.
+    Still outstanding: window evaluation logs `info!` timings per row (out of
+    R13's scope).
 - **Slices, in the R10 pattern — no-op slices kept apart from the one that
   changes answers:**
   1. ✅ **Pin the divergences, no engine change.** *(Done 2026-09-13.)* A per-operator matrix run through
