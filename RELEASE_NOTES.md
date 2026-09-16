@@ -1,44 +1,42 @@
-# SQL CLI v1.85.5
+# SQL CLI v1.85.6
 
-**Release Date:** September 14, 2026
+**Release Date:** September 16, 2026
 
 ## 📊 Release Overview
 - **Commits in this release:** 10
-- **Files updated:** 12
+- **Files updated:** 4
 
 ## ✨ Highlights
 
-### 🎨 Visual Improvements
+### 🔍 Enhanced Debugging
+- **Better Diagnostics**: Improved error messages and state dumps
 
 ## 📝 Changes by Category
 
-### 🚀 New Features
-- add lrt, an ls -alrt built on sql-cli
-
 ### 🐛 Bug Fixes
-- honour case-insensitive mode in the value evaluator (R13 slice 3b)
-- align ANSI-coloured cells under --table-style
+- WHERE column operands keep their resolved index; inner evaluator gets aliases (R13 slice 4)
 
 ### 🔧 Refactoring
-- one ArithmeticEvaluator constructor (R13 slice 3)
-- build evaluator registries once and share them (R13 slice 3)
+- WHERE's IN / NOT IN delegate to the value evaluator (R13 slice 4)
+- WHERE's BETWEEN delegates to the value evaluator (R13 slice 4)
 
 ### 📚 Documentation
-- record slice 3 and 3b
+- record the column-resolution logging follow-up
+- record slice 4 first part (BETWEEN / IN delegate, logging cost)
 
 <details>
 <summary>📋 View all commits</summary>
 
-- Merge pull request #86 from TimelordUK/refactor/r13-slice3-one-construction-path (TimelordUK)
-- docs(r13): record slice 3 and 3b (TimelordUK)
-- fix(r13): honour case-insensitive mode in the value evaluator (R13 slice 3b) (TimelordUK)
-- test(r13): pin case-insensitive divergence between evaluators (R13 slice 3b) (TimelordUK)
-- refactor(r13): one ArithmeticEvaluator constructor (R13 slice 3) (TimelordUK)
-- refactor(r13): build evaluator registries once and share them (R13 slice 3) (TimelordUK)
-- Merge pull request #85 from TimelordUK/fix/table-style-ansi-width (TimelordUK)
-- feat(scripts): add lrt, an ls -alrt built on sql-cli (TimelordUK)
-- fix(output): align ANSI-coloured cells under --table-style (TimelordUK)
-- tweak example (stephen james)
+- Merge pull request #88 from TimelordUK/perf/where-path-per-row-logging (TimelordUK)
+- docs(r13): record the column-resolution logging follow-up (TimelordUK)
+- perf: drop per-row logging from column resolution (TimelordUK)
+- Merge pull request #87 from TimelordUK/refactor/r13-slice4-where-arms-delegate (TimelordUK)
+- docs(r13): record slice 4 first part (BETWEEN / IN delegate, logging cost) (TimelordUK)
+- refactor(r13): WHERE's IN / NOT IN delegate to the value evaluator (R13 slice 4) (TimelordUK)
+- refactor(r13): WHERE's BETWEEN delegates to the value evaluator (R13 slice 4) (TimelordUK)
+- perf(r13): drop per-node logging from the value evaluator (R13 slice 4) (TimelordUK)
+- fix(r13): WHERE column operands keep their resolved index; inner evaluator gets aliases (R13 slice 4) (TimelordUK)
+- test(r13): pin window-operand guard and alias resolution for BETWEEN / IN (R13 slice 4) (TimelordUK)
 
 </details>
 
