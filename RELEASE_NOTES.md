@@ -1,42 +1,23 @@
-# SQL CLI v1.85.6
+# SQL CLI v1.85.7
 
-**Release Date:** September 16, 2026
+**Release Date:** September 17, 2026
 
 ## 📊 Release Overview
-- **Commits in this release:** 10
-- **Files updated:** 4
+- **Commits in this release:** 2
+- **Files updated:** 5
 
 ## ✨ Highlights
 
-### 🔍 Enhanced Debugging
-- **Better Diagnostics**: Improved error messages and state dumps
-
 ## 📝 Changes by Category
 
-### 🐛 Bug Fixes
-- WHERE column operands keep their resolved index; inner evaluator gets aliases (R13 slice 4)
-
-### 🔧 Refactoring
-- WHERE's IN / NOT IN delegate to the value evaluator (R13 slice 4)
-- WHERE's BETWEEN delegates to the value evaluator (R13 slice 4)
-
-### 📚 Documentation
-- record the column-resolution logging follow-up
-- record slice 4 first part (BETWEEN / IN delegate, logging cost)
+### 🚀 New Features
+- which process holds that port, with sockets() (S2)
 
 <details>
 <summary>📋 View all commits</summary>
 
-- Merge pull request #88 from TimelordUK/perf/where-path-per-row-logging (TimelordUK)
-- docs(r13): record the column-resolution logging follow-up (TimelordUK)
-- perf: drop per-row logging from column resolution (TimelordUK)
-- Merge pull request #87 from TimelordUK/refactor/r13-slice4-where-arms-delegate (TimelordUK)
-- docs(r13): record slice 4 first part (BETWEEN / IN delegate, logging cost) (TimelordUK)
-- refactor(r13): WHERE's IN / NOT IN delegate to the value evaluator (R13 slice 4) (TimelordUK)
-- refactor(r13): WHERE's BETWEEN delegates to the value evaluator (R13 slice 4) (TimelordUK)
-- perf(r13): drop per-node logging from the value evaluator (R13 slice 4) (TimelordUK)
-- fix(r13): WHERE column operands keep their resolved index; inner evaluator gets aliases (R13 slice 4) (TimelordUK)
-- test(r13): pin window-operand guard and alias resolution for BETWEEN / IN (R13 slice 4) (TimelordUK)
+- Merge pull request #89 from TimelordUK/feat/s2-sockets (TimelordUK)
+- feat(system): which process holds that port, with sockets() (S2) (TimelordUK)
 
 </details>
 
