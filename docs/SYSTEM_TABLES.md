@@ -173,34 +173,109 @@ recursive query. See S3.
   a pid, a status inside the normalised set, and no empty strings where NULL is
   meant.
 
-## S2 — `sockets()` / listening ports
-- **Status:** 🔴 OPEN — the next one
+## S2 — `sockets()`
+- **Status:** 🟢 DONE 2026-09-17
+- **Where:** `src/sql/generators/system.rs` beside S1, registered the same way;
+  worked queries in `examples/system_sockets.sql`
+- **Depends on:** `netstat2` 0.11, optional, under the same `system-tables`
+  feature
 - **Wanted:** *which process is holding that port*, which is the question that
-  started this. One row per connection: protocol, local address and port,
-  remote address and port, state, and the owning `pid`.
-- **Design:** `netstat2` is the obvious crate — socket-to-pid is `/proc` on
-  Linux, `GetExtendedTcpTable` on Windows, `libproc` on macOS, which is exactly
-  the sort of thing not to hand-write. Same feature flag, same NULL rules.
-- **Expect partial answers without privileges.** On both Windows and Linux the
-  owning pid of another user's socket is often unavailable. The row must still
-  appear with a NULL `pid`, since the socket itself is real.
-- **Joins to S1 on `pid`** through the CTE form above, which is the first real
-  demonstration that these compose.
-- **Two row-shape decisions to take up front (added 2026-09-13):**
-  - **One socket can belong to several processes** — `netstat2` reports a list
-    of associated pids (a listener shared across a fork, an inherited handle).
-    One row per *(socket, pid)*, with a single NULL-pid row when the list is
-    empty, keeps `JOIN processes() ON pid` a plain equi-join. A socket with no
-    visible owner must still appear, per the NULL rule.
-  - **UDP has no remote end and no state.** Same columns for both protocols;
-    `remote_address`, `remote_port` and `state` are NULL for UDP rather than
-    `0.0.0.0` / `0` / an invented state.
-- **Columns, proposed:** `protocol` (`tcp`/`udp`), `family` (`ipv4`/`ipv6`),
-  `local_address`, `local_port`, `remote_address`, `remote_port`, `state`, `pid`.
-  TCP state names are standard (RFC 793), so normalise them to one spelling —
-  `LISTEN`, `ESTABLISHED`, `TIME_WAIT`… — the way S1 normalised `status`.
-- **Check the crate first:** confirm `netstat2` is maintained and builds on all
-  three targets with `--no-default-features` still compiling without it.
+  started this.
+- **Columns**, one row per *(socket, owning pid)*, the same everywhere:
+
+  | Column | Type | Notes |
+  |---|---|---|
+  | `protocol` | String | `tcp` / `udp` |
+  | `family` | String | `ipv4` / `ipv6` |
+  | `local_address` | String | the literal IP, never a hostname |
+  | `local_port` | Integer | |
+  | `remote_address` | String | NULL for UDP and for a TCP socket with no far end |
+  | `remote_port` | Integer | NULL on the same rows |
+  | `state` | String | RFC 793 name; NULL for UDP |
+  | `pid` | Integer | NULL when no owner is visible |
+
+- **No name resolution, which is why this is fast.** The worry going in was
+  `netstat -a` on Windows, which takes seconds. That time is reverse DNS, one
+  lookup per remote address — not the socket table. `netstat -ano` returns in
+  33 ms on the same machine, and `Get-NetTCPConnection` takes 1.7 s through the
+  CIM layer. `netstat2` makes the `-ano` call (`GetExtendedTcpTable` /
+  `GetExtendedUdpTable`) directly: `SELECT COUNT(*) FROM sockets()` over 204
+  sockets reports ~6 ms. On Linux it is netlink `sock_diag` for the sockets and
+  a walk of `/proc/*/fd` to map socket inodes to pids. If names are ever wanted
+  they belong in an explicit function, never in this generator.
+- **State is normalised** to `LISTEN`, `SYN_SENT`, `SYN_RECEIVED`,
+  `ESTABLISHED`, `FIN_WAIT_1`, `FIN_WAIT_2`, `CLOSE_WAIT`, `CLOSING`,
+  `LAST_ACK`, `TIME_WAIT`, `CLOSED`, `UNKNOWN` — our spellings rather than
+  `netstat2`'s `Display`, which says `SYN_RCVD` and `__UNKNOWN`. Windows'
+  `DELETE_TCB` (a control block being torn down) has no RFC 793 equivalent and
+  maps to `CLOSED`.
+- **Row-shape decisions, as settled 2026-09-13:**
+  - **One row per *(socket, pid)*.** Linux can report several owners for one
+    socket (a listener shared across a fork); Windows reports at most one.
+    Duplicate pids are collapsed and the rows come out in pid order.
+  - **A socket with no visible owner still gets exactly one row**, with a NULL
+    `pid`. Principle 2 applied to rows.
+  - **UDP has no far end and no state**, so `remote_address`, `remote_port` and
+    `state` are NULL rather than `0.0.0.0` / `0` / an invented state.
+- **Extended during the build: a TCP listener has no far end either.** The OS
+  reports a listener's remote end as `0.0.0.0:0` (or `[::]:0`). That is the
+  same absence as UDP's, so it gets the same NULLs — otherwise
+  `GROUP BY remote_address` would count every listener under a fake peer. The
+  rule is an unspecified address *and* port 0, whatever the state.
+- **Pid 0 is not an owner — the S6 trap, met here first.** Windows reports
+  pid 0 for sockets no process holds any more; on this machine all 7
+  `TIME_WAIT` rows had it. `processes()` lists pid 0 as `Idle`, so passing it
+  through would have made the join claim the idle process held those
+  connections — a plausible answer, and wrong. Pid 0 becomes NULL. Pid 4
+  (`System`) is different: it really does own the kernel's listeners on
+  139 and 445, and the join names it correctly.
+- **Expect partial answers without privileges.** On Linux the pid of another
+  user's socket needs root to read from `/proc/<pid>/fd`; the socket still
+  appears, with a NULL `pid`. On Windows every socket still owned by a process
+  had its pid without elevation — `user` in the joined `processes()` is where
+  Windows is reticent (S1).
+- **Joins to S1 on `pid`** through the CTE form above — the first real
+  demonstration that these sources compose:
+  ```sql
+  WITH s AS (SELECT * FROM sockets() WHERE state = 'LISTEN'),
+       p AS (SELECT pid, name, user FROM processes())
+  SELECT s.local_port, s.local_address, p.name, p.user
+  FROM s LEFT JOIN p ON s.pid = p.pid
+  ORDER BY s.local_port;
+  ```
+  The join takes ~260 ms, nearly all of it S1's CPU sample. `sockets()` is the
+  cheap half.
+- **Rows are sorted** TCP before UDP, then by local port, local address and far
+  end, so the same machine gives the same result twice.
+- **The crate, checked before adding it:** `netstat2` 0.11.2 is maintained and
+  its dependencies are small. It lists `bindgen` as a build dependency on Linux
+  and macOS but only *runs* it on macOS (for `libproc`), so the Linux build does
+  not need libclang. `listeners` 0.6 was the alternative and was rejected: it
+  returns only the local end and drops any socket whose owner it cannot see,
+  which breaks the NULL rule.
+- **Build without it:** `--no-default-features --features redis-cache`
+  compiles with `system-tables` off. Full `--no-default-features` currently
+  fails on an unrelated `RedisCache` import in `src/main_handlers.rs`;
+  that is not this feature's doing, but it means principle 4 is not being
+  exercised by that exact command.
+- **Tested on Windows 11**, 204 sockets. Tests open their own sockets and look
+  for them — a listener, a connection to it and a UDP socket, all owned by the
+  test process — then check the fixed columns, the normalised states, the UDP
+  and listener NULLs, and that no row carries pid 0. `owners` is unit-tested
+  for the empty, pid-0 and duplicate cases.
+- **Tested on Linux** (Ubuntu 22.04 under WSL2, built without libclang
+  installed): all four `system` tests pass, `threads_are_not_listed_as_processes`
+  included. 20 sockets, counted in ~3 ms. Checked against `ss -tulpn`:
+  - **As a normal user** every socket appears and none has a `pid` — none of
+    them belong to that user. The rows are there with NULLs, which is the rule
+    working.
+  - **As root** the join names `cupsd` (pid 690) on 631, exactly as
+    `ss -tulpn` does, and the others stay NULL — `ss` cannot name them either.
+    Under WSL2 the distributions share one network namespace but not a pid
+    namespace, so sockets opened by *another* running distribution (6379,
+    1433 here) are visible with no process this `/proc` can see. Expect the same
+    inside containers that share the host network. The NULL is the honest
+    answer there, not a bug to chase.
 
 ## S3 — Walking the process tree
 - **Status:** 🔴 OPEN

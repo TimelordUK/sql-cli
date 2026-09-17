@@ -93,12 +93,16 @@ unicode-width = "0.1"
 # System tables (processes(), and the family to follow). Optional so a build
 # can drop the OS-inspection dependencies entirely.
 sysinfo = { version = "0.32", optional = true }
+# sockets(): the OS's own socket tables with owning pids - GetExtendedTcpTable
+# on Windows, netlink sock_diag plus /proc/*/fd on Linux, libproc on macOS.
+# No name resolution anywhere, which is what makes `netstat -a` slow.
+netstat2 = { version = "0.11", optional = true }
 
 [features]
 default = ["redis-cache", "system-tables"]
 redis-cache = ["dep:redis"]
-# `processes()` and friends: OS inspection as table generators.
-system-tables = ["dep:sysinfo"]
+# `processes()`, `sockets()` and friends: OS inspection as table generators.
+system-tables = ["dep:sysinfo", "dep:netstat2"]
 
 [dev-dependencies]
 tempfile = "3.8"
