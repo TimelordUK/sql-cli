@@ -1,23 +1,32 @@
-# SQL CLI v1.85.7
+# SQL CLI v1.85.8
 
-**Release Date:** September 17, 2026
+**Release Date:** September 18, 2026
 
 ## 📊 Release Overview
-- **Commits in this release:** 2
-- **Files updated:** 5
+- **Commits in this release:** 5
+- **Files updated:** 7
 
 ## ✨ Highlights
 
 ## 📝 Changes by Category
 
-### 🚀 New Features
-- which process holds that port, with sockets() (S2)
+### 🐛 Bug Fixes
+- DATETIME() is today in local time in the value evaluator too (R13 slice 4)
+
+### 🔧 Refactoring
+- WHERE's comparisons delegate to the value evaluator (R13 slice 4)
+
+### 📚 Documentation
+- record slice 4 second part (comparisons, P53/P54)
 
 <details>
 <summary>📋 View all commits</summary>
 
-- Merge pull request #89 from TimelordUK/feat/s2-sockets (TimelordUK)
-- feat(system): which process holds that port, with sockets() (S2) (TimelordUK)
+- Merge pull request #90 from TimelordUK/refactor/r13-slice4b-comparisons (TimelordUK)
+- docs(r13): record slice 4 second part (comparisons, P53/P54) (TimelordUK)
+- refactor(r13): WHERE's comparisons delegate to the value evaluator (R13 slice 4) (TimelordUK)
+- fix(r13): DATETIME() is today in local time in the value evaluator too (R13 slice 4) (TimelordUK)
+- test(r13): pin the operand readers before comparisons delegate (R13 slice 4) (TimelordUK)
 
 </details>
 
