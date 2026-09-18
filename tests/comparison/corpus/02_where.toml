@@ -273,3 +273,23 @@ sql = "SELECT id FROM null_edges WHERE 1 = 1 AND team = 'beta' ORDER BY id"
 # The `WHERE 1=1 AND ...` idiom that generated SQL leans on. Constant-false is
 # the more natural probe, but an empty result cannot be compared by the harness
 # today (our empty JSON carries no column list), so the true form pins it.
+
+# --- P54: an integer literal beyond 2^53 ---
+
+[[case]]
+id = "where_big_int_literal_equals"
+data = "big_ids.csv"
+sql = "SELECT id, name FROM big_ids WHERE id = 9007199254740993"
+expect = "DIFFER"
+# P54. WHERE read a number literal through f64, which cannot hold every integer
+# above 2^53, so 9007199254740993 became 9007199254740992 and the filter
+# returned *the neighbouring row* (bravo) instead of alpha. A 64-bit id is the
+# realistic shape. SELECT's evaluator parses i64 first and was right all along.
+
+[[case]]
+id = "where_big_int_literal_in_list"
+data = "big_ids.csv"
+sql = "SELECT id, name FROM big_ids WHERE id IN (9007199254740993, 12) ORDER BY id"
+# The control for the case above. Already AGREE: R13 slice 4 part 1 delegated
+# IN to the value evaluator, which fixed it for IN and BETWEEN without anyone
+# noticing - no case held an integer this large.

@@ -2459,6 +2459,47 @@ out of date.
   testing for NULL at the predicate layer rather than in the comparator),
   [P48](#p48).
 
+### P53 — A number held as text compares to an integer as text
+- **Status:** 🟡 OPEN, low priority — pinned in the evaluator matrix only.
+- **Corpus:** none; see *Why no corpus case*.
+- **Observed:** with `s` a VARCHAR holding `'5.0'`, `s = 5` is FALSE in both
+  evaluators; DuckDB casts the string to the number and answers TRUE. `s = 5.0`
+  is TRUE in the value evaluator (a `Float` literal compares numerically) — and
+  was FALSE in WHERE, which read `5.0` as `Integer 5`; see [P54](#p54).
+- **Pinned:** `tests/evaluator_matrix_tests.rs`, `EXPECTED_OPERANDS`, recorded
+  against both evaluators in `KNOWN_OPERANDS`.
+- **Why no corpus case:** the shape is hard to reach from a file. DuckDB's CSV
+  sniffer types a column of `'5.0'`, `'5'` as a number, as does our loader, so
+  the comparison is numeric on both sides. A column that stays text holds
+  something non-numeric, and there DuckDB's cast raises an error on that row
+  instead of answering. So what diverges in practice is "we answer FALSE where
+  DuckDB errors" — not worth a fix ahead of anything in the fix-order table.
+- **Found:** 2026-09-18, pinning the operand readers for R13 slice 4.
+
+### P54 — An integer literal beyond 2^53 is rounded in `WHERE`
+- **Status:** 🔴 OPEN — silent, wrong row. [R13](ENGINE_REFACTORING.md#r13)
+  slice 4 (comparison arms delegate) closes it.
+- **Corpus:** `02_where.toml :: where_big_int_literal_equals`
+  (`expect = "DIFFER"`); control `where_big_int_literal_in_list` AGREEs.
+- **Observed:** `SELECT id, name FROM big_ids WHERE id = 9007199254740993`
+  returns **the row with id 9007199254740992** — not zero rows, the neighbour.
+  `SELECT id = 9007199254740993` on that row projects `false`, so one query
+  contradicts itself.
+- **Cause:** WHERE's operand reader (`number_literal_value` in
+  `recursive_where_evaluator.rs`) parses every number literal as `f64` and
+  turns whole values back into `Integer`. An `f64` holds every integer only up
+  to 2^53, so a larger literal lands on the nearest representable value. The
+  value evaluator parses `i64` first and is right.
+- **Why it matters:** 64-bit identifiers (snowflake-style ids, hashes, epoch
+  nanoseconds) sit well above 2^53 — filtering an extract by one silently
+  returns a different record.
+- **Already fixed for `IN` and `BETWEEN`**, unnoticed: R13 slice 4 part 1
+  (2026-09-15) delegated those arms to the value evaluator, which reads
+  literals correctly. That slice was checked with a byte-identical parity
+  report, and no case held an integer this large — the control case exists so
+  the next such change is seen.
+- **Found:** 2026-09-18, pinning the operand readers for R13 slice 4.
+
 ---
 
 ## Deferred / won't fix (intentional)
