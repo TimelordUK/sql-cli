@@ -473,7 +473,8 @@ feature work**, and so we can tell the difference between "this is awkward" and
 ### R13 — Two expression evaluators, every boolean operator implemented twice
 - **Status:** 🟡 IN PROGRESS — filed 2026-09-13 out of [P46](SQL_PARITY.md#p46);
   **slices 1 and 2 done 2026-09-13, slice 3 (with 3b) done 2026-09-14**, slice 4
-  in progress (`BETWEEN`, `IN`, `NOT IN` delegated 2026-09-15).
+  in progress (`BETWEEN`, `IN`, `NOT IN` delegated 2026-09-15; comparisons
+  2026-09-18, closing P54).
   **The active workstream:** parity fixes that touch expression evaluation land
   as slices of this entry, not as patches.
 - **Where:** `src/data/arithmetic_evaluator.rs` (`ArithmeticEvaluator`, value →
@@ -639,6 +640,40 @@ feature work**, and so we can tell the difference between "this is awkward" and
     `price > 100` 2.83 → 2.42 s, `LIKE` 2.87 → 2.43 s, all now at load time.
     Still outstanding: window evaluation logs `info!` timings per row (out of
     R13's scope).
+  - *Part 1 was not quite a no-op.* Delegating IN and BETWEEN also moved them
+    onto the value evaluator's literal reader, which fixed [P54](SQL_PARITY.md#p54)
+    for those two operators. The parity report could not see it — no case held
+    an integer above 2^53 — so "byte-identical" proved less than it claimed. A
+    delegation changes the *readers* as well as the rules; pin the readers.
+- **Slice 4, second part (2026-09-18) — the comparison operators.** `=`, `<>`,
+  `!=`, `<`, `<=`, `>`, `>=` delegate, except with a legacy method call on the
+  left. Three commits:
+  - *Pin the readers.* A third matrix (`EXPECTED_OPERANDS`, DuckDB-generated)
+    over shapes where the readers could disagree. Probing found most agree —
+    dates held as strings compare as dates either way — and three that do not:
+    **P54** (WHERE parsed every number literal through `f64`, so
+    `WHERE id = 9007199254740993` returned the row with id …992), `'5.0' = 5.0`
+    (WHERE read `5.0` as `Integer 5` and compared as text), and **P53**, wrong in
+    both evaluators (`'5.0' = 5` compares as text; low priority, see entry).
+    `check_matrix` now takes its table.
+  - *`DATETIME()` in local time.* WHERE read today from `Local`, the value
+    evaluator from `Utc` — they disagree while the dates differ (00:00–01:00
+    under BST). WHERE was right (DuckDB's `current_date` is session-local), so
+    the value evaluator changed *before* delegation, which would otherwise have
+    moved WHERE onto UTC. The one step not pinned first: it only diverges while
+    the clock says so.
+  - *Delegate.* Exactly the four WHERE pins flipped, the P53 pair held, and
+    parity moved by exactly one case (P54, 175 → **176 AGREE** / 206).
+    `evaluate_binary_op` now gets the node itself, so neither the delegation nor
+    the P37 value-as-predicate branch clones it per row.
+  - *Remaining in slice 4:* `LIKE` (WHERE compiles through `EvaluationContext`'s
+    regex cache; the value evaluator has its own matcher, and they disagree on a
+    non-string operand — `5.0 LIKE '5%'` is FALSE in WHERE, TRUE in the value
+    evaluator, and an error in DuckDB), `IS NULL` / `IS NOT NULL` (small), and
+    then `AND` / `OR` / `NOT` / `CASE`, which wait on slice 5 for their
+    method-call children. WHERE's own readers (`number_literal_value`, the
+    `DATETIME` arms) are now only reached through a legacy left-side method
+    call or LIKE.
 - **Slices, in the R10 pattern — no-op slices kept apart from the one that
   changes answers:**
   1. ✅ **Pin the divergences, no engine change.** *(Done 2026-09-13.)* A per-operator matrix run through
@@ -704,7 +739,7 @@ R8 legacy WHERE ──── independent; stage 2 is self-contained, do it in a 
 R10 Trilean ──────── DONE; closed P18/P19 (parity 125 → 129)
 R11 ORDER BY resolver ─ independent; small, but a behaviour change — wants its own parity run
 R12 aggregate registries ─ independent; step 1 is a provable no-op, do it before the next aggregate fix
-R13 one evaluator ─── ACTIVE from 2026-09-13; slices 1 (pin), 2 (3VL), 3 (construction + case mode) DONE; 4 IN PROGRESS (BETWEEN/IN done) → 5–6
+R13 one evaluator ─── ACTIVE from 2026-09-13; slices 1 (pin), 2 (3VL), 3 (construction + case mode) DONE; 4 IN PROGRESS (BETWEEN/IN, comparisons done; LIKE, IS NULL next) → 5–6
 ```
 
 **A note on ordering, from the P18/P19 work being next.** The WHERE evaluator
@@ -746,3 +781,4 @@ AGREE count — which makes it safe to land well before the semantics change.
 | 2026-09-13 | R13 slice 2: value evaluator three-valued; `Trilean::from_value`/`to_value`; `to_bool` removed. Matrix value column 4/36 → 36/36 in one change. Closes P48, P50 — 168 → **174 AGREE** | — |
 | 2026-09-14 | R13 slice 3: registries built once per process; one `ArithmeticEvaluator` constructor, dead date-notation plumbing deleted — parity byte-identical, high-cardinality GROUP BY ~2× faster. 3b: case-insensitive mode pinned (11 matrix + 5 clause cases) then handed in at every construction site; all flipped, parity byte-identical | — |
 | 2026-09-15 | R13 slice 4 (first part): WHERE's `BETWEEN`, `IN`, `NOT IN` delegate to the value evaluator. Latent alias-resolution fault pinned and fixed first; per-node TRACE logging found to be most of the value evaluator's cost and removed (SELECT/GROUP BY expressions ~2 s faster over 100k rows). Parity byte-identical at every commit | — |
+| 2026-09-18 | R13 slice 4 (second part): WHERE comparisons delegate. Operand readers pinned first (third matrix); P53 and P54 filed; value evaluator's `DATETIME()` moved to local time before delegating. Closes P54 — 175 → **176 AGREE**. Part 1 found to have fixed P54 for IN/BETWEEN unnoticed | — |

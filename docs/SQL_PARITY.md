@@ -65,9 +65,10 @@ session apiece to fix properly, so **discovery is paused and the effort moves to
 picking them off**. Widen the corpus again when the open list is short, or
 opportunistically when a fix needs a case that doesn't exist yet.
 
-Corpus coverage today: tiers 01–10, **204 cases** (174 AGREE / 15 DIFFER /
-12 GAP / 1 OURS_ONLY / 2 BOTH_ERR as of 2026-09-13, after R13 slice 2 closed
-[P48](#p48) and [P50](#p50); [P51](#p51), [P52](#p52) open). The largest single movement so far remains the 2026-09-05
+Corpus coverage today: tiers 01–10, **206 cases** (176 AGREE / 15 DIFFER /
+12 GAP / 1 OURS_ONLY / 2 BOTH_ERR as of 2026-09-18, after R13 slice 4's
+comparison delegation closed [P54](#p54); [P51](#p51), [P52](#p52) open,
+[P53](#p53) open at low priority). The largest single movement so far remains the 2026-09-05
 NULL-ordering slice, which closed [P13](#p13) stage 2 and [P17](#p17) together —
 eleven cases in one change. **Tier 10 (aggregate & NULL edges) is still
 deliberately partial** — it holds the P14, P18–P20 and P41 cases and their
@@ -92,7 +93,7 @@ Suggested fix order, by silent blast radius:
 | ~~9d~~ | ~~[P37](#p37) window in `WHERE` returns 0 rows~~ | ✅ **Fixed 2026-09-05** — corpus count unchanged, and that is the finding: the case is `OURS_ONLY` before *and* after, so the harness cannot see this fix or a future regression of it (first entry of that kind — the regression test is a Rust module). The filed root cause was wrong: `ExpressionLifter` *does* lift from `WHERE`. The real defect was one arm in the WHERE evaluator answering FALSE for any bare value used as a predicate — `WHERE true` returned zero rows too. It did **not** close [P15](#p15), which needs the opposite change |
 | ~~9e~~ | ~~[P41](#p41) `MODE` tie-break is random per run~~ | ✅ **Fixed 2026-09-06** — 152 → **156 AGREE** (four new cases). Small, as predicted, but not where it was filed: the named `ModeState` was a *shadowed* implementation and fixing it moved nothing. Reference does specify a rule and it is **first-occurrence**, not the "smallest value wins" this row proposed. Unblocked both example files, now FORMAL. Spun off [P42](#p42), [P43](#p43), [R12](ENGINE_REFACTORING.md#r12) |
 | ~~9g~~ | ~~[P46](#p46) column-vs-column `WHERE` returns 0 rows~~ | ✅ **Fixed 2026-09-13** — 157 → **168 AGREE**. Wider than filed: *every* non-literal right-hand operand read as NULL (comparisons, `IN` items, `BETWEEN` bounds), and a literal on the left errored (`WHERE 1=0`). One resolver for all operands closed it. Did **not** need [P48](#p48) alongside, as this row predicted — the fix kept the comparison in the WHERE evaluator. Spun off [P49](#p49) (correlated outer refs bind to the inner table), accepted knowingly |
-| **NEXT** | [R13](ENGINE_REFACTORING.md#r13) one expression evaluator — **the active workstream from 2026-09-13** | **Slices 1–2 done 2026-09-13** (value evaluator three-valued, 168 → 174 AGREE, closed P48/P50); **slice 3 done 2026-09-14** (one construction path; case-insensitive mode now honoured outside WHERE, parity unmoved); slice 4 (WHERE arms delegate, one operator per commit) next. Not a finding but the reason several are cheap to fix only once. WHERE and the value evaluator implement every boolean operator separately with different NULL rules, so the same predicate answers differently in WHERE, HAVING, SELECT and JOIN ON. **Working rule:** a parity fix that touches expression evaluation lands as an R13 slice, not a patch. [P52](#p52) (NULL join keys) is slice 6 |
+| **NEXT** | [R13](ENGINE_REFACTORING.md#r13) one expression evaluator — **the active workstream from 2026-09-13** | **Slices 1–2 done 2026-09-13** (value evaluator three-valued, 168 → 174 AGREE, closed P48/P50); **slice 3 done 2026-09-14** (one construction path; case-insensitive mode now honoured outside WHERE, parity unmoved); **slice 4 in progress** (WHERE arms delegate, one operator per commit: BETWEEN/IN 2026-09-15, comparisons 2026-09-18 closing [P54](#p54), 175 → 176 AGREE; LIKE and IS NULL next). Not a finding but the reason several are cheap to fix only once. WHERE and the value evaluator implement every boolean operator separately with different NULL rules, so the same predicate answers differently in WHERE, HAVING, SELECT and JOIN ON. **Working rule:** a parity fix that touches expression evaluation lands as an R13 slice, not a patch. [P52](#p52) (NULL join keys) is slice 6 |
 | then | [P47](#p47) `MIN`/`MAX` ranked by type | Silent and cheap, and outside the evaluator (aggregate registries — confirm the live one first, [R12](ENGINE_REFACTORING.md#r12)), so it can land alongside R13 without breaking the working rule |
 | then | [P14](#p14), [P20](#p20), [P23](#p23) | Smaller, self-contained, decisions already taken. Was row 9b, then NEXT until the 2026-09-12 findings displaced it. **Check each against the R13 working rule first** — P20 (`\|\|` with NULL) is an operator in the value evaluator |
 | 9f | [P42](#p42) `MODE` is numeric-only | Companion to [R12](ENGINE_REFACTORING.md#r12), and cheap if taken with it: the shadowed implementation already handles non-numerics and preserves type, so the fix is largely to stop the live path throwing away what it knows. Also buys the corpus its clearest tie-break case |
@@ -2458,6 +2459,56 @@ out of date.
 - **Related:** [P18](#p18) (the same `NULL = NULL` answer, fixed in WHERE by
   testing for NULL at the predicate layer rather than in the comparator),
   [P48](#p48).
+
+### P53 — A number held as text compares to an integer as text
+- **Status:** 🟡 OPEN, low priority — pinned in the evaluator matrix only.
+- **Corpus:** none; see *Why no corpus case*.
+- **Observed:** with `s` a VARCHAR holding `'5.0'`, `s = 5` is FALSE in both
+  evaluators; DuckDB casts the string to the number and answers TRUE. `s = 5.0`
+  is TRUE in the value evaluator (a `Float` literal compares numerically) — and
+  was FALSE in WHERE, which read `5.0` as `Integer 5`; see [P54](#p54).
+- **Pinned:** `tests/evaluator_matrix_tests.rs`, `EXPECTED_OPERANDS`, recorded
+  against both evaluators in `KNOWN_OPERANDS`.
+- **Why no corpus case:** the shape is hard to reach from a file. DuckDB's CSV
+  sniffer types a column of `'5.0'`, `'5'` as a number, as does our loader, so
+  the comparison is numeric on both sides. A column that stays text holds
+  something non-numeric, and there DuckDB's cast raises an error on that row
+  instead of answering. So what diverges in practice is "we answer FALSE where
+  DuckDB errors" — not worth a fix ahead of anything in the fix-order table.
+- **Found:** 2026-09-18, pinning the operand readers for R13 slice 4.
+
+### P54 — An integer literal beyond 2^53 is rounded in `WHERE`
+- **Status:** ✅ FIXED 2026-09-18 by [R13](ENGINE_REFACTORING.md#r13) slice 4:
+  WHERE's comparison arms delegate to the value evaluator, whose literal reader
+  was already right. 175 → **176 AGREE**; the four matrix entries went FIXED
+  and nothing else moved.
+- **Corpus:** `02_where.toml :: where_big_int_literal_equals` (AGREE); control
+  `where_big_int_literal_in_list`.
+- **Harness blind spot:** the harness compares numbers as floats, so both ids
+  render as `9007199254740992.0` — only the `name` column showed the wrong row.
+  A case that selects only a large integer cannot tell two of them apart; select
+  something else from the row.
+- **Still reads through f64:** a *legacy method call on the left* of a WHERE
+  comparison (`name.Length() = 9007199254740993`) keeps WHERE's own reader until
+  slice 5. Not a realistic shape; noted so the reader's last use is visible.
+- **Observed:** `SELECT id, name FROM big_ids WHERE id = 9007199254740993`
+  returns **the row with id 9007199254740992** — not zero rows, the neighbour.
+  `SELECT id = 9007199254740993` on that row projects `false`, so one query
+  contradicts itself.
+- **Cause:** WHERE's operand reader (`number_literal_value` in
+  `recursive_where_evaluator.rs`) parses every number literal as `f64` and
+  turns whole values back into `Integer`. An `f64` holds every integer only up
+  to 2^53, so a larger literal lands on the nearest representable value. The
+  value evaluator parses `i64` first and is right.
+- **Why it matters:** 64-bit identifiers (snowflake-style ids, hashes, epoch
+  nanoseconds) sit well above 2^53 — filtering an extract by one silently
+  returns a different record.
+- **Already fixed for `IN` and `BETWEEN`**, unnoticed: R13 slice 4 part 1
+  (2026-09-15) delegated those arms to the value evaluator, which reads
+  literals correctly. That slice was checked with a byte-identical parity
+  report, and no case held an integer this large — the control case exists so
+  the next such change is seen.
+- **Found:** 2026-09-18, pinning the operand readers for R13 slice 4.
 
 ---
 

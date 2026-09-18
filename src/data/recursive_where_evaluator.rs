@@ -494,7 +494,7 @@ impl<'a, 'ctx, 'exec> RecursiveWhereEvaluator<'a, 'ctx, 'exec> {
 
         let result = match expr {
             SqlExpression::BinaryOp { left, op, right } => {
-                self.evaluate_binary_op(left, op, right, row_index)
+                self.evaluate_binary_op(expr, left, op, right, row_index)
             }
             SqlExpression::InList {
                 expr: probe,
@@ -561,8 +561,12 @@ impl<'a, 'ctx, 'exec> RecursiveWhereEvaluator<'a, 'ctx, 'exec> {
         result
     }
 
+    /// `expr` is the `BinaryOp` node itself, and `left` / `op` / `right` its
+    /// parts: the arms that hand the whole predicate to the value evaluator
+    /// need the node, and rebuilding it would clone the subtree on every row.
     fn evaluate_binary_op(
         &mut self,
+        expr: &SqlExpression,
         left: &SqlExpression,
         op: &str,
         right: &SqlExpression,
@@ -599,12 +603,18 @@ impl<'a, 'ctx, 'exec> RecursiveWhereEvaluator<'a, 'ctx, 'exec> {
         // predicate -- the P37 rule, rather than a comparison under an
         // operator `compare_with_op` would silently answer false for.
         if !is_predicate_operator(&op_upper) {
-            let value_expr = SqlExpression::BinaryOp {
-                left: Box::new(left.clone()),
-                op: op.to_string(),
-                right: Box::new(right.clone()),
-            };
-            return self.evaluate_value_as_predicate(&value_expr, row_index);
+            return self.evaluate_value_as_predicate(expr, row_index);
+        }
+
+        // A comparison is the value evaluator's (R13 slice 4): its operand
+        // readers and three-valued `compare_trilean` are the one
+        // implementation. Two shapes stay below for now - a legacy method call
+        // on the left (`Length()`, `IndexOf()`, `Trim*()`), whose registry
+        // twins are slice 5's to check, and the operators with their own arms.
+        if is_comparison_operator(&op_upper) && !matches!(left, SqlExpression::MethodCall { .. }) {
+            reject_unlifted_window(left)?;
+            reject_unlifted_window(right)?;
+            return self.evaluate_delegated(expr, row_index);
         }
 
         // Both operands are resolved to values here and compared below, so the
@@ -1150,6 +1160,12 @@ fn reject_unlifted_window(expr: &SqlExpression) -> Result<()> {
         )),
         _ => Ok(()),
     }
+}
+
+/// The comparison operators the value evaluator implements, and so the ones a
+/// WHERE comparison delegates. Expects the operator already upper-cased.
+fn is_comparison_operator(op_upper: &str) -> bool {
+    matches!(op_upper, "=" | "!=" | "<>" | "<" | "<=" | ">" | ">=")
 }
 
 /// Operators whose result is a truth value, handled by `evaluate_binary_op`'s

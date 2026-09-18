@@ -1581,10 +1581,14 @@ impl<'a> ArithmeticEvaluator<'a> {
         minute: Option<u32>,
         second: Option<u32>,
     ) -> Result<DataValue> {
-        use chrono::{TimeZone, Utc};
+        use chrono::{Local, TimeZone, Utc};
 
-        // Get today's date in UTC
-        let today = Utc::now().date_naive();
+        // Today in the local time zone, as DuckDB's `current_date` and WHERE's
+        // operand reader both read it. This used to be the UTC date, so for the
+        // hours where the two differ (00:00-01:00 under BST) `SELECT d >=
+        // DATETIME()` and `WHERE d >= DATETIME()` saw different days. The `Utc`
+        // below only formats the naive value; it converts nothing.
+        let today = Local::now().date_naive();
 
         // Create datetime with provided time components or defaults
         let hour = hour.unwrap_or(0);
