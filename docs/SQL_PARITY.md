@@ -2477,10 +2477,19 @@ out of date.
 - **Found:** 2026-09-18, pinning the operand readers for R13 slice 4.
 
 ### P54 — An integer literal beyond 2^53 is rounded in `WHERE`
-- **Status:** 🔴 OPEN — silent, wrong row. [R13](ENGINE_REFACTORING.md#r13)
-  slice 4 (comparison arms delegate) closes it.
-- **Corpus:** `02_where.toml :: where_big_int_literal_equals`
-  (`expect = "DIFFER"`); control `where_big_int_literal_in_list` AGREEs.
+- **Status:** ✅ FIXED 2026-09-18 by [R13](ENGINE_REFACTORING.md#r13) slice 4:
+  WHERE's comparison arms delegate to the value evaluator, whose literal reader
+  was already right. 175 → **176 AGREE**; the four matrix entries went FIXED
+  and nothing else moved.
+- **Corpus:** `02_where.toml :: where_big_int_literal_equals` (AGREE); control
+  `where_big_int_literal_in_list`.
+- **Harness blind spot:** the harness compares numbers as floats, so both ids
+  render as `9007199254740992.0` — only the `name` column showed the wrong row.
+  A case that selects only a large integer cannot tell two of them apart; select
+  something else from the row.
+- **Still reads through f64:** a *legacy method call on the left* of a WHERE
+  comparison (`name.Length() = 9007199254740993`) keeps WHERE's own reader until
+  slice 5. Not a realistic shape; noted so the reader's last use is visible.
 - **Observed:** `SELECT id, name FROM big_ids WHERE id = 9007199254740993`
   returns **the row with id 9007199254740992** — not zero rows, the neighbour.
   `SELECT id = 9007199254740993` on that row projects `false`, so one query

@@ -209,38 +209,14 @@ const EXPECTED_OPERANDS: &[(&str, &str)] = &[
     ("n > 7", "FUT"),
 ];
 
-const WHERE_ROUNDS_BIG_LITERALS: &str =
-    "P54: WHERE reads a number literal through f64, so an integer \
-     beyond 2^53 is rounded onto its neighbour; the value evaluator parses i64 first";
 const STRING_VS_INTEGER: &str = "P53: '5.0' = 5 compares as text in both evaluators; DuckDB casts \
      the string to the number";
 
+// R13 slice 4 recorded four WHERE entries here - three from P54 (an integer
+// literal beyond 2^53 rounded through f64) and `s = 5.0` (5.0 read as Integer
+// 5). All four went FIXED when WHERE's comparisons started delegating to the
+// value evaluator, whose reader was already right. P53 is in both evaluators.
 const KNOWN_OPERANDS: &[Known] = &[
-    Known {
-        evaluator: Evaluator::Where,
-        predicate: "big = 9007199254740993",
-        observed: "FTU",
-        why: WHERE_ROUNDS_BIG_LITERALS,
-    },
-    Known {
-        evaluator: Evaluator::Where,
-        predicate: "big <> 9007199254740993",
-        observed: "TFU",
-        why: WHERE_ROUNDS_BIG_LITERALS,
-    },
-    Known {
-        evaluator: Evaluator::Where,
-        predicate: "9007199254740993 = big",
-        observed: "FTU",
-        why: WHERE_ROUNDS_BIG_LITERALS,
-    },
-    Known {
-        evaluator: Evaluator::Where,
-        predicate: "s = 5.0",
-        observed: "FTU",
-        why: "WHERE reads the literal 5.0 as Integer 5, and '5.0' does not equal 5 as text \
-              (P53); the value evaluator keeps it a Float and compares numerically",
-    },
     Known {
         evaluator: Evaluator::Where,
         predicate: "s = 5",
