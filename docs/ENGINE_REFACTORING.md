@@ -680,7 +680,7 @@ feature work**, and so we can tell the difference between "this is awkward" and
     and `_` in the pattern and escaping nothing else, so it got six of ten
     wrong — **P55**: `LIKE 'a.c'` matched `abc`, `'[a]bc'` was a character
     class, `'a(b%'` failed the whole query, and `%` stopped at a newline. Three
-    corpus cases over new `data/like_patterns.csv`.
+    corpus cases over new `data/pattern_matching.csv`.
   - *The value evaluator's matcher was exponential.* Right on all ten patterns,
     but recursive over every split for every `%`: one 80-character value
     against `'%a%a%a%a%a%a%a%b'` ran for over a minute (SELECT has had this all

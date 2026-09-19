@@ -304,21 +304,21 @@ sql = "SELECT id, name FROM big_ids WHERE id IN (9007199254740993, 12) ORDER BY 
 
 [[case]]
 id = "where_like_dot_is_literal"
-data = "like_patterns.csv"
-sql = "SELECT id, s FROM like_patterns WHERE s LIKE 'a.c' ORDER BY id"
+data = "pattern_matching.csv"
+sql = "SELECT id, s FROM pattern_matching WHERE s LIKE 'a.c' ORDER BY id"
 # P55. WHERE turned `%` into `.*` and `_` into `.` and passed every other
 # character to the regex engine as-is, so `.` matched any character: `abc`
 # came back alongside `a.c`.
 
 [[case]]
 id = "where_like_bracket_is_literal"
-data = "like_patterns.csv"
-sql = "SELECT id, s FROM like_patterns WHERE s LIKE '[a]bc' ORDER BY id"
+data = "pattern_matching.csv"
+sql = "SELECT id, s FROM pattern_matching WHERE s LIKE '[a]bc' ORDER BY id"
 # P55. `[a]` was a regex character class: matched `abc`, missed `[a]bc` itself.
 
 [[case]]
 id = "where_like_paren_is_literal"
-data = "like_patterns.csv"
-sql = "SELECT id, s FROM like_patterns WHERE s LIKE 'a(b%' ORDER BY id"
+data = "pattern_matching.csv"
+sql = "SELECT id, s FROM pattern_matching WHERE s LIKE 'a(b%' ORDER BY id"
 # P55. `(` opened a regex group, so the query failed: "Invalid LIKE pattern
 # 'a(b%': regex parse error ... unclosed group".
