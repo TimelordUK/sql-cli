@@ -474,7 +474,9 @@ feature work**, and so we can tell the difference between "this is awkward" and
 - **Status:** 🟡 IN PROGRESS — filed 2026-09-13 out of [P46](SQL_PARITY.md#p46);
   **slices 1 and 2 done 2026-09-13, slice 3 (with 3b) done 2026-09-14**, slice 4
   in progress (`BETWEEN`, `IN`, `NOT IN` delegated 2026-09-15; comparisons
-  2026-09-18, closing P54).
+  2026-09-18, closing P54; IS NULL and LIKE 2026-09-19, closing P55). Every
+  WHERE *operator* now delegates; what remains of slice 4 (AND / OR / NOT /
+  CASE) lands after slice 5.
   **The active workstream:** parity fixes that touch expression evaluation land
   as slices of this entry, not as patches.
 - **Where:** `src/data/arithmetic_evaluator.rs` (`ArithmeticEvaluator`, value →
@@ -666,14 +668,42 @@ feature work**, and so we can tell the difference between "this is awkward" and
     parity moved by exactly one case (P54, 175 → **176 AGREE** / 206).
     `evaluate_binary_op` now gets the node itself, so neither the delegation nor
     the P37 value-as-predicate branch clones it per row.
-  - *Remaining in slice 4:* `LIKE` (WHERE compiles through `EvaluationContext`'s
-    regex cache; the value evaluator has its own matcher, and they disagree on a
-    non-string operand — `5.0 LIKE '5%'` is FALSE in WHERE, TRUE in the value
-    evaluator, and an error in DuckDB), `IS NULL` / `IS NOT NULL` (small), and
-    then `AND` / `OR` / `NOT` / `CASE`, which wait on slice 5 for their
-    method-call children. WHERE's own readers (`number_literal_value`, the
-    `DATETIME` arms) are now only reached through a legacy left-side method
-    call or LIKE.
+  - *Left after part 2:* LIKE and IS NULL (part 3, below), then `AND` / `OR` /
+    `NOT` / `CASE`, which wait on slice 5 for their method-call children.
+- **Slice 4, third part (2026-09-19) — IS NULL and LIKE.** Six commits:
+  - *IS NULL / IS NOT NULL delegate* — a true no-op: the parser always puts a
+    `Null` literal on the right, and no reader difference changes whether the
+    left operand is NULL. WHERE's bare `IS` / `IS NOT` arms and `==` went with
+    it: the parser never emits them.
+  - *Pin LIKE.* A fourth matrix (`EXPECTED_LIKE`, DuckDB-generated) aimed at
+    what separated the two matchers. WHERE built its matcher by replacing `%`
+    and `_` in the pattern and escaping nothing else, so it got six of ten
+    wrong — **P55**: `LIKE 'a.c'` matched `abc`, `'[a]bc'` was a character
+    class, `'a(b%'` failed the whole query, and `%` stopped at a newline. Three
+    corpus cases over new `data/like_patterns.csv`.
+  - *The value evaluator's matcher was exponential.* Right on all ten patterns,
+    but recursive over every split for every `%`: one 80-character value
+    against `'%a%a%a%a%a%a%a%b'` ran for over a minute (SELECT has had this all
+    along). Replaced with the iterative matcher — backtrack only to the most
+    recent `%`, O(text × pattern) — **before** WHERE delegated to it, so the fix
+    did not swap wrong rows for a hang. 28 unit cases plus a 2,000-character
+    pathological one on a 1 s budget.
+  - *LIKE over a number — a decision, D2.* DuckDB rejects it, so there is no
+    reference answer. Chosen: match the number's displayed text, as the value
+    evaluator already did (`5.0` displays as `5`). Pinned as a fifth matrix set
+    whose expected answers are the decision, not DuckDB output; WHERE's
+    "always FALSE" recorded against it.
+  - *Delegate.* All of LIKE is now one function, `sql_like`, called by the
+    value evaluator and by WHERE's one remaining legacy arm. Exactly the ten
+    WHERE pins flipped; parity moved by exactly the three P55 cases,
+    176 → **179 AGREE** / 209. Flat on the benchmarks without the regex cache.
+  - *Plumbing removed.* `EvaluationContext` (the regex cache), WHERE's
+    `'ctx` lifetime and context constructors, and `with_config` (no callers) —
+    147 lines out, parity byte-identical.
+  - *Left in slice 4:* `AND` / `OR` / `NOT` / `CASE` and WHERE's legacy
+    left-side method-call arm, all waiting on slice 5. WHERE's readers
+    (`number_literal_value`, the `DATETIME` arms, `compare_trilean`) are now
+    reached only through that arm.
 - **Slices, in the R10 pattern — no-op slices kept apart from the one that
   changes answers:**
   1. ✅ **Pin the divergences, no engine change.** *(Done 2026-09-13.)* A per-operator matrix run through
@@ -739,7 +769,7 @@ R8 legacy WHERE ──── independent; stage 2 is self-contained, do it in a 
 R10 Trilean ──────── DONE; closed P18/P19 (parity 125 → 129)
 R11 ORDER BY resolver ─ independent; small, but a behaviour change — wants its own parity run
 R12 aggregate registries ─ independent; step 1 is a provable no-op, do it before the next aggregate fix
-R13 one evaluator ─── ACTIVE from 2026-09-13; slices 1 (pin), 2 (3VL), 3 (construction + case mode) DONE; 4 IN PROGRESS (BETWEEN/IN, comparisons done; LIKE, IS NULL next) → 5–6
+R13 one evaluator ─── ACTIVE from 2026-09-13; slices 1 (pin), 2 (3VL), 3 (construction + case mode) DONE; 4 operators DONE (BETWEEN/IN, comparisons, IS NULL, LIKE) → 5 (method calls) → 4 tail (AND/OR/NOT/CASE) → 6
 ```
 
 **A note on ordering, from the P18/P19 work being next.** The WHERE evaluator
@@ -782,3 +812,4 @@ AGREE count — which makes it safe to land well before the semantics change.
 | 2026-09-14 | R13 slice 3: registries built once per process; one `ArithmeticEvaluator` constructor, dead date-notation plumbing deleted — parity byte-identical, high-cardinality GROUP BY ~2× faster. 3b: case-insensitive mode pinned (11 matrix + 5 clause cases) then handed in at every construction site; all flipped, parity byte-identical | — |
 | 2026-09-15 | R13 slice 4 (first part): WHERE's `BETWEEN`, `IN`, `NOT IN` delegate to the value evaluator. Latent alias-resolution fault pinned and fixed first; per-node TRACE logging found to be most of the value evaluator's cost and removed (SELECT/GROUP BY expressions ~2 s faster over 100k rows). Parity byte-identical at every commit | — |
 | 2026-09-18 | R13 slice 4 (second part): WHERE comparisons delegate. Operand readers pinned first (third matrix); P53 and P54 filed; value evaluator's `DATETIME()` moved to local time before delegating. Closes P54 — 175 → **176 AGREE**. Part 1 found to have fixed P54 for IN/BETWEEN unnoticed | — |
+| 2026-09-19 | R13 slice 4 (third part): IS NULL and LIKE delegate; one `sql_like` for both evaluators. P55 (LIKE compiled as an unescaped regex) filed and closed — 176 → **179 AGREE**; the value evaluator's exponential LIKE matcher replaced first; D2 (LIKE over a number matches its displayed text) decided; `EvaluationContext` removed | — |
