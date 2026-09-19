@@ -280,6 +280,50 @@ const EXPECTED_LIKE: &[(&str, &str)] = &[
     ("s LIKE ''", "FFFFUFF"),
 ];
 
+/// LIKE over a number, on the operand table. DuckDB refuses these outright
+/// (no `LIKE(DOUBLE, VARCHAR)`), so the expected answers are **not** DuckDB's:
+/// they are the deliberate choice recorded as D2 in docs/SQL_PARITY.md - a
+/// number is matched as the text the tool displays for it. `5.0` displays as
+/// `5`, so it matches `'5%'` but not `'5.0'`.
+const EXPECTED_NUMBER_LIKE: &[(&str, &str)] = &[
+    ("n LIKE '5%'", "TUF"),
+    ("n LIKE '5.0'", "FUF"),
+    ("n LIKE '7._'", "FUT"),
+    ("big LIKE '9007%'", "TTU"),
+    ("big LIKE '%993'", "TFU"),
+];
+
+const NUMBER_LIKE_NEVER_MATCHES: &str =
+    "D2: WHERE's LIKE answers FALSE for any non-text operand; the decision is to \
+     match the displayed text, as the value evaluator already does";
+
+const KNOWN_NUMBER_LIKE: &[Known] = &[
+    Known {
+        evaluator: Evaluator::Where,
+        predicate: "n LIKE '5%'",
+        observed: "FUF",
+        why: NUMBER_LIKE_NEVER_MATCHES,
+    },
+    Known {
+        evaluator: Evaluator::Where,
+        predicate: "n LIKE '7._'",
+        observed: "FUF",
+        why: NUMBER_LIKE_NEVER_MATCHES,
+    },
+    Known {
+        evaluator: Evaluator::Where,
+        predicate: "big LIKE '9007%'",
+        observed: "FFU",
+        why: NUMBER_LIKE_NEVER_MATCHES,
+    },
+    Known {
+        evaluator: Evaluator::Where,
+        predicate: "big LIKE '%993'",
+        observed: "FFU",
+        why: NUMBER_LIKE_NEVER_MATCHES,
+    },
+];
+
 const LIKE_AS_REGEX: &str = "P55: WHERE compiles a LIKE pattern to a regex without escaping it, \
      so regex syntax in the pattern is live and `.` does not cross a newline";
 
@@ -391,6 +435,16 @@ fn every_operand_reading_through_both_evaluators() {
 #[test]
 fn every_like_pattern_through_both_evaluators() {
     check_matrix(&like_table(), EXPECTED_LIKE, KNOWN_LIKE, false);
+}
+
+#[test]
+fn like_over_a_number_through_both_evaluators() {
+    check_matrix(
+        &operand_table(),
+        EXPECTED_NUMBER_LIKE,
+        KNOWN_NUMBER_LIKE,
+        false,
+    );
 }
 
 fn check_matrix(

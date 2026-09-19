@@ -2550,6 +2550,25 @@ out of date.
   for the current "vanilla SQL consistency" effort. Revisit if/when that scope
   layer is pursued. Not a bug; do not let the corpus case churn — keep `expect = "GAP"`.
 
+### D2 — `LIKE` over a number matches the number's displayed text
+- **Status:** ⚪ DELIBERATE (decided 2026-09-19, R13 slice 4).
+- **Corpus:** none — DuckDB errors, so there is no reference answer to agree
+  with. Pinned in the evaluator matrix (`EXPECTED_NUMBER_LIKE`), whose expected
+  answers for these rows are this decision, not DuckDB output.
+- **Behaviour:** a non-text operand of `LIKE` is matched as the text sql-cli
+  displays for it: `51.5 LIKE '5%'` is TRUE; `5.0` displays as `5`, so it
+  matches `'5%'` but not `'5.0'`. DuckDB rejects the query (no
+  `LIKE(DOUBLE, VARCHAR)`) and asks for an explicit cast.
+- **Rationale:** the tool is for exploring data, often loosely typed CSVs where
+  an id or code column is inferred as a number; "does this id start with
+  `9007`" should just work. Matching the displayed text means the pattern
+  matches what the user can see. The value evaluator (SELECT, HAVING, CASE)
+  already behaved this way; before R13 slice 4, WHERE answered FALSE for every
+  number, so the same predicate disagreed with itself between clauses.
+- **Considered:** erroring like DuckDB (strict, but breaks existing SELECTs that
+  rely on it), and FALSE everywhere (a silent non-match is the least useful
+  answer).
+
 _When we consciously diverge from the reference engine on results (rather than
 simply not implementing a feature), record it here with the rationale so the
 DIFFER is understood, not mistaken for a bug._
