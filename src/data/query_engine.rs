@@ -10,7 +10,6 @@ use crate::config::config::BehaviorConfig;
 use crate::data::arithmetic_evaluator::ArithmeticEvaluator;
 use crate::data::data_view::DataView;
 use crate::data::datatable::{DataColumn, DataRow, DataTable, DataValue};
-use crate::data::evaluation_context::EvaluationContext;
 use crate::data::group_by_expressions::GroupByExpressions;
 use crate::data::hash_join::HashJoinExecutor;
 use crate::data::recursive_where_evaluator::RecursiveWhereEvaluator;
@@ -1624,15 +1623,13 @@ impl QueryEngine {
             }
 
             let filter_start = Instant::now();
-            // Create an evaluation context for caching compiled regexes
-            let mut eval_context = EvaluationContext::new(self.case_insensitive);
 
             // Create evaluator ONCE before the loop for performance
             let mut evaluator = if let Some(exec_ctx) = exec_context {
-                // Use both contexts: exec_context for alias resolution, eval_context for regex caching
-                RecursiveWhereEvaluator::with_both_contexts(&table, &mut eval_context, exec_ctx)
+                // The execution context is for alias resolution
+                RecursiveWhereEvaluator::with_exec_context(&table, exec_ctx, self.case_insensitive)
             } else {
-                RecursiveWhereEvaluator::with_context(&table, &mut eval_context)
+                RecursiveWhereEvaluator::with_case_insensitive(&table, self.case_insensitive)
             };
 
             // Filter visible rows based on WHERE clause
@@ -1670,14 +1667,6 @@ impl QueryEngine {
                 }
             }
 
-            // Log regex cache statistics
-            let (compilations, cache_hits) = eval_context.get_stats();
-            if compilations > 0 || cache_hits > 0 {
-                debug!(
-                    "LIKE pattern cache: {} compilations, {} cache hits",
-                    compilations, cache_hits
-                );
-            }
             visible_rows = filtered_rows;
             let filter_duration = filter_start.elapsed();
             info!(

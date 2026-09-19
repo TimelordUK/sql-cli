@@ -1,6 +1,5 @@
 use crate::data::arithmetic_evaluator::{sql_like, ArithmeticEvaluator};
 use crate::data::datatable::{DataTable, DataValue};
-use crate::data::evaluation_context::EvaluationContext;
 use crate::data::query_engine::ExecutionContext;
 use crate::data::trilean::Trilean;
 use crate::data::value_comparisons::compare_with_op;
@@ -12,10 +11,9 @@ use std::cell::RefCell;
 use tracing::debug;
 
 /// Evaluates WHERE clauses from `recursive_parser` directly against `DataTable`
-pub struct RecursiveWhereEvaluator<'a, 'ctx, 'exec> {
+pub struct RecursiveWhereEvaluator<'a, 'exec> {
     table: &'a DataTable,
     case_insensitive: bool,
-    context: Option<&'ctx mut EvaluationContext>,
     exec_context: Option<&'exec ExecutionContext>,
     /// One `ArithmeticEvaluator` for the whole evaluation, built on first use.
     /// Constructing one builds the function and aggregate registries, and its
@@ -24,25 +22,20 @@ pub struct RecursiveWhereEvaluator<'a, 'ctx, 'exec> {
     arithmetic: RefCell<Option<ArithmeticEvaluator<'a>>>,
 }
 
-impl<'a, 'ctx, 'exec> RecursiveWhereEvaluator<'a, 'ctx, 'exec> {
+impl<'a, 'exec> RecursiveWhereEvaluator<'a, 'exec> {
     #[must_use]
-    pub fn new(table: &'a DataTable) -> RecursiveWhereEvaluator<'a, 'static, 'static> {
-        RecursiveWhereEvaluator {
-            table,
-            case_insensitive: false,
-            context: None,
-            exec_context: None,
-            arithmetic: RefCell::new(None),
-        }
+    pub fn new(table: &'a DataTable) -> RecursiveWhereEvaluator<'a, 'static> {
+        Self::with_case_insensitive(table, false)
     }
 
-    /// Create evaluator with an evaluation context for caching
-    pub fn with_context(table: &'a DataTable, context: &'ctx mut EvaluationContext) -> Self {
-        let case_insensitive = context.is_case_insensitive();
-        Self {
+    #[must_use]
+    pub fn with_case_insensitive(
+        table: &'a DataTable,
+        case_insensitive: bool,
+    ) -> RecursiveWhereEvaluator<'a, 'static> {
+        RecursiveWhereEvaluator {
             table,
             case_insensitive,
-            context: Some(context),
             exec_context: None,
             arithmetic: RefCell::new(None),
         }
@@ -57,23 +50,6 @@ impl<'a, 'ctx, 'exec> RecursiveWhereEvaluator<'a, 'ctx, 'exec> {
         Self {
             table,
             case_insensitive,
-            context: None,
-            exec_context: Some(exec_context),
-            arithmetic: RefCell::new(None),
-        }
-    }
-
-    /// Create evaluator with both execution context (for alias resolution) and evaluation context (for regex caching)
-    pub fn with_both_contexts(
-        table: &'a DataTable,
-        context: &'ctx mut EvaluationContext,
-        exec_context: &'exec ExecutionContext,
-    ) -> Self {
-        let case_insensitive = context.is_case_insensitive();
-        Self {
-            table,
-            case_insensitive,
-            context: Some(context),
             exec_context: Some(exec_context),
             arithmetic: RefCell::new(None),
         }
@@ -130,35 +106,6 @@ impl<'a, 'ctx, 'exec> RecursiveWhereEvaluator<'a, 'ctx, 'exec> {
         }
 
         matrix[len1][len2]
-    }
-
-    #[must_use]
-    pub fn with_case_insensitive(
-        table: &'a DataTable,
-        case_insensitive: bool,
-    ) -> RecursiveWhereEvaluator<'a, 'static, 'static> {
-        RecursiveWhereEvaluator {
-            table,
-            case_insensitive,
-            context: None,
-            exec_context: None,
-            arithmetic: RefCell::new(None),
-        }
-    }
-
-    #[must_use]
-    pub fn with_config(
-        table: &'a DataTable,
-        case_insensitive: bool,
-        _date_notation: String, // No longer needed since we use centralized parse_datetime
-    ) -> RecursiveWhereEvaluator<'a, 'static, 'static> {
-        RecursiveWhereEvaluator {
-            table,
-            case_insensitive,
-            context: None,
-            exec_context: None,
-            arithmetic: RefCell::new(None),
-        }
     }
 
     /// Compare two values under SQL three-valued logic: if **either** operand
