@@ -1,6 +1,5 @@
-use crate::data::arithmetic_evaluator::ArithmeticEvaluator;
+use crate::data::arithmetic_evaluator::{sql_like, ArithmeticEvaluator};
 use crate::data::datatable::{DataTable, DataValue};
-use crate::data::evaluation_context::EvaluationContext;
 use crate::data::query_engine::ExecutionContext;
 use crate::data::trilean::Trilean;
 use crate::data::value_comparisons::compare_with_op;
@@ -12,10 +11,9 @@ use std::cell::RefCell;
 use tracing::debug;
 
 /// Evaluates WHERE clauses from `recursive_parser` directly against `DataTable`
-pub struct RecursiveWhereEvaluator<'a, 'ctx, 'exec> {
+pub struct RecursiveWhereEvaluator<'a, 'exec> {
     table: &'a DataTable,
     case_insensitive: bool,
-    context: Option<&'ctx mut EvaluationContext>,
     exec_context: Option<&'exec ExecutionContext>,
     /// One `ArithmeticEvaluator` for the whole evaluation, built on first use.
     /// Constructing one builds the function and aggregate registries, and its
@@ -24,25 +22,20 @@ pub struct RecursiveWhereEvaluator<'a, 'ctx, 'exec> {
     arithmetic: RefCell<Option<ArithmeticEvaluator<'a>>>,
 }
 
-impl<'a, 'ctx, 'exec> RecursiveWhereEvaluator<'a, 'ctx, 'exec> {
+impl<'a, 'exec> RecursiveWhereEvaluator<'a, 'exec> {
     #[must_use]
-    pub fn new(table: &'a DataTable) -> RecursiveWhereEvaluator<'a, 'static, 'static> {
-        RecursiveWhereEvaluator {
-            table,
-            case_insensitive: false,
-            context: None,
-            exec_context: None,
-            arithmetic: RefCell::new(None),
-        }
+    pub fn new(table: &'a DataTable) -> RecursiveWhereEvaluator<'a, 'static> {
+        Self::with_case_insensitive(table, false)
     }
 
-    /// Create evaluator with an evaluation context for caching
-    pub fn with_context(table: &'a DataTable, context: &'ctx mut EvaluationContext) -> Self {
-        let case_insensitive = context.is_case_insensitive();
-        Self {
+    #[must_use]
+    pub fn with_case_insensitive(
+        table: &'a DataTable,
+        case_insensitive: bool,
+    ) -> RecursiveWhereEvaluator<'a, 'static> {
+        RecursiveWhereEvaluator {
             table,
             case_insensitive,
-            context: Some(context),
             exec_context: None,
             arithmetic: RefCell::new(None),
         }
@@ -57,23 +50,6 @@ impl<'a, 'ctx, 'exec> RecursiveWhereEvaluator<'a, 'ctx, 'exec> {
         Self {
             table,
             case_insensitive,
-            context: None,
-            exec_context: Some(exec_context),
-            arithmetic: RefCell::new(None),
-        }
-    }
-
-    /// Create evaluator with both execution context (for alias resolution) and evaluation context (for regex caching)
-    pub fn with_both_contexts(
-        table: &'a DataTable,
-        context: &'ctx mut EvaluationContext,
-        exec_context: &'exec ExecutionContext,
-    ) -> Self {
-        let case_insensitive = context.is_case_insensitive();
-        Self {
-            table,
-            case_insensitive,
-            context: Some(context),
             exec_context: Some(exec_context),
             arithmetic: RefCell::new(None),
         }
@@ -130,35 +106,6 @@ impl<'a, 'ctx, 'exec> RecursiveWhereEvaluator<'a, 'ctx, 'exec> {
         }
 
         matrix[len1][len2]
-    }
-
-    #[must_use]
-    pub fn with_case_insensitive(
-        table: &'a DataTable,
-        case_insensitive: bool,
-    ) -> RecursiveWhereEvaluator<'a, 'static, 'static> {
-        RecursiveWhereEvaluator {
-            table,
-            case_insensitive,
-            context: None,
-            exec_context: None,
-            arithmetic: RefCell::new(None),
-        }
-    }
-
-    #[must_use]
-    pub fn with_config(
-        table: &'a DataTable,
-        case_insensitive: bool,
-        _date_notation: String, // No longer needed since we use centralized parse_datetime
-    ) -> RecursiveWhereEvaluator<'a, 'static, 'static> {
-        RecursiveWhereEvaluator {
-            table,
-            case_insensitive,
-            context: None,
-            exec_context: None,
-            arithmetic: RefCell::new(None),
-        }
     }
 
     /// Compare two values under SQL three-valued logic: if **either** operand
@@ -606,12 +553,14 @@ impl<'a, 'ctx, 'exec> RecursiveWhereEvaluator<'a, 'ctx, 'exec> {
             return self.evaluate_value_as_predicate(expr, row_index);
         }
 
-        // A comparison is the value evaluator's (R13 slice 4): its operand
-        // readers and three-valued `compare_trilean` are the one
-        // implementation. Two shapes stay below for now - a legacy method call
-        // on the left (`Length()`, `IndexOf()`, `Trim*()`), whose registry
-        // twins are slice 5's to check, and the operators with their own arms.
-        if is_comparison_operator(&op_upper) && !matches!(left, SqlExpression::MethodCall { .. }) {
+        // Comparisons, NULL tests and LIKE are the value evaluator's (R13
+        // slice 4): its operand readers, three-valued `compare_trilean` and
+        // `sql_like` are the one implementation. One shape stays below for
+        // now - a legacy method call on the left (`Length()`, `IndexOf()`,
+        // `Trim*()`), whose registry twins are slice 5's to check.
+        if delegates_to_value_evaluator(&op_upper)
+            && !matches!(left, SqlExpression::MethodCall { .. })
+        {
             reject_unlifted_window(left)?;
             reject_unlifted_window(right)?;
             return self.evaluate_delegated(expr, row_index);
@@ -688,58 +637,19 @@ impl<'a, 'ctx, 'exec> RecursiveWhereEvaluator<'a, 'ctx, 'exec> {
         // Handle special operators that aren't standard comparisons
         match op_upper.as_str() {
             // LIKE operator - handle specially
-            "LIKE" => {
-                let table_value = cell_value.unwrap_or(DataValue::Null);
-                let pattern = match compare_value {
-                    DataValue::String(s) => s,
-                    DataValue::InternedString(s) => s.to_string(),
-                    // A NULL pattern makes the whole predicate UNKNOWN; any
-                    // other non-string pattern is simply not a match.
-                    DataValue::Null => return Ok(Trilean::Unknown),
-                    _ => return Ok(Trilean::False),
-                };
-
-                let text = match &table_value {
-                    DataValue::String(s) => s.as_str(),
-                    DataValue::InternedString(s) => s.as_str(),
-                    // Likewise on the value side: NULL LIKE '...' is UNKNOWN,
-                    // which matters under NOT — see P19.
-                    DataValue::Null => return Ok(Trilean::Unknown),
-                    _ => return Ok(Trilean::False),
-                };
-
-                // Use cached regex if context is available, otherwise compile fresh
-                if let Some(ctx) = &mut self.context {
-                    let regex = ctx
-                        .get_or_compile_like_regex(&pattern)
-                        .map_err(|e| anyhow::anyhow!("{}", e))?;
-                    Ok(Trilean::from_bool(regex.is_match(text)))
-                } else {
-                    // Fallback to compiling regex each time (old behavior)
-                    let regex_pattern = pattern.replace('%', ".*").replace('_', ".");
-                    let regex = regex::RegexBuilder::new(&format!("^{regex_pattern}$"))
-                        .case_insensitive(self.case_insensitive)
-                        .build()
-                        .map_err(|e| anyhow::anyhow!("Invalid LIKE pattern: {}", e))?;
-                    Ok(Trilean::from_bool(regex.is_match(text)))
-                }
-            }
+            // Reached only with a legacy method call on the left; every other
+            // LIKE delegated above. Same function, so the same rules.
+            "LIKE" => Ok(sql_like(
+                &cell_value.unwrap_or(DataValue::Null),
+                &compare_value,
+                self.case_insensitive,
+            )),
 
             // IS NULL / IS NOT NULL
             "IS NULL" => Ok(Trilean::from_bool(
                 cell_value.is_none() || matches!(cell_value, Some(DataValue::Null)),
             )),
             "IS NOT NULL" => Ok(Trilean::from_bool(
-                cell_value.is_some() && !matches!(cell_value, Some(DataValue::Null)),
-            )),
-
-            // `x IS NULL` written with an explicit NULL operand. Matched on the
-            // expression, not the value: `a IS b` where b happens to be NULL on
-            // this row is not a NULL test.
-            "IS" if matches!(right, SqlExpression::Null) => Ok(Trilean::from_bool(
-                cell_value.is_none() || matches!(cell_value, Some(DataValue::Null)),
-            )),
-            "IS NOT" if matches!(right, SqlExpression::Null) => Ok(Trilean::from_bool(
                 cell_value.is_some() && !matches!(cell_value, Some(DataValue::Null)),
             )),
 
@@ -1162,10 +1072,13 @@ fn reject_unlifted_window(expr: &SqlExpression) -> Result<()> {
     }
 }
 
-/// The comparison operators the value evaluator implements, and so the ones a
-/// WHERE comparison delegates. Expects the operator already upper-cased.
-fn is_comparison_operator(op_upper: &str) -> bool {
-    matches!(op_upper, "=" | "!=" | "<>" | "<" | "<=" | ">" | ">=")
+/// The binary predicates WHERE hands whole to the value evaluator: the
+/// comparisons and the NULL tests. Expects the operator already upper-cased.
+fn delegates_to_value_evaluator(op_upper: &str) -> bool {
+    matches!(
+        op_upper,
+        "=" | "!=" | "<>" | "<" | "<=" | ">" | ">=" | "IS NULL" | "IS NOT NULL" | "LIKE"
+    )
 }
 
 /// Operators whose result is a truth value, handled by `evaluate_binary_op`'s
@@ -1173,18 +1086,7 @@ fn is_comparison_operator(op_upper: &str) -> bool {
 fn is_predicate_operator(op_upper: &str) -> bool {
     matches!(
         op_upper,
-        "=" | "=="
-            | "!="
-            | "<>"
-            | "<"
-            | "<="
-            | ">"
-            | ">="
-            | "LIKE"
-            | "IS"
-            | "IS NOT"
-            | "IS NULL"
-            | "IS NOT NULL"
+        "=" | "!=" | "<>" | "<" | "<=" | ">" | ">=" | "LIKE" | "IS NULL" | "IS NOT NULL"
     )
 }
 

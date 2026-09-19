@@ -65,10 +65,10 @@ session apiece to fix properly, so **discovery is paused and the effort moves to
 picking them off**. Widen the corpus again when the open list is short, or
 opportunistically when a fix needs a case that doesn't exist yet.
 
-Corpus coverage today: tiers 01–10, **206 cases** (176 AGREE / 15 DIFFER /
-12 GAP / 1 OURS_ONLY / 2 BOTH_ERR as of 2026-09-18, after R13 slice 4's
-comparison delegation closed [P54](#p54); [P51](#p51), [P52](#p52) open,
-[P53](#p53) open at low priority). The largest single movement so far remains the 2026-09-05
+Corpus coverage today: tiers 01–10, **209 cases** (179 AGREE / 15 DIFFER /
+12 GAP / 1 OURS_ONLY / 2 BOTH_ERR as of 2026-09-19, after R13 slice 4 closed
+[P54](#p54) and [P55](#p55); [P51](#p51), [P52](#p52) open, [P53](#p53) open
+at low priority). The largest single movement so far remains the 2026-09-05
 NULL-ordering slice, which closed [P13](#p13) stage 2 and [P17](#p17) together —
 eleven cases in one change. **Tier 10 (aggregate & NULL edges) is still
 deliberately partial** — it holds the P14, P18–P20 and P41 cases and their
@@ -93,7 +93,7 @@ Suggested fix order, by silent blast radius:
 | ~~9d~~ | ~~[P37](#p37) window in `WHERE` returns 0 rows~~ | ✅ **Fixed 2026-09-05** — corpus count unchanged, and that is the finding: the case is `OURS_ONLY` before *and* after, so the harness cannot see this fix or a future regression of it (first entry of that kind — the regression test is a Rust module). The filed root cause was wrong: `ExpressionLifter` *does* lift from `WHERE`. The real defect was one arm in the WHERE evaluator answering FALSE for any bare value used as a predicate — `WHERE true` returned zero rows too. It did **not** close [P15](#p15), which needs the opposite change |
 | ~~9e~~ | ~~[P41](#p41) `MODE` tie-break is random per run~~ | ✅ **Fixed 2026-09-06** — 152 → **156 AGREE** (four new cases). Small, as predicted, but not where it was filed: the named `ModeState` was a *shadowed* implementation and fixing it moved nothing. Reference does specify a rule and it is **first-occurrence**, not the "smallest value wins" this row proposed. Unblocked both example files, now FORMAL. Spun off [P42](#p42), [P43](#p43), [R12](ENGINE_REFACTORING.md#r12) |
 | ~~9g~~ | ~~[P46](#p46) column-vs-column `WHERE` returns 0 rows~~ | ✅ **Fixed 2026-09-13** — 157 → **168 AGREE**. Wider than filed: *every* non-literal right-hand operand read as NULL (comparisons, `IN` items, `BETWEEN` bounds), and a literal on the left errored (`WHERE 1=0`). One resolver for all operands closed it. Did **not** need [P48](#p48) alongside, as this row predicted — the fix kept the comparison in the WHERE evaluator. Spun off [P49](#p49) (correlated outer refs bind to the inner table), accepted knowingly |
-| **NEXT** | [R13](ENGINE_REFACTORING.md#r13) one expression evaluator — **the active workstream from 2026-09-13** | **Slices 1–2 done 2026-09-13** (value evaluator three-valued, 168 → 174 AGREE, closed P48/P50); **slice 3 done 2026-09-14** (one construction path; case-insensitive mode now honoured outside WHERE, parity unmoved); **slice 4 in progress** (WHERE arms delegate, one operator per commit: BETWEEN/IN 2026-09-15, comparisons 2026-09-18 closing [P54](#p54), 175 → 176 AGREE; LIKE and IS NULL next). Not a finding but the reason several are cheap to fix only once. WHERE and the value evaluator implement every boolean operator separately with different NULL rules, so the same predicate answers differently in WHERE, HAVING, SELECT and JOIN ON. **Working rule:** a parity fix that touches expression evaluation lands as an R13 slice, not a patch. [P52](#p52) (NULL join keys) is slice 6 |
+| **NEXT** | [R13](ENGINE_REFACTORING.md#r13) one expression evaluator — **the active workstream from 2026-09-13** | **Slices 1–2 done 2026-09-13** (value evaluator three-valued, 168 → 174 AGREE, closed P48/P50); **slice 3 done 2026-09-14** (one construction path; case-insensitive mode now honoured outside WHERE, parity unmoved); **slice 4 in progress** (WHERE arms delegate, one operator per commit: BETWEEN/IN 2026-09-15, comparisons 2026-09-18 closing [P54](#p54), IS NULL and LIKE 2026-09-19 closing [P55](#p55), 175 → 179 AGREE; every WHERE operator now delegates — AND/OR/NOT/CASE follow slice 5). Not a finding but the reason several are cheap to fix only once. WHERE and the value evaluator implement every boolean operator separately with different NULL rules, so the same predicate answers differently in WHERE, HAVING, SELECT and JOIN ON. **Working rule:** a parity fix that touches expression evaluation lands as an R13 slice, not a patch. [P52](#p52) (NULL join keys) is slice 6 |
 | then | [P47](#p47) `MIN`/`MAX` ranked by type | Silent and cheap, and outside the evaluator (aggregate registries — confirm the live one first, [R12](ENGINE_REFACTORING.md#r12)), so it can land alongside R13 without breaking the working rule |
 | then | [P14](#p14), [P20](#p20), [P23](#p23) | Smaller, self-contained, decisions already taken. Was row 9b, then NEXT until the 2026-09-12 findings displaced it. **Check each against the R13 working rule first** — P20 (`\|\|` with NULL) is an operator in the value evaluator |
 | 9f | [P42](#p42) `MODE` is numeric-only | Companion to [R12](ENGINE_REFACTORING.md#r12), and cheap if taken with it: the shadowed implementation already handles non-numerics and preserves type, so the fix is largely to stop the live path throwing away what it knows. Also buys the corpus its clearest tie-break case |
@@ -2510,6 +2510,38 @@ out of date.
   the next such change is seen.
 - **Found:** 2026-09-18, pinning the operand readers for R13 slice 4.
 
+### P55 — A `LIKE` pattern in `WHERE` is read as a regex
+- **Status:** ✅ FIXED 2026-09-19 by [R13](ENGINE_REFACTORING.md#r13) slice 4:
+  WHERE's LIKE delegates to the value evaluator, and both now call one
+  function, `sql_like`, which treats only `%` and `_` as special. The regex
+  path is gone. 176 → **179 AGREE**; the six matrix entries went FIXED and
+  nothing else moved.
+- **Corpus:** `02_where.toml :: where_like_dot_is_literal`,
+  `where_like_bracket_is_literal`, `where_like_paren_is_literal` (all AGREE).
+  The newline shapes are pinned in the evaluator matrix only (`EXPECTED_LIKE`);
+  a CSV value with an embedded newline would test the loader as much as LIKE.
+- **Found on the way:** the value evaluator's own matcher, correct on all ten
+  patterns, was exponential — one 80-character value against
+  `'%a%a%a%a%a%a%a%b'` ran for over a minute. Replaced with an iterative
+  matcher before WHERE delegated to it, so the fix did not trade wrong rows for
+  a hang.
+- **Observed:** `WHERE s LIKE 'a.c'` returns `abc` as well as `a.c`;
+  `LIKE '[a]bc'` returns `abc` and misses `[a]bc`; `LIKE 'a(b%'` fails the
+  query with "regex parse error … unclosed group"; `LIKE '%'` misses a value
+  containing a newline.
+- **Cause:** WHERE builds its matcher by string replacement —
+  `pattern.replace('%', ".*").replace('_', ".")` — in both
+  `EvaluationContext::get_or_compile_like_regex` (the cached path every query
+  takes) and the uncached fallback in `recursive_where_evaluator.rs`. Nothing
+  else is escaped, so every regex metacharacter (`. [ ] ( ) + * ? ^ $ | \ { }`)
+  in a pattern is live, and `.` does not match `\n`. The value evaluator's
+  `sql_like_match` walks characters and treats only `%` and `_` specially — it
+  gets all ten matrix patterns right.
+- **Why it matters:** `.` and `(` are ordinary in the data people filter —
+  file names (`LIKE '%.csv'` matches `xcsv`), versions, email addresses,
+  `'price (usd)%'`.
+- **Found:** 2026-09-19, pinning LIKE for R13 slice 4.
+
 ---
 
 ## Deferred / won't fix (intentional)
@@ -2524,6 +2556,25 @@ out of date.
   variables, staged temp tables, and iterative evaluation — which is out of scope
   for the current "vanilla SQL consistency" effort. Revisit if/when that scope
   layer is pursued. Not a bug; do not let the corpus case churn — keep `expect = "GAP"`.
+
+### D2 — `LIKE` over a number matches the number's displayed text
+- **Status:** ⚪ DELIBERATE (decided 2026-09-19, R13 slice 4).
+- **Corpus:** none — DuckDB errors, so there is no reference answer to agree
+  with. Pinned in the evaluator matrix (`EXPECTED_NUMBER_LIKE`), whose expected
+  answers for these rows are this decision, not DuckDB output.
+- **Behaviour:** a non-text operand of `LIKE` is matched as the text sql-cli
+  displays for it: `51.5 LIKE '5%'` is TRUE; `5.0` displays as `5`, so it
+  matches `'5%'` but not `'5.0'`. DuckDB rejects the query (no
+  `LIKE(DOUBLE, VARCHAR)`) and asks for an explicit cast.
+- **Rationale:** the tool is for exploring data, often loosely typed CSVs where
+  an id or code column is inferred as a number; "does this id start with
+  `9007`" should just work. Matching the displayed text means the pattern
+  matches what the user can see. The value evaluator (SELECT, HAVING, CASE)
+  already behaved this way; before R13 slice 4, WHERE answered FALSE for every
+  number, so the same predicate disagreed with itself between clauses.
+- **Considered:** erroring like DuckDB (strict, but breaks existing SELECTs that
+  rely on it), and FALSE everywhere (a silent non-match is the least useful
+  answer).
 
 _When we consciously diverge from the reference engine on results (rather than
 simply not implementing a feature), record it here with the rationale so the
