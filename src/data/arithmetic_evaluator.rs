@@ -367,20 +367,7 @@ impl<'a> ArithmeticEvaluator<'a> {
             "IS NOT NULL" => Ok(DataValue::Boolean(!matches!(left_val, DataValue::Null))),
             "AND" => Ok(truth_of(&left_val)?.and(truth_of(&right_val)?).to_value()),
             "OR" => Ok(truth_of(&left_val)?.or(truth_of(&right_val)?).to_value()),
-            // LIKE operator - SQL pattern matching
-            "LIKE" => {
-                if matches!(left_val, DataValue::Null) || matches!(right_val, DataValue::Null) {
-                    return Ok(DataValue::Null);
-                }
-                let mut text = self.value_to_string(&left_val);
-                let mut pattern = self.value_to_string(&right_val);
-                if self.case_insensitive {
-                    text = text.to_lowercase();
-                    pattern = pattern.to_lowercase();
-                }
-                let matches = like_match(&text, &pattern);
-                Ok(DataValue::Boolean(matches))
-            }
+            "LIKE" => Ok(sql_like(&left_val, &right_val, self.case_insensitive).to_value()),
             _ => Err(anyhow!("Unsupported arithmetic operator: {}", op)),
         }
     }
@@ -464,24 +451,6 @@ impl<'a> ArithmeticEvaluator<'a> {
             (DataValue::Float(a), DataValue::Integer(b)) => Ok(DataValue::Float(a / *b as f64)),
             (DataValue::Float(a), DataValue::Float(b)) => Ok(DataValue::Float(a / b)),
             _ => Err(anyhow!("Cannot divide {:?} and {:?}", left, right)),
-        }
-    }
-
-    /// Convert DataValue to string for pattern matching
-    fn value_to_string(&self, value: &DataValue) -> String {
-        match value {
-            DataValue::String(s) => s.clone(),
-            DataValue::InternedString(s) => s.to_string(),
-            DataValue::Integer(i) => i.to_string(),
-            DataValue::Float(f) => f.to_string(),
-            DataValue::Boolean(b) => b.to_string(),
-            DataValue::DateTime(dt) => dt.to_string(),
-            DataValue::Vector(v) => {
-                // Format as "[x,y,z]"
-                let components: Vec<String> = v.iter().map(|f| f.to_string()).collect();
-                format!("[{}]", components.join(","))
-            }
-            DataValue::Null => String::new(),
         }
     }
 
@@ -1573,6 +1542,41 @@ fn compare_trilean(
         return Trilean::Unknown;
     }
     Trilean::from_bool(compare_with_op(left, right, op, case_insensitive))
+}
+
+/// `value LIKE pattern`, three-valued: the one implementation of LIKE, used by
+/// the value evaluator and by the WHERE evaluator's remaining legacy arm.
+/// NULL on either side is UNKNOWN. A non-text operand is matched as the text
+/// sql-cli displays for it (D2 in docs/SQL_PARITY.md - DuckDB rejects LIKE on
+/// a number instead).
+pub(crate) fn sql_like(value: &DataValue, pattern: &DataValue, case_insensitive: bool) -> Trilean {
+    if matches!(value, DataValue::Null) || matches!(pattern, DataValue::Null) {
+        return Trilean::Unknown;
+    }
+    let (text, pattern) = (like_text(value), like_text(pattern));
+    Trilean::from_bool(if case_insensitive {
+        like_match(&text.to_lowercase(), &pattern.to_lowercase())
+    } else {
+        like_match(&text, &pattern)
+    })
+}
+
+/// The text a LIKE operand is matched as: what sql-cli displays for it.
+fn like_text(value: &DataValue) -> String {
+    match value {
+        DataValue::String(s) => s.clone(),
+        DataValue::InternedString(s) => s.to_string(),
+        DataValue::Integer(i) => i.to_string(),
+        DataValue::Float(f) => f.to_string(),
+        DataValue::Boolean(b) => b.to_string(),
+        DataValue::DateTime(dt) => dt.to_string(),
+        DataValue::Vector(v) => {
+            // Format as "[x,y,z]"
+            let components: Vec<String> = v.iter().map(|f| f.to_string()).collect();
+            format!("[{}]", components.join(","))
+        }
+        DataValue::Null => String::new(),
+    }
 }
 
 /// SQL `LIKE`: `%` matches any run of characters (including none, and across

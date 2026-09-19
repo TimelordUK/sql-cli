@@ -2511,13 +2511,20 @@ out of date.
 - **Found:** 2026-09-18, pinning the operand readers for R13 slice 4.
 
 ### P55 — A `LIKE` pattern in `WHERE` is read as a regex
-- **Status:** 🔴 OPEN — silent wrong rows, or a failed query.
-  [R13](ENGINE_REFACTORING.md#r13) slice 4 (LIKE delegates) closes it.
+- **Status:** ✅ FIXED 2026-09-19 by [R13](ENGINE_REFACTORING.md#r13) slice 4:
+  WHERE's LIKE delegates to the value evaluator, and both now call one
+  function, `sql_like`, which treats only `%` and `_` as special. The regex
+  path is gone. 176 → **179 AGREE**; the six matrix entries went FIXED and
+  nothing else moved.
 - **Corpus:** `02_where.toml :: where_like_dot_is_literal`,
-  `where_like_bracket_is_literal` (`expect = "DIFFER"`),
-  `where_like_paren_is_literal` (`expect = "GAP"`). The newline shapes are
-  pinned in the evaluator matrix only (`EXPECTED_LIKE`); a CSV value with an
-  embedded newline would test the loader as much as LIKE.
+  `where_like_bracket_is_literal`, `where_like_paren_is_literal` (all AGREE).
+  The newline shapes are pinned in the evaluator matrix only (`EXPECTED_LIKE`);
+  a CSV value with an embedded newline would test the loader as much as LIKE.
+- **Found on the way:** the value evaluator's own matcher, correct on all ten
+  patterns, was exponential — one 80-character value against
+  `'%a%a%a%a%a%a%a%b'` ran for over a minute. Replaced with an iterative
+  matcher before WHERE delegated to it, so the fix did not trade wrong rows for
+  a hang.
 - **Observed:** `WHERE s LIKE 'a.c'` returns `abc` as well as `a.c`;
   `LIKE '[a]bc'` returns `abc` and misses `[a]bc`; `LIKE 'a(b%'` fails the
   query with "regex parse error … unclosed group"; `LIKE '%'` misses a value

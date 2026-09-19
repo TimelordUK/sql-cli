@@ -1,4 +1,4 @@
-use crate::data::arithmetic_evaluator::ArithmeticEvaluator;
+use crate::data::arithmetic_evaluator::{sql_like, ArithmeticEvaluator};
 use crate::data::datatable::{DataTable, DataValue};
 use crate::data::evaluation_context::EvaluationContext;
 use crate::data::query_engine::ExecutionContext;
@@ -606,11 +606,11 @@ impl<'a, 'ctx, 'exec> RecursiveWhereEvaluator<'a, 'ctx, 'exec> {
             return self.evaluate_value_as_predicate(expr, row_index);
         }
 
-        // Comparisons and NULL tests are the value evaluator's (R13 slice 4):
-        // its operand readers and three-valued `compare_trilean` are the one
-        // implementation. Two shapes stay below for now - a legacy method call
-        // on the left (`Length()`, `IndexOf()`, `Trim*()`), whose registry
-        // twins are slice 5's to check, and LIKE.
+        // Comparisons, NULL tests and LIKE are the value evaluator's (R13
+        // slice 4): its operand readers, three-valued `compare_trilean` and
+        // `sql_like` are the one implementation. One shape stays below for
+        // now - a legacy method call on the left (`Length()`, `IndexOf()`,
+        // `Trim*()`), whose registry twins are slice 5's to check.
         if delegates_to_value_evaluator(&op_upper)
             && !matches!(left, SqlExpression::MethodCall { .. })
         {
@@ -690,42 +690,13 @@ impl<'a, 'ctx, 'exec> RecursiveWhereEvaluator<'a, 'ctx, 'exec> {
         // Handle special operators that aren't standard comparisons
         match op_upper.as_str() {
             // LIKE operator - handle specially
-            "LIKE" => {
-                let table_value = cell_value.unwrap_or(DataValue::Null);
-                let pattern = match compare_value {
-                    DataValue::String(s) => s,
-                    DataValue::InternedString(s) => s.to_string(),
-                    // A NULL pattern makes the whole predicate UNKNOWN; any
-                    // other non-string pattern is simply not a match.
-                    DataValue::Null => return Ok(Trilean::Unknown),
-                    _ => return Ok(Trilean::False),
-                };
-
-                let text = match &table_value {
-                    DataValue::String(s) => s.as_str(),
-                    DataValue::InternedString(s) => s.as_str(),
-                    // Likewise on the value side: NULL LIKE '...' is UNKNOWN,
-                    // which matters under NOT — see P19.
-                    DataValue::Null => return Ok(Trilean::Unknown),
-                    _ => return Ok(Trilean::False),
-                };
-
-                // Use cached regex if context is available, otherwise compile fresh
-                if let Some(ctx) = &mut self.context {
-                    let regex = ctx
-                        .get_or_compile_like_regex(&pattern)
-                        .map_err(|e| anyhow::anyhow!("{}", e))?;
-                    Ok(Trilean::from_bool(regex.is_match(text)))
-                } else {
-                    // Fallback to compiling regex each time (old behavior)
-                    let regex_pattern = pattern.replace('%', ".*").replace('_', ".");
-                    let regex = regex::RegexBuilder::new(&format!("^{regex_pattern}$"))
-                        .case_insensitive(self.case_insensitive)
-                        .build()
-                        .map_err(|e| anyhow::anyhow!("Invalid LIKE pattern: {}", e))?;
-                    Ok(Trilean::from_bool(regex.is_match(text)))
-                }
-            }
+            // Reached only with a legacy method call on the left; every other
+            // LIKE delegated above. Same function, so the same rules.
+            "LIKE" => Ok(sql_like(
+                &cell_value.unwrap_or(DataValue::Null),
+                &compare_value,
+                self.case_insensitive,
+            )),
 
             // IS NULL / IS NOT NULL
             "IS NULL" => Ok(Trilean::from_bool(
@@ -1159,7 +1130,7 @@ fn reject_unlifted_window(expr: &SqlExpression) -> Result<()> {
 fn delegates_to_value_evaluator(op_upper: &str) -> bool {
     matches!(
         op_upper,
-        "=" | "!=" | "<>" | "<" | "<=" | ">" | ">=" | "IS NULL" | "IS NOT NULL"
+        "=" | "!=" | "<>" | "<" | "<=" | ">" | ">=" | "IS NULL" | "IS NOT NULL" | "LIKE"
     )
 }
 

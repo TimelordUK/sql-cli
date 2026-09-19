@@ -293,78 +293,14 @@ const EXPECTED_NUMBER_LIKE: &[(&str, &str)] = &[
     ("big LIKE '%993'", "TFU"),
 ];
 
-const NUMBER_LIKE_NEVER_MATCHES: &str =
-    "D2: WHERE's LIKE answers FALSE for any non-text operand; the decision is to \
-     match the displayed text, as the value evaluator already does";
+// R13 slice 4 recorded four WHERE entries here - WHERE's LIKE answered FALSE
+// for every non-text operand. All four went FIXED when LIKE delegated.
+const KNOWN_NUMBER_LIKE: &[Known] = &[];
 
-const KNOWN_NUMBER_LIKE: &[Known] = &[
-    Known {
-        evaluator: Evaluator::Where,
-        predicate: "n LIKE '5%'",
-        observed: "FUF",
-        why: NUMBER_LIKE_NEVER_MATCHES,
-    },
-    Known {
-        evaluator: Evaluator::Where,
-        predicate: "n LIKE '7._'",
-        observed: "FUF",
-        why: NUMBER_LIKE_NEVER_MATCHES,
-    },
-    Known {
-        evaluator: Evaluator::Where,
-        predicate: "big LIKE '9007%'",
-        observed: "FFU",
-        why: NUMBER_LIKE_NEVER_MATCHES,
-    },
-    Known {
-        evaluator: Evaluator::Where,
-        predicate: "big LIKE '%993'",
-        observed: "FFU",
-        why: NUMBER_LIKE_NEVER_MATCHES,
-    },
-];
-
-const LIKE_AS_REGEX: &str = "P55: WHERE compiles a LIKE pattern to a regex without escaping it, \
-     so regex syntax in the pattern is live and `.` does not cross a newline";
-
-const KNOWN_LIKE: &[Known] = &[
-    Known {
-        evaluator: Evaluator::Where,
-        predicate: "s LIKE 'a.c'",
-        observed: "TTFFUFF",
-        why: LIKE_AS_REGEX,
-    },
-    Known {
-        evaluator: Evaluator::Where,
-        predicate: "s LIKE 'a(b%'",
-        observed: "EEEEUEE",
-        why: LIKE_AS_REGEX,
-    },
-    Known {
-        evaluator: Evaluator::Where,
-        predicate: "s LIKE '[a]bc'",
-        observed: "TFFFUFF",
-        why: LIKE_AS_REGEX,
-    },
-    Known {
-        evaluator: Evaluator::Where,
-        predicate: "s LIKE '%'",
-        observed: "TTTFUTT",
-        why: LIKE_AS_REGEX,
-    },
-    Known {
-        evaluator: Evaluator::Where,
-        predicate: "s LIKE 'line1%'",
-        observed: "FFFFUFF",
-        why: LIKE_AS_REGEX,
-    },
-    Known {
-        evaluator: Evaluator::Where,
-        predicate: "s LIKE '%2'",
-        observed: "FFFFUFF",
-        why: LIKE_AS_REGEX,
-    },
-];
+// R13 slice 4 recorded six WHERE entries here (P55: the pattern compiled to a
+// regex, unescaped - `.`, `[a]` and `(` were live, and `%` stopped at a
+// newline). All six went FIXED when LIKE delegated to `sql_like`.
+const KNOWN_LIKE: &[Known] = &[];
 
 fn trilean_char(t: Trilean) -> char {
     match t {
