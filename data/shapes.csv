@@ -1,0 +1,42 @@
+num_sides,num_vertices,internal_angle_sum,num_parallel_pairs,num_equal_sides,num_right_angles,aspect_ratio,is_curved,compactness_ratio,symmetry_lines,label
+1,0,0,0,0,0,0.00,0,0.00,1,Line / Line Segment
+1,0,0,0,0,0,0.00,0,0.00,1,Ray
+3,3,180,0,3,0,1.15,0,0.78,3,Equilateral Triangle
+3,3,180,0,2,0,1.10,0,0.73,1,Isosceles Triangle
+3,3,180,0,0,0,1.45,0,0.61,0,Scalene Triangle
+3,3,180,0,0,1,1.33,0,0.58,0,Right Scalene Triangle
+3,3,180,0,2,1,1.00,0,0.65,1,Right Isosceles Triangle
+4,4,360,2,4,4,1.00,0,0.79,4,Square
+4,4,360,2,2,4,2.00,0,0.69,2,Rectangle
+4,4,360,2,4,0,1.50,0,0.72,2,Rhombus
+4,4,360,2,2,0,1.80,0,0.68,0,Parallelogram
+4,4,360,1,2,0,1.60,0,0.70,1,Isosceles Trapezoid
+4,4,360,0,0,0,1.70,0,0.64,0,Scalene Trapezoid
+4,4,360,0,2,0,1.20,0,0.67,1,Kite
+5,5,540,0,5,0,1.05,0,0.86,5,Regular Pentagon
+6,6,720,3,6,0,1.15,0,0.91,6,Regular Hexagon
+7,7,900,0,7,0,1.03,0,0.93,7,Regular Heptagon
+8,8,"1,080",4,8,0,1.00,0,0.95,8,Regular Octagon
+9,9,"1,260",0,9,0,1.02,0,0.96,9,Regular Nonagon
+10,10,"1,440",5,10,0,1.00,0,0.97,10,Regular Decagon
+12,12,"1,800",6,12,0,1.00,0,0.98,12,Regular Dodecagon
+0,0,0,0,0,0,1.00,1,1.00,-1,Circle
+0,0,0,0,0,0,2.50,1,0.82,2,Ellipse
+1,2,180,0,0,0,2.00,1,0.76,1,Semicircle
+0,0,0,0,0,0,1.20,1,0.88,1,Crescent
+0,0,0,0,0,0,1.10,1,0.80,1,Heart
+1,2,180,0,0,0,1.00,1,0.85,1,Pie Sector (90 Deg)
+10,10,"1,440",0,10,0,1.00,0,0.48,5,5-Point Star
+12,12,"1,800",0,12,0,1.00,0,0.42,6,6-Point Star
+8,8,"1,080",0,8,0,1.00,0,0.52,4,4-Point Star
+12,12,"1,800",0,4,4,1.00,0,0.70,4,Cross / Plus Shape
+0,0,0,0,0,0,1.00,1,1.00,-1,Sphere
+12,8,"2,160",3,12,24,1.00,0,0.79,9,Cube
+12,8,"2,160",3,4,24,1.50,0,0.69,3,Rectangular Prism (Cuboid)
+2,1,0,0,0,0,1.00,1,0.80,-1,Cone
+2,0,0,1,0,0,1.00,1,0.85,-1,Cylinder
+8,5,720,0,8,0,1.00,0,0.65,4,Square Pyramid
+6,4,360,0,6,0,1.00,0,0.60,3,Triangular Pyramid (Tetrahedron)
+9,6,720,0,3,0,1.15,0,0.75,3,Triangular Prism
+30,20,"6,480",0,30,0,1.00,0,0.80,15,Icosahedron
+30,12,"3,600",0,30,0,1.00,0,0.83,15,Dodecahedron
