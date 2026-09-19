@@ -606,12 +606,14 @@ impl<'a, 'ctx, 'exec> RecursiveWhereEvaluator<'a, 'ctx, 'exec> {
             return self.evaluate_value_as_predicate(expr, row_index);
         }
 
-        // A comparison is the value evaluator's (R13 slice 4): its operand
-        // readers and three-valued `compare_trilean` are the one
+        // Comparisons and NULL tests are the value evaluator's (R13 slice 4):
+        // its operand readers and three-valued `compare_trilean` are the one
         // implementation. Two shapes stay below for now - a legacy method call
         // on the left (`Length()`, `IndexOf()`, `Trim*()`), whose registry
-        // twins are slice 5's to check, and the operators with their own arms.
-        if is_comparison_operator(&op_upper) && !matches!(left, SqlExpression::MethodCall { .. }) {
+        // twins are slice 5's to check, and LIKE.
+        if delegates_to_value_evaluator(&op_upper)
+            && !matches!(left, SqlExpression::MethodCall { .. })
+        {
             reject_unlifted_window(left)?;
             reject_unlifted_window(right)?;
             return self.evaluate_delegated(expr, row_index);
@@ -730,16 +732,6 @@ impl<'a, 'ctx, 'exec> RecursiveWhereEvaluator<'a, 'ctx, 'exec> {
                 cell_value.is_none() || matches!(cell_value, Some(DataValue::Null)),
             )),
             "IS NOT NULL" => Ok(Trilean::from_bool(
-                cell_value.is_some() && !matches!(cell_value, Some(DataValue::Null)),
-            )),
-
-            // `x IS NULL` written with an explicit NULL operand. Matched on the
-            // expression, not the value: `a IS b` where b happens to be NULL on
-            // this row is not a NULL test.
-            "IS" if matches!(right, SqlExpression::Null) => Ok(Trilean::from_bool(
-                cell_value.is_none() || matches!(cell_value, Some(DataValue::Null)),
-            )),
-            "IS NOT" if matches!(right, SqlExpression::Null) => Ok(Trilean::from_bool(
                 cell_value.is_some() && !matches!(cell_value, Some(DataValue::Null)),
             )),
 
@@ -1162,10 +1154,13 @@ fn reject_unlifted_window(expr: &SqlExpression) -> Result<()> {
     }
 }
 
-/// The comparison operators the value evaluator implements, and so the ones a
-/// WHERE comparison delegates. Expects the operator already upper-cased.
-fn is_comparison_operator(op_upper: &str) -> bool {
-    matches!(op_upper, "=" | "!=" | "<>" | "<" | "<=" | ">" | ">=")
+/// The binary predicates WHERE hands whole to the value evaluator: the
+/// comparisons and the NULL tests. Expects the operator already upper-cased.
+fn delegates_to_value_evaluator(op_upper: &str) -> bool {
+    matches!(
+        op_upper,
+        "=" | "!=" | "<>" | "<" | "<=" | ">" | ">=" | "IS NULL" | "IS NOT NULL"
+    )
 }
 
 /// Operators whose result is a truth value, handled by `evaluate_binary_op`'s
@@ -1173,18 +1168,7 @@ fn is_comparison_operator(op_upper: &str) -> bool {
 fn is_predicate_operator(op_upper: &str) -> bool {
     matches!(
         op_upper,
-        "=" | "=="
-            | "!="
-            | "<>"
-            | "<"
-            | "<="
-            | ">"
-            | ">="
-            | "LIKE"
-            | "IS"
-            | "IS NOT"
-            | "IS NULL"
-            | "IS NOT NULL"
+        "=" | "!=" | "<>" | "<" | "<=" | ">" | ">=" | "LIKE" | "IS NULL" | "IS NOT NULL"
     )
 }
 
