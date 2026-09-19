@@ -666,6 +666,7 @@ impl ViewportManager {
         // Update our stored terminal dimensions
         self.terminal_width = terminal_width;
         self.terminal_height = terminal_height;
+        self.width_calculator.set_width_budget(terminal_width);
 
         // Only adjust viewport if terminal size actually changed AND we need to
         // Don't reset the viewport on every render!
