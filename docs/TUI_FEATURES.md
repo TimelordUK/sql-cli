@@ -745,6 +745,35 @@ Older, non-living notes that still contain usable thinking:
   editor knew a schema. This is the same correction T2 made to the completer,
   arriving late for the other widget.
 
+### T18 — Column packing squeezed headers into a half-empty screen
+- **Status:** 🟢 DONE (2026-09-19)
+- **Where:** `ColumnWidthCalculator` (`src/ui/viewport/column_width_calculator.rs`),
+  `ViewportManager::update_terminal_size`, `build_header_row`
+  (`src/ui/rendering/table_renderer.rs`)
+- **Observed:** opening `data/shapes.csv` (11 columns, long names such as
+  `num_parallel_pairs` over 1–4 character values) used under 40% of the screen.
+  Every header was cut down to a few characters, and Alt+S had to be pressed
+  twice, to Header Focus, to get a readable table.
+- **Cause:** the calculator never knew how wide the table was. Balanced mode
+  limits a header to 1.5× its data width, so a 1-character column came out 3
+  wide however much room was left. The only width-aware code
+  (`calculate_with_terminal_width`) widened columns to at most 15, and the
+  render path never called it.
+- **Fix:** `update_terminal_size` gives the calculator a width budget. Each mode
+  still packs as before, then `expand_into_spare_width` hands out the leftover
+  space to truncated columns, **smallest shortfall first**, so it completes as
+  many columns as it can instead of widening all of them slightly. Widths never
+  shrink, so a table that already overflows keeps the packed layout. Packing
+  modes now decide only *what to sacrifice when there is no room*; none of them
+  wastes space when there is.
+- **Same fix, header text:** the header of the selected column carried a
+  ` [*]` suffix that the calculator did not budget for, so it usually showed as
+  a stray `[`. It was redundant, because the column is already yellow and
+  underlined, and it has been removed. The sort arrow (` ↑`/` ↓`) is now
+  counted in the sorted column's header width (`SORT_INDICATOR_WIDTH`).
+- **Loose end:** the pin prefix (`📌 `) is still not budgeted, so pinned
+  headers can lose their last characters.
+
 ### T14 — The registry knows every signature and the editor never shows one
 - **Status:** 🔴 OPEN — opened 2026-09-12; the ergonomic half of T10
 - **Where:** `src/sql/cursor_context.rs` (a new context), the status line in

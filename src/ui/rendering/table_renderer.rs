@@ -84,9 +84,9 @@ fn build_header_row(ctx: &TableRenderContext) -> Row<'static> {
         // Get sort indicator
         let sort_indicator = ctx.get_sort_indicator(visual_pos);
 
-        // Check if this is the current column
+        // Current column is marked by style alone (yellow, underlined) - a text
+        // marker would cost header width the column calculator does not budget for
         let is_crosshair = ctx.is_selected_column(visual_pos);
-        let column_indicator = if is_crosshair { " [*]" } else { "" };
 
         // Add pin indicator for pinned columns
         let pin_indicator = if is_pinned { "📌 " } else { "" };
@@ -110,12 +110,8 @@ fn build_header_row(ctx: &TableRenderContext) -> Row<'static> {
             style = style.fg(Color::Yellow).add_modifier(Modifier::UNDERLINED);
         }
 
-        header_cells.push(
-            Cell::from(format!(
-                "{pin_indicator}{header}{sort_indicator}{column_indicator}"
-            ))
-            .style(style),
-        );
+        header_cells
+            .push(Cell::from(format!("{pin_indicator}{header}{sort_indicator}")).style(style));
 
         last_was_pinned = is_pinned;
     }

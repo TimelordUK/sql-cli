@@ -1,4 +1,4 @@
-use crate::data::data_view::DataView;
+use crate::data::data_view::{DataView, SortOrder};
 
 // Constants moved from viewport_manager.rs
 pub const DEFAULT_COL_WIDTH: u16 = 15;
@@ -8,6 +8,8 @@ pub const MAX_COL_WIDTH_DATA_FOCUS: u16 = 100;
 pub const COLUMN_PADDING: u16 = 2;
 pub const MIN_HEADER_WIDTH_DATA_FOCUS: u16 = 5;
 pub const MAX_HEADER_TO_DATA_RATIO: f32 = 1.5;
+/// Display width of the " ↑" / " ↓" suffix on the sorted column's header
+pub const SORT_INDICATOR_WIDTH: u16 = 2;
 
 /// Column packing modes for different width calculation strategies
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -59,6 +61,10 @@ pub struct ColumnWidthCalculator {
     column_width_debug: Vec<ColumnWidthDebugInfo>,
     /// Whether cache needs recalculation
     cache_dirty: bool,
+    /// Width the table has to fill (the `available_width` the viewport fits columns
+    /// into), or 0 when not yet known. When the packed widths leave room to spare,
+    /// truncated columns are widened into it - packing only squeezes when it has to.
+    width_budget: u16,
 }
 
 impl ColumnWidthCalculator {
@@ -70,6 +76,7 @@ impl ColumnWidthCalculator {
             packing_mode: ColumnPackingMode::Balanced,
             column_width_debug: Vec::new(),
             cache_dirty: true,
+            width_budget: 0,
         }
     }
 
@@ -103,6 +110,14 @@ impl ColumnWidthCalculator {
         self.cache_dirty = true;
     }
 
+    /// Set the width the columns are laid out into (0 = unknown, no expansion)
+    pub fn set_width_budget(&mut self, width: u16) {
+        if self.width_budget != width {
+            self.width_budget = width;
+            self.cache_dirty = true;
+        }
+    }
+
     /// Calculate optimal widths with terminal width awareness
     pub fn calculate_with_terminal_width(
         &mut self,
@@ -110,41 +125,8 @@ impl ColumnWidthCalculator {
         viewport_rows: &std::ops::Range<usize>,
         terminal_width: u16,
     ) {
-        // First calculate normal widths
+        self.set_width_budget(terminal_width);
         self.recalculate_column_widths(dataview, viewport_rows);
-
-        // Check if we can auto-expand small columns
-        let total_ideal_width: u16 = self.column_widths.iter().sum();
-        let separators_width = (self.column_widths.len() as u16).saturating_sub(1);
-        let borders_width = 4u16; // Left and right borders plus margins
-
-        let total_needed = total_ideal_width + separators_width + borders_width;
-
-        // If everything fits comfortably, we're good
-        // If not, we might want to expand short columns that were truncated
-        if total_needed < terminal_width {
-            // We have extra space - check if any short columns can be expanded
-            let extra_space = terminal_width - total_needed;
-            let num_columns = self.column_widths.len() as u16;
-            let space_per_column = if num_columns > 0 {
-                extra_space / num_columns
-            } else {
-                0
-            };
-
-            // Find columns that might benefit from expansion
-            for (idx, width) in self.column_widths.iter_mut().enumerate() {
-                if *width <= 10 && idx < self.column_width_debug.len() {
-                    let (_, header_w, data_w, _, _) = &self.column_width_debug[idx];
-                    let ideal = (*header_w).max(*data_w) + COLUMN_PADDING;
-
-                    // If this column was truncated, expand it
-                    if ideal > *width && ideal <= 15 {
-                        *width = ideal.min(*width + space_per_column);
-                    }
-                }
-            }
-        }
     }
 
     /// Get cached column width for a column's **visual position**.
@@ -209,6 +191,13 @@ impl ColumnWidthCalculator {
         // Get column headers for width calculation
         let headers = dataview.column_names();
 
+        // The sorted column's header also carries " ↑" or " ↓"
+        let sort_state = dataview.get_sort_state();
+        let sorted_col = match sort_state.order {
+            SortOrder::None => None,
+            _ => sort_state.column,
+        };
+
         // First pass: calculate ideal widths for all columns
         let mut ideal_widths = Vec::with_capacity(col_count);
         let mut header_widths = Vec::with_capacity(col_count);
@@ -217,7 +206,10 @@ impl ColumnWidthCalculator {
         // First pass: collect all column metrics
         for col_idx in 0..col_count {
             // Track header width
-            let header_width = headers.get(col_idx).map_or(0, |h| h.len() as u16);
+            let mut header_width = headers.get(col_idx).map_or(0, |h| h.len() as u16);
+            if sorted_col == Some(col_idx) {
+                header_width += SORT_INDICATOR_WIDTH;
+            }
             header_widths.push(header_width);
 
             // Track actual data width
@@ -298,6 +290,16 @@ impl ColumnWidthCalculator {
             ));
         }
 
+        let max_width = match self.packing_mode {
+            ColumnPackingMode::DataFocus => MAX_COL_WIDTH_DATA_FOCUS,
+            _ => MAX_COL_WIDTH,
+        };
+        let targets: Vec<u16> = ideal_widths.iter().map(|w| (*w).min(max_width)).collect();
+        expand_into_spare_width(&mut self.column_widths, &targets, self.width_budget);
+        for (info, &width) in self.column_width_debug.iter_mut().zip(&self.column_widths) {
+            info.3 = width;
+        }
+
         self.cache_dirty = false;
     }
 
@@ -364,6 +366,35 @@ impl ColumnWidthCalculator {
                     header_width.max(DEFAULT_COL_WIDTH)
                 }
             }
+        }
+    }
+}
+
+/// Widen packed columns towards their ideal widths using whatever of `budget` they
+/// leave unused (each column also costs a 1-char separator).
+///
+/// Packing modes decide what to sacrifice when columns do not fit; they should not
+/// throw space away when they do. Columns closest to complete are widened first, so
+/// the spare width finishes as many columns as possible rather than spreading thinly.
+/// Widths are never reduced, so a table that already overflows is left as packed.
+fn expand_into_spare_width(widths: &mut [u16], targets: &[u16], budget: u16) {
+    let used: u32 = widths.iter().map(|&w| u32::from(w) + 1).sum();
+    let mut spare = u32::from(budget).saturating_sub(used);
+    if spare == 0 {
+        return;
+    }
+
+    let mut short: Vec<usize> = (0..widths.len())
+        .filter(|&i| targets.get(i).is_some_and(|&t| t > widths[i]))
+        .collect();
+    short.sort_by_key(|&i| targets[i] - widths[i]);
+
+    for i in short {
+        let grant = u32::from(targets[i] - widths[i]).min(spare);
+        widths[i] += grant as u16;
+        spare -= grant;
+        if spare == 0 {
+            break;
         }
     }
 }
@@ -458,5 +489,88 @@ mod tests {
         // Column 1 has a very long header but short data
         // HeaderFocus should be wider than DataFocus for this column
         assert!(header_focus_widths[1] >= data_focus_widths[1]);
+    }
+
+    /// Long headers over tiny values, as in `data/shapes.csv`
+    fn create_long_header_dataview() -> DataView {
+        let mut table = DataTable::new("shapes");
+        for name in ["num_sides", "num_parallel_pairs", "num_right_angles"] {
+            table.add_column(DataColumn::new(name));
+        }
+        for i in 0..5 {
+            let values = vec![
+                DataValue::Integer(i),
+                DataValue::Integer(i % 2),
+                DataValue::Integer(i % 3),
+            ];
+            table.add_row(DataRow::new(values)).unwrap();
+        }
+        DataView::new(Arc::new(table))
+    }
+
+    #[test]
+    fn test_spare_width_shows_full_headers() {
+        let dataview = create_long_header_dataview();
+        let mut calculator = ColumnWidthCalculator::new();
+
+        // No budget known: Balanced packs long headers down towards the data
+        let packed = calculator
+            .get_all_column_widths(&dataview, &(0..5))
+            .to_vec();
+        assert!(packed[1] < "num_parallel_pairs".len() as u16);
+
+        // A wide table has room for every header in full
+        calculator.set_width_budget(120);
+        let widths = calculator
+            .get_all_column_widths(&dataview, &(0..5))
+            .to_vec();
+        assert_eq!(widths, vec![11, 20, 18]);
+    }
+
+    #[test]
+    fn test_spare_width_finishes_nearest_columns_first() {
+        let dataview = create_long_header_dataview();
+        let mut calculator = ColumnWidthCalculator::new();
+        let packed = calculator
+            .get_all_column_widths(&dataview, &(0..5))
+            .to_vec();
+        let packed_total: u16 = packed.iter().map(|w| w + 1).sum();
+
+        // Enough spare to finish num_sides and num_right_angles (the two smaller
+        // shortfalls) with 2 left over for num_parallel_pairs
+        let spare = (11 - packed[0]) + (18 - packed[2]) + 2;
+        calculator.set_width_budget(packed_total + spare);
+        let widths = calculator
+            .get_all_column_widths(&dataview, &(0..5))
+            .to_vec();
+        assert_eq!(widths, vec![11, packed[1] + 2, 18]);
+    }
+
+    #[test]
+    fn test_sorted_column_makes_room_for_indicator() {
+        let mut dataview = create_long_header_dataview();
+        dataview.toggle_sort(1).unwrap();
+        let mut calculator = ColumnWidthCalculator::new();
+        calculator.set_width_budget(120);
+        let widths = calculator
+            .get_all_column_widths(&dataview, &(0..5))
+            .to_vec();
+        // "num_parallel_pairs ↑" plus padding
+        assert_eq!(widths[1], 18 + SORT_INDICATOR_WIDTH + COLUMN_PADDING);
+    }
+
+    #[test]
+    fn test_overflowing_table_stays_packed() {
+        let dataview = create_long_header_dataview();
+        let mut calculator = ColumnWidthCalculator::new();
+        let packed = calculator
+            .get_all_column_widths(&dataview, &(0..5))
+            .to_vec();
+
+        calculator.set_width_budget(5);
+        let widths = calculator
+            .get_all_column_widths(&dataview, &(0..5))
+            .to_vec();
+        assert_eq!(widths, packed);
     }
 }
