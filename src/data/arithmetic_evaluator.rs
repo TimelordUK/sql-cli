@@ -378,7 +378,7 @@ impl<'a> ArithmeticEvaluator<'a> {
                     text = text.to_lowercase();
                     pattern = pattern.to_lowercase();
                 }
-                let matches = self.sql_like_match(&text, &pattern);
+                let matches = like_match(&text, &pattern);
                 Ok(DataValue::Boolean(matches))
             }
             _ => Err(anyhow!("Unsupported arithmetic operator: {}", op)),
@@ -483,59 +483,6 @@ impl<'a> ArithmeticEvaluator<'a> {
             }
             DataValue::Null => String::new(),
         }
-    }
-
-    /// SQL LIKE pattern matching
-    /// Supports % (any chars) and _ (single char)
-    fn sql_like_match(&self, text: &str, pattern: &str) -> bool {
-        let pattern_chars: Vec<char> = pattern.chars().collect();
-        let text_chars: Vec<char> = text.chars().collect();
-
-        self.like_match_recursive(&text_chars, 0, &pattern_chars, 0)
-    }
-
-    /// Recursive helper for LIKE matching
-    fn like_match_recursive(
-        &self,
-        text: &[char],
-        text_pos: usize,
-        pattern: &[char],
-        pattern_pos: usize,
-    ) -> bool {
-        // If we've consumed both text and pattern, it's a match
-        if pattern_pos >= pattern.len() {
-            return text_pos >= text.len();
-        }
-
-        // Handle % wildcard (matches zero or more characters)
-        if pattern[pattern_pos] == '%' {
-            // Try matching zero characters (skip the %)
-            if self.like_match_recursive(text, text_pos, pattern, pattern_pos + 1) {
-                return true;
-            }
-            // Try matching one or more characters
-            if text_pos < text.len() {
-                return self.like_match_recursive(text, text_pos + 1, pattern, pattern_pos);
-            }
-            return false;
-        }
-
-        // If text is consumed but pattern isn't, no match
-        if text_pos >= text.len() {
-            return false;
-        }
-
-        // Handle _ wildcard (matches exactly one character)
-        if pattern[pattern_pos] == '_' {
-            return self.like_match_recursive(text, text_pos + 1, pattern, pattern_pos + 1);
-        }
-
-        // Handle literal character match
-        if text[text_pos] == pattern[pattern_pos] {
-            return self.like_match_recursive(text, text_pos + 1, pattern, pattern_pos + 1);
-        }
-
-        false
     }
 
     /// Evaluate a function call
@@ -1628,6 +1575,49 @@ fn compare_trilean(
     Trilean::from_bool(compare_with_op(left, right, op, case_insensitive))
 }
 
+/// SQL `LIKE`: `%` matches any run of characters (including none, and across
+/// newlines), `_` exactly one character, and every other character only
+/// itself - nothing in a pattern is regex syntax (P55).
+///
+/// Iterative, backtracking only to the most recent `%`: when a literal fails
+/// after a `%`, the `%` absorbs one more character and matching resumes from
+/// there. That is enough because a later `%` can always absorb whatever an
+/// earlier one would have, so earlier choices never need revisiting - which
+/// keeps the worst case at O(text × pattern). The recursive matcher this
+/// replaced tried every split for every `%`: one 60-character value against
+/// `'%a%a%a%a%a%a%a%b'` took 7 s, and 80 characters over a minute.
+fn like_match(text: &str, pattern: &str) -> bool {
+    let text: Vec<char> = text.chars().collect();
+    let pattern: Vec<char> = pattern.chars().collect();
+    let (mut t, mut p) = (0, 0);
+    // Pattern position just after the most recent `%`, and the text position
+    // that `%` has absorbed up to.
+    let mut resume: Option<(usize, usize)> = None;
+
+    while t < text.len() {
+        match pattern.get(p) {
+            Some(&'%') => {
+                p += 1;
+                resume = Some((p, t));
+            }
+            Some(&c) if c == '_' || c == text[t] => {
+                t += 1;
+                p += 1;
+            }
+            _ => match resume {
+                Some((after_percent, absorbed)) => {
+                    p = after_percent;
+                    t = absorbed + 1;
+                    resume = Some((after_percent, t));
+                }
+                None => return false,
+            },
+        }
+    }
+    // Text used up: only trailing `%`s may remain.
+    pattern[p..].iter().all(|&c| c == '%')
+}
+
 /// The truth value of an operand of AND / OR / NOT. A value with no truth value
 /// (a string, a date) is an error, as it was before three-valued logic.
 fn truth_of(value: &DataValue) -> Result<Trilean> {
@@ -1777,6 +1767,65 @@ mod tests {
             .divide_values(&DataValue::Integer(10), &DataValue::Integer(3))
             .unwrap();
         assert_eq!(result, DataValue::Float(10.0 / 3.0));
+    }
+
+    #[test]
+    fn like_match_semantics() {
+        for (text, pattern, expected) in [
+            ("abc", "abc", true),
+            ("abc", "a%", true),
+            ("abc", "%c", true),
+            ("abc", "%b%", true),
+            ("abc", "a_c", true),
+            ("abc", "a_", false),
+            ("abc", "", false),
+            ("", "", true),
+            ("", "%", true),
+            ("", "_", false),
+            ("abc", "%%%", true),
+            ("abcd", "_%_", true),
+            ("a", "_%_", false),
+            // Only % and _ are special.
+            ("a.c", "a.c", true),
+            ("abc", "a.c", false),
+            ("[a]bc", "[a]bc", true),
+            ("abc", "[a]bc", false),
+            ("a(bc", "a(b%", true),
+            // A literal % in the data is matched by the wildcard.
+            ("50%", "50%", true),
+            // % spans a newline.
+            ("line1\nline2", "%2", true),
+            ("line1\nline2", "line1%", true),
+            // Backtracking to the most recent % is enough.
+            ("aab", "%a%b", true),
+            ("ab", "%a%a", false),
+            ("mississippi", "%iss%pi", true),
+            ("mississippi", "m%ss%ss%", true),
+            ("mississippi", "m%ss%ss%ss%", false),
+            // _ is one character, not one byte.
+            ("é", "_", true),
+            ("éa", "_a", true),
+        ] {
+            assert_eq!(
+                like_match(text, pattern),
+                expected,
+                "{text:?} LIKE {pattern:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn like_match_has_no_exponential_backtracking() {
+        // The recursive matcher this replaced took 7 s for 60 characters and
+        // over a minute for 80, on one value. Here: 2,000 characters.
+        let text = "a".repeat(2000);
+        let start = std::time::Instant::now();
+        assert!(!like_match(&text, "%a%a%a%a%a%a%a%b"));
+        assert!(
+            start.elapsed() < std::time::Duration::from_secs(1),
+            "took {:?}",
+            start.elapsed()
+        );
     }
 
     #[test]
