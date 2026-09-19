@@ -297,3 +297,29 @@ sql = "SELECT id, name FROM big_ids WHERE id IN (9007199254740993, 12) ORDER BY 
 # The control for the case above. Already AGREE: R13 slice 4 part 1 delegated
 # IN to the value evaluator, which fixed it for IN and BETWEEN without anyone
 # noticing - no case held an integer this large.
+
+# --- P55: LIKE patterns were compiled as regexes, unescaped ---
+
+[[case]]
+id = "where_like_dot_is_literal"
+data = "like_patterns.csv"
+sql = "SELECT id, s FROM like_patterns WHERE s LIKE 'a.c' ORDER BY id"
+expect = "DIFFER"
+# P55. WHERE turned `%` into `.*` and `_` into `.` and passed every other
+# character to the regex engine as-is, so `.` matched any character: `abc`
+# came back alongside `a.c`.
+
+[[case]]
+id = "where_like_bracket_is_literal"
+data = "like_patterns.csv"
+sql = "SELECT id, s FROM like_patterns WHERE s LIKE '[a]bc' ORDER BY id"
+expect = "DIFFER"
+# P55. `[a]` was a regex character class: matched `abc`, missed `[a]bc` itself.
+
+[[case]]
+id = "where_like_paren_is_literal"
+data = "like_patterns.csv"
+sql = "SELECT id, s FROM like_patterns WHERE s LIKE 'a(b%' ORDER BY id"
+expect = "GAP"
+# P55. `(` opened a regex group, so the query failed: "Invalid LIKE pattern
+# 'a(b%': regex parse error ... unclosed group".

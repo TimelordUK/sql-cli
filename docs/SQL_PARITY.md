@@ -2510,6 +2510,31 @@ out of date.
   the next such change is seen.
 - **Found:** 2026-09-18, pinning the operand readers for R13 slice 4.
 
+### P55 — A `LIKE` pattern in `WHERE` is read as a regex
+- **Status:** 🔴 OPEN — silent wrong rows, or a failed query.
+  [R13](ENGINE_REFACTORING.md#r13) slice 4 (LIKE delegates) closes it.
+- **Corpus:** `02_where.toml :: where_like_dot_is_literal`,
+  `where_like_bracket_is_literal` (`expect = "DIFFER"`),
+  `where_like_paren_is_literal` (`expect = "GAP"`). The newline shapes are
+  pinned in the evaluator matrix only (`EXPECTED_LIKE`); a CSV value with an
+  embedded newline would test the loader as much as LIKE.
+- **Observed:** `WHERE s LIKE 'a.c'` returns `abc` as well as `a.c`;
+  `LIKE '[a]bc'` returns `abc` and misses `[a]bc`; `LIKE 'a(b%'` fails the
+  query with "regex parse error … unclosed group"; `LIKE '%'` misses a value
+  containing a newline.
+- **Cause:** WHERE builds its matcher by string replacement —
+  `pattern.replace('%', ".*").replace('_', ".")` — in both
+  `EvaluationContext::get_or_compile_like_regex` (the cached path every query
+  takes) and the uncached fallback in `recursive_where_evaluator.rs`. Nothing
+  else is escaped, so every regex metacharacter (`. [ ] ( ) + * ? ^ $ | \ { }`)
+  in a pattern is live, and `.` does not match `\n`. The value evaluator's
+  `sql_like_match` walks characters and treats only `%` and `_` specially — it
+  gets all ten matrix patterns right.
+- **Why it matters:** `.` and `(` are ordinary in the data people filter —
+  file names (`LIKE '%.csv'` matches `xcsv`), versions, email addresses,
+  `'price (usd)%'`.
+- **Found:** 2026-09-19, pinning LIKE for R13 slice 4.
+
 ---
 
 ## Deferred / won't fix (intentional)
