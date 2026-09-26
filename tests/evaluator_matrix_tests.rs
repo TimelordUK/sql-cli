@@ -348,6 +348,10 @@ const EXPECTED_METHODS: &[(&str, &str)] = &[
     ("s.Trim() = 'aB'", "FFUT"),
     ("s.TrimStart() = 'aB '", "FFUT"),
     ("s.TrimEnd() = ' aB'", "FFUT"),
+    // The function forms share the method's implementation and its rules.
+    ("CONTAINS(s, 'B')", "FTUT"),
+    ("INSTR(s, 'b') = 2", "TFUF"),
+    ("CONTAINS(s, NULL)", "UUUU"),
 ];
 
 /// The same methods under `--case-insensitive`. DuckDB has no such mode; the
@@ -361,6 +365,9 @@ const EXPECTED_METHODS_CASE_INSENSITIVE: &[(&str, &str)] = &[
     ("s.EndsWith('c')", "TTUF"),
     ("s.IndexOf('B') = 1", "TTUF"),
     ("s.Trim() = 'AB'", "FFUT"),
+    ("CONTAINS(s, 'b')", "TTUT"),
+    ("INSTR(s, 'b') = 2", "TTUF"),
+    ("ENDSWITH(s, 'c')", "TTUF"),
 ];
 
 /// A method over a number. DuckDB refuses these (no implicit cast to VARCHAR),
@@ -370,6 +377,8 @@ const EXPECTED_NUMBER_METHODS: &[(&str, &str)] = &[
     ("n.Contains('5')", "TFUT"),
     ("n.StartsWith('1')", "FTUF"),
     ("n.Length() > 1", "FTUT"),
+    ("INSTR(n, '5') = 1", "TFUF"),
+    ("CONTAINS(n, '.')", "FFUT"),
 ];
 
 // Recorded by R13 slice 5's pin (2026-09-26), grouped by fault. The observed
@@ -484,6 +493,30 @@ const KNOWN_METHODS: &[Known] = &[
         observed: "FTFF",
         why: NULL_RECEIVER,
     },
+    Known {
+        evaluator: Evaluator::Where,
+        predicate: "CONTAINS(s, 'B')",
+        observed: "FTFT",
+        why: NULL_RECEIVER,
+    },
+    Known {
+        evaluator: Evaluator::Value,
+        predicate: "CONTAINS(s, 'B')",
+        observed: "FTFT",
+        why: NULL_RECEIVER,
+    },
+    Known {
+        evaluator: Evaluator::Where,
+        predicate: "CONTAINS(s, NULL)",
+        observed: "FFFF",
+        why: NULL_RECEIVER,
+    },
+    Known {
+        evaluator: Evaluator::Value,
+        predicate: "CONTAINS(s, NULL)",
+        observed: "FFFF",
+        why: NULL_RECEIVER,
+    },
 ];
 
 const KNOWN_METHODS_CASE_INSENSITIVE: &[Known] = &[
@@ -553,6 +586,42 @@ const KNOWN_METHODS_CASE_INSENSITIVE: &[Known] = &[
         observed: "FTUF",
         why: IGNORES_SWITCH,
     },
+    Known {
+        evaluator: Evaluator::Where,
+        predicate: "CONTAINS(s, 'b')",
+        observed: "TFFF",
+        why: NULL_RECEIVER_AND_IGNORES_SWITCH,
+    },
+    Known {
+        evaluator: Evaluator::Value,
+        predicate: "CONTAINS(s, 'b')",
+        observed: "TFFF",
+        why: NULL_RECEIVER_AND_IGNORES_SWITCH,
+    },
+    Known {
+        evaluator: Evaluator::Where,
+        predicate: "INSTR(s, 'b') = 2",
+        observed: "TFUF",
+        why: IGNORES_SWITCH,
+    },
+    Known {
+        evaluator: Evaluator::Value,
+        predicate: "INSTR(s, 'b') = 2",
+        observed: "TFUF",
+        why: IGNORES_SWITCH,
+    },
+    Known {
+        evaluator: Evaluator::Where,
+        predicate: "ENDSWITH(s, 'c')",
+        observed: "TFFF",
+        why: NULL_RECEIVER_AND_IGNORES_SWITCH,
+    },
+    Known {
+        evaluator: Evaluator::Value,
+        predicate: "ENDSWITH(s, 'c')",
+        observed: "TFFF",
+        why: NULL_RECEIVER_AND_IGNORES_SWITCH,
+    },
 ];
 
 const KNOWN_NUMBER_METHODS: &[Known] = &[
@@ -590,6 +659,30 @@ const KNOWN_NUMBER_METHODS: &[Known] = &[
         evaluator: Evaluator::Value,
         predicate: "n.Length() > 1",
         observed: "EEUE",
+        why: NUMBER_ERRORS,
+    },
+    Known {
+        evaluator: Evaluator::Where,
+        predicate: "INSTR(n, '5') = 1",
+        observed: "EEUE",
+        why: NUMBER_ERRORS,
+    },
+    Known {
+        evaluator: Evaluator::Value,
+        predicate: "INSTR(n, '5') = 1",
+        observed: "EEUE",
+        why: NUMBER_ERRORS,
+    },
+    Known {
+        evaluator: Evaluator::Where,
+        predicate: "CONTAINS(n, '.')",
+        observed: "EEFE",
+        why: NUMBER_ERRORS,
+    },
+    Known {
+        evaluator: Evaluator::Value,
+        predicate: "CONTAINS(n, '.')",
+        observed: "EEFE",
         why: NUMBER_ERRORS,
     },
 ];
