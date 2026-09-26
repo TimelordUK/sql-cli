@@ -28,7 +28,7 @@ pub trait MethodFunction: SqlFunction {
     }
 }
 
-/// The text a search function reads an operand as (R13 slice 5): `None` for
+/// The text a string function reads an operand as (R13 slice 5): `None` for
 /// NULL, whose answer is then NULL (P56); any other value as the text sql-cli
 /// displays for it, so a number is searched as it looks (D2); lowercased under
 /// `--case-insensitive`, as `=` and LIKE compare (D3).
@@ -149,11 +149,9 @@ impl SqlFunction for TrimMethod {
     fn evaluate(&self, args: &[DataValue]) -> Result<DataValue> {
         self.validate_args(args)?;
 
-        match &args[0] {
-            DataValue::String(s) => Ok(DataValue::String(s.trim().to_string())),
-            DataValue::InternedString(s) => Ok(DataValue::String(s.trim().to_string())),
-            DataValue::Null => Ok(DataValue::Null),
-            _ => Err(anyhow!("Trim expects a string argument")),
+        match search_text(&args[0], false) {
+            Some(text) => Ok(DataValue::String(text.trim().to_string())),
+            None => Ok(DataValue::Null),
         }
     }
 }
@@ -189,11 +187,9 @@ impl SqlFunction for TrimStartMethod {
     fn evaluate(&self, args: &[DataValue]) -> Result<DataValue> {
         self.validate_args(args)?;
 
-        match &args[0] {
-            DataValue::String(s) => Ok(DataValue::String(s.trim_start().to_string())),
-            DataValue::InternedString(s) => Ok(DataValue::String(s.trim_start().to_string())),
-            DataValue::Null => Ok(DataValue::Null),
-            _ => Err(anyhow!("TrimStart expects a string argument")),
+        match search_text(&args[0], false) {
+            Some(text) => Ok(DataValue::String(text.trim_start().to_string())),
+            None => Ok(DataValue::Null),
         }
     }
 }
@@ -229,11 +225,9 @@ impl SqlFunction for TrimEndMethod {
     fn evaluate(&self, args: &[DataValue]) -> Result<DataValue> {
         self.validate_args(args)?;
 
-        match &args[0] {
-            DataValue::String(s) => Ok(DataValue::String(s.trim_end().to_string())),
-            DataValue::InternedString(s) => Ok(DataValue::String(s.trim_end().to_string())),
-            DataValue::Null => Ok(DataValue::Null),
-            _ => Err(anyhow!("TrimEnd expects a string argument")),
+        match search_text(&args[0], false) {
+            Some(text) => Ok(DataValue::String(text.trim_end().to_string())),
+            None => Ok(DataValue::Null),
         }
     }
 }
@@ -723,11 +717,9 @@ impl SqlFunction for TrimFunction {
     fn evaluate(&self, args: &[DataValue]) -> Result<DataValue> {
         self.validate_args(args)?;
 
-        match &args[0] {
-            DataValue::String(s) => Ok(DataValue::String(s.trim().to_string())),
-            DataValue::InternedString(s) => Ok(DataValue::String(s.trim().to_string())),
-            DataValue::Null => Ok(DataValue::Null),
-            _ => Err(anyhow!("TRIM expects a string argument")),
+        match search_text(&args[0], false) {
+            Some(text) => Ok(DataValue::String(text.trim().to_string())),
+            None => Ok(DataValue::Null),
         }
     }
 }

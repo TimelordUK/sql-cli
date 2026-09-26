@@ -332,7 +332,6 @@ sql = "SELECT id, s FROM pattern_matching WHERE s LIKE 'a(b%' ORDER BY id"
 id = "where_not_method_null_receiver"
 data = "null_edges.csv"
 sql = "SELECT id FROM null_edges WHERE NOT label.contains('e') ORDER BY id"
-expect = "DIFFER"
 # P56. A NULL label made `.contains()` FALSE, not NULL, so NOT selected it:
 # ids 2, 5, 10, 11, 12 came back alongside 4, 6, 8, 9.
 
@@ -340,7 +339,6 @@ expect = "DIFFER"
 id = "where_method_contains_case_sensitive"
 data = "null_edges.csv"
 sql = "SELECT id FROM null_edges WHERE label IS NOT NULL AND NOT label.contains('E') ORDER BY id"
-expect = "DIFFER"
 # D3. WHERE's `.contains()` ignored case whatever the switch said, so `'E'`
 # found delta, charlie, echo and foxtrot and NOT dropped them; `contains` is
 # case-sensitive, as `=` and LIKE are here outside --case-insensitive, so every
@@ -358,7 +356,6 @@ sql = "SELECT id, label.contains('e') AS c FROM null_edges ORDER BY id"
 id = "where_method_other_than_legacy_on_left"
 data = "null_edges.csv"
 sql = "SELECT id FROM null_edges WHERE label.upper() = 'ECHO' ORDER BY id"
-expect = "GAP"
 # P57. WHERE accepted only Length / IndexOf / Trim* on the left of a
 # comparison, so any other method failed the query: "Method 'upper' cannot be
 # used in comparisons". SELECT has always evaluated it.

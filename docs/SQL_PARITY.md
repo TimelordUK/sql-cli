@@ -2543,12 +2543,12 @@ out of date.
 - **Found:** 2026-09-19, pinning LIKE for R13 slice 4.
 
 ### P56 — A method call over a NULL receiver answers FALSE, not NULL
-- **Status:** 🟡 HALF FIXED — pinned 2026-09-26 by [R13](ENGINE_REFACTORING.md#r13)
-  slice 5. The registry's search functions (SELECT, HAVING, every clause but
-  WHERE's own method arms, and every function form) fixed the same day —
-  179 → **180 AGREE**. WHERE's method calls go when WHERE delegates them.
-- **Corpus:** `02_where.toml :: where_not_method_null_receiver`
-  (`expect = "DIFFER"`), `select_method_null_receiver` (AGREE). The methods DuckDB
+- **Status:** ✅ FIXED 2026-09-26 by [R13](ENGINE_REFACTORING.md#r13) slice 5,
+  in two steps: the registry's search functions read NULL as NULL
+  (179 → 180 AGREE), then WHERE delegated its method calls to them and its own
+  arms were deleted (with P57 and D3, 180 → **183 AGREE**).
+- **Corpus:** `02_where.toml :: where_not_method_null_receiver`,
+  `select_method_null_receiver` (both AGREE). The methods DuckDB
   has no twin for are pinned in the evaluator matrix (`EXPECTED_METHODS`).
 - **Observed:** `WHERE NOT label.contains('e')` returns every NULL label along
   with the labels lacking an `e`; `SELECT label.contains('e')` shows `false` for
@@ -2565,10 +2565,11 @@ out of date.
 - **Found:** 2026-09-26, pinning method calls for R13 slice 5.
 
 ### P57 — Only five methods may sit on the left of a WHERE comparison
-- **Status:** 🔴 OPEN — pinned 2026-09-26 by [R13](ENGINE_REFACTORING.md#r13)
-  slice 5; fixed by that slice.
+- **Status:** ✅ FIXED 2026-09-26 by [R13](ENGINE_REFACTORING.md#r13) slice 5:
+  WHERE's comparisons delegate whatever the left operand is, so any registry
+  method works there.
 - **Corpus:** `02_where.toml :: where_method_other_than_legacy_on_left`
-  (`expect = "GAP"`); matrix rows `s.ToUpper() = 'ABC'`,
+  (AGREE); matrix rows `s.ToUpper() = 'ABC'`,
   `s.Replace('a', 'z') = 'zbc'`.
 - **Observed:** `WHERE label.upper() = 'ECHO'` fails the query — "Method
   'upper' cannot be used in comparisons". The same expression works in SELECT,
@@ -2614,12 +2615,16 @@ out of date.
 - **Extended 2026-09-26 (R13 slice 5)** to the string methods: `n.Contains('5')`,
   `n.StartsWith('1')` and `n.Length()` read a number as its displayed text.
   WHERE already did; the registry functions behind the value evaluator errored.
-  Pinned in `EXPECTED_NUMBER_METHODS`.
+  Pinned in `EXPECTED_NUMBER_METHODS`. `Trim()` / `TrimStart()` / `TrimEnd()`
+  likewise: WHERE trimmed a number's text, and once WHERE delegated, the
+  registry's TRIM rejecting a number failed the `presidents` example
+  (`r.Greatness.Trim() <> 'NA'` over a mostly numeric column) — fixed the same
+  way and pinned (`n.Trim() = '7.5'`).
 
 ### D3 — String methods follow `--case-insensitive`, like every comparison
 - **Status:** ⚪ DELIBERATE (decided 2026-09-26, R13 slice 5).
-- **Corpus:** `02_where.toml :: where_method_contains_case_sensitive`
-  (`expect = "DIFFER"` until the slice lands). The switch itself has no DuckDB
+- **Corpus:** `02_where.toml :: where_method_contains_case_sensitive` (AGREE
+  since 2026-09-26). The switch itself has no DuckDB
   counterpart; its expected answers are DuckDB's over `lower(s)`, in
   `EXPECTED_METHODS_CASE_INSENSITIVE`.
 - **Behaviour:** `.Contains()`, `.StartsWith()`, `.EndsWith()` and `.IndexOf()`

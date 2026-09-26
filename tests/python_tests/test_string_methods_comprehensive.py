@@ -23,13 +23,14 @@ class TestStringMethods:
             subprocess.run(["cargo", "build", "--release"], 
                           cwd=cls.project_root, check=True)
     
-    def run_query(self, csv_file: str, query: str):
+    def run_query(self, csv_file: str, query: str, extra_args=()):
         """Helper to run a SQL query"""
         cmd = [
             self.sql_cli, 
             str(self.project_root / "data" / csv_file), 
             "-q", query, 
-            "-o", "csv"
+            "-o", "csv",
+            *extra_args,
         ]
         result = subprocess.run(cmd, capture_output=True, text=True, timeout=5)
         
@@ -112,11 +113,13 @@ class TestStringMethods:
         assert set(df['id'].tolist()) == {1, 4, 7, 10}
     
     def test_contains_case_sensitive(self):
-        """Test Contains() - appears to be case-insensitive based on logs"""
-        df, _ = self.run_query("test_simple_strings.csv",
-                               "SELECT id FROM test_simple_strings WHERE status.Contains('active')")
-        # Contains appears to be case-insensitive, so it matches Active and Inactive
-        assert len(df) == 7  # Active (1,3,5,7,9) + Inactive (2,8)
+        """Contains() follows --case-insensitive, like = and LIKE (D3)"""
+        query = "SELECT id FROM test_simple_strings WHERE status.Contains('active')"
+        df, _ = self.run_query("test_simple_strings.csv", query)
+        # Case-sensitive by default: only Inactive contains 'active'
+        assert set(df['id'].tolist()) == {2, 8}
+        df, _ = self.run_query("test_simple_strings.csv", query, ["--case-insensitive"])
+        # Active (1,3,5,7,9) + Inactive (2,8)
         assert set(df['id'].tolist()) == {1, 2, 3, 5, 7, 8, 9}
     
     # STARTSWITH METHOD
@@ -128,11 +131,13 @@ class TestStringMethods:
         assert df.iloc[0]['id'] == 1
     
     def test_startswith_case_sensitive(self):
-        """Test StartsWith() - appears to be case-insensitive"""
-        df, _ = self.run_query("test_simple_strings.csv",
-                               "SELECT id FROM test_simple_strings WHERE status.StartsWith('a')")
-        # StartsWith appears to be case-insensitive like Contains
-        assert len(df) == 6  # Active and Archived both start with 'a' or 'A'
+        """StartsWith() follows --case-insensitive, like = and LIKE (D3)"""
+        query = "SELECT id FROM test_simple_strings WHERE status.StartsWith('a')"
+        df, _ = self.run_query("test_simple_strings.csv", query)
+        # Case-sensitive by default: every status is capitalised
+        assert len(df) == 0
+        df, _ = self.run_query("test_simple_strings.csv", query, ["--case-insensitive"])
+        # Active and Archived
         assert set(df['id'].tolist()) == {1, 3, 5, 6, 7, 9}
     
     # ENDSWITH METHOD

@@ -381,167 +381,21 @@ const EXPECTED_NUMBER_METHODS: &[(&str, &str)] = &[
     ("n.Contains('5')", "TFUT"),
     ("n.StartsWith('1')", "FTUF"),
     ("n.Length() > 1", "FTUT"),
+    ("n.Trim() = '7.5'", "FFUT"),
     ("INSTR(n, '5') = 1", "TFUF"),
     ("CONTAINS(n, '.')", "FFUT"),
 ];
 
-// Recorded by R13 slice 5's pin (2026-09-26), grouped by fault; an observed
-// string can combine two. The pin also recorded 27 value-evaluator and
-// function-form entries - the registry's search functions answered FALSE for
-// NULL, ignored --case-insensitive and rejected a number - which all went FIXED
-// when those functions moved onto one `search_text` reader. What is left is
-// WHERE's own method-call arms, which go when WHERE delegates method calls.
-const NULL_RECEIVER: &str = "P56: WHERE's method over a NULL receiver answers FALSE (its Length /      IndexOf / Trim* a non-NULL value) instead of NULL";
-const NULL_RECEIVER_AND_WHERE_ALWAYS_NOCASE: &str =
-    "P56 (NULL receiver answers FALSE) and D3 (WHERE's search methods always ignore case)";
-const WHERE_METHOD_ALLOWLIST: &str = "P57: on the left of a WHERE comparison only Length /      IndexOf / Trim* are accepted; any other method fails the query";
-
-const KNOWN_METHODS: &[Known] = &[
-    Known {
-        evaluator: Evaluator::Where,
-        predicate: "s.ToUpper() = 'ABC'",
-        observed: "EEEE",
-        why: WHERE_METHOD_ALLOWLIST,
-    },
-    Known {
-        evaluator: Evaluator::Where,
-        predicate: "s.Replace('a', 'z') = 'zbc'",
-        observed: "EEEE",
-        why: WHERE_METHOD_ALLOWLIST,
-    },
-    Known {
-        evaluator: Evaluator::Where,
-        predicate: "t.s.Contains('b')",
-        observed: "TTFT",
-        why: NULL_RECEIVER_AND_WHERE_ALWAYS_NOCASE,
-    },
-    Known {
-        evaluator: Evaluator::Where,
-        predicate: "s.Contains('b')",
-        observed: "TTFT",
-        why: NULL_RECEIVER_AND_WHERE_ALWAYS_NOCASE,
-    },
-    Known {
-        evaluator: Evaluator::Where,
-        predicate: "s.Contains('B')",
-        observed: "TTFT",
-        why: NULL_RECEIVER_AND_WHERE_ALWAYS_NOCASE,
-    },
-    Known {
-        evaluator: Evaluator::Where,
-        predicate: "NOT s.Contains('b')",
-        observed: "FFTF",
-        why: NULL_RECEIVER_AND_WHERE_ALWAYS_NOCASE,
-    },
-    Known {
-        evaluator: Evaluator::Where,
-        predicate: "s.StartsWith('a')",
-        observed: "TTFF",
-        why: NULL_RECEIVER_AND_WHERE_ALWAYS_NOCASE,
-    },
-    Known {
-        evaluator: Evaluator::Where,
-        predicate: "s.EndsWith('C')",
-        observed: "TTFF",
-        why: NULL_RECEIVER_AND_WHERE_ALWAYS_NOCASE,
-    },
-    Known {
-        evaluator: Evaluator::Where,
-        predicate: "s.Length() > 3",
-        observed: "FFFT",
-        why: NULL_RECEIVER,
-    },
-    Known {
-        evaluator: Evaluator::Where,
-        predicate: "s.IndexOf('b') = 1",
-        observed: "TTFF",
-        why: NULL_RECEIVER_AND_WHERE_ALWAYS_NOCASE,
-    },
-    Known {
-        evaluator: Evaluator::Where,
-        predicate: "s.IndexOf('z') = -1",
-        observed: "TTTT",
-        why: NULL_RECEIVER,
-    },
-    Known {
-        evaluator: Evaluator::Where,
-        predicate: "s.Trim() = 'aB'",
-        observed: "FFFT",
-        why: NULL_RECEIVER,
-    },
-    Known {
-        evaluator: Evaluator::Where,
-        predicate: "s.TrimStart() = 'aB '",
-        observed: "FFFT",
-        why: NULL_RECEIVER,
-    },
-    Known {
-        evaluator: Evaluator::Where,
-        predicate: "s.TrimEnd() = ' aB'",
-        observed: "FFFT",
-        why: NULL_RECEIVER,
-    },
-];
-
-const KNOWN_METHODS_CASE_INSENSITIVE: &[Known] = &[
-    Known {
-        evaluator: Evaluator::Where,
-        predicate: "s.Contains('B')",
-        observed: "TTFT",
-        why: NULL_RECEIVER,
-    },
-    Known {
-        evaluator: Evaluator::Where,
-        predicate: "NOT s.Contains('B')",
-        observed: "FFTF",
-        why: NULL_RECEIVER,
-    },
-    Known {
-        evaluator: Evaluator::Where,
-        predicate: "s.StartsWith('A')",
-        observed: "TTFF",
-        why: NULL_RECEIVER,
-    },
-    Known {
-        evaluator: Evaluator::Where,
-        predicate: "s.EndsWith('c')",
-        observed: "TTFF",
-        why: NULL_RECEIVER,
-    },
-    Known {
-        evaluator: Evaluator::Where,
-        predicate: "s.IndexOf('B') = 1",
-        observed: "TTFF",
-        why: NULL_RECEIVER,
-    },
-    Known {
-        evaluator: Evaluator::Where,
-        predicate: "s.Trim() = 'AB'",
-        observed: "FFFT",
-        why: NULL_RECEIVER,
-    },
-];
-
-const KNOWN_NUMBER_METHODS: &[Known] = &[
-    Known {
-        evaluator: Evaluator::Where,
-        predicate: "n.Contains('5')",
-        observed: "TFFT",
-        why: NULL_RECEIVER,
-    },
-    Known {
-        evaluator: Evaluator::Where,
-        predicate: "n.StartsWith('1')",
-        observed: "FTFF",
-        why: NULL_RECEIVER,
-    },
-    Known {
-        evaluator: Evaluator::Where,
-        predicate: "n.Length() > 1",
-        observed: "FTFT",
-        why: NULL_RECEIVER,
-    },
-];
+// R13 slice 5 recorded 55 entries across these three lists (2026-09-26): P56
+// (a NULL receiver answered FALSE, in both evaluators), D3 (WHERE's search
+// methods always ignored case; the registry's ignored the switch), the
+// registry rejecting a number (D2), and P57 (WHERE refused any other method on
+// the left of a comparison). The registry's went FIXED when its search
+// functions moved onto one `search_text` reader; WHERE's when it delegated
+// method calls to the value evaluator and its own arms were deleted.
+const KNOWN_METHODS: &[Known] = &[];
+const KNOWN_METHODS_CASE_INSENSITIVE: &[Known] = &[];
+const KNOWN_NUMBER_METHODS: &[Known] = &[];
 
 fn trilean_char(t: Trilean) -> char {
     match t {

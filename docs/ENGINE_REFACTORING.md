@@ -475,8 +475,9 @@ feature work**, and so we can tell the difference between "this is awkward" and
   **slices 1 and 2 done 2026-09-13, slice 3 (with 3b) done 2026-09-14**, slice 4
   in progress (`BETWEEN`, `IN`, `NOT IN` delegated 2026-09-15; comparisons
   2026-09-18, closing P54; IS NULL and LIKE 2026-09-19, closing P55). Every
-  WHERE *operator* now delegates; what remains of slice 4 (AND / OR / NOT /
-  CASE) lands after slice 5.
+  WHERE *operator* now delegates. **Slice 5 (method calls) done 2026-09-26**,
+  closing P56 and P57 and deciding D3. What remains of slice 4 (AND / OR /
+  NOT / CASE) is next, then slice 6.
   **The active workstream:** parity fixes that touch expression evaluation land
   as slices of this entry, not as patches.
 - **Where:** `src/data/arithmetic_evaluator.rs` (`ArithmeticEvaluator`, value →
@@ -704,6 +705,49 @@ feature work**, and so we can tell the difference between "this is awkward" and
     left-side method-call arm, all waiting on slice 5. WHERE's readers
     (`number_literal_value`, the `DATETIME` arms, `compare_trilean`) are now
     reached only through that arm.
+- **Slice 5 (2026-09-26) — method calls.** Five commits; one user decision.
+  - *Pin.* Three matrices (`EXPECTED_METHODS`, `…_CASE_INSENSITIVE`,
+    `EXPECTED_NUMBER_METHODS`; DuckDB's `contains` / `starts_with` /
+    `ends_with` / `length` / `instr` / `trim` family as the reference, with
+    `IndexOf` as `instr − 1`), then the function forms and the methods WHERE
+    refused. **55 divergences, both evaluators**: a NULL receiver answered
+    FALSE (**P56**) — so `WHERE NOT label.contains('e')` selected every NULL
+    label; WHERE's search methods always ignored case while the registry's
+    ignored the switch; the registry rejected a number; and WHERE accepted
+    only `Length` / `IndexOf` / `Trim*` on the left of a comparison, failing
+    `WHERE s.ToUpper() = 'ABC'` (**P57**). DuckDB's dot-call syntax
+    (`label.contains('e')`) made four of them real corpus cases.
+  - *D3, decided by the user:* the search methods and functions follow
+    `--case-insensitive` like `=` and LIKE, case-sensitive by default — "one
+    rule tied to the switch rather than decisions made at different times",
+    accepting that queries relying on WHERE's old behaviour change answer.
+  - *Registry first.* `SqlFunction::evaluate_with_case` (default: ignore the
+    mode) carries the switch into a function; `MethodFunction::evaluate_method`
+    takes it too; the value evaluator's three registry call sites pass it. The
+    five search functions (and LENGTH / TRIM*) read operands through one
+    `search_text`: NULL → NULL, a number as its displayed text (D2), lowercased
+    under the switch. Exactly the 27 value-evaluator and function-form entries
+    went FIXED; 179 → 180 AGREE.
+  - *Delegate.* WHERE's method-call predicate and its comparison arm delegate
+    unconditionally; `evaluate_binary_op`'s legacy tail, the method arms, and
+    everything reachable only from them went — WHERE's own column resolver,
+    literal readers, `compare_trilean` and "did you mean" suggester (~700
+    lines). The remaining 28 WHERE entries went FIXED; parity moved by exactly
+    the three WHERE cases, 180 → **183 AGREE** / 213.
+  - *What the pin missed.* A numeric `Trim()` receiver: WHERE trimmed its text,
+    the registry's TRIM errored, and the `presidents` FORMAL example failed on
+    `r.Greatness.Trim() <> 'NA'`. Fixed by the same reader and pinned. The
+    matrix covers what someone thought to put in it; the examples are a
+    second net.
+  - *Two tests stated the old rule* (`test_case_sensitivity`, and two Python
+    tests whose docstrings said "appears to be case-insensitive based on
+    logs"); rewritten to assert D3 in both modes. No captured output changed.
+  - *Cost:* nil — `Contains`, `Length() >`, `NOT StartsWith` over
+    `trades_100000.csv` all run at load time (~2.5 s), level with LIKE.
+  - *Left:* the functions that match text while transforming it (REPLACE,
+    FREQUENCY, SUBSTRING_BEFORE/AFTER, SPLIT_PART, LEFT/RIGHT with a
+    delimiter) do not yet follow the switch — listed under D3. LENGTH /
+    INDEXOF / INSTR count bytes, not characters (unpinned).
 - **Slices, in the R10 pattern — no-op slices kept apart from the one that
   changes answers:**
   1. ✅ **Pin the divergences, no engine change.** *(Done 2026-09-13.)* A per-operator matrix run through
@@ -727,7 +771,7 @@ feature work**, and so we can tell the difference between "this is awkward" and
      the hand-written arm is deleted. After slice 2 the rules already agree, so
      each commit is a provable no-op — parity exactly unchanged, and the slice-1
      matrix still green.
-  5. **Method calls:** WHERE's hand-rolled `Contains`/`StartsWith`/`Trim`… move
+  5. ✅ **Method calls:** *(Done 2026-09-26 — see result above.)* WHERE's hand-rolled `Contains`/`StartsWith`/`Trim`… move
      onto the registry mapping the value evaluator already uses.
   6. **Collapse sites converge:** HAVING's `is_truthy` and JOIN's bare comparison
      go through the same collapse. JOIN NULL keys need care on the *hash* path
@@ -769,7 +813,7 @@ R8 legacy WHERE ──── independent; stage 2 is self-contained, do it in a 
 R10 Trilean ──────── DONE; closed P18/P19 (parity 125 → 129)
 R11 ORDER BY resolver ─ independent; small, but a behaviour change — wants its own parity run
 R12 aggregate registries ─ independent; step 1 is a provable no-op, do it before the next aggregate fix
-R13 one evaluator ─── ACTIVE from 2026-09-13; slices 1 (pin), 2 (3VL), 3 (construction + case mode) DONE; 4 operators DONE (BETWEEN/IN, comparisons, IS NULL, LIKE) → 5 (method calls) → 4 tail (AND/OR/NOT/CASE) → 6
+R13 one evaluator ─── ACTIVE from 2026-09-13; slices 1 (pin), 2 (3VL), 3 (construction + case mode) DONE; 4 operators DONE (BETWEEN/IN, comparisons, IS NULL, LIKE); 5 (method calls) DONE → 4 tail (AND/OR/NOT/CASE) → 6
 ```
 
 **A note on ordering, from the P18/P19 work being next.** The WHERE evaluator
@@ -813,3 +857,4 @@ AGREE count — which makes it safe to land well before the semantics change.
 | 2026-09-15 | R13 slice 4 (first part): WHERE's `BETWEEN`, `IN`, `NOT IN` delegate to the value evaluator. Latent alias-resolution fault pinned and fixed first; per-node TRACE logging found to be most of the value evaluator's cost and removed (SELECT/GROUP BY expressions ~2 s faster over 100k rows). Parity byte-identical at every commit | — |
 | 2026-09-18 | R13 slice 4 (second part): WHERE comparisons delegate. Operand readers pinned first (third matrix); P53 and P54 filed; value evaluator's `DATETIME()` moved to local time before delegating. Closes P54 — 175 → **176 AGREE**. Part 1 found to have fixed P54 for IN/BETWEEN unnoticed | — |
 | 2026-09-19 | R13 slice 4 (third part): IS NULL and LIKE delegate; one `sql_like` for both evaluators. P55 (LIKE compiled as an unescaped regex) filed and closed — 176 → **179 AGREE**; the value evaluator's exponential LIKE matcher replaced first; D2 (LIKE over a number matches its displayed text) decided; `EvaluationContext` removed | — |
+| 2026-09-26 | R13 slice 5: method calls. Pinned 55 divergences across both evaluators; P56 (NULL receiver → FALSE) and P57 (WHERE refused all but five methods on a comparison's left) filed and closed; D3 decided (search methods follow `--case-insensitive`). Registry search functions fixed first (180), then WHERE delegated and ~700 lines of its arms and readers deleted — 179 → **183 AGREE** / 213 | — |

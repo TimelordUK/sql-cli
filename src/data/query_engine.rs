@@ -3474,11 +3474,12 @@ mod tests {
             println!("Row {i}: status = {status:?}");
         }
 
-        // Test 1: Basic string contains (should work)
-        println!("\n--- Test 1: status.Contains('pend') ---");
+        // Test 1: Basic string contains (should work). Case-sensitive outside
+        // --case-insensitive (D3), so the search is spelled as the data is.
+        println!("\n--- Test 1: status.Contains('Pend') ---");
         let result = engine.execute(
             table.clone(),
-            "SELECT * FROM test WHERE status.Contains('pend')",
+            "SELECT * FROM test WHERE status.Contains('Pend')",
         );
         match result {
             Ok(view) => {
