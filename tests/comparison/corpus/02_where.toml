@@ -322,3 +322,34 @@ data = "pattern_matching.csv"
 sql = "SELECT id, s FROM pattern_matching WHERE s LIKE 'a(b%' ORDER BY id"
 # P55. `(` opened a regex group, so the query failed: "Invalid LIKE pattern
 # 'a(b%': regex parse error ... unclosed group".
+
+# --- R13 slice 5: method calls (P56, D3) ---
+# DuckDB accepts the dot-call form, so `label.contains('e')` is contains(label,
+# 'e') on both sides. The other methods (StartsWith, IndexOf, Trim*) have no
+# DuckDB twin under the same name and are pinned in the evaluator matrix only.
+
+[[case]]
+id = "where_not_method_null_receiver"
+data = "null_edges.csv"
+sql = "SELECT id FROM null_edges WHERE NOT label.contains('e') ORDER BY id"
+expect = "DIFFER"
+# P56. A NULL label made `.contains()` FALSE, not NULL, so NOT selected it:
+# ids 2, 5, 10, 11, 12 came back alongside 4, 6, 8, 9.
+
+[[case]]
+id = "where_method_contains_case_sensitive"
+data = "null_edges.csv"
+sql = "SELECT id FROM null_edges WHERE label IS NOT NULL AND NOT label.contains('E') ORDER BY id"
+expect = "DIFFER"
+# D3. WHERE's `.contains()` ignored case whatever the switch said, so `'E'`
+# found delta, charlie, echo and foxtrot and NOT dropped them; `contains` is
+# case-sensitive, as `=` and LIKE are here outside --case-insensitive, so every
+# non-NULL label is kept. (Shaped to return rows on both sides: an empty
+# reference result is reported as a column mismatch, not a row diff.)
+
+[[case]]
+id = "select_method_null_receiver"
+data = "null_edges.csv"
+sql = "SELECT id, label.contains('e') AS c FROM null_edges ORDER BY id"
+expect = "DIFFER"
+# P56, in SELECT: the registry's CONTAINS answered false for a NULL label.

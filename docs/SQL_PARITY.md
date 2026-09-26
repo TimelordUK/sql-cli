@@ -2542,6 +2542,26 @@ out of date.
   `'price (usd)%'`.
 - **Found:** 2026-09-19, pinning LIKE for R13 slice 4.
 
+### P56 — A method call over a NULL receiver answers FALSE, not NULL
+- **Status:** 🔴 OPEN — pinned 2026-09-26 by [R13](ENGINE_REFACTORING.md#r13)
+  slice 5; fixed by that slice.
+- **Corpus:** `02_where.toml :: where_not_method_null_receiver`,
+  `select_method_null_receiver` (both `expect = "DIFFER"`). The methods DuckDB
+  has no twin for are pinned in the evaluator matrix (`EXPECTED_METHODS`).
+- **Observed:** `WHERE NOT label.contains('e')` returns every NULL label along
+  with the labels lacking an `e`; `SELECT label.contains('e')` shows `false` for
+  a NULL label. In WHERE, `s.Length()`, `s.IndexOf(..)` and `s.Trim*()` on the
+  left of a comparison also give a non-NULL value for a NULL `s`:
+  `WHERE s.IndexOf('z') = -1` selects the NULL rows.
+- **Cause:** both evaluators. WHERE's hand-rolled `Contains` / `StartsWith` /
+  `EndsWith` return `Trilean::False` for anything not a value, and its
+  `evaluate_length` / `evaluate_indexof` / `evaluate_trim` read NULL as empty
+  text. The registry's `CONTAINS` / `STARTSWITH` / `ENDSWITH` return
+  `Boolean(false)` for a NULL argument.
+- **Why it matters:** the same NULL rule as [P18](#p18) — a function of NULL is
+  NULL, so `NOT` over it does not select the row.
+- **Found:** 2026-09-26, pinning method calls for R13 slice 5.
+
 ---
 
 ## Deferred / won't fix (intentional)
@@ -2575,6 +2595,31 @@ out of date.
 - **Considered:** erroring like DuckDB (strict, but breaks existing SELECTs that
   rely on it), and FALSE everywhere (a silent non-match is the least useful
   answer).
+- **Extended 2026-09-26 (R13 slice 5)** to the string methods: `n.Contains('5')`,
+  `n.StartsWith('1')` and `n.Length()` read a number as its displayed text.
+  WHERE already did; the registry functions behind the value evaluator errored.
+  Pinned in `EXPECTED_NUMBER_METHODS`.
+
+### D3 — String methods follow `--case-insensitive`, like every comparison
+- **Status:** ⚪ DELIBERATE (decided 2026-09-26, R13 slice 5).
+- **Corpus:** `02_where.toml :: where_method_contains_case_sensitive`
+  (`expect = "DIFFER"` until the slice lands). The switch itself has no DuckDB
+  counterpart; its expected answers are DuckDB's over `lower(s)`, in
+  `EXPECTED_METHODS_CASE_INSENSITIVE`.
+- **Behaviour:** `.Contains()`, `.StartsWith()`, `.EndsWith()` and `.IndexOf()`
+  search case-sensitively by default and case-insensitively under
+  `--case-insensitive` — the same rule as `=`, `IN` and `LIKE`. In every clause.
+- **Before:** WHERE's own versions always ignored case (an early TUI choice),
+  while the registry functions the same methods mean in SELECT never did, even
+  under the switch. So `'ABC'.Contains('b')` was TRUE in WHERE and FALSE in
+  SELECT.
+- **Rationale:** one rule, tied to the one switch, rather than per-method
+  decisions made at different times. Queries that relied on WHERE's
+  `.Contains()` ignoring case change answer; they get it back with
+  `--case-insensitive`. Consistent with DuckDB's `contains`, which is
+  case-sensitive.
+- **Considered:** keeping WHERE's behaviour and making the registry match it —
+  rejected: it makes one family of predicates disagree with `=` and LIKE.
 
 _When we consciously diverge from the reference engine on results (rather than
 simply not implementing a feature), record it here with the rationale so the
