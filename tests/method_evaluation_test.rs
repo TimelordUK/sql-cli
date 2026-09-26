@@ -247,16 +247,28 @@ fn test_indexof_with_greater_than() {
 
 #[test]
 fn test_case_sensitivity() {
+    // D3 (docs/SQL_PARITY.md): a method's search follows --case-insensitive,
+    // exactly as `=` and LIKE do. It used to ignore case in WHERE regardless.
     let table = create_test_table();
-    let mut evaluator = RecursiveWhereEvaluator::new(&table);
+    let spellings = ["Widget", "widget", "WIDGET", "WiDgEt"];
 
-    // Test that methods are case-insensitive for search strings
-    let where_clause1 = extract_where_clause("SELECT * FROM test WHERE name.Contains('WIDGET')");
-    let where_clause2 = extract_where_clause("SELECT * FROM test WHERE name.Contains('widget')");
-    let where_clause3 = extract_where_clause("SELECT * FROM test WHERE name.Contains('WiDgEt')");
+    let mut sensitive = RecursiveWhereEvaluator::new(&table);
+    for search in spellings {
+        let clause = extract_where_clause(&format!(
+            "SELECT * FROM test WHERE name.Contains('{search}')"
+        ));
+        let matched = sensitive.evaluate(&clause, 0).unwrap().is_true();
+        assert_eq!(matched, search == "Widget", "default mode, '{search}'");
+    }
 
-    // All should match the same row (Widget)
-    assert!(evaluator.evaluate(&where_clause1, 0).unwrap().is_true());
-    assert!(evaluator.evaluate(&where_clause2, 0).unwrap().is_true());
-    assert!(evaluator.evaluate(&where_clause3, 0).unwrap().is_true());
+    let mut insensitive = RecursiveWhereEvaluator::with_case_insensitive(&table, true);
+    for search in spellings {
+        let clause = extract_where_clause(&format!(
+            "SELECT * FROM test WHERE name.Contains('{search}')"
+        ));
+        assert!(
+            insensitive.evaluate(&clause, 0).unwrap().is_true(),
+            "--case-insensitive, '{search}'"
+        );
+    }
 }
