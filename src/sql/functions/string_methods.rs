@@ -1,4 +1,5 @@
 use anyhow::{anyhow, Result};
+use std::borrow::Cow;
 
 use super::{ArgCount, FunctionCategory, FunctionSignature, SqlFunction};
 use crate::data::datatable::DataValue;
@@ -12,13 +13,37 @@ pub trait MethodFunction: SqlFunction {
     /// Get the method name this function handles
     fn method_name(&self) -> &'static str;
 
-    /// Evaluate as a method (first arg is implicit 'self')
-    fn evaluate_method(&self, receiver: &DataValue, args: &[DataValue]) -> Result<DataValue> {
+    /// Evaluate as a method (first arg is implicit 'self'), under the engine's
+    /// string-comparison mode (see `SqlFunction::evaluate_with_case`).
+    fn evaluate_method(
+        &self,
+        receiver: &DataValue,
+        args: &[DataValue],
+        case_insensitive: bool,
+    ) -> Result<DataValue> {
         // Default implementation: prepend receiver to args and call evaluate
         let mut full_args = vec![receiver.clone()];
         full_args.extend_from_slice(args);
-        self.evaluate(&full_args)
+        self.evaluate_with_case(&full_args, case_insensitive)
     }
+}
+
+/// The text a search function reads an operand as (R13 slice 5): `None` for
+/// NULL, whose answer is then NULL (P56); any other value as the text sql-cli
+/// displays for it, so a number is searched as it looks (D2); lowercased under
+/// `--case-insensitive`, as `=` and LIKE compare (D3).
+fn search_text(value: &DataValue, case_insensitive: bool) -> Option<Cow<'_, str>> {
+    let text = match value {
+        DataValue::Null => return None,
+        DataValue::String(s) => Cow::Borrowed(s.as_str()),
+        DataValue::InternedString(s) => Cow::Borrowed(s.as_str()),
+        other => Cow::Owned(other.to_string()),
+    };
+    Some(if case_insensitive {
+        Cow::Owned(text.to_lowercase())
+    } else {
+        text
+    })
 }
 
 /// `ToUpper` method function
@@ -244,11 +269,9 @@ impl SqlFunction for LengthMethod {
     fn evaluate(&self, args: &[DataValue]) -> Result<DataValue> {
         self.validate_args(args)?;
 
-        match &args[0] {
-            DataValue::String(s) => Ok(DataValue::Integer(s.len() as i64)),
-            DataValue::InternedString(s) => Ok(DataValue::Integer(s.len() as i64)),
-            DataValue::Null => Ok(DataValue::Null),
-            _ => Err(anyhow!("Length expects a string argument")),
+        match search_text(&args[0], false) {
+            Some(text) => Ok(DataValue::Integer(text.len() as i64)),
+            None => Ok(DataValue::Null),
         }
     }
 }
@@ -282,23 +305,20 @@ impl SqlFunction for ContainsMethod {
     }
 
     fn evaluate(&self, args: &[DataValue]) -> Result<DataValue> {
+        self.evaluate_with_case(args, false)
+    }
+
+    fn evaluate_with_case(&self, args: &[DataValue], case_insensitive: bool) -> Result<DataValue> {
         self.validate_args(args)?;
 
-        let haystack = match &args[0] {
-            DataValue::String(s) => s.as_str(),
-            DataValue::InternedString(s) => s.as_str(),
-            DataValue::Null => return Ok(DataValue::Boolean(false)),
-            _ => return Err(anyhow!("Contains expects string arguments")),
+        let (Some(haystack), Some(needle)) = (
+            search_text(&args[0], case_insensitive),
+            search_text(&args[1], case_insensitive),
+        ) else {
+            return Ok(DataValue::Null);
         };
 
-        let needle = match &args[1] {
-            DataValue::String(s) => s.as_str(),
-            DataValue::InternedString(s) => s.as_str(),
-            DataValue::Null => return Ok(DataValue::Boolean(false)),
-            _ => return Err(anyhow!("Contains expects string arguments")),
-        };
-
-        Ok(DataValue::Boolean(haystack.contains(needle)))
+        Ok(DataValue::Boolean(haystack.contains(needle.as_ref())))
     }
 }
 
@@ -331,23 +351,20 @@ impl SqlFunction for StartsWithMethod {
     }
 
     fn evaluate(&self, args: &[DataValue]) -> Result<DataValue> {
+        self.evaluate_with_case(args, false)
+    }
+
+    fn evaluate_with_case(&self, args: &[DataValue], case_insensitive: bool) -> Result<DataValue> {
         self.validate_args(args)?;
 
-        let string = match &args[0] {
-            DataValue::String(s) => s.as_str(),
-            DataValue::InternedString(s) => s.as_str(),
-            DataValue::Null => return Ok(DataValue::Boolean(false)),
-            _ => return Err(anyhow!("StartsWith expects string arguments")),
+        let (Some(string), Some(prefix)) = (
+            search_text(&args[0], case_insensitive),
+            search_text(&args[1], case_insensitive),
+        ) else {
+            return Ok(DataValue::Null);
         };
 
-        let prefix = match &args[1] {
-            DataValue::String(s) => s.as_str(),
-            DataValue::InternedString(s) => s.as_str(),
-            DataValue::Null => return Ok(DataValue::Boolean(false)),
-            _ => return Err(anyhow!("StartsWith expects string arguments")),
-        };
-
-        Ok(DataValue::Boolean(string.starts_with(prefix)))
+        Ok(DataValue::Boolean(string.starts_with(prefix.as_ref())))
     }
 }
 
@@ -380,23 +397,20 @@ impl SqlFunction for EndsWithMethod {
     }
 
     fn evaluate(&self, args: &[DataValue]) -> Result<DataValue> {
+        self.evaluate_with_case(args, false)
+    }
+
+    fn evaluate_with_case(&self, args: &[DataValue], case_insensitive: bool) -> Result<DataValue> {
         self.validate_args(args)?;
 
-        let string = match &args[0] {
-            DataValue::String(s) => s.as_str(),
-            DataValue::InternedString(s) => s.as_str(),
-            DataValue::Null => return Ok(DataValue::Boolean(false)),
-            _ => return Err(anyhow!("EndsWith expects string arguments")),
+        let (Some(string), Some(suffix)) = (
+            search_text(&args[0], case_insensitive),
+            search_text(&args[1], case_insensitive),
+        ) else {
+            return Ok(DataValue::Null);
         };
 
-        let suffix = match &args[1] {
-            DataValue::String(s) => s.as_str(),
-            DataValue::InternedString(s) => s.as_str(),
-            DataValue::Null => return Ok(DataValue::Boolean(false)),
-            _ => return Err(anyhow!("EndsWith expects string arguments")),
-        };
-
-        Ok(DataValue::Boolean(string.ends_with(suffix)))
+        Ok(DataValue::Boolean(string.ends_with(suffix.as_ref())))
     }
 }
 
@@ -490,7 +504,12 @@ impl MethodFunction for SubstringMethod {
         "Substring"
     }
 
-    fn evaluate_method(&self, receiver: &DataValue, args: &[DataValue]) -> Result<DataValue> {
+    fn evaluate_method(
+        &self,
+        receiver: &DataValue,
+        args: &[DataValue],
+        _case_insensitive: bool,
+    ) -> Result<DataValue> {
         // C# `.Substring()` form keeps 0-based indexing (.NET semantics).
         let mut full_args = vec![receiver.clone()];
         full_args.extend_from_slice(args);
@@ -937,23 +956,20 @@ impl SqlFunction for IndexOfMethod {
     }
 
     fn evaluate(&self, args: &[DataValue]) -> Result<DataValue> {
+        self.evaluate_with_case(args, false)
+    }
+
+    fn evaluate_with_case(&self, args: &[DataValue], case_insensitive: bool) -> Result<DataValue> {
         self.validate_args(args)?;
 
-        let string = match &args[0] {
-            DataValue::String(s) => s.as_str(),
-            DataValue::InternedString(s) => s.as_str(),
-            DataValue::Null => return Ok(DataValue::Null),
-            _ => return Err(anyhow!("IndexOf expects string arguments")),
+        let (Some(string), Some(substring)) = (
+            search_text(&args[0], case_insensitive),
+            search_text(&args[1], case_insensitive),
+        ) else {
+            return Ok(DataValue::Null);
         };
 
-        let substring = match &args[1] {
-            DataValue::String(s) => s.as_str(),
-            DataValue::InternedString(s) => s.as_str(),
-            DataValue::Null => return Ok(DataValue::Null),
-            _ => return Err(anyhow!("IndexOf expects string arguments")),
-        };
-
-        match string.find(substring) {
+        match string.find(substring.as_ref()) {
             Some(pos) => Ok(DataValue::Integer(pos as i64)),
             None => Ok(DataValue::Integer(-1)), // Return -1 if not found
         }
@@ -990,23 +1006,20 @@ impl SqlFunction for InstrFunction {
     }
 
     fn evaluate(&self, args: &[DataValue]) -> Result<DataValue> {
+        self.evaluate_with_case(args, false)
+    }
+
+    fn evaluate_with_case(&self, args: &[DataValue], case_insensitive: bool) -> Result<DataValue> {
         self.validate_args(args)?;
 
-        let string = match &args[0] {
-            DataValue::String(s) => s.as_str(),
-            DataValue::InternedString(s) => s.as_str(),
-            DataValue::Null => return Ok(DataValue::Null),
-            _ => return Err(anyhow!("INSTR expects string arguments")),
+        let (Some(string), Some(substring)) = (
+            search_text(&args[0], case_insensitive),
+            search_text(&args[1], case_insensitive),
+        ) else {
+            return Ok(DataValue::Null);
         };
 
-        let substring = match &args[1] {
-            DataValue::String(s) => s.as_str(),
-            DataValue::InternedString(s) => s.as_str(),
-            DataValue::Null => return Ok(DataValue::Null),
-            _ => return Err(anyhow!("INSTR expects string arguments")),
-        };
-
-        match string.find(substring) {
+        match string.find(substring.as_ref()) {
             Some(pos) => Ok(DataValue::Integer((pos + 1) as i64)), // 1-based for SQL
             None => Ok(DataValue::Integer(0)), // Return 0 if not found (SQL standard)
         }

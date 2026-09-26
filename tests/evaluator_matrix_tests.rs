@@ -381,20 +381,15 @@ const EXPECTED_NUMBER_METHODS: &[(&str, &str)] = &[
     ("CONTAINS(n, '.')", "FFUT"),
 ];
 
-// Recorded by R13 slice 5's pin (2026-09-26), grouped by fault. The observed
-// strings combine faults, so an entry may carry two.
-const NULL_RECEIVER: &str = "P56: a method over a NULL receiver answers FALSE (WHERE's Length / \
-     IndexOf / Trim* a non-NULL value) instead of NULL";
-const WHERE_ALWAYS_NOCASE: &str = "D3: WHERE's own Contains / StartsWith / EndsWith / IndexOf \
-     ignore case whatever the switch says";
-const IGNORES_SWITCH: &str = "D3: the registry functions a method maps to compare \
-     case-sensitively even under --case-insensitive";
+// Recorded by R13 slice 5's pin (2026-09-26), grouped by fault; an observed
+// string can combine two. The pin also recorded 27 value-evaluator and
+// function-form entries - the registry's search functions answered FALSE for
+// NULL, ignored --case-insensitive and rejected a number - which all went FIXED
+// when those functions moved onto one `search_text` reader. What is left is
+// WHERE's own method-call arms, which go when WHERE delegates method calls.
+const NULL_RECEIVER: &str = "P56: WHERE's method over a NULL receiver answers FALSE (its Length /      IndexOf / Trim* a non-NULL value) instead of NULL";
 const NULL_RECEIVER_AND_WHERE_ALWAYS_NOCASE: &str =
     "P56 (NULL receiver answers FALSE) and D3 (WHERE's search methods always ignore case)";
-const NULL_RECEIVER_AND_IGNORES_SWITCH: &str =
-    "P56 (NULL receiver answers FALSE) and D3 (registry functions ignore --case-insensitive)";
-const NUMBER_ERRORS: &str = "D2 extended to methods: the registry functions reject a numeric \
-     receiver instead of reading its displayed text";
 
 const KNOWN_METHODS: &[Known] = &[
     Known {
@@ -463,60 +458,6 @@ const KNOWN_METHODS: &[Known] = &[
         observed: "FFFT",
         why: NULL_RECEIVER,
     },
-    Known {
-        evaluator: Evaluator::Value,
-        predicate: "s.Contains('b')",
-        observed: "TFFF",
-        why: NULL_RECEIVER,
-    },
-    Known {
-        evaluator: Evaluator::Value,
-        predicate: "s.Contains('B')",
-        observed: "FTFT",
-        why: NULL_RECEIVER,
-    },
-    Known {
-        evaluator: Evaluator::Value,
-        predicate: "NOT s.Contains('b')",
-        observed: "FTTT",
-        why: NULL_RECEIVER,
-    },
-    Known {
-        evaluator: Evaluator::Value,
-        predicate: "s.StartsWith('a')",
-        observed: "TFFF",
-        why: NULL_RECEIVER,
-    },
-    Known {
-        evaluator: Evaluator::Value,
-        predicate: "s.EndsWith('C')",
-        observed: "FTFF",
-        why: NULL_RECEIVER,
-    },
-    Known {
-        evaluator: Evaluator::Where,
-        predicate: "CONTAINS(s, 'B')",
-        observed: "FTFT",
-        why: NULL_RECEIVER,
-    },
-    Known {
-        evaluator: Evaluator::Value,
-        predicate: "CONTAINS(s, 'B')",
-        observed: "FTFT",
-        why: NULL_RECEIVER,
-    },
-    Known {
-        evaluator: Evaluator::Where,
-        predicate: "CONTAINS(s, NULL)",
-        observed: "FFFF",
-        why: NULL_RECEIVER,
-    },
-    Known {
-        evaluator: Evaluator::Value,
-        predicate: "CONTAINS(s, NULL)",
-        observed: "FFFF",
-        why: NULL_RECEIVER,
-    },
 ];
 
 const KNOWN_METHODS_CASE_INSENSITIVE: &[Known] = &[
@@ -556,72 +497,6 @@ const KNOWN_METHODS_CASE_INSENSITIVE: &[Known] = &[
         observed: "FFFT",
         why: NULL_RECEIVER,
     },
-    Known {
-        evaluator: Evaluator::Value,
-        predicate: "s.Contains('B')",
-        observed: "FTFT",
-        why: NULL_RECEIVER_AND_IGNORES_SWITCH,
-    },
-    Known {
-        evaluator: Evaluator::Value,
-        predicate: "NOT s.Contains('B')",
-        observed: "TFTF",
-        why: NULL_RECEIVER_AND_IGNORES_SWITCH,
-    },
-    Known {
-        evaluator: Evaluator::Value,
-        predicate: "s.StartsWith('A')",
-        observed: "FTFF",
-        why: NULL_RECEIVER_AND_IGNORES_SWITCH,
-    },
-    Known {
-        evaluator: Evaluator::Value,
-        predicate: "s.EndsWith('c')",
-        observed: "TFFF",
-        why: NULL_RECEIVER_AND_IGNORES_SWITCH,
-    },
-    Known {
-        evaluator: Evaluator::Value,
-        predicate: "s.IndexOf('B') = 1",
-        observed: "FTUF",
-        why: IGNORES_SWITCH,
-    },
-    Known {
-        evaluator: Evaluator::Where,
-        predicate: "CONTAINS(s, 'b')",
-        observed: "TFFF",
-        why: NULL_RECEIVER_AND_IGNORES_SWITCH,
-    },
-    Known {
-        evaluator: Evaluator::Value,
-        predicate: "CONTAINS(s, 'b')",
-        observed: "TFFF",
-        why: NULL_RECEIVER_AND_IGNORES_SWITCH,
-    },
-    Known {
-        evaluator: Evaluator::Where,
-        predicate: "INSTR(s, 'b') = 2",
-        observed: "TFUF",
-        why: IGNORES_SWITCH,
-    },
-    Known {
-        evaluator: Evaluator::Value,
-        predicate: "INSTR(s, 'b') = 2",
-        observed: "TFUF",
-        why: IGNORES_SWITCH,
-    },
-    Known {
-        evaluator: Evaluator::Where,
-        predicate: "ENDSWITH(s, 'c')",
-        observed: "TFFF",
-        why: NULL_RECEIVER_AND_IGNORES_SWITCH,
-    },
-    Known {
-        evaluator: Evaluator::Value,
-        predicate: "ENDSWITH(s, 'c')",
-        observed: "TFFF",
-        why: NULL_RECEIVER_AND_IGNORES_SWITCH,
-    },
 ];
 
 const KNOWN_NUMBER_METHODS: &[Known] = &[
@@ -642,48 +517,6 @@ const KNOWN_NUMBER_METHODS: &[Known] = &[
         predicate: "n.Length() > 1",
         observed: "FTFT",
         why: NULL_RECEIVER,
-    },
-    Known {
-        evaluator: Evaluator::Value,
-        predicate: "n.Contains('5')",
-        observed: "EEFE",
-        why: NUMBER_ERRORS,
-    },
-    Known {
-        evaluator: Evaluator::Value,
-        predicate: "n.StartsWith('1')",
-        observed: "EEFE",
-        why: NUMBER_ERRORS,
-    },
-    Known {
-        evaluator: Evaluator::Value,
-        predicate: "n.Length() > 1",
-        observed: "EEUE",
-        why: NUMBER_ERRORS,
-    },
-    Known {
-        evaluator: Evaluator::Where,
-        predicate: "INSTR(n, '5') = 1",
-        observed: "EEUE",
-        why: NUMBER_ERRORS,
-    },
-    Known {
-        evaluator: Evaluator::Value,
-        predicate: "INSTR(n, '5') = 1",
-        observed: "EEUE",
-        why: NUMBER_ERRORS,
-    },
-    Known {
-        evaluator: Evaluator::Where,
-        predicate: "CONTAINS(n, '.')",
-        observed: "EEFE",
-        why: NUMBER_ERRORS,
-    },
-    Known {
-        evaluator: Evaluator::Value,
-        predicate: "CONTAINS(n, '.')",
-        observed: "EEFE",
-        why: NUMBER_ERRORS,
     },
 ];
 

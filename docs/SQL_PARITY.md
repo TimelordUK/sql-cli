@@ -2543,10 +2543,12 @@ out of date.
 - **Found:** 2026-09-19, pinning LIKE for R13 slice 4.
 
 ### P56 — A method call over a NULL receiver answers FALSE, not NULL
-- **Status:** 🔴 OPEN — pinned 2026-09-26 by [R13](ENGINE_REFACTORING.md#r13)
-  slice 5; fixed by that slice.
-- **Corpus:** `02_where.toml :: where_not_method_null_receiver`,
-  `select_method_null_receiver` (both `expect = "DIFFER"`). The methods DuckDB
+- **Status:** 🟡 HALF FIXED — pinned 2026-09-26 by [R13](ENGINE_REFACTORING.md#r13)
+  slice 5. The registry's search functions (SELECT, HAVING, every clause but
+  WHERE's own method arms, and every function form) fixed the same day —
+  179 → **180 AGREE**. WHERE's method calls go when WHERE delegates them.
+- **Corpus:** `02_where.toml :: where_not_method_null_receiver`
+  (`expect = "DIFFER"`), `select_method_null_receiver` (AGREE). The methods DuckDB
   has no twin for are pinned in the evaluator matrix (`EXPECTED_METHODS`).
 - **Observed:** `WHERE NOT label.contains('e')` returns every NULL label along
   with the labels lacking an `e`; `SELECT label.contains('e')` shows `false` for
@@ -2607,8 +2609,17 @@ out of date.
   counterpart; its expected answers are DuckDB's over `lower(s)`, in
   `EXPECTED_METHODS_CASE_INSENSITIVE`.
 - **Behaviour:** `.Contains()`, `.StartsWith()`, `.EndsWith()` and `.IndexOf()`
-  search case-sensitively by default and case-insensitively under
-  `--case-insensitive` — the same rule as `=`, `IN` and `LIKE`. In every clause.
+  — and their function forms `CONTAINS`, `STARTSWITH`, `ENDSWITH`, `INDEXOF`,
+  `INSTR` — search case-sensitively by default and case-insensitively under
+  `--case-insensitive`: the same rule as `=`, `IN` and `LIKE`, in every clause.
+  The mode reaches a function through `SqlFunction::evaluate_with_case`; a
+  function that compares text overrides it, every other one ignores it.
+- **Still to follow the switch:** the functions that *match* text while
+  transforming it — `REPLACE`, `FREQUENCY`, `SUBSTRING_BEFORE` /
+  `SUBSTRING_AFTER`, `SPLIT_PART`, `LEFT` / `RIGHT` with a delimiter. Each to be
+  pinned then moved onto `evaluate_with_case` (user decision 2026-09-26: the
+  switch applies across the whole range, even where captured smoke output has
+  to be regenerated).
 - **Before:** WHERE's own versions always ignored case (an early TUI choice),
   while the registry functions the same methods mean in SELECT never did, even
   under the switch. So `'ABC'.Contains('b')` was TRUE in WHERE and FALSE in

@@ -137,6 +137,15 @@ pub trait SqlFunction: Send + Sync {
     /// Evaluate the function with the given arguments
     fn evaluate(&self, args: &[DataValue]) -> Result<DataValue>;
 
+    /// Evaluate under the engine's string-comparison mode (`--case-insensitive`).
+    /// A function whose answer depends on comparing text overrides this, so it
+    /// follows the switch exactly as `=` and LIKE do (D3 in docs/SQL_PARITY.md);
+    /// every other function ignores the mode.
+    fn evaluate_with_case(&self, args: &[DataValue], case_insensitive: bool) -> Result<DataValue> {
+        let _ = case_insensitive;
+        self.evaluate(args)
+    }
+
     /// Validate arguments before evaluation (default implementation checks count)
     fn validate_args(&self, args: &[DataValue]) -> Result<()> {
         let sig = self.signature();

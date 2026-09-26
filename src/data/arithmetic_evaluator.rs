@@ -753,7 +753,7 @@ impl<'a> ArithmeticEvaluator<'a> {
 
             // Get the function and call it
             let func = self.function_registry.get(name).unwrap();
-            return func.evaluate(&evaluated_args);
+            return func.evaluate_with_case(&evaluated_args, self.case_insensitive);
         }
 
         // If not in registry, return error for unknown function
@@ -1297,7 +1297,7 @@ impl<'a> ArithmeticEvaluator<'a> {
             for arg in args {
                 method_args.push(self.evaluate(arg, row_index)?);
             }
-            return method_fn.evaluate_method(value, &method_args);
+            return method_fn.evaluate_method(value, &method_args, self.case_insensitive);
         }
 
         // Otherwise, proxy the method through the function registry.
@@ -1328,7 +1328,7 @@ impl<'a> ArithmeticEvaluator<'a> {
 
             // Get the function and call it
             let func = self.function_registry.get(function_name).unwrap();
-            return func.evaluate(&func_args);
+            return func.evaluate_with_case(&func_args, self.case_insensitive);
         }
 
         // If not in registry, the method is not supported
