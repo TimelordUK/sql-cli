@@ -2564,6 +2564,20 @@ out of date.
   NULL, so `NOT` over it does not select the row.
 - **Found:** 2026-09-26, pinning method calls for R13 slice 5.
 
+### P57 — Only five methods may sit on the left of a WHERE comparison
+- **Status:** 🔴 OPEN — pinned 2026-09-26 by [R13](ENGINE_REFACTORING.md#r13)
+  slice 5; fixed by that slice.
+- **Corpus:** `02_where.toml :: where_method_other_than_legacy_on_left`
+  (`expect = "GAP"`); matrix rows `s.ToUpper() = 'ABC'`,
+  `s.Replace('a', 'z') = 'zbc'`.
+- **Observed:** `WHERE label.upper() = 'ECHO'` fails the query — "Method
+  'upper' cannot be used in comparisons". The same expression works in SELECT,
+  and chained forms such as `s.Trim().Length() = 2` already work in WHERE.
+- **Cause:** a method call on the left of a comparison is the one shape WHERE
+  did not delegate to the value evaluator; its own arm knows `Length`,
+  `IndexOf`, `Trim`, `TrimStart` and `TrimEnd` and rejects everything else.
+- **Found:** 2026-09-26, pinning method calls for R13 slice 5.
+
 ---
 
 ## Deferred / won't fix (intentional)

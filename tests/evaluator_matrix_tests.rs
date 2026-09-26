@@ -348,6 +348,10 @@ const EXPECTED_METHODS: &[(&str, &str)] = &[
     ("s.Trim() = 'aB'", "FFUT"),
     ("s.TrimStart() = 'aB '", "FFUT"),
     ("s.TrimEnd() = ' aB'", "FFUT"),
+    // Any other method on the left of a comparison, and a qualified receiver.
+    ("s.ToUpper() = 'ABC'", "TTUF"),
+    ("s.Replace('a', 'z') = 'zbc'", "TFUF"),
+    ("t.s.Contains('b')", "TFUF"),
     // The function forms share the method's implementation and its rules.
     ("CONTAINS(s, 'B')", "FTUT"),
     ("INSTR(s, 'b') = 2", "TFUF"),
@@ -390,8 +394,27 @@ const EXPECTED_NUMBER_METHODS: &[(&str, &str)] = &[
 const NULL_RECEIVER: &str = "P56: WHERE's method over a NULL receiver answers FALSE (its Length /      IndexOf / Trim* a non-NULL value) instead of NULL";
 const NULL_RECEIVER_AND_WHERE_ALWAYS_NOCASE: &str =
     "P56 (NULL receiver answers FALSE) and D3 (WHERE's search methods always ignore case)";
+const WHERE_METHOD_ALLOWLIST: &str = "P57: on the left of a WHERE comparison only Length /      IndexOf / Trim* are accepted; any other method fails the query";
 
 const KNOWN_METHODS: &[Known] = &[
+    Known {
+        evaluator: Evaluator::Where,
+        predicate: "s.ToUpper() = 'ABC'",
+        observed: "EEEE",
+        why: WHERE_METHOD_ALLOWLIST,
+    },
+    Known {
+        evaluator: Evaluator::Where,
+        predicate: "s.Replace('a', 'z') = 'zbc'",
+        observed: "EEEE",
+        why: WHERE_METHOD_ALLOWLIST,
+    },
+    Known {
+        evaluator: Evaluator::Where,
+        predicate: "t.s.Contains('b')",
+        observed: "TTFT",
+        why: NULL_RECEIVER_AND_WHERE_ALWAYS_NOCASE,
+    },
     Known {
         evaluator: Evaluator::Where,
         predicate: "s.Contains('b')",

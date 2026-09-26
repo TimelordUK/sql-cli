@@ -353,3 +353,12 @@ data = "null_edges.csv"
 sql = "SELECT id, label.contains('e') AS c FROM null_edges ORDER BY id"
 # P56, in SELECT: the registry's CONTAINS answered false for a NULL label.
 # AGREE since the search functions read NULL as NULL (R13 slice 5).
+
+[[case]]
+id = "where_method_other_than_legacy_on_left"
+data = "null_edges.csv"
+sql = "SELECT id FROM null_edges WHERE label.upper() = 'ECHO' ORDER BY id"
+expect = "GAP"
+# P57. WHERE accepted only Length / IndexOf / Trim* on the left of a
+# comparison, so any other method failed the query: "Method 'upper' cannot be
+# used in comparisons". SELECT has always evaluated it.
