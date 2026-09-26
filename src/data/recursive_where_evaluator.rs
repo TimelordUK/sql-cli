@@ -405,11 +405,9 @@ fn reject_unlifted_window(expr: &SqlExpression) -> Result<()> {
     }
 }
 
-/// The binary predicates WHERE hands whole to the value evaluator: the
-/// comparisons and the NULL tests. Expects the operator already upper-cased.
-
-/// Operators whose result is a truth value, handled by `evaluate_binary_op`'s
-/// comparison arms. Expects the operator already upper-cased.
+/// Operators whose result is a truth value - the comparisons, LIKE and the NULL
+/// tests - which WHERE hands whole to the value evaluator. Expects the operator
+/// already upper-cased.
 fn is_predicate_operator(op_upper: &str) -> bool {
     matches!(
         op_upper,
