@@ -1,31 +1,35 @@
-# SQL CLI v1.85.10
+# SQL CLI v1.85.11
 
-**Release Date:** September 19, 2026
+**Release Date:** September 26, 2026
 
 ## 📊 Release Overview
-- **Commits in this release:** 4
-- **Files updated:** 5
+- **Commits in this release:** 8
+- **Files updated:** 12
 
 ## ✨ Highlights
 
-### 🔍 Enhanced Debugging
-- **Better Diagnostics**: Improved error messages and state dumps
-
 ## 📝 Changes by Category
 
-### 🚀 New Features
-- widen packed columns into spare terminal width (T18)
-
 ### 🐛 Bug Fixes
-- drop the [*] selected-column header marker; log T18
+- search functions read NULL as NULL, a number as its text, and follow --case-insensitive (R13 slice 5)
+
+### 🔧 Refactoring
+- WHERE's method calls delegate; its method arms and readers go (R13 slice 5)
+
+### 📚 Documentation
+- merge an orphaned doc comment left by the deletion
 
 <details>
 <summary>📋 View all commits</summary>
 
-- Merge pull request #92 from TimelordUK/feat/t18-column-fit (TimelordUK)
-- fix(tui): drop the [*] selected-column header marker; log T18 (TimelordUK)
-- feat(tui): widen packed columns into spare terminal width (T18) (TimelordUK)
-- add shapes csv (stephen james)
+- Merge pull request #93 from TimelordUK/refactor/r13-slice5-method-calls (TimelordUK)
+- docs(r13): merge an orphaned doc comment left by the deletion (TimelordUK)
+- refactor(r13): WHERE's method calls delegate; its method arms and readers go (R13 slice 5) (TimelordUK)
+- test(r13): pin methods WHERE rejects on the left of a comparison; file P57 (R13 slice 5) (TimelordUK)
+- fix(r13): search functions read NULL as NULL, a number as its text, and follow --case-insensitive (R13 slice 5) (TimelordUK)
+- test(r13): pin the search functions' function forms under D3 (R13 slice 5) (TimelordUK)
+- test(r13): pin method calls before they move onto the registry; file P56, D3 (R13 slice 5) (TimelordUK)
+- add a maths equation csv (stephen james)
 
 </details>
 
