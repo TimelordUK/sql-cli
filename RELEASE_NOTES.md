@@ -1,35 +1,23 @@
-# SQL CLI v1.85.11
+# SQL CLI v1.85.12
 
-**Release Date:** September 26, 2026
+**Release Date:** September 27, 2026
 
 ## 📊 Release Overview
-- **Commits in this release:** 8
-- **Files updated:** 12
+- **Commits in this release:** 2
+- **Files updated:** 4
 
 ## ✨ Highlights
 
 ## 📝 Changes by Category
 
-### 🐛 Bug Fixes
-- search functions read NULL as NULL, a number as its text, and follow --case-insensitive (R13 slice 5)
-
-### 🔧 Refactoring
-- WHERE's method calls delegate; its method arms and readers go (R13 slice 5)
-
-### 📚 Documentation
-- merge an orphaned doc comment left by the deletion
+### 🚀 New Features
+- environment() lists the process's environment variables (S9)
 
 <details>
 <summary>📋 View all commits</summary>
 
-- Merge pull request #93 from TimelordUK/refactor/r13-slice5-method-calls (TimelordUK)
-- docs(r13): merge an orphaned doc comment left by the deletion (TimelordUK)
-- refactor(r13): WHERE's method calls delegate; its method arms and readers go (R13 slice 5) (TimelordUK)
-- test(r13): pin methods WHERE rejects on the left of a comparison; file P57 (R13 slice 5) (TimelordUK)
-- fix(r13): search functions read NULL as NULL, a number as its text, and follow --case-insensitive (R13 slice 5) (TimelordUK)
-- test(r13): pin the search functions' function forms under D3 (R13 slice 5) (TimelordUK)
-- test(r13): pin method calls before they move onto the registry; file P56, D3 (R13 slice 5) (TimelordUK)
-- add a maths equation csv (stephen james)
+- Merge pull request #94 from TimelordUK/feat/s9-environment (TimelordUK)
+- feat(system): environment() lists the process's environment variables (S9) (TimelordUK)
 
 </details>
 
