@@ -1,7 +1,8 @@
-//! System tables: the running machine as something to query (S1, S2).
+//! System tables: the running machine as something to query (S1, S2, S9).
 //!
 //! `SELECT * FROM processes() WHERE name LIKE 'node%'`,
-//! `SELECT * FROM sockets() WHERE state = 'LISTEN'`.
+//! `SELECT * FROM sockets() WHERE state = 'LISTEN'`,
+//! `SELECT * FROM environment() WHERE name LIKE 'CARGO%'`.
 //!
 //! These are ordinary [`TableGenerator`]s, the same shape as the file readers
 //! next door, so nothing in the parser or the executor knows they are special.
@@ -361,6 +362,81 @@ impl TableGenerator for Sockets {
     }
 }
 
+/// One row per environment variable, as this process inherited it.
+pub struct Environment;
+
+impl Environment {
+    /// Windows keeps a hidden `=C:`-style variable per drive, holding that
+    /// drive's current directory. `set` and PowerShell's `Env:` both hide them,
+    /// Linux has no equivalent, and they are not configuration anyone set - the
+    /// same kind of question as S1's threads, with the same answer.
+    fn is_hidden(name: &str) -> bool {
+        name.starts_with('=')
+    }
+
+    /// Case-insensitive first, so `Path`, `PROCESSOR_ARCHITECTURE` and
+    /// `windir` sit where a reader expects them; the exact name breaks ties so
+    /// Linux's `path` and `PATH` still come out in the same order every time.
+    fn sort_key(name: &str) -> (String, String) {
+        (name.to_lowercase(), name.to_string())
+    }
+}
+
+impl TableGenerator for Environment {
+    fn name(&self) -> &str {
+        "ENVIRONMENT"
+    }
+
+    fn description(&self) -> &str {
+        "Every environment variable this process inherited: name, value (UNNEST(value, ';') splits a Windows PATH into rows)"
+    }
+
+    fn arg_count(&self) -> usize {
+        0
+    }
+
+    fn columns(&self) -> Vec<DataColumn> {
+        vec![
+            DataColumn::new("name").with_type(DataType::String),
+            DataColumn::new("value").with_type(DataType::String),
+        ]
+    }
+
+    fn generate(&self, _args: Vec<DataValue>) -> Result<Arc<DataTable>> {
+        // `vars_os` rather than `vars`: `vars` panics on a variable that is not
+        // valid UTF-8. Lossy conversion keeps the row; dropping it would be the
+        // silent shortening principle 5 rules out.
+        let mut variables: Vec<(String, String)> = std::env::vars_os()
+            .map(|(name, value)| {
+                (
+                    name.to_string_lossy().into_owned(),
+                    value.to_string_lossy().into_owned(),
+                )
+            })
+            .filter(|(name, _)| !Self::is_hidden(name))
+            .collect();
+        variables.sort_by_cached_key(|(name, _)| Self::sort_key(name));
+
+        let mut table = DataTable::new("environment");
+        for column in self.columns() {
+            table.add_column(column);
+        }
+        // An empty value stays an empty string, unlike S1's unreadable cells:
+        // on Unix `FOO=` is set-but-empty, a real answer that differs from
+        // unset. Windows cannot hold an empty variable, so it never arises there.
+        for (name, value) in variables {
+            table
+                .add_row(DataRow::new(vec![
+                    DataValue::String(name),
+                    DataValue::String(value),
+                ]))
+                .map_err(|e| anyhow::anyhow!("environment(): {e}"))?;
+        }
+
+        Ok(Arc::new(table))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -585,5 +661,40 @@ mod tests {
                 "row {row}: pid 0 is not an owner"
             );
         }
+    }
+
+    /// The environment is shared by every test thread, so this reads a
+    /// variable Cargo sets for every test binary rather than setting its own.
+    #[test]
+    fn environment_lists_what_this_process_inherited() {
+        let table = Environment.generate(Vec::new()).expect("read environment");
+        assert_eq!(
+            table.column_names(),
+            vec!["name", "value"],
+            "the column set is fixed, and identical on every platform"
+        );
+
+        let text = |s: &str| DataValue::String(s.to_string());
+        let package = (0..table.row_count())
+            .find(|&row| table.get_value(row, 0) == Some(&text("CARGO_PKG_NAME")))
+            .expect("cargo sets CARGO_PKG_NAME for every test binary");
+        assert_eq!(
+            table.get_value(package, 1),
+            Some(&text(env!("CARGO_PKG_NAME")))
+        );
+
+        let names: Vec<String> = (0..table.row_count())
+            .map(|row| match table.get_value(row, 0) {
+                Some(DataValue::String(name)) => name.clone(),
+                other => panic!("row {row} has name {other:?}"),
+            })
+            .collect();
+        assert!(
+            names.iter().all(|name| !Environment::is_hidden(name)),
+            "Windows' per-drive `=C:` variables are not listed"
+        );
+        let mut sorted = names.clone();
+        sorted.sort_by_cached_key(|name| Environment::sort_key(name));
+        assert_eq!(names, sorted, "rows come out in a stable order");
     }
 }
