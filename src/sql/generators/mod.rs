@@ -109,6 +109,8 @@ impl GeneratorRegistry {
         self.register(Box::new(system::Processes));
         #[cfg(feature = "system-tables")]
         self.register(Box::new(system::Sockets));
+        #[cfg(feature = "system-tables")]
+        self.register(Box::new(system::Environment));
     }
 
     pub fn register(&mut self, generator: Box<dyn TableGenerator>) {

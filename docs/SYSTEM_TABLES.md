@@ -357,13 +357,50 @@ together** (small, same crate, no sampling delay), then the rest by demand.
   an explicit argument, never a hidden default), and what a permission-denied
   directory contributes (its own row with NULL metadata, not a query error).
 
-## S9 — `env()`
-- **Status:** 🔴 OPEN — tiny
-- **Columns:** `name`, `value`. `std::env::vars_os`; values that are not valid
-  UTF-8 come back lossily converted rather than dropped.
-- **Why:** checking `PATH` or configuration from a script, and `SPLIT` already
-  turns a `PATH` value into rows. Windows names are case-insensitive — document
-  that `WHERE name = 'Path'` versus `'PATH'` differs by platform.
+## S9 — `environment()`
+- **Status:** 🟢 DONE 2026-09-27
+- **Where:** `src/sql/generators/system.rs` beside S1 and S2, same feature;
+  worked queries in `examples/system_environment.sql`
+- **Depends on:** nothing — `std::env::vars_os`
+- **Named `environment()`, not `env()` as surveyed.** A table function and a
+  scalar share one name space in a reader's head, and `ENV('HOME')` is the
+  obvious spelling for a scalar lookup if one is ever wanted. The full word
+  also reads as the noun it is, like `processes()` and `sockets()`.
+- **Columns**, one row per variable, the same everywhere:
+
+  | Column | Type | Notes |
+  |---|---|---|
+  | `name` | String | as stored, **case preserved** — see below |
+  | `value` | String | lossily converted if not valid UTF-8, never dropped |
+
+- **Whose environment:** the `sql-cli` process's own, inherited from whatever
+  launched it. It is a snapshot of the shell you ran it from, not the machine's
+  or the user's registry defaults.
+- **Name case differs by the *launching shell*, not only by platform.**
+  Windows treats names case-insensitively but stores a spelling. On the same
+  machine, launched from PowerShell the rows are `Path` and `windir`; from Git
+  Bash they are `PATH` and `WINDIR`, because MSYS rewrites them. So a portable
+  lookup is `WHERE UPPER(name) = 'PATH'`, and that is what the example uses.
+  Linux names are case-sensitive and `path` and `PATH` can both exist; the
+  `UPPER` form would then return both, which is the honest answer.
+- **Windows' hidden `=C:` variables are skipped.** Windows keeps one per drive
+  holding that drive's current directory. `set` and PowerShell's `Env:` both
+  hide them, Linux has nothing like them, and nobody configured them — the S1
+  thread question again (*same kind of row?*), answered the same way.
+- **An empty value stays an empty string**, the one place these tables do not
+  turn `''` into NULL. On Unix `FOO=` is set-but-empty, which is a real answer
+  and differs from unset; the row existing *is* the fact. Windows cannot hold
+  an empty variable (setting one to empty deletes it), so it never arises there.
+- **Rows are sorted** case-insensitively by name, exact name breaking ties, so
+  the same shell gives the same result twice.
+- **Splitting `PATH` into rows** is `UNNEST(value, ';')` on Windows and
+  `UNNEST(value, ':')` on Unix — the one query here that is not portable,
+  because the separator is part of the value.
+- **Tests:** one, reading `CARGO_PKG_NAME` (Cargo sets it for every test
+  binary) rather than setting a variable — the environment is shared by every
+  test thread, and `set_var` in a parallel test run is a race. It also checks
+  the fixed columns, the stable order, and that no `=`-prefixed name appears.
+  Passes on Windows 11 and on Linux (Ubuntu 22.04 under WSL2).
 
 ## S10 — `cpus()`
 - **Status:** 🔴 OPEN — least essential
