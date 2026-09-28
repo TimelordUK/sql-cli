@@ -45,3 +45,15 @@ WITH e AS (SELECT value FROM environment() WHERE UPPER(name) = 'PATH')
 SELECT UNNEST(value, ';') AS directory
 FROM e;
 GO
+
+-- ---------------------------------------------------------------------------
+-- ENV(name): one variable as a scalar (S15), so it can sit in an expression.
+-- NULL when unset; on Windows the name is matched case-insensitively.
+-- ---------------------------------------------------------------------------
+SELECT ENV('PATH') IS NOT NULL AS has_path,
+       COALESCE(ENV('SQL_CLI_EXAMPLE_UNSET'), 'default') AS fallback;
+GO
+
+-- The PATH split again, without the CTE.
+SELECT UNNEST(ENV('PATH'), ';') AS directory;
+GO
