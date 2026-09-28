@@ -1,6 +1,6 @@
-# SQL CLI v1.85.12
+# SQL CLI v1.85.13
 
-**Release Date:** September 27, 2026
+**Release Date:** September 28, 2026
 
 ## 📊 Release Overview
 - **Commits in this release:** 2
@@ -11,13 +11,13 @@
 ## 📝 Changes by Category
 
 ### 🚀 New Features
-- environment() lists the process's environment variables (S9)
+- ENV(name) scalar lookup of one environment variable (S15)
 
 <details>
 <summary>📋 View all commits</summary>
 
-- Merge pull request #94 from TimelordUK/feat/s9-environment (TimelordUK)
-- feat(system): environment() lists the process's environment variables (S9) (TimelordUK)
+- Merge pull request #95 from TimelordUK/feat/s15-env-scalar (TimelordUK)
+- feat(system): ENV(name) scalar lookup of one environment variable (S15) (TimelordUK)
 
 </details>
 
