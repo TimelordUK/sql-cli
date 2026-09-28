@@ -38,6 +38,8 @@ pub mod statistics;
 pub mod string_fun;
 pub mod string_methods;
 pub mod string_utils;
+#[cfg(feature = "system-tables")]
+pub mod system;
 pub mod text_processing;
 pub mod trigonometry;
 pub mod type_checking;
@@ -63,6 +65,7 @@ pub enum FunctionCategory {
     TableFunction, // Table-generating functions
     Bitwise,       // Bitwise operations and binary visualization
     Terminal,      // Terminal formatting (ANSI colors, styles)
+    System,        // The running process and machine (system-tables feature)
 }
 
 impl fmt::Display for FunctionCategory {
@@ -81,6 +84,7 @@ impl fmt::Display for FunctionCategory {
             FunctionCategory::TableFunction => write!(f, "TableFunction"),
             FunctionCategory::Bitwise => write!(f, "Bitwise"),
             FunctionCategory::Terminal => write!(f, "Terminal"),
+            FunctionCategory::System => write!(f, "System"),
         }
     }
 }
@@ -201,6 +205,8 @@ impl FunctionRegistry {
         registry.register_bitwise_functions();
         registry.register_ansi_functions();
         registry.register_vector_functions();
+        #[cfg(feature = "system-tables")]
+        registry.register_system_functions();
 
         registry
     }
@@ -892,6 +898,12 @@ impl FunctionRegistry {
         self.register(Box::new(AnsiBlinkFunction));
         self.register(Box::new(AnsiReverseFunction));
         self.register(Box::new(AnsiStrikethroughFunction));
+    }
+
+    /// Register lookups on the running process (S15)
+    #[cfg(feature = "system-tables")]
+    fn register_system_functions(&mut self) {
+        self.register(Box::new(system::EnvFunction));
     }
 
     /// Register vector mathematics functions

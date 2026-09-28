@@ -410,6 +410,34 @@ together** (small, same crate, no sampling delay), then the rest by demand.
   Probably only worth it if a real question needs per-core usage; `system()`
   covers core counts.
 
+## S15 — `ENV(name)`, the scalar lookup
+- **Status:** 🟢 DONE 2026-09-28
+- **Where:** `src/sql/functions/system.rs`, registered under a new `System`
+  function category, behind the same `system-tables` feature (principle 4).
+  Worked queries appended to `examples/system_environment.sql`.
+- **Why a scalar beside S9:** `environment()` answers *list them all*; a single
+  value wanted inside an expression otherwise needs a scalar subquery,
+  `(SELECT value FROM environment() WHERE UPPER(name) = 'PATH')`.
+  `ENV('PATH')` is the name S9 kept free for exactly this.
+- **Not a `TableGenerator`, a deliberate exception to principle 1.** That
+  principle is about *sources*; this is a lookup of one value, and a function
+  in the registry is the existing mechanism for that.
+- **Unset is NULL, set-but-empty is `''`** — S9's distinction, so
+  `COALESCE(ENV('EDITOR'), 'vi')` works. A name the OS can never hold (empty,
+  containing `=` or NUL) is NULL too, rather than being handed to `var_os`.
+  `ENV(NULL)` is NULL; a non-string name is an error.
+- **Name case follows the OS, not S9's advice.** `var_os` is case-insensitive
+  on Windows, so `ENV('path')` finds `Path` whichever shell launched us — the
+  lookup `environment()` needs `UPPER(name)` for. On Linux it is exact, which
+  is the correct answer there.
+- **Splitting** is `UNNEST(ENV('PATH'), ';')` with no `FROM`. The separator is
+  still not portable; see the open question below.
+- **Tests:** four in the module plus a Windows-only case test, reading
+  `CARGO_PKG_NAME` rather than setting anything (S9's reason).
+- **Open question, not filed:** a portable PATH split — `UNNEST` with the
+  platform separator, or a `PATH_SEPARATOR()` constant — so the one
+  non-portable query in the example stops being one. Wait for a real need.
+
 ## Deliberately not doing
 
 ## S11 — Open files per process
