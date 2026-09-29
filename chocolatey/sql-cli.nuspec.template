@@ -7,6 +7,7 @@
     <authors>TimelordUK</authors>
     <owners>TimelordUK</owners>
     <projectUrl>https://github.com/TimelordUK/sql-cli</projectUrl>
+    <packageSourceUrl>https://github.com/TimelordUK/sql-cli/tree/main/chocolatey</packageSourceUrl>
     <projectSourceUrl>https://github.com/TimelordUK/sql-cli</projectSourceUrl>
     <docsUrl>https://github.com/TimelordUK/sql-cli/blob/main/README.md</docsUrl>
     <bugTrackerUrl>https://github.com/TimelordUK/sql-cli/issues</bugTrackerUrl>
