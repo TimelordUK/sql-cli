@@ -1,6 +1,6 @@
 # Chocolatey packaging
 
-This folder contains the template files used by the release workflow to publish
+This folder contains the template files used by `publish-chocolatey.yml` to publish
 sql-cli to the [Chocolatey Community Repository](https://community.chocolatey.org/).
 
 ## Layout
@@ -9,24 +9,29 @@ sql-cli to the [Chocolatey Community Repository](https://community.chocolatey.or
 - `tools/chocolateyInstall.ps1.template` — downloads the Windows binary from the matching
   GitHub release and verifies its SHA256. `__VERSION__` and `__CHECKSUM__` are replaced
   at pack time.
-- `tools/VERIFICATION.txt` — instructions for the Chocolatey moderation team to verify
-  the package contents against the published source.
-- `tools/LICENSE.txt` — a copy of the upstream MIT license (required by Chocolatey
-  moderation for binary packages).
+
+No `VERIFICATION.txt` / `LICENSE.txt`: the package downloads the binary rather than
+embedding it, and the Chocolatey moderators asked for both files to be removed. The
+nuspec's `packageSourceUrl` points moderators at this folder instead.
 
 Chocolatey auto-shims any `.exe` placed in `tools/`, so after install the binary is
 available on `PATH` as `sql-cli`.
 
 ## Publishing
 
-Publishing is automated in `.github/workflows/release-manual.yml`. The workflow runs
-after the GitHub release is created — at that point the Windows binary asset is
-available at a stable URL, so the workflow:
+Publishing is **manual**, and separate from the release workflow. crates.io gets every
+release; Chocolatey gets only the versions we choose to submit, because each pushed
+version sits in moderation for a long time.
 
-1. Downloads `sql-cli-windows-x64.exe` from the release.
+Once a GitHub release exists, run `.github/workflows/publish-chocolatey.yml` with its
+version (Actions tab, or `gh workflow run publish-chocolatey.yml -f version=1.85.13`).
+It:
+
+1. Downloads `sql-cli-windows-x64.exe` from that release.
 2. Computes its SHA256.
-3. Substitutes `__VERSION__` and `__CHECKSUM__` into the templates.
-4. Runs `choco pack` and `choco push`.
+3. Substitutes `__VERSION__` and `__CHECKSUM__` into the templates (taken from `main`,
+   so packaging fixes apply to older releases too).
+4. Runs `choco pack` and `choco push`, and uploads the `.nupkg` as a build artifact.
 
 ## One-time setup
 
@@ -34,7 +39,7 @@ available at a stable URL, so the workflow:
 2. Generate an API key at <https://community.chocolatey.org/account>.
 3. Add it as a GitHub repo secret named `CHOCOLATEY_API_KEY`.
 4. The **first** submission of a brand-new package id goes through manual moderator
-   review (typically a few days). Subsequent versions normally auto-pass.
+   review, which can take weeks to months.
 
 ## Testing locally
 
