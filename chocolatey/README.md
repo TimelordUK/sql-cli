@@ -6,6 +6,7 @@ sql-cli to the [Chocolatey Community Repository](https://community.chocolatey.or
 ## Layout
 
 - `sql-cli.nuspec.template` — package metadata. `__VERSION__` is replaced at pack time.
+  `iconUrl` must stay on `cdn.jsdelivr.net`: moderation rejects `raw.githubusercontent.com`.
 - `tools/chocolateyInstall.ps1.template` — downloads the Windows binary from the matching
   GitHub release and verifies its SHA256. `__VERSION__` and `__CHECKSUM__` are replaced
   at pack time.
