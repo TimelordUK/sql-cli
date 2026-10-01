@@ -130,129 +130,12 @@ impl<'a, 'exec> RecursiveWhereEvaluator<'a, 'exec> {
         result
     }
 
+    /// Every predicate shape - comparisons, IN, BETWEEN, LIKE, method calls,
+    /// AND / OR / NOT, CASE, and a bare value used as a predicate - is the value
+    /// evaluator's (R13 slice 4). WHERE keeps only what the value evaluator
+    /// must not do quietly: evaluate an unlifted window function (P15).
     fn evaluate_expression(&mut self, expr: &SqlExpression, row_index: usize) -> Result<Trilean> {
-        // Only log first few rows to avoid performance impact
-        if row_index < 3 {
-            debug!(
-                "RecursiveWhereEvaluator: evaluate_expression() ENTRY - row {}, expr = {:?}",
-                row_index, expr
-            );
-        }
-
-        let result = match expr {
-            SqlExpression::BinaryOp { left, op, right } => {
-                self.evaluate_binary_op(expr, left, op, right, row_index)
-            }
-            SqlExpression::InList {
-                expr: probe,
-                values,
-            }
-            | SqlExpression::NotInList {
-                expr: probe,
-                values,
-            } => {
-                reject_unlifted_window(probe)?;
-                for item in values {
-                    reject_unlifted_window(item)?;
-                }
-                self.evaluate_delegated(expr, row_index)
-            }
-            SqlExpression::Between {
-                expr: value,
-                lower,
-                upper,
-            } => {
-                for operand in [value, lower, upper] {
-                    reject_unlifted_window(operand)?;
-                }
-                self.evaluate_delegated(expr, row_index)
-            }
-            SqlExpression::Not { expr } => {
-                let inner_result = self.evaluate_expression(expr, row_index)?;
-                // `NOT UNKNOWN` is UNKNOWN, not TRUE — see P18/P19.
-                Ok(inner_result.negate())
-            }
-            // `WHERE s.Contains('x')`: the registry's method function, through
-            // the value evaluator (R13 slice 5).
-            SqlExpression::MethodCall { .. } => {
-                reject_unlifted_window(expr)?;
-                self.evaluate_delegated(expr, row_index)
-            }
-            // CASE is the value evaluator's (R13 slice 4): its WHEN reads a
-            // condition through the one truth rule, and no ELSE is ELSE NULL -
-            // UNKNOWN, which NOT keeps UNKNOWN (P61).
-            SqlExpression::CaseExpression { .. } => {
-                reject_unlifted_windows(expr)?;
-                self.evaluate_delegated(expr, row_index)
-            }
-            // A bare value expression used as a predicate -- `WHERE flag`,
-            // `WHERE true`, and the `WHERE lifted_value` that
-            // `ExpressionLifter` rewrites a window comparison into. This arm
-            // used to answer FALSE for every row, which is how P37 turned an
-            // unsupported shape into a silently empty result set.
-            _ => self.evaluate_value_as_predicate(expr, row_index),
-        };
-
-        if row_index < 3 {
-            debug!(
-                "RecursiveWhereEvaluator: evaluate_expression() EXIT - row {}, result = {:?}",
-                row_index, result
-            );
-        }
-        result
-    }
-
-    /// `expr` is the `BinaryOp` node itself, and `left` / `op` / `right` its
-    /// parts: the arms that hand the whole predicate to the value evaluator
-    /// need the node, and rebuilding it would clone the subtree on every row.
-    fn evaluate_binary_op(
-        &mut self,
-        expr: &SqlExpression,
-        left: &SqlExpression,
-        op: &str,
-        right: &SqlExpression,
-        row_index: usize,
-    ) -> Result<Trilean> {
-        // Only log first few rows to avoid performance impact
-        if row_index < 3 {
-            debug!(
-                "RecursiveWhereEvaluator: evaluate_binary_op() ENTRY - row {}, op = '{}'",
-                row_index, op
-            );
-        }
-
-        // Handle logical operators (AND, OR) specially
-        if op.to_uppercase() == "OR" || op.to_uppercase() == "AND" {
-            let left_result = self.evaluate_expression(left, row_index)?;
-            let right_result = self.evaluate_expression(right, row_index)?;
-
-            return Ok(match op.to_uppercase().as_str() {
-                // `Trilean::or` / `and` are the SQL truth tables, so FALSE still
-                // dominates AND and TRUE still dominates OR even when the other
-                // side is UNKNOWN — which `||`/`&&` over a collapsed bool could
-                // not express.
-                "OR" => left_result.or(right_result),
-                "AND" => left_result.and(right_result),
-                _ => unreachable!(),
-            });
-        }
-
-        let op_upper = op.to_uppercase();
-
-        // An operator that does not yield a truth value (`WHERE a + b`,
-        // `WHERE x || y`) makes the whole expression a value used as a
-        // predicate -- the P37 rule, rather than a comparison under an
-        // operator `compare_with_op` would silently answer false for.
-        if !is_predicate_operator(&op_upper) {
-            return self.evaluate_value_as_predicate(expr, row_index);
-        }
-
-        // Comparisons, NULL tests and LIKE are the value evaluator's (R13
-        // slices 4 and 5): its operand readers, three-valued `compare_trilean`,
-        // `sql_like` and the registry's method functions are the one
-        // implementation, whatever shape either operand takes.
-        reject_unlifted_window(left)?;
-        reject_unlifted_window(right)?;
+        reject_unlifted_windows(expr)?;
         self.evaluate_delegated(expr, row_index)
     }
 
@@ -281,31 +164,6 @@ impl<'a, 'exec> RecursiveWhereEvaluator<'a, 'exec> {
     fn evaluate_delegated(&self, expr: &SqlExpression, row_index: usize) -> Result<Trilean> {
         let value = self.evaluate_arithmetic(expr, row_index)?;
         Trilean::from_value(&value)
-    }
-
-    /// Evaluate an expression for its VALUE and coerce that value to a
-    /// predicate (P37).
-    ///
-    /// A bare value used directly as a `WHERE` predicate: `WHERE flag`,
-    /// `WHERE true`, and the `WHERE lifted_value` that `ExpressionLifter`
-    /// rewrites a window comparison into. The coercion itself is
-    /// `Trilean::from_value`, the one rule every clause uses (D4).
-    ///
-    /// A raw `WindowFunction` reaching here means the lifter did not hoist it,
-    /// which is a defect rather than a value to coerce -- so it errors. That
-    /// is the P37 rule: a loud failure beats a silently empty result.
-    fn evaluate_value_as_predicate(
-        &mut self,
-        expr: &SqlExpression,
-        row_index: usize,
-    ) -> Result<Trilean> {
-        if let SqlExpression::WindowFunction { name, .. } = expr {
-            return Err(anyhow::anyhow!(
-                "Window function {name} cannot be used directly as a predicate (the expression was not lifted to a CTE column)"
-            ));
-        }
-
-        self.evaluate_delegated(expr, row_index)
     }
 }
 
