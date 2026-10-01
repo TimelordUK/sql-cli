@@ -29,6 +29,39 @@ FROM #countries
 WHERE "name.common" = 'Russia';
 go
 
+-- using unnest to explode the borders on left hand side to self join back to get the matching row on right
+
+WITH
+    all AS (
+        SELECT 
+        "name.common" as name,
+        cca3,
+        latlng,
+        borders,
+        area
+        FROM #countries 
+    ),
+    lc AS (
+        SELECT
+            l.name as l_name,
+            l.cca3 AS iso,
+            l.latlng,
+            l.borders,
+            SPLIT_PART(l.latlng, ',', 1) AS lat,
+            SPLIT_PART(l.latlng, ',', 2) AS lon,
+            l.area,
+            Unnest(l.borders, ',' ) AS border
+        FROM all
+        WHERE l.cca3 = 'BRA'
+    )
+SELECT
+ lc.*,
+ r.latlng,
+ r.name as r_name
+FROM lc
+INNER JOIN all AS r ON l.border = r.cca3
+GO
+
 SELECT
   "name.common" as name, 
   region, cca3 as iso, 
