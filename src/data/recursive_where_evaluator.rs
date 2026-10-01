@@ -178,14 +178,12 @@ impl<'a, 'exec> RecursiveWhereEvaluator<'a, 'exec> {
                 reject_unlifted_window(expr)?;
                 self.evaluate_delegated(expr, row_index)
             }
-            SqlExpression::CaseExpression {
-                when_branches,
-                else_branch,
-            } => {
-                if row_index < 3 {
-                    debug!("RecursiveWhereEvaluator: evaluate_expression() - found CaseExpression, evaluating");
-                }
-                self.evaluate_case_expression_as_bool(when_branches, else_branch, row_index)
+            // CASE is the value evaluator's (R13 slice 4): its WHEN reads a
+            // condition through the one truth rule, and no ELSE is ELSE NULL -
+            // UNKNOWN, which NOT keeps UNKNOWN (P61).
+            SqlExpression::CaseExpression { .. } => {
+                reject_unlifted_windows(expr)?;
+                self.evaluate_delegated(expr, row_index)
             }
             // A bare value expression used as a predicate -- `WHERE flag`,
             // `WHERE true`, and the `WHERE lifted_value` that
@@ -285,51 +283,13 @@ impl<'a, 'exec> RecursiveWhereEvaluator<'a, 'exec> {
         Trilean::from_value(&value)
     }
 
-    /// Evaluate a CASE expression as a boolean (for WHERE clauses)
-    fn evaluate_case_expression_as_bool(
-        &mut self,
-        when_branches: &[crate::sql::recursive_parser::WhenBranch],
-        else_branch: &Option<Box<SqlExpression>>,
-        row_index: usize,
-    ) -> Result<Trilean> {
-        debug!(
-            "RecursiveWhereEvaluator: evaluating CASE expression as bool for row {}",
-            row_index
-        );
-
-        // Evaluate each WHEN condition in order
-        for branch in when_branches {
-            // Evaluate the condition as a boolean
-            let condition_result = self.evaluate_expression(&branch.condition, row_index)?;
-
-            // A WHEN whose condition is UNKNOWN does not match, exactly like
-            // FALSE — the same rule the row filter applies.
-            if condition_result.is_true() {
-                debug!("CASE: WHEN condition matched, evaluating result expression as bool");
-                // Evaluate the result and convert to boolean
-                return self.evaluate_expression_as_bool(&branch.result, row_index);
-            }
-        }
-
-        // If no WHEN condition matched, evaluate ELSE clause (or return false)
-        if let Some(else_expr) = else_branch {
-            debug!("CASE: No WHEN matched, evaluating ELSE expression as bool");
-            self.evaluate_expression_as_bool(else_expr, row_index)
-        } else {
-            debug!("CASE: No WHEN matched and no ELSE, returning false");
-            Ok(Trilean::False)
-        }
-    }
-
     /// Evaluate an expression for its VALUE and coerce that value to a
     /// predicate (P37).
     ///
-    /// This is the tail of both `evaluate_expression` (a bare value used
-    /// directly as a `WHERE` predicate: `WHERE flag`, `WHERE true`, and the
-    /// `WHERE lifted_value` that `ExpressionLifter` rewrites a window
-    /// comparison into) and `evaluate_expression_as_bool` (the result of a
-    /// CASE branch). The coercion itself is `Trilean::from_value`, the one
-    /// rule every clause uses (D4).
+    /// A bare value used directly as a `WHERE` predicate: `WHERE flag`,
+    /// `WHERE true`, and the `WHERE lifted_value` that `ExpressionLifter`
+    /// rewrites a window comparison into. The coercion itself is
+    /// `Trilean::from_value`, the one rule every clause uses (D4).
     ///
     /// A raw `WindowFunction` reaching here means the lifter did not hoist it,
     /// which is a defect rather than a value to coerce -- so it errors. That
@@ -347,30 +307,6 @@ impl<'a, 'exec> RecursiveWhereEvaluator<'a, 'exec> {
 
         self.evaluate_delegated(expr, row_index)
     }
-
-    fn evaluate_expression_as_bool(
-        &mut self,
-        expr: &SqlExpression,
-        row_index: usize,
-    ) -> Result<Trilean> {
-        match expr {
-            // For expressions that naturally return booleans, use the existing evaluator
-            SqlExpression::BinaryOp { .. }
-            | SqlExpression::InList { .. }
-            | SqlExpression::NotInList { .. }
-            | SqlExpression::Between { .. }
-            | SqlExpression::Not { .. }
-            | SqlExpression::MethodCall { .. } => self.evaluate_expression(expr, row_index),
-            // For CASE expressions, recurse
-            SqlExpression::CaseExpression {
-                when_branches,
-                else_branch,
-            } => self.evaluate_case_expression_as_bool(when_branches, else_branch, row_index),
-            // For other expressions (columns, literals), evaluate the value
-            // and coerce -- the same rule the WHERE predicate path uses.
-            _ => self.evaluate_value_as_predicate(expr, row_index),
-        }
-    }
 }
 
 /// A raw window function in a WHERE operand was not lifted to a CTE column.
@@ -384,6 +320,64 @@ fn reject_unlifted_window(expr: &SqlExpression) -> Result<()> {
         SqlExpression::WindowFunction { name, .. } => Err(anyhow!(
             "Window function {name} cannot be used directly in a comparison (the expression was not lifted to a CTE column)"
         )),
+        _ => Ok(()),
+    }
+}
+
+/// `reject_unlifted_window` for a whole predicate handed to the value evaluator
+/// in one piece. It walks the predicate's own structure - AND / OR / NOT, CASE
+/// conditions and results - to the operands WHERE used to guard one at a time,
+/// because the value evaluator does not come back to WHERE on the way down.
+/// Unlike the leaf-by-leaf guard it also looks inside CASE branches no row
+/// happens to reach, which only ever turns a latent P15 defect into an error.
+fn reject_unlifted_windows(expr: &SqlExpression) -> Result<()> {
+    match expr {
+        SqlExpression::WindowFunction { name, .. } => Err(anyhow!(
+            "Window function {name} cannot be used directly as a predicate (the expression was not lifted to a CTE column)"
+        )),
+        SqlExpression::BinaryOp { left, op, right } => {
+            let op_upper = op.to_uppercase();
+            if op_upper == "AND" || op_upper == "OR" {
+                reject_unlifted_windows(left)?;
+                reject_unlifted_windows(right)
+            } else if is_predicate_operator(&op_upper) {
+                reject_unlifted_window(left)?;
+                reject_unlifted_window(right)
+            } else {
+                Ok(())
+            }
+        }
+        SqlExpression::Not { expr } => reject_unlifted_windows(expr),
+        SqlExpression::InList {
+            expr: probe,
+            values,
+        }
+        | SqlExpression::NotInList {
+            expr: probe,
+            values,
+        } => {
+            reject_unlifted_window(probe)?;
+            values.iter().try_for_each(reject_unlifted_window)
+        }
+        SqlExpression::Between {
+            expr: value,
+            lower,
+            upper,
+        } => [value, lower, upper]
+            .into_iter()
+            .try_for_each(|operand| reject_unlifted_window(operand)),
+        SqlExpression::CaseExpression {
+            when_branches,
+            else_branch,
+        } => {
+            for branch in when_branches {
+                reject_unlifted_windows(&branch.condition)?;
+                reject_unlifted_windows(&branch.result)?;
+            }
+            else_branch
+                .as_deref()
+                .map_or(Ok(()), reject_unlifted_windows)
+        }
         _ => Ok(()),
     }
 }
@@ -839,6 +833,30 @@ mod operand_resolution_tests {
             "ROW_NUMBER() OVER (ORDER BY a) IN (1, 2)",
             "a IN (ROW_NUMBER() OVER (ORDER BY a), 2)",
             "ROW_NUMBER() OVER (ORDER BY a) NOT IN (1, 2)",
+        ] {
+            let err = try_eval(&t, predicate, 0)
+                .expect_err("a raw window operand must not evaluate quietly");
+            assert!(
+                err.to_string().contains("ROW_NUMBER"),
+                "{predicate}: got {err}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_raw_window_operand_errors_under_and_or_not_case() {
+        // The guard used to sit at each leaf, reached by WHERE's own recursion
+        // through AND / OR / NOT / CASE. Once those delegate whole (R13 slice
+        // 4), the value evaluator never comes back to WHERE, so the guard has
+        // to find a window function anywhere in the predicate structure.
+        let t = pairs();
+        for predicate in [
+            "a > 0 AND ROW_NUMBER() OVER (ORDER BY a) = 1",
+            "ROW_NUMBER() OVER (ORDER BY a) = 1 OR a > 0",
+            "NOT (ROW_NUMBER() OVER (ORDER BY a) = 1)",
+            "a > 0 AND ROW_NUMBER() OVER (ORDER BY a)",
+            "CASE WHEN ROW_NUMBER() OVER (ORDER BY a) = 1 THEN true ELSE false END",
+            "CASE WHEN a > 0 THEN ROW_NUMBER() OVER (ORDER BY a) = 1 ELSE false END",
         ] {
             let err = try_eval(&t, predicate, 0)
                 .expect_err("a raw window operand must not evaluate quietly");

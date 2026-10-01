@@ -364,7 +364,6 @@ sql = "SELECT id FROM null_edges WHERE label.upper() = 'ECHO' ORDER BY id"
 id = "where_not_case_without_else"
 data = "null_edges.csv"
 sql = "SELECT id FROM null_edges WHERE NOT (CASE WHEN score > 40 THEN true END) ORDER BY id"
-expect = "DIFFER"
 # P61. A CASE with no ELSE is ELSE NULL, so a row no WHEN matches is UNKNOWN
 # and NOT keeps it UNKNOWN: DuckDB returns no rows. WHERE's own CASE answered
 # FALSE there, and NOT turned that into the seven rows with score <= 40 or NULL.

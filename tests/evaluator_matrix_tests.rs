@@ -485,41 +485,15 @@ const EXPECTED_TRUTH_BARE: &[(&str, &str)] = &[
     ("CASE WHEN n > 1 THEN s END", "EUUU"),
 ];
 
-const CASE_NO_ELSE: &str = "P61: WHERE's CASE answers FALSE when no WHEN matches and there \
-     is no ELSE; SQL's implicit ELSE is NULL, so NOT must not select the row";
-
-// R13 slice 4 pinned 19 divergences here (2026-10-01). Fifteen were P62 - five
-// "is this value true?" tables: WHERE and CASE WHEN read non-empty text and
-// any date as TRUE (so 'f' and 'No' passed), AND / OR / NOT refused all text.
-// They went FIXED in one change when every site moved onto
-// `Trilean::from_value` (D4). What is left is P61, WHERE's own CASE.
-const KNOWN_TRUTH: &[Known] = &[
-    Known {
-        evaluator: Evaluator::Where,
-        predicate: "CASE WHEN n > 1 THEN true END",
-        observed: "TFFF",
-        why: CASE_NO_ELSE,
-    },
-    Known {
-        evaluator: Evaluator::Where,
-        predicate: "NOT (CASE WHEN n > 1 THEN true END)",
-        observed: "FTTT",
-        why: CASE_NO_ELSE,
-    },
-    Known {
-        evaluator: Evaluator::Where,
-        predicate: "(CASE WHEN n > 1 THEN tb END) AND true",
-        observed: "TFFF",
-        why: CASE_NO_ELSE,
-    },
-];
-
-const KNOWN_TRUTH_BARE: &[Known] = &[Known {
-    evaluator: Evaluator::Where,
-    predicate: "CASE WHEN n > 1 THEN s END",
-    observed: "EFFF",
-    why: CASE_NO_ELSE,
-}];
+// R13 slice 4 pinned 19 divergences here (2026-10-01), all now FIXED.
+// Fifteen were P62 - five "is this value true?" tables: WHERE and CASE WHEN
+// read non-empty text and any date as TRUE (so 'f' and 'No' passed), and
+// AND / OR / NOT refused all text. They went in one change when every site
+// moved onto `Trilean::from_value` (D4). The other four were P61, WHERE's own
+// CASE answering FALSE where no WHEN matched and there was no ELSE; they went
+// when WHERE's CASE delegated to the value evaluator.
+const KNOWN_TRUTH: &[Known] = &[];
+const KNOWN_TRUTH_BARE: &[Known] = &[];
 
 fn trilean_char(t: Trilean) -> char {
     match t {
