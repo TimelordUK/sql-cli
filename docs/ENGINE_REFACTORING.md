@@ -789,6 +789,73 @@ feature work**, and so we can tell the difference between "this is awkward" and
   (`price > quantity`, `price + 0 > quantity` over `trades_100000.csv`, inline
   QUALIFY) are the baseline.
 
+### R14 — A column reference is resolved by several hand-written copies
+- **Status:** 🔴 OPEN — filed 2026-10-01 by [P58](SQL_PARITY.md#p58). **Not
+  to start before R13 is finished** (slice 4 tail, slice 6); slice 1 below is
+  a no-op pin and can go any time.
+- **Observed:** `ExecutionContext::resolve_column_index` (`query_engine.rs:109`)
+  describes itself as *the* resolver "used by all SQL clauses". Probing
+  `alias."dotted.name"` (P58) found at least five places that resolve a column
+  reference, each written separately:
+
+  | Site | Alias map | Qualified then bare | How a dotted name is treated | Error |
+  |---|---|---|---|---|
+  | `ExecutionContext::resolve_column_index` (`query_engine.rs:109`) | yes | yes ([P49](SQL_PARITY.md#p49) fallback) | literal name first, then as qualified | `qualified_column_not_found` |
+  | `ArithmeticEvaluator`, column arm (`arithmetic_evaluator.rs` ~210) | its own lookup | yes | — | same helper |
+  | `ArithmeticEvaluator::evaluate_column` (unqualified) | — | — | **splits at the last dot first**, literal second | own "did you mean" |
+  | `resolve_select_columns` (`query_engine.rs` ~2966) | **none** — passes the raw prefix as "resolved" | yes, case-insensitive bare match | — | same helper, but with no aliases it says *Unknown table or alias 'l'* for `SELECT l.nosuch FROM countries l`, where `l` plainly is in scope |
+  | ORDER BY inline copy — [R11](#r11) | ignores `table_prefix` | — | literal first since [P34](SQL_PARITY.md#p34) | own |
+  | `hash_join::find_column_index` (`hash_join.rs:443`) | **ignores the prefix** | — | **strips at the last dot** — breaks `ON a."name.common" = …` ([P58](SQL_PARITY.md#p58)) | own; own case-insensitivity |
+  | GROUP BY keys (`group_by_expressions.rs:96`) | via the evaluator | via the evaluator | via the evaluator | **swallowed to NULL** ([P60](SQL_PARITY.md#p60)) |
+
+  Not yet examined: `window_context.rs` (`resolve_sort_columns`, 28
+  `get_column_index` calls), `subquery_executor.rs`, `data_view.rs`.
+- **The upstream half — `ColumnRef` gets flattened back into text.** The
+  parser produces a structured `ColumnRef { table_prefix, name, quote_style }`,
+  but several consumers rebuild `format!("{prefix}.{name}")` and re-split it:
+  hash join (`extract_simple_column_name`), the SELECT-list path, and
+  `parse_identifier_list` in the parser itself (CTE column lists, window
+  `PARTITION BY`). Once flattened, `l` + `name.common` and `l.name` + `common`
+  are the same string, and every re-split has to guess. P34 and P58 are both
+  that guess going wrong. The parser has three separate `ident . ident` readers
+  too (`parse_primary`, `parse_identifier_list`, `parse_column_reference`) —
+  P58 fixed only the first.
+- **Impact:** every resolution rule — alias handling, quoting, case
+  sensitivity, the P49 strictness decision, the error wording — has to be
+  changed in N places, and the history says it isn't: P34 fixed ORDER BY's copy,
+  P46 made WHERE use the shared one, `column_resolution_error` unified the
+  *message* at three sites; the join copy got none of those. It is also what
+  [P3](SQL_PARITY.md#p3)'s scope spine would have to thread through: correlated
+  resolution needs one place to ask "which scope owns this name?".
+- **Same family as [R11](#r11) and [R13](#r13).** R13 gives an expression one
+  *meaning*; R14 gives a name one *binding*. R11 becomes a slice of this entry.
+- **Target shape:** one function, `resolve(&ColumnRef, &Scope) -> Result<usize>`,
+  where `Scope` carries the table, its aliases and the case mode. It takes the
+  structured reference, never a dotted string; no consumer formats
+  `prefix.name`. The error is built from the scope, so it knows the aliases.
+- **Slices, in the R13 pattern:**
+  1. **Pin, no engine change.** A clause × reference-shape matrix —
+     SELECT, WHERE, GROUP BY, HAVING, ORDER BY, JOIN ON, PARTITION BY ×
+     `col`, `t.col`, `"dotted.col"`, `t."dotted.col"`, `"t"."col"`, unknown
+     column, unknown prefix — with DuckDB-generated expectations, over
+     `countries.csv` and a two-table join. Records today's divergences
+     (P58 join, P59, P60, the misleading message) as a KNOWN list, as
+     `tests/evaluator_matrix_tests.rs` did.
+  2. **Stop flattening.** Hash join and the SELECT-list path take the
+     `ColumnRef`; `parse_identifier_list` returns `ColumnRef`s. Closes P58's
+     join half.
+  3. **Converge the copies** onto `resolve_column_index` (renamed if `Scope`
+     lands), one site per commit: evaluator, SELECT list, hash join, then
+     ORDER BY (R11 — note its recorded behaviour change for unquoted dotted
+     names).
+  4. **Decide strictness once** — [P49](SQL_PARITY.md#p49)'s unknown-prefix
+     fallback, and errors not swallowed (P60) — now that it is one place.
+- **Explicitly not in scope:** correlated outer references
+  ([P3](SQL_PARITY.md#p3) / [R7](#r7)) — but R14 is the groundwork that makes
+  them a scope lookup rather than another copy.
+- **Found:** 2026-10-01. P58's one-branch parser fix worked in every clause
+  but JOIN ON, and the reason was a resolver nobody knew was separate.
+
 ---
 
 ## Sequencing
@@ -811,9 +878,10 @@ R4 fixtures ──────── adopt opportunistically, per transformer to
 R5 dead code ─────── opportunistic
 R8 legacy WHERE ──── independent; stage 2 is self-contained, do it in a lull
 R10 Trilean ──────── DONE; closed P18/P19 (parity 125 → 129)
-R11 ORDER BY resolver ─ independent; small, but a behaviour change — wants its own parity run
+R11 ORDER BY resolver ─ independent; small, but a behaviour change — wants its own parity run; now slice 3 of R14
 R12 aggregate registries ─ independent; step 1 is a provable no-op, do it before the next aggregate fix
 R13 one evaluator ─── ACTIVE from 2026-09-13; slices 1 (pin), 2 (3VL), 3 (construction + case mode) DONE; 4 operators DONE (BETWEEN/IN, comparisons, IS NULL, LIKE); 5 (method calls) DONE → 4 tail (AND/OR/NOT/CASE) → 6
+R14 one column resolver ─ after R13; slice 1 (pin) any time → 2 (stop flattening ColumnRef; P58 join) → 3 (converge copies, absorbs R11) → 4 (P49/P60 strictness) ──→ feeds P3 scope spine
 ```
 
 **A note on ordering, from the P18/P19 work being next.** The WHERE evaluator
@@ -858,3 +926,4 @@ AGREE count — which makes it safe to land well before the semantics change.
 | 2026-09-18 | R13 slice 4 (second part): WHERE comparisons delegate. Operand readers pinned first (third matrix); P53 and P54 filed; value evaluator's `DATETIME()` moved to local time before delegating. Closes P54 — 175 → **176 AGREE**. Part 1 found to have fixed P54 for IN/BETWEEN unnoticed | — |
 | 2026-09-19 | R13 slice 4 (third part): IS NULL and LIKE delegate; one `sql_like` for both evaluators. P55 (LIKE compiled as an unescaped regex) filed and closed — 176 → **179 AGREE**; the value evaluator's exponential LIKE matcher replaced first; D2 (LIKE over a number matches its displayed text) decided; `EvaluationContext` removed | — |
 | 2026-09-26 | R13 slice 5: method calls. Pinned 55 divergences across both evaluators; P56 (NULL receiver → FALSE) and P57 (WHERE refused all but five methods on a comparison's left) filed and closed; D3 decided (search methods follow `--case-insensitive`). Registry search functions fixed first (180), then WHERE delegated and ~700 lines of its arms and readers deleted — 179 → **183 AGREE** / 213 | — |
+| 2026-10-01 | R14 filed from P58 (`alias."quoted col"`): parser fix landed on a branch and worked in every clause but JOIN ON, whose resolver strips at the last dot. Five resolver copies inventoried; P59 (quoted alias) and P60 (GROUP BY unknown column → NULL group) filed | — |

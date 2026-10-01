@@ -81,7 +81,9 @@ acting as an offer policy, so a column with 250 values offered nothing even
 with a prefix typed. That is the shape to watch for — a limit applied at a
 layer that cannot see the question being asked.
 
-**Recommended order from here: T14 → T10**, then T5. **T7** (deletion) and **T12**
+**Recommended order from here: T14 → T10**, then T5. **T19** (filed
+2026-10-01 — `alias.<tab>` completes nothing) is item 1 of the list below
+failing for every aliased query, so it competes with T14 for first. **T7** (deletion) and **T12**
 (retire the `ParseState` fallback) stay droppable anywhere.
 
 ### What this editor is for (2026-09-12)
@@ -773,6 +775,45 @@ Older, non-living notes that still contain usable thinking:
   counted in the sorted column's header width (`SORT_INDICATOR_WIDTH`).
 - **Loose end:** the pin prefix (`📌 `) is still not budgeted, so pinned
   headers can lose their last characters.
+
+### T19 — Completion does not know table aliases
+- **Status:** 🔴 OPEN — filed 2026-10-01 alongside [P58](SQL_PARITY.md#p58)
+- **Where:** `src/sql/cursor_context.rs` (no notion of FROM-clause aliases),
+  `src/sql/cursor_aware_parser.rs` (`AfterColumn` → method suggestions)
+- **Observed:** measured through `CursorAwareParser::get_completions` +
+  `apply_completion_to_text` against `data/countries.csv`, the same harness
+  as `tests/completion_schema.rs`:
+
+  | Typed (rest of query: `… from countries l`) | Context | Result |
+  |---|---|---|
+  | `select name.offi<tab>` (no alias) | `DottedColumn` | `"name.official"` ✓ |
+  | `select l.<tab>` | `AfterColumn` | `l.Contains('')` — `l` taken for a column, string methods offered |
+  | `select l.offi<tab>` | `AfterColumn` | nothing |
+  | `select l.name.offi<tab>` | `AfterColumn` | nothing |
+  | `select l."name.o<tab>` | `DottedColumn` | `l."name.official"` ✓ — **by accident**: the open-quote token shape never looks behind the quote |
+  | `select countries.offi<tab>` (table name, no alias) | `AfterColumn` | nothing |
+  | `… where l.reg<tab>` | `AfterColumn` | nothing |
+
+  So every query that aliases its table — and every self-join, where
+  aliasing is compulsory — loses column completion after `alias.`.
+- **Wanted:** `l.offi<tab>` → `l."name.official"` (the quoting P58 now makes
+  legal), `l.<tab>` → the table's columns rather than methods, and the
+  same for `countries.` when the table name itself is the qualifier. Matching
+  should be a substring of the dotted name, as `name.offi` already is, so
+  `offi` reaches `name.official`.
+- **What it needs:** the cursor analyzer already tokenizes the whole text up to
+  the cursor (T9); it does *not* look past the cursor, and the FROM clause
+  usually is past it (`select l.<tab> from countries l`). So: tokenize the
+  full statement once, collect `FROM`/`JOIN` table + alias pairs, and when the
+  token before the `Dot` names one, treat the text after the dot as a column
+  partial in that table's schema (T2). With only one table loaded the alias
+  map is trivial, but resolving it properly is what lets a join of two CTEs
+  complete each side's columns later.
+- **Ordering vs. `"l"."col"`:** [P59](SQL_PARITY.md#p59) (quoted alias) is not
+  accepted by the engine yet, so the completer should emit `l."col"`, never
+  `"l"."col"`, until it is.
+- **Tests:** add the table above to `tests/completion_schema.rs` as pinned
+  rows; `select l."name.o` is the one that must not regress.
 
 ### T14 — The registry knows every signature and the editor never shows one
 - **Status:** 🔴 OPEN — opened 2026-09-12; the ergonomic half of T10
