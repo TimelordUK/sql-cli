@@ -65,9 +65,9 @@ session apiece to fix properly, so **discovery is paused and the effort moves to
 picking them off**. Widen the corpus again when the open list is short, or
 opportunistically when a fix needs a case that doesn't exist yet.
 
-Corpus coverage today: tiers 01–10, **209 cases** (179 AGREE / 15 DIFFER /
-12 GAP / 1 OURS_ONLY / 2 BOTH_ERR as of 2026-09-19, after R13 slice 4 closed
-[P54](#p54) and [P55](#p55); [P51](#p51), [P52](#p52) open, [P53](#p53) open
+Corpus coverage today: tiers 01–10, **217 cases** (186 AGREE / 15 DIFFER /
+12 GAP / 1 OURS_ONLY / 3 BOTH_ERR as of 2026-10-01, after R13 slice 4 closed
+[P61](#p61) and [P62](#p62); [P51](#p51), [P52](#p52) open, [P53](#p53) open
 at low priority). The largest single movement so far remains the 2026-09-05
 NULL-ordering slice, which closed [P13](#p13) stage 2 and [P17](#p17) together —
 eleven cases in one change. **Tier 10 (aggregate & NULL edges) is still
@@ -93,7 +93,8 @@ Suggested fix order, by silent blast radius:
 | ~~9d~~ | ~~[P37](#p37) window in `WHERE` returns 0 rows~~ | ✅ **Fixed 2026-09-05** — corpus count unchanged, and that is the finding: the case is `OURS_ONLY` before *and* after, so the harness cannot see this fix or a future regression of it (first entry of that kind — the regression test is a Rust module). The filed root cause was wrong: `ExpressionLifter` *does* lift from `WHERE`. The real defect was one arm in the WHERE evaluator answering FALSE for any bare value used as a predicate — `WHERE true` returned zero rows too. It did **not** close [P15](#p15), which needs the opposite change |
 | ~~9e~~ | ~~[P41](#p41) `MODE` tie-break is random per run~~ | ✅ **Fixed 2026-09-06** — 152 → **156 AGREE** (four new cases). Small, as predicted, but not where it was filed: the named `ModeState` was a *shadowed* implementation and fixing it moved nothing. Reference does specify a rule and it is **first-occurrence**, not the "smallest value wins" this row proposed. Unblocked both example files, now FORMAL. Spun off [P42](#p42), [P43](#p43), [R12](ENGINE_REFACTORING.md#r12) |
 | ~~9g~~ | ~~[P46](#p46) column-vs-column `WHERE` returns 0 rows~~ | ✅ **Fixed 2026-09-13** — 157 → **168 AGREE**. Wider than filed: *every* non-literal right-hand operand read as NULL (comparisons, `IN` items, `BETWEEN` bounds), and a literal on the left errored (`WHERE 1=0`). One resolver for all operands closed it. Did **not** need [P48](#p48) alongside, as this row predicted — the fix kept the comparison in the WHERE evaluator. Spun off [P49](#p49) (correlated outer refs bind to the inner table), accepted knowingly |
-| **NEXT** | [R13](ENGINE_REFACTORING.md#r13) one expression evaluator — **the active workstream from 2026-09-13** | **Slices 1–2 done 2026-09-13** (value evaluator three-valued, 168 → 174 AGREE, closed P48/P50); **slice 3 done 2026-09-14** (one construction path; case-insensitive mode now honoured outside WHERE, parity unmoved); **slice 4 in progress** (WHERE arms delegate, one operator per commit: BETWEEN/IN 2026-09-15, comparisons 2026-09-18 closing [P54](#p54), IS NULL and LIKE 2026-09-19 closing [P55](#p55), 175 → 179 AGREE; every WHERE operator now delegates — AND/OR/NOT/CASE follow slice 5). Not a finding but the reason several are cheap to fix only once. WHERE and the value evaluator implement every boolean operator separately with different NULL rules, so the same predicate answers differently in WHERE, HAVING, SELECT and JOIN ON. **Working rule:** a parity fix that touches expression evaluation lands as an R13 slice, not a patch. [P52](#p52) (NULL join keys) is slice 6 |
+| **NEXT** | [R13](ENGINE_REFACTORING.md#r13) one expression evaluator — **the active workstream from 2026-09-13** | **Slices 1–2 done 2026-09-13** (value evaluator three-valued, 168 → 174 AGREE, closed P48/P50); **slice 3 done 2026-09-14** (one construction path; case-insensitive mode now honoured outside WHERE, parity unmoved); **slice 4 in progress** (WHERE arms delegate, one operator per commit: BETWEEN/IN 2026-09-15, comparisons 2026-09-18 closing [P54](#p54), IS NULL and LIKE 2026-09-19 closing [P55](#p55), 175 → 179 AGREE; every WHERE operator now delegates; **finished 2026-10-01** with AND/OR/NOT/CASE, closing [P61](#p61) and [P62](#p62) under [D4](#d4), 183 → 186 AGREE); slice 5 (method calls) done 2026-09-26; slice 6 (HAVING, `IIF`, JOIN collapse) next. Not a finding but the reason several are cheap to fix only once. WHERE and the value evaluator implement every boolean operator separately with different NULL rules, so the same predicate answers differently in WHERE, HAVING, SELECT and JOIN ON. **Working rule:** a parity fix that touches expression evaluation lands as an R13 slice, not a patch. [P52](#p52) (NULL join keys) is slice 6 |
+| then | [P60](#p60) `GROUP BY` unknown column → NULL group; [P58](#p58) JOIN ON half | Filed 2026-10-01. P60 is silent and a one-line cause, so cheap; P58's join half is a resolver fix — take it as the first slice of [R14](ENGINE_REFACTORING.md#r14) rather than a patch. [P59](#p59) (quoted alias) rides along if convenient |
 | then | [P47](#p47) `MIN`/`MAX` ranked by type | Silent and cheap, and outside the evaluator (aggregate registries — confirm the live one first, [R12](ENGINE_REFACTORING.md#r12)), so it can land alongside R13 without breaking the working rule |
 | then | [P14](#p14), [P20](#p20), [P23](#p23) | Smaller, self-contained, decisions already taken. Was row 9b, then NEXT until the 2026-09-12 findings displaced it. **Check each against the R13 working rule first** — P20 (`\|\|` with NULL) is an operator in the value evaluator |
 | 9f | [P42](#p42) `MODE` is numeric-only | Companion to [R12](ENGINE_REFACTORING.md#r12), and cheap if taken with it: the shadowed implementation already handles non-numerics and preserves type, so the fix is largely to stop the live path throwing away what it knows. Also buys the corpus its clearest tie-break case |
@@ -2579,6 +2580,129 @@ out of date.
   `IndexOf`, `Trim`, `TrimStart` and `TrimEnd` and rejects everything else.
 - **Found:** 2026-09-26, pinning method calls for R13 slice 5.
 
+### P58 — A quoted column cannot follow an alias qualifier (`l."name.official"`)
+- **Status:** 🟡 PARTIAL — expression positions fixed 2026-10-01 (#97);
+  **JOIN ON keys still fail**.
+- **Corpus:** none yet. Add to `01_select.toml` (SELECT / WHERE forms) and
+  `04_joins.toml` (the ON form) with the fix — DuckDB 1.5.5 answers every form
+  below, checked by hand against `data/countries.csv`.
+- **Observed:** `countries.csv` flattens its JSON into columns such as
+  `name.official`, which must be quoted. `SELECT "name.official" FROM countries`
+  works, but qualifying it — unavoidable in a self-join, which is where it came
+  from — failed to parse: `SELECT l."name.official" FROM countries l` →
+  *Expected identifier after '.'*.
+- **Cause:** `parse_primary` (`src/sql/parser/expressions/primary.rs`) accepted
+  only a bare `Token::Identifier` after the dot.
+- **Fixed so far:** that branch now also accepts `Token::QuotedIdentifier` and
+  builds a quoted `ColumnRef` carrying the prefix. Nothing downstream needed
+  changing for SELECT, WHERE, GROUP BY, ORDER BY or a CTE — verified with each.
+- **Still failing — JOIN ON.** `... JOIN countries b ON a."name.common" =
+  b."name.common"` → *Column 'a.name.common' not found in either table*. The
+  join keeps a structured `ColumnRef`, but `hash_join::extract_simple_column_name`
+  flattens it back to the string `a.name.common` and `find_column_index` splits
+  that at the **last** dot, looking for a column called `common`. The same
+  shape [P34](#p34) fixed in ORDER BY, in a resolver copy P34 did not reach —
+  see [R14](ENGINE_REFACTORING.md#r14). Fix it there (pass the `ColumnRef`
+  through, not a string), not by special-casing quotes in the join.
+- **Related:** [P59](#p59) (quoted *alias*), [P34](#p34), [R11](ENGINE_REFACTORING.md#r11),
+  [R14](ENGINE_REFACTORING.md#r14), [T19](TUI_FEATURES.md#t19) (completing the same shape).
+- **Found:** 2026-10-01, field use — a self-join over `countries.csv` to list
+  each country's neighbours.
+
+### P59 — A quoted table alias is not accepted (`"l".cca3`, `FROM t "l"`)
+- **Status:** 🔴 OPEN — hard error
+- **Corpus:** none yet; add to `01_select.toml` with the fix.
+- **Observed:** DuckDB accepts the qualifier quoted as well as the column, and
+  a quoted alias in FROM. We fail each, in a different place:
+
+  | Query | Ours | DuckDB |
+  |---|---|---|
+  | `SELECT "l"."name.official" FROM countries l` | parse error: *Expected identifier after '.'* | `Aruba` |
+  | `SELECT "l".cca3 FROM countries l` | *Column '"l".cca3' not found* — parses, then fails to resolve | `ABW` |
+  | `SELECT l."cca3" FROM countries "l"` | parse error: *Unexpected 'l' after end of statement* | `ABW` |
+
+- **Cause (to confirm):** the `Token::QuotedIdentifier` arm of `parse_primary`
+  never looks for a following `Dot`; the second row suggests a different path
+  (the SELECT-list fast path?) builds the name as text. FROM's alias parsing
+  accepts only a bare identifier.
+- **Why it matters:** low on its own — few people quote an alias. But tools
+  that generate SQL (and DuckDB's own `EXPLAIN` output) quote everything, and
+  the second row is a silent mis-parse rather than a refusal.
+- **Related:** [P58](#p58).
+- **Found:** 2026-10-01, probing the P58 fix against DuckDB.
+
+### P60 — `GROUP BY` an unknown column forms one NULL group instead of failing
+- **Status:** 🔴 OPEN — **silent**
+- **Corpus:** none yet; add to `07_grouping.toml` — DuckDB is an error, so the
+  case is `BOTH_ERR` once fixed, and `OURS_ONLY` today.
+- **Observed:** any name that resolves to nothing — bare, qualified or quoted —
+  is grouped as NULL, and every row lands in that one group:
+
+  | Query | Ours | DuckDB |
+  |---|---|---|
+  | `SELECT COUNT(*) AS n FROM countries GROUP BY nosuch` | `nosuch=NULL, n=250` | *Referenced column "nosuch" not found* |
+  | `... FROM countries l GROUP BY l."no such"` | `no such=NULL, n=250` | *Table "l" does not have a column named "no such"* |
+
+  The same name in SELECT or ORDER BY is an error, so it is GROUP BY alone.
+  A one-character typo in a grouping key returns a plausible-looking total.
+- **Cause:** `group_by_expressions.rs:96` evaluates each key with
+  `.unwrap_or(DataValue::Null)` — every evaluation error, not only an unknown
+  column, becomes NULL. Lines ~291 and ~309 have the same shape and want
+  checking with it.
+- **Decision:** propagate the error. Check first whether anything relies on the
+  swallow (a key that errors on some rows but not others — e.g. a cast — would
+  now fail the query, which is DuckDB's behaviour too).
+- **Related:** [R14](ENGINE_REFACTORING.md#r14) — the sweep there should look for
+  other `unwrap_or(Null)` around column resolution.
+- **Found:** 2026-10-01, while testing P58 with a column name that does not exist.
+
+### P61 — WHERE's `CASE` with no `ELSE` answers FALSE, so `NOT` selects the row
+- **Status:** ✅ FIXED 2026-10-01 by [R13](ENGINE_REFACTORING.md#r13) slice 4:
+  WHERE's CASE delegates to the value evaluator, whose CASE returns NULL with
+  no ELSE (185 → 186 AGREE).
+- **Corpus:** `02_where.toml :: where_not_case_without_else` (DIFFER → AGREE).
+  Evaluator matrix: `CASE_NO_ELSE` entries in `KNOWN_TRUTH` / `KNOWN_TRUTH_BARE`.
+- **Observed:** `WHERE NOT (CASE WHEN score > 40 THEN true END)` on
+  `null_edges.csv` returns the seven rows with `score <= 40` or NULL; DuckDB
+  returns none. A CASE with no ELSE is `ELSE NULL`, so a row no WHEN matches is
+  UNKNOWN and `NOT` keeps it UNKNOWN.
+- **Cause:** `RecursiveWhereEvaluator::evaluate_case_expression_as_bool` ends
+  `Ok(Trilean::False)` when nothing matches and there is no ELSE. The value
+  evaluator's CASE already returns NULL there — the same expression answers
+  correctly in SELECT.
+- **Found:** 2026-10-01, pinning AND / OR / NOT / CASE for R13 slice 4.
+
+### P62 — Text and dates used as a truth value are read as TRUE when non-empty
+- **Status:** ✅ FIXED 2026-10-01 by [R13](ENGINE_REFACTORING.md#r13) slice 4
+  under [D4](#d4): `Trilean::from_value` is the one rule, and three of the
+  five copies below are gone (183 → 185 AGREE). HAVING's `is_truthy` and
+  `IIF` still carry their own tables — slice 6.
+- **Corpus:** `02_where.toml :: where_text_flag_as_predicate`,
+  `where_not_text_flag` (DIFFER → AGREE), `where_text_not_a_boolean`
+  (OURS_ONLY → `expect = "BOTH_ERR"`), over new `data/predicate_text.csv`. Evaluator
+  matrix: `TEXT_TRUTHY` / `TEXT_REFUSED` / `DATE_TRUTHY` entries.
+- **Observed:** `WHERE flag` over `yes`, `no`, `true`, `f`, `N` returns every
+  row with a value — `'no'` and `'f'` are TRUE because they are not empty.
+  DuckDB reads boolean text (`yes`/`true` TRUE, `no`/`f`/`N` FALSE) and raises
+  an error for text that is no boolean (`WHERE word`) and for a date.
+- **Cause:** five separate "is this value true?" tables, which disagree:
+
+  | Copy | Text | NULL | Date / other | NaN |
+  |---|---|---|---|---|
+  | WHERE `evaluate_value_as_predicate` | non-empty → TRUE | UNKNOWN | TRUE | TRUE |
+  | value evaluator `truth_of` (AND / OR / NOT) | **error**, even `'true'` | UNKNOWN | error | TRUE |
+  | value evaluator `evaluate_condition_as_bool` (CASE WHEN) | non-empty → TRUE | FALSE | TRUE | TRUE |
+  | HAVING `is_truthy` | TRUE | FALSE | TRUE | FALSE |
+  | `IIF` (`functions/comparison.rs`) | non-empty → TRUE | FALSE | FALSE | FALSE |
+
+  So `WHERE flag` and `WHERE flag AND true` answered differently: the first
+  read `'f'` as TRUE, the second failed the query.
+- **Decision:** one function, DuckDB's rule — [D4](#d4). The first three copies
+  go with R13 slice 4; HAVING's `is_truthy` and `IIF` are slice 6's collapse
+  sites.
+- **Found:** 2026-10-01, pinning AND / OR / NOT / CASE for R13 slice 4 — the
+  two evaluators could not delegate to each other without choosing one rule.
+
 ---
 
 ## Deferred / won't fix (intentional)
@@ -2650,6 +2774,27 @@ out of date.
   case-sensitive.
 - **Considered:** keeping WHERE's behaviour and making the registry match it —
   rejected: it makes one family of predicates disagree with `=` and LIKE.
+
+### D4 — A value used as a truth value follows DuckDB's cast to boolean
+- **Status:** ⚪ DECIDED 2026-10-01 (user decision, R13 slice 4). Agrees with
+  DuckDB, so not a divergence — recorded here because it changes answers that
+  sql-cli gave before.
+- **Corpus:** the [P62](#p62) cases; evaluator matrix `EXPECTED_TRUTH` /
+  `EXPECTED_TRUTH_BARE`.
+- **Rule**, in every clause (WHERE, AND / OR / NOT, CASE WHEN, and — with
+  slice 6 — HAVING and `IIF`): a boolean is itself; a number is TRUE when
+  non-zero (NaN included); NULL is UNKNOWN; text is read as a boolean,
+  ignoring case — `true`/`t`/`yes`/`y`/`1` and `false`/`f`/`no`/`n`/`0` — and
+  any other text is an error, as is a date.
+- **Before:** non-empty text and any date counted as TRUE in WHERE and CASE
+  WHEN, while AND / OR / NOT refused all text — see P62's table.
+- **Rationale:** the lenient rule gave a confident wrong answer for the one
+  case where text plainly *is* a boolean (`'f'`, `'no'`). Erroring on other
+  text costs `WHERE name` as shorthand for "name is not empty"; write
+  `name <> ''` (or `name IS NOT NULL`).
+- **Considered:** lenient — boolean text converts, any other non-empty text or
+  date is TRUE (nothing that runs today fails). Rejected in favour of one rule
+  that matches the reference engine.
 
 _When we consciously diverge from the reference engine on results (rather than
 simply not implementing a feature), record it here with the rationale so the

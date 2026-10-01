@@ -476,8 +476,9 @@ feature work**, and so we can tell the difference between "this is awkward" and
   in progress (`BETWEEN`, `IN`, `NOT IN` delegated 2026-09-15; comparisons
   2026-09-18, closing P54; IS NULL and LIKE 2026-09-19, closing P55). Every
   WHERE *operator* now delegates. **Slice 5 (method calls) done 2026-09-26**,
-  closing P56 and P57 and deciding D3. What remains of slice 4 (AND / OR /
-  NOT / CASE) is next, then slice 6.
+  closing P56 and P57 and deciding D3. **Slice 4 finished 2026-10-01** (AND /
+  OR / NOT / CASE, one truth rule — closing P61 and P62, deciding D4): WHERE
+  evaluates nothing itself any more. Slice 6 is next.
   **The active workstream:** parity fixes that touch expression evaluation land
   as slices of this entry, not as patches.
 - **Where:** `src/data/arithmetic_evaluator.rs` (`ArithmeticEvaluator`, value →
@@ -748,6 +749,48 @@ feature work**, and so we can tell the difference between "this is awkward" and
     FREQUENCY, SUBSTRING_BEFORE/AFTER, SPLIT_PART, LEFT/RIGHT with a
     delimiter) do not yet follow the switch — listed under D3. LENGTH /
     INDEXOF / INSTR count bytes, not characters (unpinned).
+- **Slice 4, fourth part (2026-10-01) — AND / OR / NOT / CASE.** Four
+  commits and a clippy fix; one user decision.
+  - *Pin.* A sixth matrix (`EXPECTED_TRUTH`, `EXPECTED_TRUTH_BARE`;
+    DuckDB-generated one row at a time so an erroring row shows as `E`
+    without hiding the rest) over values used as truth values: numbers, NaN,
+    boolean-looking text (`'true'`, `'f'`, `'No'`), other text, dates, CASE
+    with and without ELSE. 19 divergences. Two silent ones, end to end:
+    **P62** — `WHERE flag` read `'no'` and `'f'` as TRUE because they are
+    non-empty — and **P61** — WHERE's CASE answered FALSE with no ELSE, so
+    `NOT (CASE …)` selected the rows. Four corpus cases over new
+    `data/predicate_text.csv`.
+  - *Five truth tables.* The reason the delegation could not simply happen:
+    WHERE's `evaluate_value_as_predicate`, the value evaluator's `truth_of`
+    (AND / OR / NOT) and `evaluate_condition_as_bool` (CASE WHEN), HAVING's
+    `is_truthy` and `IIF` each decided "is this value true?" and disagreed on
+    text, dates, NULL and NaN (table in [P62](SQL_PARITY.md#p62)).
+  - *D4, decided by the user:* DuckDB's cast to boolean everywhere — boolean
+    text converts, other text and dates are errors. `Trilean::from_value`
+    became that rule and returns `Result`, so a caller cannot pick its own
+    fallback; three of the five copies went. Exactly the 15 P62 entries
+    FIXED; parity 183 → 185.
+  - *CASE delegates* — before AND / OR / NOT, so that the commit changing
+    answers (P61, 185 → **186 AGREE** / 217, exactly the four P61 entries) is
+    not the one restructuring the window guard's reach. The P15 guard had sat
+    at each leaf, reached by WHERE's own recursion; the value evaluator never
+    returns to WHERE, so `reject_unlifted_windows` now walks the predicate's
+    structure (AND / OR / NOT, CASE conditions and results) to the same
+    operands. Pinned under each shape against the old code first.
+  - *NOT / AND / OR delegate* — a provable no-op: matrix unchanged, parity
+    report byte-identical, every shape at load time over `trades_100000.csv`.
+    `evaluate_binary_op`, `evaluate_case_expression_as_bool`,
+    `evaluate_expression_as_bool` and `evaluate_value_as_predicate` are gone;
+    `evaluate_expression` is the guard plus one delegation.
+  - *Copy-paste found and left, logged here.* `WhereClause` is a
+    `Vec<Condition>` joined by `connector`s — a second representation of
+    AND / OR beside the expression tree. Only `qualify_to_where_transformer`
+    still produces more than one condition (QUALIFY merged into an existing
+    WHERE), so `RecursiveWhereEvaluator::evaluate` keeps a connector loop
+    over `Trilean::and` / `or`. Building a `BinaryOp AND` there instead would
+    let the loop and the `connector` field go; `in_operator_lifter` and
+    `subquery_executor` copy conditions one by one and want checking with it.
+    A natural companion to slice 6.
 - **Slices, in the R10 pattern — no-op slices kept apart from the one that
   changes answers:**
   1. ✅ **Pin the divergences, no engine change.** *(Done 2026-09-13.)* A per-operator matrix run through
@@ -766,15 +809,18 @@ feature work**, and so we can tell the difference between "this is awkward" and
      — case sensitivity, date notation, table aliases — passed in rather than
      defaulted per site. No-op; acceptance is parity *exactly* unchanged, and it
      fixes the case-insensitivity gap as a side effect only if slice 1 pinned it.
-  4. **Retire WHERE's duplicate arms, one operator per commit.** Each arm of
+  4. ✅ **Retire WHERE's duplicate arms, one operator per commit.** *(Done
+     2026-10-01 — see the four parts above.)* Each arm of
      `RecursiveWhereEvaluator` delegates to the value evaluator and collapses;
      the hand-written arm is deleted. After slice 2 the rules already agree, so
      each commit is a provable no-op — parity exactly unchanged, and the slice-1
      matrix still green.
   5. ✅ **Method calls:** *(Done 2026-09-26 — see result above.)* WHERE's hand-rolled `Contains`/`StartsWith`/`Trim`… move
      onto the registry mapping the value evaluator already uses.
-  6. **Collapse sites converge:** HAVING's `is_truthy` and JOIN's bare comparison
-     go through the same collapse. JOIN NULL keys need care on the *hash* path
+  6. **Collapse sites converge:** HAVING's `is_truthy`, `IIF`'s own truth
+     table (both [P62](SQL_PARITY.md#p62)'s remaining copies, onto
+     `Trilean::from_value`) and JOIN's bare comparison go through the same
+     collapse. `WhereClause`'s connector list (above) can go with it. JOIN NULL keys need care on the *hash* path
      too, not only the nested loop. [R8](#r8) stage 2 (the legacy WHERE stack) is
      a natural lull task alongside.
 - **Explicitly not in scope:** window evaluation (`BatchWindowEvaluator`),
@@ -788,6 +834,73 @@ feature work**, and so we can tell the difference between "this is awkward" and
   cost when WHERE arms start delegating (slice 4): the P46 benchmarks
   (`price > quantity`, `price + 0 > quantity` over `trades_100000.csv`, inline
   QUALIFY) are the baseline.
+
+### R14 — A column reference is resolved by several hand-written copies
+- **Status:** 🔴 OPEN — filed 2026-10-01 by [P58](SQL_PARITY.md#p58). **Not
+  to start before R13 is finished** (slice 4 tail, slice 6); slice 1 below is
+  a no-op pin and can go any time.
+- **Observed:** `ExecutionContext::resolve_column_index` (`query_engine.rs:109`)
+  describes itself as *the* resolver "used by all SQL clauses". Probing
+  `alias."dotted.name"` (P58) found at least five places that resolve a column
+  reference, each written separately:
+
+  | Site | Alias map | Qualified then bare | How a dotted name is treated | Error |
+  |---|---|---|---|---|
+  | `ExecutionContext::resolve_column_index` (`query_engine.rs:109`) | yes | yes ([P49](SQL_PARITY.md#p49) fallback) | literal name first, then as qualified | `qualified_column_not_found` |
+  | `ArithmeticEvaluator`, column arm (`arithmetic_evaluator.rs` ~210) | its own lookup | yes | — | same helper |
+  | `ArithmeticEvaluator::evaluate_column` (unqualified) | — | — | **splits at the last dot first**, literal second | own "did you mean" |
+  | `resolve_select_columns` (`query_engine.rs` ~2966) | **none** — passes the raw prefix as "resolved" | yes, case-insensitive bare match | — | same helper, but with no aliases it says *Unknown table or alias 'l'* for `SELECT l.nosuch FROM countries l`, where `l` plainly is in scope |
+  | ORDER BY inline copy — [R11](#r11) | ignores `table_prefix` | — | literal first since [P34](SQL_PARITY.md#p34) | own |
+  | `hash_join::find_column_index` (`hash_join.rs:443`) | **ignores the prefix** | — | **strips at the last dot** — breaks `ON a."name.common" = …` ([P58](SQL_PARITY.md#p58)) | own; own case-insensitivity |
+  | GROUP BY keys (`group_by_expressions.rs:96`) | via the evaluator | via the evaluator | via the evaluator | **swallowed to NULL** ([P60](SQL_PARITY.md#p60)) |
+
+  Not yet examined: `window_context.rs` (`resolve_sort_columns`, 28
+  `get_column_index` calls), `subquery_executor.rs`, `data_view.rs`.
+- **The upstream half — `ColumnRef` gets flattened back into text.** The
+  parser produces a structured `ColumnRef { table_prefix, name, quote_style }`,
+  but several consumers rebuild `format!("{prefix}.{name}")` and re-split it:
+  hash join (`extract_simple_column_name`), the SELECT-list path, and
+  `parse_identifier_list` in the parser itself (CTE column lists, window
+  `PARTITION BY`). Once flattened, `l` + `name.common` and `l.name` + `common`
+  are the same string, and every re-split has to guess. P34 and P58 are both
+  that guess going wrong. The parser has three separate `ident . ident` readers
+  too (`parse_primary`, `parse_identifier_list`, `parse_column_reference`) —
+  P58 fixed only the first.
+- **Impact:** every resolution rule — alias handling, quoting, case
+  sensitivity, the P49 strictness decision, the error wording — has to be
+  changed in N places, and the history says it isn't: P34 fixed ORDER BY's copy,
+  P46 made WHERE use the shared one, `column_resolution_error` unified the
+  *message* at three sites; the join copy got none of those. It is also what
+  [P3](SQL_PARITY.md#p3)'s scope spine would have to thread through: correlated
+  resolution needs one place to ask "which scope owns this name?".
+- **Same family as [R11](#r11) and [R13](#r13).** R13 gives an expression one
+  *meaning*; R14 gives a name one *binding*. R11 becomes a slice of this entry.
+- **Target shape:** one function, `resolve(&ColumnRef, &Scope) -> Result<usize>`,
+  where `Scope` carries the table, its aliases and the case mode. It takes the
+  structured reference, never a dotted string; no consumer formats
+  `prefix.name`. The error is built from the scope, so it knows the aliases.
+- **Slices, in the R13 pattern:**
+  1. **Pin, no engine change.** A clause × reference-shape matrix —
+     SELECT, WHERE, GROUP BY, HAVING, ORDER BY, JOIN ON, PARTITION BY ×
+     `col`, `t.col`, `"dotted.col"`, `t."dotted.col"`, `"t"."col"`, unknown
+     column, unknown prefix — with DuckDB-generated expectations, over
+     `countries.csv` and a two-table join. Records today's divergences
+     (P58 join, P59, P60, the misleading message) as a KNOWN list, as
+     `tests/evaluator_matrix_tests.rs` did.
+  2. **Stop flattening.** Hash join and the SELECT-list path take the
+     `ColumnRef`; `parse_identifier_list` returns `ColumnRef`s. Closes P58's
+     join half.
+  3. **Converge the copies** onto `resolve_column_index` (renamed if `Scope`
+     lands), one site per commit: evaluator, SELECT list, hash join, then
+     ORDER BY (R11 — note its recorded behaviour change for unquoted dotted
+     names).
+  4. **Decide strictness once** — [P49](SQL_PARITY.md#p49)'s unknown-prefix
+     fallback, and errors not swallowed (P60) — now that it is one place.
+- **Explicitly not in scope:** correlated outer references
+  ([P3](SQL_PARITY.md#p3) / [R7](#r7)) — but R14 is the groundwork that makes
+  them a scope lookup rather than another copy.
+- **Found:** 2026-10-01. P58's one-branch parser fix worked in every clause
+  but JOIN ON, and the reason was a resolver nobody knew was separate.
 
 ---
 
@@ -811,9 +924,10 @@ R4 fixtures ──────── adopt opportunistically, per transformer to
 R5 dead code ─────── opportunistic
 R8 legacy WHERE ──── independent; stage 2 is self-contained, do it in a lull
 R10 Trilean ──────── DONE; closed P18/P19 (parity 125 → 129)
-R11 ORDER BY resolver ─ independent; small, but a behaviour change — wants its own parity run
+R11 ORDER BY resolver ─ independent; small, but a behaviour change — wants its own parity run; now slice 3 of R14
 R12 aggregate registries ─ independent; step 1 is a provable no-op, do it before the next aggregate fix
-R13 one evaluator ─── ACTIVE from 2026-09-13; slices 1 (pin), 2 (3VL), 3 (construction + case mode) DONE; 4 operators DONE (BETWEEN/IN, comparisons, IS NULL, LIKE); 5 (method calls) DONE → 4 tail (AND/OR/NOT/CASE) → 6
+R13 one evaluator ─── ACTIVE from 2026-09-13; slices 1 (pin), 2 (3VL), 3 (construction + case mode) DONE; 4 operators DONE (BETWEEN/IN, comparisons, IS NULL, LIKE); 5 (method calls) DONE; 4 tail (AND/OR/NOT/CASE, D4) DONE 2026-10-01 → 6
+R14 one column resolver ─ after R13; slice 1 (pin) any time → 2 (stop flattening ColumnRef; P58 join) → 3 (converge copies, absorbs R11) → 4 (P49/P60 strictness) ──→ feeds P3 scope spine
 ```
 
 **A note on ordering, from the P18/P19 work being next.** The WHERE evaluator
@@ -858,3 +972,5 @@ AGREE count — which makes it safe to land well before the semantics change.
 | 2026-09-18 | R13 slice 4 (second part): WHERE comparisons delegate. Operand readers pinned first (third matrix); P53 and P54 filed; value evaluator's `DATETIME()` moved to local time before delegating. Closes P54 — 175 → **176 AGREE**. Part 1 found to have fixed P54 for IN/BETWEEN unnoticed | — |
 | 2026-09-19 | R13 slice 4 (third part): IS NULL and LIKE delegate; one `sql_like` for both evaluators. P55 (LIKE compiled as an unescaped regex) filed and closed — 176 → **179 AGREE**; the value evaluator's exponential LIKE matcher replaced first; D2 (LIKE over a number matches its displayed text) decided; `EvaluationContext` removed | — |
 | 2026-09-26 | R13 slice 5: method calls. Pinned 55 divergences across both evaluators; P56 (NULL receiver → FALSE) and P57 (WHERE refused all but five methods on a comparison's left) filed and closed; D3 decided (search methods follow `--case-insensitive`). Registry search functions fixed first (180), then WHERE delegated and ~700 lines of its arms and readers deleted — 179 → **183 AGREE** / 213 | — |
+| 2026-10-01 | R14 filed from P58 (`alias."quoted col"`): parser fix landed on a branch and worked in every clause but JOIN ON, whose resolver strips at the last dot. Five resolver copies inventoried; P59 (quoted alias) and P60 (GROUP BY unknown column → NULL group) filed | — |
+| 2026-10-01 | R13 slice 4 finished: AND / OR / NOT / CASE. Pinned 19 divergences (sixth matrix, values as truth values); P61 (WHERE CASE without ELSE → FALSE) and P62 (five truth tables; `'f'` read as TRUE) filed and closed; D4 decided (DuckDB's cast to boolean). `Trilean::from_value` the one rule; WHERE evaluates nothing itself — 183 → **186 AGREE** / 217 | — |

@@ -359,3 +359,33 @@ sql = "SELECT id FROM null_edges WHERE label.upper() = 'ECHO' ORDER BY id"
 # P57. WHERE accepted only Length / IndexOf / Trim* on the left of a
 # comparison, so any other method failed the query: "Method 'upper' cannot be
 # used in comparisons". SELECT has always evaluated it.
+
+[[case]]
+id = "where_not_case_without_else"
+data = "null_edges.csv"
+sql = "SELECT id FROM null_edges WHERE NOT (CASE WHEN score > 40 THEN true END) ORDER BY id"
+# P61. A CASE with no ELSE is ELSE NULL, so a row no WHEN matches is UNKNOWN
+# and NOT keeps it UNKNOWN: DuckDB returns no rows. WHERE's own CASE answered
+# FALSE there, and NOT turned that into the seven rows with score <= 40 or NULL.
+
+[[case]]
+id = "where_text_flag_as_predicate"
+data = "predicate_text.csv"
+sql = "SELECT id FROM predicate_text WHERE flag ORDER BY id"
+# P62. Text used as a truth value is read as a boolean ('yes', 'true' TRUE;
+# 'no', 'f', 'N' FALSE). WHERE read any non-empty text as TRUE, so 'no' and 'f'
+# passed: 1, 2, 3, 4, 6 instead of 1, 3.
+
+[[case]]
+id = "where_not_text_flag"
+data = "predicate_text.csv"
+sql = "SELECT id FROM predicate_text WHERE NOT flag ORDER BY id"
+# P62. The same, under NOT: every non-empty flag was TRUE, so nothing came back.
+
+[[case]]
+id = "where_text_not_a_boolean"
+data = "predicate_text.csv"
+sql = "SELECT id FROM predicate_text WHERE word ORDER BY id"
+expect = "BOTH_ERR"
+# P62 / D4. Text that does not read as a boolean is an error, in DuckDB and,
+# once fixed, here; WHERE read it as TRUE when non-empty.
