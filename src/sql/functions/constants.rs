@@ -125,7 +125,9 @@ impl SqlFunction for PhiFunction {
 
     fn evaluate(&self, args: &[DataValue]) -> Result<DataValue> {
         self.validate_args(args)?;
-        Ok(DataValue::Float(1.618033988749895)) // (1 + sqrt(5)) / 2
+        // Computed rather than written out: clippy 1.99 rejects the literal in
+        // favour of `f64::consts::GOLDEN_RATIO`, which older toolchains lack.
+        Ok(DataValue::Float((1.0 + 5.0_f64.sqrt()) / 2.0))
     }
 }
 
