@@ -2581,8 +2581,8 @@ out of date.
 - **Found:** 2026-09-26, pinning method calls for R13 slice 5.
 
 ### P58 — A quoted column cannot follow an alias qualifier (`l."name.official"`)
-- **Status:** 🟡 PARTIAL — expression positions fixed 2026-10-01 on branch
-  `fix/qualified-quoted-columns` (unmerged); **JOIN ON keys still fail**.
+- **Status:** 🟡 PARTIAL — expression positions fixed 2026-10-01 (#97);
+  **JOIN ON keys still fail**.
 - **Corpus:** none yet. Add to `01_select.toml` (SELECT / WHERE forms) and
   `04_joins.toml` (the ON form) with the fix — DuckDB 1.5.5 answers every form
   below, checked by hand against `data/countries.csv`.
@@ -2656,6 +2656,50 @@ out of date.
   other `unwrap_or(Null)` around column resolution.
 - **Found:** 2026-10-01, while testing P58 with a column name that does not exist.
 
+### P61 — WHERE's `CASE` with no `ELSE` answers FALSE, so `NOT` selects the row
+- **Status:** 🔴 OPEN — **silent**; to close in [R13](ENGINE_REFACTORING.md#r13)
+  slice 4 (CASE delegates)
+- **Corpus:** `02_where.toml :: where_not_case_without_else` (`expect = "DIFFER"`).
+  Evaluator matrix: `CASE_NO_ELSE` entries in `KNOWN_TRUTH` / `KNOWN_TRUTH_BARE`.
+- **Observed:** `WHERE NOT (CASE WHEN score > 40 THEN true END)` on
+  `null_edges.csv` returns the seven rows with `score <= 40` or NULL; DuckDB
+  returns none. A CASE with no ELSE is `ELSE NULL`, so a row no WHEN matches is
+  UNKNOWN and `NOT` keeps it UNKNOWN.
+- **Cause:** `RecursiveWhereEvaluator::evaluate_case_expression_as_bool` ends
+  `Ok(Trilean::False)` when nothing matches and there is no ELSE. The value
+  evaluator's CASE already returns NULL there — the same expression answers
+  correctly in SELECT.
+- **Found:** 2026-10-01, pinning AND / OR / NOT / CASE for R13 slice 4.
+
+### P62 — Text and dates used as a truth value are read as TRUE when non-empty
+- **Status:** 🔴 OPEN — **silent**; to close in [R13](ENGINE_REFACTORING.md#r13)
+  slice 4 under the rule decided as [D4](#d4)
+- **Corpus:** `02_where.toml :: where_text_flag_as_predicate`,
+  `where_not_text_flag` (both `expect = "DIFFER"`), `where_text_not_a_boolean`
+  (`expect = "OURS_ONLY"`), over new `data/predicate_text.csv`. Evaluator
+  matrix: `TEXT_TRUTHY` / `TEXT_REFUSED` / `DATE_TRUTHY` entries.
+- **Observed:** `WHERE flag` over `yes`, `no`, `true`, `f`, `N` returns every
+  row with a value — `'no'` and `'f'` are TRUE because they are not empty.
+  DuckDB reads boolean text (`yes`/`true` TRUE, `no`/`f`/`N` FALSE) and raises
+  an error for text that is no boolean (`WHERE word`) and for a date.
+- **Cause:** five separate "is this value true?" tables, which disagree:
+
+  | Copy | Text | NULL | Date / other | NaN |
+  |---|---|---|---|---|
+  | WHERE `evaluate_value_as_predicate` | non-empty → TRUE | UNKNOWN | TRUE | TRUE |
+  | value evaluator `truth_of` (AND / OR / NOT) | **error**, even `'true'` | UNKNOWN | error | TRUE |
+  | value evaluator `evaluate_condition_as_bool` (CASE WHEN) | non-empty → TRUE | FALSE | TRUE | TRUE |
+  | HAVING `is_truthy` | TRUE | FALSE | TRUE | FALSE |
+  | `IIF` (`functions/comparison.rs`) | non-empty → TRUE | FALSE | FALSE | FALSE |
+
+  So `WHERE flag` and `WHERE flag AND true` answered differently: the first
+  read `'f'` as TRUE, the second failed the query.
+- **Decision:** one function, DuckDB's rule — [D4](#d4). The first three copies
+  go with R13 slice 4; HAVING's `is_truthy` and `IIF` are slice 6's collapse
+  sites.
+- **Found:** 2026-10-01, pinning AND / OR / NOT / CASE for R13 slice 4 — the
+  two evaluators could not delegate to each other without choosing one rule.
+
 ---
 
 ## Deferred / won't fix (intentional)
@@ -2727,6 +2771,27 @@ out of date.
   case-sensitive.
 - **Considered:** keeping WHERE's behaviour and making the registry match it —
   rejected: it makes one family of predicates disagree with `=` and LIKE.
+
+### D4 — A value used as a truth value follows DuckDB's cast to boolean
+- **Status:** ⚪ DECIDED 2026-10-01 (user decision, R13 slice 4). Agrees with
+  DuckDB, so not a divergence — recorded here because it changes answers that
+  sql-cli gave before.
+- **Corpus:** the [P62](#p62) cases; evaluator matrix `EXPECTED_TRUTH` /
+  `EXPECTED_TRUTH_BARE`.
+- **Rule**, in every clause (WHERE, AND / OR / NOT, CASE WHEN, and — with
+  slice 6 — HAVING and `IIF`): a boolean is itself; a number is TRUE when
+  non-zero (NaN included); NULL is UNKNOWN; text is read as a boolean,
+  ignoring case — `true`/`t`/`yes`/`y`/`1` and `false`/`f`/`no`/`n`/`0` — and
+  any other text is an error, as is a date.
+- **Before:** non-empty text and any date counted as TRUE in WHERE and CASE
+  WHEN, while AND / OR / NOT refused all text — see P62's table.
+- **Rationale:** the lenient rule gave a confident wrong answer for the one
+  case where text plainly *is* a boolean (`'f'`, `'no'`). Erroring on other
+  text costs `WHERE name` as shorthand for "name is not empty"; write
+  `name <> ''` (or `name IS NOT NULL`).
+- **Considered:** lenient — boolean text converts, any other non-empty text or
+  date is TRUE (nothing that runs today fails). Rejected in favour of one rule
+  that matches the reference engine.
 
 _When we consciously diverge from the reference engine on results (rather than
 simply not implementing a feature), record it here with the rationale so the
