@@ -134,6 +134,14 @@ where
                             );
                             Ok(SqlExpression::Column(col_ref))
                         }
+                    } else if let Token::QuotedIdentifier(next_id) =
+                        ExpressionParser::current_token(parser)
+                    {
+                        // Qualified quoted column: alias."Column Name"
+                        let mut col_ref = ColumnRef::quoted(next_id.clone());
+                        col_ref.table_prefix = Some(id_clone);
+                        ExpressionParser::advance(parser);
+                        Ok(SqlExpression::Column(col_ref))
                     } else {
                         Err("Expected identifier after '.'".to_string())
                     }
