@@ -94,6 +94,7 @@ Suggested fix order, by silent blast radius:
 | ~~9e~~ | ~~[P41](#p41) `MODE` tie-break is random per run~~ | ✅ **Fixed 2026-09-06** — 152 → **156 AGREE** (four new cases). Small, as predicted, but not where it was filed: the named `ModeState` was a *shadowed* implementation and fixing it moved nothing. Reference does specify a rule and it is **first-occurrence**, not the "smallest value wins" this row proposed. Unblocked both example files, now FORMAL. Spun off [P42](#p42), [P43](#p43), [R12](ENGINE_REFACTORING.md#r12) |
 | ~~9g~~ | ~~[P46](#p46) column-vs-column `WHERE` returns 0 rows~~ | ✅ **Fixed 2026-09-13** — 157 → **168 AGREE**. Wider than filed: *every* non-literal right-hand operand read as NULL (comparisons, `IN` items, `BETWEEN` bounds), and a literal on the left errored (`WHERE 1=0`). One resolver for all operands closed it. Did **not** need [P48](#p48) alongside, as this row predicted — the fix kept the comparison in the WHERE evaluator. Spun off [P49](#p49) (correlated outer refs bind to the inner table), accepted knowingly |
 | **NEXT** | [R13](ENGINE_REFACTORING.md#r13) one expression evaluator — **the active workstream from 2026-09-13** | **Slices 1–2 done 2026-09-13** (value evaluator three-valued, 168 → 174 AGREE, closed P48/P50); **slice 3 done 2026-09-14** (one construction path; case-insensitive mode now honoured outside WHERE, parity unmoved); **slice 4 in progress** (WHERE arms delegate, one operator per commit: BETWEEN/IN 2026-09-15, comparisons 2026-09-18 closing [P54](#p54), IS NULL and LIKE 2026-09-19 closing [P55](#p55), 175 → 179 AGREE; every WHERE operator now delegates — AND/OR/NOT/CASE follow slice 5). Not a finding but the reason several are cheap to fix only once. WHERE and the value evaluator implement every boolean operator separately with different NULL rules, so the same predicate answers differently in WHERE, HAVING, SELECT and JOIN ON. **Working rule:** a parity fix that touches expression evaluation lands as an R13 slice, not a patch. [P52](#p52) (NULL join keys) is slice 6 |
+| then | [P60](#p60) `GROUP BY` unknown column → NULL group; [P58](#p58) JOIN ON half | Filed 2026-10-01. P60 is silent and a one-line cause, so cheap; P58's join half is a resolver fix — take it as the first slice of [R14](ENGINE_REFACTORING.md#r14) rather than a patch. [P59](#p59) (quoted alias) rides along if convenient |
 | then | [P47](#p47) `MIN`/`MAX` ranked by type | Silent and cheap, and outside the evaluator (aggregate registries — confirm the live one first, [R12](ENGINE_REFACTORING.md#r12)), so it can land alongside R13 without breaking the working rule |
 | then | [P14](#p14), [P20](#p20), [P23](#p23) | Smaller, self-contained, decisions already taken. Was row 9b, then NEXT until the 2026-09-12 findings displaced it. **Check each against the R13 working rule first** — P20 (`\|\|` with NULL) is an operator in the value evaluator |
 | 9f | [P42](#p42) `MODE` is numeric-only | Companion to [R12](ENGINE_REFACTORING.md#r12), and cheap if taken with it: the shadowed implementation already handles non-numerics and preserves type, so the fix is largely to stop the live path throwing away what it knows. Also buys the corpus its clearest tie-break case |
@@ -2578,6 +2579,82 @@ out of date.
   did not delegate to the value evaluator; its own arm knows `Length`,
   `IndexOf`, `Trim`, `TrimStart` and `TrimEnd` and rejects everything else.
 - **Found:** 2026-09-26, pinning method calls for R13 slice 5.
+
+### P58 — A quoted column cannot follow an alias qualifier (`l."name.official"`)
+- **Status:** 🟡 PARTIAL — expression positions fixed 2026-10-01 on branch
+  `fix/qualified-quoted-columns` (unmerged); **JOIN ON keys still fail**.
+- **Corpus:** none yet. Add to `01_select.toml` (SELECT / WHERE forms) and
+  `04_joins.toml` (the ON form) with the fix — DuckDB 1.5.5 answers every form
+  below, checked by hand against `data/countries.csv`.
+- **Observed:** `countries.csv` flattens its JSON into columns such as
+  `name.official`, which must be quoted. `SELECT "name.official" FROM countries`
+  works, but qualifying it — unavoidable in a self-join, which is where it came
+  from — failed to parse: `SELECT l."name.official" FROM countries l` →
+  *Expected identifier after '.'*.
+- **Cause:** `parse_primary` (`src/sql/parser/expressions/primary.rs`) accepted
+  only a bare `Token::Identifier` after the dot.
+- **Fixed so far:** that branch now also accepts `Token::QuotedIdentifier` and
+  builds a quoted `ColumnRef` carrying the prefix. Nothing downstream needed
+  changing for SELECT, WHERE, GROUP BY, ORDER BY or a CTE — verified with each.
+- **Still failing — JOIN ON.** `... JOIN countries b ON a."name.common" =
+  b."name.common"` → *Column 'a.name.common' not found in either table*. The
+  join keeps a structured `ColumnRef`, but `hash_join::extract_simple_column_name`
+  flattens it back to the string `a.name.common` and `find_column_index` splits
+  that at the **last** dot, looking for a column called `common`. The same
+  shape [P34](#p34) fixed in ORDER BY, in a resolver copy P34 did not reach —
+  see [R14](ENGINE_REFACTORING.md#r14). Fix it there (pass the `ColumnRef`
+  through, not a string), not by special-casing quotes in the join.
+- **Related:** [P59](#p59) (quoted *alias*), [P34](#p34), [R11](ENGINE_REFACTORING.md#r11),
+  [R14](ENGINE_REFACTORING.md#r14), [T19](TUI_FEATURES.md#t19) (completing the same shape).
+- **Found:** 2026-10-01, field use — a self-join over `countries.csv` to list
+  each country's neighbours.
+
+### P59 — A quoted table alias is not accepted (`"l".cca3`, `FROM t "l"`)
+- **Status:** 🔴 OPEN — hard error
+- **Corpus:** none yet; add to `01_select.toml` with the fix.
+- **Observed:** DuckDB accepts the qualifier quoted as well as the column, and
+  a quoted alias in FROM. We fail each, in a different place:
+
+  | Query | Ours | DuckDB |
+  |---|---|---|
+  | `SELECT "l"."name.official" FROM countries l` | parse error: *Expected identifier after '.'* | `Aruba` |
+  | `SELECT "l".cca3 FROM countries l` | *Column '"l".cca3' not found* — parses, then fails to resolve | `ABW` |
+  | `SELECT l."cca3" FROM countries "l"` | parse error: *Unexpected 'l' after end of statement* | `ABW` |
+
+- **Cause (to confirm):** the `Token::QuotedIdentifier` arm of `parse_primary`
+  never looks for a following `Dot`; the second row suggests a different path
+  (the SELECT-list fast path?) builds the name as text. FROM's alias parsing
+  accepts only a bare identifier.
+- **Why it matters:** low on its own — few people quote an alias. But tools
+  that generate SQL (and DuckDB's own `EXPLAIN` output) quote everything, and
+  the second row is a silent mis-parse rather than a refusal.
+- **Related:** [P58](#p58).
+- **Found:** 2026-10-01, probing the P58 fix against DuckDB.
+
+### P60 — `GROUP BY` an unknown column forms one NULL group instead of failing
+- **Status:** 🔴 OPEN — **silent**
+- **Corpus:** none yet; add to `07_grouping.toml` — DuckDB is an error, so the
+  case is `BOTH_ERR` once fixed, and `OURS_ONLY` today.
+- **Observed:** any name that resolves to nothing — bare, qualified or quoted —
+  is grouped as NULL, and every row lands in that one group:
+
+  | Query | Ours | DuckDB |
+  |---|---|---|
+  | `SELECT COUNT(*) AS n FROM countries GROUP BY nosuch` | `nosuch=NULL, n=250` | *Referenced column "nosuch" not found* |
+  | `... FROM countries l GROUP BY l."no such"` | `no such=NULL, n=250` | *Table "l" does not have a column named "no such"* |
+
+  The same name in SELECT or ORDER BY is an error, so it is GROUP BY alone.
+  A one-character typo in a grouping key returns a plausible-looking total.
+- **Cause:** `group_by_expressions.rs:96` evaluates each key with
+  `.unwrap_or(DataValue::Null)` — every evaluation error, not only an unknown
+  column, becomes NULL. Lines ~291 and ~309 have the same shape and want
+  checking with it.
+- **Decision:** propagate the error. Check first whether anything relies on the
+  swallow (a key that errors on some rows but not others — e.g. a cast — would
+  now fail the query, which is DuckDB's behaviour too).
+- **Related:** [R14](ENGINE_REFACTORING.md#r14) — the sweep there should look for
+  other `unwrap_or(Null)` around column resolution.
+- **Found:** 2026-10-01, while testing P58 with a column name that does not exist.
 
 ---
 
