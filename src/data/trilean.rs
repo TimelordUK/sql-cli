@@ -100,20 +100,28 @@ impl Trilean {
         Trilean::from_bool(self == expected)
     }
 
-    /// Read a truth value out of an evaluated expression, where NULL is how the
-    /// value evaluator spells UNKNOWN. Numbers keep their long-standing
-    /// zero/non-zero reading. `None` means the value has no truth value at all
-    /// (a string, a date), which callers report as an error rather than guess.
+    /// The truth value of a value used where a predicate is wanted - `WHERE n`,
+    /// an operand of AND / OR / NOT, a CASE condition. NULL is how the value
+    /// evaluator spells UNKNOWN.
     ///
-    /// This is the value-evaluator side of the R13 boundary: predicates are
-    /// evaluated as `DataValue`s, and this is where they become `Trilean`.
-    pub fn from_value(value: &DataValue) -> Option<Trilean> {
+    /// **The one rule (D4 in `docs/SQL_PARITY.md`), DuckDB's cast to boolean:**
+    /// a number is TRUE when non-zero (NaN included); text is read as a
+    /// boolean, ignoring case (`true`/`t`/`yes`/`y`/`1`, `false`/`f`/`no`/`n`/
+    /// `0`); any other text, a date or a vector is an error rather than a guess.
+    /// Each evaluator used to carry its own table and they disagreed - non-empty
+    /// text was TRUE in one and an error in another (P62) - so nothing outside
+    /// this function should decide what a value's truth is.
+    pub fn from_value(value: &DataValue) -> anyhow::Result<Trilean> {
         match value {
-            DataValue::Boolean(b) => Some(Trilean::from_bool(*b)),
-            DataValue::Null => Some(Trilean::Unknown),
-            DataValue::Integer(i) => Some(Trilean::from_bool(*i != 0)),
-            DataValue::Float(f) => Some(Trilean::from_bool(*f != 0.0)),
-            _ => None,
+            DataValue::Boolean(b) => Ok(Trilean::from_bool(*b)),
+            DataValue::Null => Ok(Trilean::Unknown),
+            DataValue::Integer(i) => Ok(Trilean::from_bool(*i != 0)),
+            DataValue::Float(f) => Ok(Trilean::from_bool(*f != 0.0)),
+            DataValue::String(s) => text_truth(s),
+            DataValue::InternedString(s) => text_truth(s),
+            DataValue::DateTime(_) | DataValue::Vector(_) => Err(anyhow::anyhow!(
+                "Cannot use {value} as a truth value - compare it to something"
+            )),
         }
     }
 
@@ -124,6 +132,19 @@ impl Trilean {
             Trilean::False => DataValue::Boolean(false),
             Trilean::Unknown => DataValue::Null,
         }
+    }
+}
+
+/// Text read as a boolean - the spellings DuckDB's `CAST(text AS BOOLEAN)`
+/// accepts. No trimming: DuckDB refuses `' true'` too.
+fn text_truth(text: &str) -> anyhow::Result<Trilean> {
+    match text.to_ascii_lowercase().as_str() {
+        "true" | "t" | "yes" | "y" | "1" => Ok(Trilean::True),
+        "false" | "f" | "no" | "n" | "0" => Ok(Trilean::False),
+        _ => Err(anyhow::anyhow!(
+            "Cannot use the text '{text}' as a truth value - it is not true/false, \
+             yes/no, t/f, y/n or 1/0 (to test for non-empty text, write col <> '')"
+        )),
     }
 }
 
@@ -224,17 +245,35 @@ mod tests {
         // The R13 boundary: the value evaluator carries UNKNOWN as NULL, so the
         // conversion must never turn NULL into FALSE in either direction.
         for t in ALL {
-            assert_eq!(Trilean::from_value(&t.to_value()), Some(t), "{t}");
+            assert_eq!(Trilean::from_value(&t.to_value()).unwrap(), t, "{t}");
         }
         assert_eq!(Unknown.to_value(), DataValue::Null);
-        assert_eq!(Trilean::from_value(&DataValue::Null), Some(Unknown));
-        assert_eq!(Trilean::from_value(&DataValue::Integer(0)), Some(False));
-        assert_eq!(Trilean::from_value(&DataValue::Float(2.5)), Some(True));
+        assert_eq!(Trilean::from_value(&DataValue::Null).unwrap(), Unknown);
+        assert_eq!(Trilean::from_value(&DataValue::Integer(0)).unwrap(), False);
+        assert_eq!(Trilean::from_value(&DataValue::Float(2.5)).unwrap(), True);
         assert_eq!(
-            Trilean::from_value(&DataValue::String("yes".to_string())),
-            None,
-            "a string has no truth value; callers must error, not guess"
+            Trilean::from_value(&DataValue::Float(f64::NAN)).unwrap(),
+            True
         );
+    }
+
+    #[test]
+    fn text_is_read_as_a_boolean_or_refused() {
+        // D4: DuckDB's cast to boolean. Boolean spellings in any case convert;
+        // other text - including empty and padded text - is an error, never a
+        // guess from whether the text is empty (P62).
+        let text = |s: &str| Trilean::from_value(&DataValue::String(s.to_string()));
+        for s in ["true", "TRUE", "t", "Yes", "y", "1"] {
+            assert_eq!(text(s).unwrap(), True, "{s}");
+        }
+        for s in ["false", "F", "no", "N", "0"] {
+            assert_eq!(text(s).unwrap(), False, "{s}");
+        }
+        for s in ["abc", "", " true", "on", "2"] {
+            assert!(text(s).is_err(), "{s:?} should have no truth value");
+        }
+        let date = DataValue::DateTime("2024-01-01".to_string());
+        assert!(Trilean::from_value(&date).is_err());
     }
 
     #[test]

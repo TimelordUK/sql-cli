@@ -170,7 +170,7 @@ impl<'a> ArithmeticEvaluator<'a> {
             // as NULL, hence the three-valued comparison arms above.
             SqlExpression::Not { expr } => {
                 let inner = self.evaluate(expr, row_index)?;
-                Ok(truth_of(&inner)?.negate().to_value())
+                Ok(Trilean::from_value(&inner)?.negate().to_value())
             }
             // IN / NOT IN as a value-producing expression — used by SELECT,
             // HAVING and CASE. After subquery rewriting, an `x IN (SELECT ...)`
@@ -365,8 +365,12 @@ impl<'a> ArithmeticEvaluator<'a> {
             // IS NULL / IS NOT NULL are the sanctioned NULL tests, so two-valued.
             "IS NULL" => Ok(DataValue::Boolean(matches!(left_val, DataValue::Null))),
             "IS NOT NULL" => Ok(DataValue::Boolean(!matches!(left_val, DataValue::Null))),
-            "AND" => Ok(truth_of(&left_val)?.and(truth_of(&right_val)?).to_value()),
-            "OR" => Ok(truth_of(&left_val)?.or(truth_of(&right_val)?).to_value()),
+            "AND" => Ok(Trilean::from_value(&left_val)?
+                .and(Trilean::from_value(&right_val)?)
+                .to_value()),
+            "OR" => Ok(Trilean::from_value(&left_val)?
+                .or(Trilean::from_value(&right_val)?)
+                .to_value()),
             "LIKE" => Ok(sql_like(&left_val, &right_val, self.case_insensitive).to_value()),
             _ => Err(anyhow!("Unsupported arithmetic operator: {}", op)),
         }
@@ -1444,17 +1448,9 @@ impl<'a> ArithmeticEvaluator<'a> {
         expr: &SqlExpression,
         row_index: usize,
     ) -> Result<bool> {
+        // A WHEN whose condition is UNKNOWN does not match, exactly like FALSE.
         let value = self.evaluate(expr, row_index)?;
-
-        match value {
-            DataValue::Boolean(b) => Ok(b),
-            DataValue::Integer(i) => Ok(i != 0),
-            DataValue::Float(f) => Ok(f != 0.0),
-            DataValue::Null => Ok(false),
-            DataValue::String(s) => Ok(!s.is_empty()),
-            DataValue::InternedString(s) => Ok(!s.is_empty()),
-            _ => Ok(true), // Other types are considered truthy
-        }
+        Ok(Trilean::from_value(&value)?.is_true())
     }
 
     /// Evaluate a DATETIME constructor expression
@@ -1620,12 +1616,6 @@ fn like_match(text: &str, pattern: &str) -> bool {
     }
     // Text used up: only trailing `%`s may remain.
     pattern[p..].iter().all(|&c| c == '%')
-}
-
-/// The truth value of an operand of AND / OR / NOT. A value with no truth value
-/// (a string, a date) is an error, as it was before three-valued logic.
-fn truth_of(value: &DataValue) -> Result<Trilean> {
-    Trilean::from_value(value).ok_or_else(|| anyhow!("Cannot convert {:?} to boolean", value))
 }
 
 #[cfg(test)]

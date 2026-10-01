@@ -485,78 +485,15 @@ const EXPECTED_TRUTH_BARE: &[(&str, &str)] = &[
     ("CASE WHEN n > 1 THEN s END", "EUUU"),
 ];
 
-const TEXT_TRUTHY: &str = "P62: text is TRUE when non-empty, so 'f' and 'No' are TRUE and      text that is no boolean at all passes instead of failing";
-const TEXT_REFUSED: &str = "P62: AND / OR / NOT refuse all text, including 'true' and 'f'";
-const DATE_TRUTHY: &str = "P62: a date is TRUE instead of an error";
-const CASE_NO_ELSE: &str = "P61: WHERE's CASE answers FALSE when no WHEN matches and there      is no ELSE; SQL's implicit ELSE is NULL, so NOT must not select the row";
+const CASE_NO_ELSE: &str = "P61: WHERE's CASE answers FALSE when no WHEN matches and there \
+     is no ELSE; SQL's implicit ELSE is NULL, so NOT must not select the row";
 
+// R13 slice 4 pinned 19 divergences here (2026-10-01). Fifteen were P62 - five
+// "is this value true?" tables: WHERE and CASE WHEN read non-empty text and
+// any date as TRUE (so 'f' and 'No' passed), AND / OR / NOT refused all text.
+// They went FIXED in one change when every site moved onto
+// `Trilean::from_value` (D4). What is left is P61, WHERE's own CASE.
 const KNOWN_TRUTH: &[Known] = &[
-    Known {
-        evaluator: Evaluator::Where,
-        predicate: "tb AND true",
-        observed: "TTUT",
-        why: TEXT_TRUTHY,
-    },
-    Known {
-        evaluator: Evaluator::Value,
-        predicate: "tb AND true",
-        observed: "EEUE",
-        why: TEXT_REFUSED,
-    },
-    Known {
-        evaluator: Evaluator::Where,
-        predicate: "NOT tb",
-        observed: "FFUF",
-        why: TEXT_TRUTHY,
-    },
-    Known {
-        evaluator: Evaluator::Value,
-        predicate: "NOT tb",
-        observed: "EEUE",
-        why: TEXT_REFUSED,
-    },
-    Known {
-        evaluator: Evaluator::Where,
-        predicate: "s AND true",
-        observed: "TFUT",
-        why: TEXT_TRUTHY,
-    },
-    Known {
-        evaluator: Evaluator::Where,
-        predicate: "NOT s",
-        observed: "FTUF",
-        why: TEXT_TRUTHY,
-    },
-    Known {
-        evaluator: Evaluator::Where,
-        predicate: "d AND true",
-        observed: "TUUT",
-        why: DATE_TRUTHY,
-    },
-    Known {
-        evaluator: Evaluator::Where,
-        predicate: "CASE WHEN tb THEN true ELSE false END",
-        observed: "TTFT",
-        why: TEXT_TRUTHY,
-    },
-    Known {
-        evaluator: Evaluator::Value,
-        predicate: "CASE WHEN tb THEN true ELSE false END",
-        observed: "TTFT",
-        why: TEXT_TRUTHY,
-    },
-    Known {
-        evaluator: Evaluator::Where,
-        predicate: "CASE WHEN s THEN true ELSE false END",
-        observed: "TFFT",
-        why: TEXT_TRUTHY,
-    },
-    Known {
-        evaluator: Evaluator::Value,
-        predicate: "CASE WHEN s THEN true ELSE false END",
-        observed: "TFFT",
-        why: TEXT_TRUTHY,
-    },
     Known {
         evaluator: Evaluator::Where,
         predicate: "CASE WHEN n > 1 THEN true END",
@@ -575,40 +512,14 @@ const KNOWN_TRUTH: &[Known] = &[
         observed: "TFFF",
         why: CASE_NO_ELSE,
     },
-    Known {
-        evaluator: Evaluator::Value,
-        predicate: "(CASE WHEN n > 1 THEN tb END) AND true",
-        observed: "EUUU",
-        why: TEXT_REFUSED,
-    },
 ];
 
-const KNOWN_TRUTH_BARE: &[Known] = &[
-    Known {
-        evaluator: Evaluator::Where,
-        predicate: "s",
-        observed: "TFUT",
-        why: TEXT_TRUTHY,
-    },
-    Known {
-        evaluator: Evaluator::Where,
-        predicate: "tb",
-        observed: "TTUT",
-        why: TEXT_TRUTHY,
-    },
-    Known {
-        evaluator: Evaluator::Where,
-        predicate: "d",
-        observed: "TUUT",
-        why: DATE_TRUTHY,
-    },
-    Known {
-        evaluator: Evaluator::Where,
-        predicate: "CASE WHEN n > 1 THEN s END",
-        observed: "TFFF",
-        why: CASE_NO_ELSE,
-    },
-];
+const KNOWN_TRUTH_BARE: &[Known] = &[Known {
+    evaluator: Evaluator::Where,
+    predicate: "CASE WHEN n > 1 THEN s END",
+    observed: "EFFF",
+    why: CASE_NO_ELSE,
+}];
 
 fn trilean_char(t: Trilean) -> char {
     match t {

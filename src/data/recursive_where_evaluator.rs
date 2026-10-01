@@ -283,7 +283,6 @@ impl<'a, 'exec> RecursiveWhereEvaluator<'a, 'exec> {
     fn evaluate_delegated(&self, expr: &SqlExpression, row_index: usize) -> Result<Trilean> {
         let value = self.evaluate_arithmetic(expr, row_index)?;
         Trilean::from_value(&value)
-            .ok_or_else(|| anyhow!("Predicate did not evaluate to a truth value: {value:?}"))
     }
 
     /// Evaluate a CASE expression as a boolean (for WHERE clauses)
@@ -329,8 +328,8 @@ impl<'a, 'exec> RecursiveWhereEvaluator<'a, 'exec> {
     /// directly as a `WHERE` predicate: `WHERE flag`, `WHERE true`, and the
     /// `WHERE lifted_value` that `ExpressionLifter` rewrites a window
     /// comparison into) and `evaluate_expression_as_bool` (the result of a
-    /// CASE branch). Both used to have their own copy of the coercion table
-    /// and disagreed on NULL; they now share this one.
+    /// CASE branch). The coercion itself is `Trilean::from_value`, the one
+    /// rule every clause uses (D4).
     ///
     /// A raw `WindowFunction` reaching here means the lifter did not hoist it,
     /// which is a defect rather than a value to coerce -- so it errors. That
@@ -346,23 +345,7 @@ impl<'a, 'exec> RecursiveWhereEvaluator<'a, 'exec> {
             ));
         }
 
-        let value = self.evaluate_arithmetic(expr, row_index)?;
-
-        use crate::data::datatable::DataValue;
-        Ok(match value {
-            DataValue::Boolean(b) => Trilean::from_bool(b),
-            DataValue::Integer(i) => Trilean::from_bool(i != 0),
-            DataValue::Float(f) => Trilean::from_bool(f != 0.0),
-            // A NULL predicate is UNKNOWN, not FALSE. Under `WHERE` alone the
-            // two are indistinguishable -- both drop the row -- and they only
-            // diverge under `NOT`, which is exactly the P18/P19 trap. The CASE
-            // path used to answer FALSE here; this is the one deliberate
-            // behaviour change in unifying the two copies.
-            DataValue::Null => Trilean::Unknown,
-            DataValue::String(ref s) => Trilean::from_bool(!s.is_empty()),
-            DataValue::InternedString(ref s) => Trilean::from_bool(!s.is_empty()),
-            _ => Trilean::True,
-        })
+        self.evaluate_delegated(expr, row_index)
     }
 
     fn evaluate_expression_as_bool(

@@ -373,7 +373,6 @@ expect = "DIFFER"
 id = "where_text_flag_as_predicate"
 data = "predicate_text.csv"
 sql = "SELECT id FROM predicate_text WHERE flag ORDER BY id"
-expect = "DIFFER"
 # P62. Text used as a truth value is read as a boolean ('yes', 'true' TRUE;
 # 'no', 'f', 'N' FALSE). WHERE read any non-empty text as TRUE, so 'no' and 'f'
 # passed: 1, 2, 3, 4, 6 instead of 1, 3.
@@ -382,13 +381,12 @@ expect = "DIFFER"
 id = "where_not_text_flag"
 data = "predicate_text.csv"
 sql = "SELECT id FROM predicate_text WHERE NOT flag ORDER BY id"
-expect = "DIFFER"
 # P62. The same, under NOT: every non-empty flag was TRUE, so nothing came back.
 
 [[case]]
 id = "where_text_not_a_boolean"
 data = "predicate_text.csv"
 sql = "SELECT id FROM predicate_text WHERE word ORDER BY id"
-expect = "OURS_ONLY"
+expect = "BOTH_ERR"
 # P62 / D4. Text that does not read as a boolean is an error, in DuckDB and,
 # once fixed, here; WHERE read it as TRUE when non-empty.
