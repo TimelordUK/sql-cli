@@ -519,57 +519,11 @@ const EXPECTED_TRUTH_HAVING: &[(&str, &str)] = &[
     ("NOT (MIN(n) > 0)", "FTFF"),
 ];
 
-/// HAVING collapses the condition's value with its own `is_truthy`, one of
-/// P62's five truth tables and one of the two still standing: any text (even
-/// empty) and any date are TRUE, so `'f'` and `'No'` keep their group and text
-/// that is not a boolean keeps it rather than failing; NaN is FALSE, where
-/// DuckDB reads it as non-zero.
-const HAVING_IS_TRUTHY: &str = "P62: HAVING's own is_truthy - text and dates TRUE, NaN FALSE";
-
-const KNOWN_TRUTH_HAVING: &[Known] = &[
-    Known {
-        evaluator: Evaluator::Having,
-        predicate: "x",
-        observed: "TFFF",
-        why: HAVING_IS_TRUTHY,
-    },
-    Known {
-        evaluator: Evaluator::Having,
-        predicate: "s",
-        observed: "TTFT",
-        why: HAVING_IS_TRUTHY,
-    },
-    Known {
-        evaluator: Evaluator::Having,
-        predicate: "tb",
-        observed: "TTFT",
-        why: HAVING_IS_TRUTHY,
-    },
-    Known {
-        evaluator: Evaluator::Having,
-        predicate: "d",
-        observed: "TFFT",
-        why: HAVING_IS_TRUTHY,
-    },
-    Known {
-        evaluator: Evaluator::Having,
-        predicate: "CASE WHEN n > 1 THEN s END",
-        observed: "TFFF",
-        why: HAVING_IS_TRUTHY,
-    },
-    Known {
-        evaluator: Evaluator::Having,
-        predicate: "MAX(tb)",
-        observed: "TTFT",
-        why: HAVING_IS_TRUTHY,
-    },
-    Known {
-        evaluator: Evaluator::Having,
-        predicate: "MAX(s)",
-        observed: "TTFT",
-        why: HAVING_IS_TRUTHY,
-    },
-];
+// R13 slice 6 pinned 7 HAVING divergences here (2026-10-03), all now FIXED:
+// HAVING collapsed the condition with its own `is_truthy` (any text and any
+// date TRUE, NaN FALSE) - one of P62's truth tables. They went when HAVING
+// moved onto `Trilean::from_value`.
+const KNOWN_TRUTH_HAVING: &[Known] = &[];
 
 /// The same values as `IIF`'s condition (R13 slice 6), through both
 /// evaluators. DuckDB has no `IIF`; these were generated with its `if()`,
@@ -587,61 +541,11 @@ const EXPECTED_TRUTH_IIF: &[(&str, &str)] = &[
     ("IIF(CASE WHEN n > 1 THEN tb END, true, false)", "TFFF"),
 ];
 
-/// `IIF` reads its condition with a table of its own - P62's other standing
-/// copy, and not the same as HAVING's: non-empty text is TRUE (so `'f'` and
-/// `'No'` take the second argument) but a date is FALSE, and NaN is FALSE.
-const IIF_OWN_TRUTH: &str = "P62: IIF's own truth table - non-empty text TRUE, dates and NaN FALSE";
-
-const KNOWN_TRUTH_IIF: &[Known] = &[
-    Known {
-        evaluator: Evaluator::Where,
-        predicate: "IIF(x, true, false)",
-        observed: "TFFF",
-        why: IIF_OWN_TRUTH,
-    },
-    Known {
-        evaluator: Evaluator::Value,
-        predicate: "IIF(x, true, false)",
-        observed: "TFFF",
-        why: IIF_OWN_TRUTH,
-    },
-    Known {
-        evaluator: Evaluator::Where,
-        predicate: "IIF(s, true, false)",
-        observed: "TFFT",
-        why: IIF_OWN_TRUTH,
-    },
-    Known {
-        evaluator: Evaluator::Value,
-        predicate: "IIF(s, true, false)",
-        observed: "TFFT",
-        why: IIF_OWN_TRUTH,
-    },
-    Known {
-        evaluator: Evaluator::Where,
-        predicate: "IIF(tb, true, false)",
-        observed: "TTFT",
-        why: IIF_OWN_TRUTH,
-    },
-    Known {
-        evaluator: Evaluator::Value,
-        predicate: "IIF(tb, true, false)",
-        observed: "TTFT",
-        why: IIF_OWN_TRUTH,
-    },
-    Known {
-        evaluator: Evaluator::Where,
-        predicate: "IIF(d, true, false)",
-        observed: "FFFF",
-        why: IIF_OWN_TRUTH,
-    },
-    Known {
-        evaluator: Evaluator::Value,
-        predicate: "IIF(d, true, false)",
-        observed: "FFFF",
-        why: IIF_OWN_TRUTH,
-    },
-];
+// R13 slice 6 pinned 8 `IIF` divergences here (2026-10-03), all now FIXED:
+// `IIF` read its condition with its own table (non-empty text TRUE, dates and
+// NaN FALSE) - P62's last copy - in both evaluators. They went when it moved
+// onto `Trilean::from_value`.
+const KNOWN_TRUTH_IIF: &[Known] = &[];
 
 fn trilean_char(t: Trilean) -> char {
     match t {
