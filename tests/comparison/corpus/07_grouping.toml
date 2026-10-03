@@ -80,7 +80,7 @@ sql = "SELECT team, COUNT(*) AS n FROM null_edges GROUP BY team HAVING NOT (MIN(
 id = "having_text_flag_as_condition"
 data = "predicate_text.csv"
 sql = "SELECT flag FROM predicate_text GROUP BY flag HAVING flag ORDER BY flag"
-expect = "DIFFER"
+# FIXED 2026-10-03 by R13 slice 6 (HAVING onto Trilean::from_value); was DIFFER.
 # P62, pinned 2026-10-03 for R13 slice 6. Text used as a truth value is read as
 # a boolean (D4): DuckDB keeps 'true' and 'yes'. HAVING collapses the value with
 # its own is_truthy, which reads any text as TRUE, so 'f', 'N' and 'no' keep
@@ -97,6 +97,7 @@ sql = "SELECT flag FROM predicate_text GROUP BY flag HAVING NOT flag ORDER BY fl
 id = "having_text_not_a_boolean"
 data = "predicate_text.csv"
 sql = "SELECT word FROM predicate_text GROUP BY word HAVING word ORDER BY word"
-expect = "OURS_ONLY"
+expect = "BOTH_ERR"
 # P62 / D4. Text that does not read as a boolean is an error in DuckDB, and in
-# our WHERE; HAVING's is_truthy keeps every non-NULL group instead.
+# our WHERE and (since R13 slice 6, 2026-10-03) HAVING; HAVING's is_truthy
+# kept every non-NULL group instead (was OURS_ONLY).

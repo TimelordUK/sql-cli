@@ -3,6 +3,7 @@ use std::cmp::Ordering;
 
 use super::{ArgCount, FunctionCategory, FunctionSignature, SqlFunction};
 use crate::data::datatable::DataValue;
+use crate::data::trilean::Trilean;
 
 /// Helper to compare two `DataValues`
 /// Returns None if values are incomparable (different types that can't be coerced)
@@ -319,18 +320,10 @@ impl SqlFunction for IifFunction {
         let true_value = &args[1];
         let false_value = &args[2];
 
-        // Evaluate condition as boolean
-        let is_true = match condition {
-            DataValue::Boolean(b) => *b,
-            DataValue::Integer(i) => *i != 0,
-            DataValue::Float(f) => *f != 0.0 && !f.is_nan(),
-            DataValue::String(s) => !s.is_empty(),
-            DataValue::InternedString(s) => !s.is_empty(),
-            DataValue::Null => false,
-            _ => false,
-        };
-
-        Ok(if is_true {
+        // The one truth rule (D4): only TRUE takes the second argument -
+        // FALSE and NULL both take the third - and text that is no boolean
+        // is an error.
+        Ok(if Trilean::from_value(condition)?.is_true() {
             true_value.clone()
         } else {
             false_value.clone()

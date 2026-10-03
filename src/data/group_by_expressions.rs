@@ -9,6 +9,7 @@ use crate::data::arithmetic_evaluator::ArithmeticEvaluator;
 use crate::data::data_view::DataView;
 use crate::data::datatable::{DataColumn, DataRow, DataTable, DataValue};
 use crate::data::query_engine::QueryEngine;
+use crate::data::trilean::Trilean;
 use crate::sql::aggregates::contains_aggregate;
 use crate::sql::parser::ast::{SelectItem, SqlExpression};
 use tracing::debug;
@@ -340,8 +341,10 @@ impl GroupByExpressions for QueryEngine {
                     ArithmeticEvaluator::new(&temp_table).with_case_insensitive(case_insensitive);
                 let having_result = evaluator.evaluate(having_expr, 0)?;
 
-                // Skip this group if HAVING condition is not met
-                if !is_truthy(&having_result) {
+                // Skip this group unless the condition is TRUE: FALSE and
+                // UNKNOWN both drop it. The value is read with the one truth
+                // rule, so text that is no boolean is an error (D4).
+                if !Trilean::from_value(&having_result)?.is_true() {
                     groups_filtered += 1;
                     having_time += having_start.elapsed();
                     continue;
@@ -469,16 +472,5 @@ fn expression_references_column(expr: &SqlExpression, column: &str) -> bool {
                 || expression_references_column(upper, column)
         }
         _ => false,
-    }
-}
-
-/// Check if a DataValue is truthy (for HAVING evaluation)
-fn is_truthy(value: &DataValue) -> bool {
-    match value {
-        DataValue::Boolean(b) => *b,
-        DataValue::Integer(i) => *i != 0,
-        DataValue::Float(f) => *f != 0.0 && !f.is_nan(),
-        DataValue::Null => false,
-        _ => true,
     }
 }
