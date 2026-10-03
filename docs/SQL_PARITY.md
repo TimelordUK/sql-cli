@@ -65,10 +65,11 @@ session apiece to fix properly, so **discovery is paused and the effort moves to
 picking them off**. Widen the corpus again when the open list is short, or
 opportunistically when a fix needs a case that doesn't exist yet.
 
-Corpus coverage today: tiers 01–10, **217 cases** (186 AGREE / 15 DIFFER /
-12 GAP / 1 OURS_ONLY / 3 BOTH_ERR as of 2026-10-01, after R13 slice 4 closed
-[P61](#p61) and [P62](#p62); [P51](#p51), [P52](#p52) open, [P53](#p53) open
-at low priority). The largest single movement so far remains the 2026-09-05
+Corpus coverage today: tiers 01–10, **229 cases** (190 AGREE / 22 DIFFER /
+12 GAP / 2 OURS_ONLY / 3 BOTH_ERR as of 2026-10-03, after R13 slice 6's pin
+added P52's join paths and P62's HAVING copy — four guards AGREE, eight cases
+await slice 6; [P51](#p51), [P52](#p52) open, [P53](#p53) open at low
+priority). The largest single movement so far remains the 2026-09-05
 NULL-ordering slice, which closed [P13](#p13) stage 2 and [P17](#p17) together —
 eleven cases in one change. **Tier 10 (aggregate & NULL edges) is still
 deliberately partial** — it holds the P14, P18–P20 and P41 cases and their
@@ -2438,7 +2439,25 @@ out of date.
 - **Status:** 🔴 OPEN — silent, too many rows. [R13](ENGINE_REFACTORING.md#r13) slice 6.
 - **Corpus:** `10_aggregate_nulls.toml :: join_on_null_key_both_sides`
   (`expect = "DIFFER"`). Its neighbour `join_on_null_key` AGREEs and could not
-  see this: it has NULL on only one side.
+  see this: it has NULL on only one side. **Every live join path pinned
+  2026-10-03** (R13 slice 6), each `expect = "DIFFER"`:
+
+  | Case | Path | DuckDB | Ours |
+  |---|---|---|---|
+  | `join_on_null_key_both_sides` | hash INNER | 7 | 32 |
+  | `left_join_on_null_key_both_sides` | hash LEFT | 12 | 32 |
+  | `right_join_on_null_key_both_sides` | hash LEFT, tables swapped | 12 | 32 |
+  | `join_on_null_keys_two_conditions` | nested-loop INNER (multi) | 5 | 14 |
+  | `left_join_on_null_keys_two_conditions` | nested-loop LEFT (multi) | 12 | 12, NULL-label rows matched |
+  | `right_join_on_null_keys_two_conditions` | nested-loop RIGHT (multi) | 12 | 12, likewise |
+  | `join_on_null_key_expression` | nested loop over expressions | 7 | 32 |
+
+  **Only equality is wrong.** Three guards AGREE already —
+  `join_on_null_score_less_than`, `join_on_null_team_not_equal`,
+  `left_join_on_null_score_inequality` — because the comparator's ordering and
+  `<>` answers with a NULL side are never true; they are there to hold when the
+  nested loop's comparator changes. `nested_loop_join_inner` and
+  `nested_loop_join_left` (the single-condition forms) have no callers.
 - **Observed:** `null_edges a JOIN null_edges b ON a.label = b.label` returns
   **32** rows; DuckDB **7**. Seven distinct non-NULL labels match themselves;
   the five NULL-label rows then pair with each other, 5 × 5 = 25.
@@ -2676,11 +2695,25 @@ out of date.
 - **Status:** ✅ FIXED 2026-10-01 by [R13](ENGINE_REFACTORING.md#r13) slice 4
   under [D4](#d4): `Trilean::from_value` is the one rule, and three of the
   five copies below are gone (183 → 185 AGREE). HAVING's `is_truthy` and
-  `IIF` still carry their own tables — slice 6.
+  `IIF` still carry their own tables — slice 6, **pinned 2026-10-03**: 7
+  HAVING and 8 `IIF` divergences recorded in the matrix, two corpus cases
+  waiting (below).
 - **Corpus:** `02_where.toml :: where_text_flag_as_predicate`,
   `where_not_text_flag` (DIFFER → AGREE), `where_text_not_a_boolean`
   (OURS_ONLY → `expect = "BOTH_ERR"`), over new `data/predicate_text.csv`. Evaluator
   matrix: `TEXT_TRUTHY` / `TEXT_REFUSED` / `DATE_TRUTHY` entries.
+  Slice 6 (the two remaining copies): `07_grouping.toml ::
+  having_text_flag_as_condition` (`expect = "DIFFER"` — `'f'`, `'N'`, `'no'`
+  keep their groups), `having_text_not_a_boolean` (`expect = "OURS_ONLY"`, to
+  become BOTH_ERR) and the guard `having_not_text_flag`. Matrix:
+  `EXPECTED_TRUTH_HAVING` / `KNOWN_TRUTH_HAVING` (a new `Having` column — each
+  row a group of its own through `QueryEngine`) and `EXPECTED_TRUTH_IIF` /
+  `KNOWN_TRUTH_IIF`. **`IIF` has no corpus case:** DuckDB has no `IIF`; its
+  expectations were generated with `if()`, which takes the same arguments.
+  The pin also showed the two copies disagree with *each other* — empty text
+  keeps a HAVING group but is FALSE to `IIF`; a date is TRUE to one and FALSE
+  to the other — and that both read NaN as FALSE, where D4 reads it as
+  non-zero.
 - **Observed:** `WHERE flag` over `yes`, `no`, `true`, `f`, `N` returns every
   row with a value — `'no'` and `'f'` are TRUE because they are not empty.
   DuckDB reads boolean text (`yes`/`true` TRUE, `no`/`f`/`N` FALSE) and raises
