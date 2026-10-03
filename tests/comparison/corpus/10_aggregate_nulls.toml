@@ -116,6 +116,78 @@ expect = "DIFFER"
 # key, so a NULL probe finds the NULL build rows; the nested-loop path uses
 # compare_with_op, which also reports NULL = NULL as equal. R13 slice 6.
 
+# --- P52 on every live join path (pinned 2026-10-03, R13 slice 6) ---
+# The case above is the hash INNER path. A single equality between two plain
+# columns takes the hash path for INNER, LEFT and RIGHT; anything else - a
+# second condition, an expression, an inequality - takes a nested loop, with
+# separate INNER, LEFT and RIGHT builders. Only equality is wrong: the
+# inequality cases at the end AGREE and guard the nested loop when its
+# comparator changes.
+
+[[case]]
+id = "left_join_on_null_key_both_sides"
+data = "null_edges.csv"
+sql = "SELECT a.id AS aid, b.id AS bid FROM null_edges a LEFT JOIN null_edges b ON a.label = b.label ORDER BY a.id, b.id"
+expect = "DIFFER"
+# P52, hash LEFT path. DuckDB 12 rows: 7 matches plus the 5 NULL-label rows
+# unmatched, b NULL. We return 32 - the NULL labels pair 5 x 5.
+
+[[case]]
+id = "right_join_on_null_key_both_sides"
+data = "null_edges.csv"
+sql = "SELECT a.id AS aid, b.id AS bid FROM null_edges a RIGHT JOIN null_edges b ON a.label = b.label ORDER BY b.id, a.id"
+expect = "DIFFER"
+# P52, hash path via the swapped LEFT join. DuckDB 12 rows, we return 32.
+
+[[case]]
+id = "join_on_null_keys_two_conditions"
+data = "null_edges.csv"
+sql = "SELECT a.id AS aid, b.id AS bid FROM null_edges a JOIN null_edges b ON a.label = b.label AND a.team = b.team ORDER BY a.id, b.id"
+expect = "DIFFER"
+# P52, nested-loop INNER path (two conditions). DuckDB 5 rows, we return 14.
+
+[[case]]
+id = "left_join_on_null_keys_two_conditions"
+data = "null_edges.csv"
+sql = "SELECT a.id AS aid, b.id AS bid FROM null_edges a LEFT JOIN null_edges b ON a.label = b.label AND a.id = b.id ORDER BY a.id, b.id"
+expect = "DIFFER"
+# P52, nested-loop LEFT path. 12 rows both ways, but for the NULL-label rows
+# DuckDB leaves b NULL and we fill it with the row itself.
+
+[[case]]
+id = "right_join_on_null_keys_two_conditions"
+data = "null_edges.csv"
+sql = "SELECT a.id AS aid, b.id AS bid FROM null_edges a RIGHT JOIN null_edges b ON a.label = b.label AND a.id = b.id ORDER BY b.id, a.id"
+expect = "DIFFER"
+# P52, nested-loop RIGHT builder; the mirror of the LEFT case.
+
+[[case]]
+id = "join_on_null_key_expression"
+data = "null_edges.csv"
+sql = "SELECT a.id AS aid, b.id AS bid FROM null_edges a JOIN null_edges b ON UPPER(a.label) = UPPER(b.label) ORDER BY a.id, b.id"
+expect = "DIFFER"
+# P52, nested loop over evaluated expressions. UPPER(NULL) is NULL, which then
+# meets the same comparator. DuckDB 7 rows, we return 32.
+
+[[case]]
+id = "join_on_null_score_less_than"
+data = "null_edges.csv"
+sql = "SELECT a.id AS aid, b.id AS bid FROM null_edges a JOIN null_edges b ON a.score < b.score ORDER BY a.id, b.id"
+# Guard: an ordering comparison with a NULL side is already never true.
+
+[[case]]
+id = "join_on_null_team_not_equal"
+data = "null_edges.csv"
+sql = "SELECT a.id AS aid, b.id AS bid FROM null_edges a JOIN null_edges b ON a.team <> b.team ORDER BY a.id, b.id"
+# Guard: NULL <> x is already never true, so the NULL-team rows join nothing.
+
+[[case]]
+id = "left_join_on_null_score_inequality"
+data = "null_edges.csv"
+sql = "SELECT a.id AS aid, b.id AS bid FROM null_edges a LEFT JOIN null_edges b ON a.score > b.score + 50 ORDER BY a.id, b.id"
+# Guard: the nested-loop LEFT path over an expression with NULLs; unmatched
+# rows (including every NULL score) still come back once with b NULL.
+
 [[case]]
 id = "null_arithmetic"
 data = "null_edges.csv"

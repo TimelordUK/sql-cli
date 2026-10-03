@@ -478,7 +478,8 @@ feature work**, and so we can tell the difference between "this is awkward" and
   WHERE *operator* now delegates. **Slice 5 (method calls) done 2026-09-26**,
   closing P56 and P57 and deciding D3. **Slice 4 finished 2026-10-01** (AND /
   OR / NOT / CASE, one truth rule — closing P61 and P62, deciding D4): WHERE
-  evaluates nothing itself any more. Slice 6 is next.
+  evaluates nothing itself any more. **Slice 6 (the last) begun 2026-10-03**
+  with its pin — no engine change.
   **The active workstream:** parity fixes that touch expression evaluation land
   as slices of this entry, not as patches.
 - **Where:** `src/data/arithmetic_evaluator.rs` (`ArithmeticEvaluator`, value →
@@ -791,6 +792,26 @@ feature work**, and so we can tell the difference between "this is awkward" and
     let the loop and the `connector` field go; `in_operator_lifter` and
     `subquery_executor` copy conditions one by one and want checking with it.
     A natural companion to slice 6.
+- **Slice 6, pin (2026-10-03).** No engine change; the parity report moved
+  by exactly the twelve new cases (217 → 229; 186 → 190 AGREE, the four
+  guards).
+  - *HAVING and `IIF` as truth-value sites.* The sixth matrix's table gains
+    two runs: a `Having` column (each row grouped on its own through
+    `QueryEngine`, `T` kept / `F` dropped / `E` failed) and `IIF(v, true,
+    false)` through both evaluators, expectations from DuckDB (`if()` for
+    `IIF`, which DuckDB lacks). **15 divergences**: 7 HAVING, 8 `IIF` (4 × 2
+    evaluators). The two copies disagree with D4 *and with each other* — empty
+    text keeps a group but is FALSE to `IIF`; dates TRUE to HAVING, FALSE to
+    `IIF` — and both read NaN as FALSE. Corpus: two HAVING cases waiting over
+    `predicate_text.csv` (P62) and one guard; `IIF` is matrix-only.
+  - *Joins.* `execute_join` routes a single plain-column equality to the hash
+    path (INNER, LEFT, RIGHT as a swapped LEFT) and everything else to three
+    nested-loop builders (`*_multi`). P52 now has a DIFFER case on each of the
+    six plus the expression form. Probing found **only equality wrong**: `<`,
+    `<>` and a LEFT join over an inequality already agree — the comparator's
+    NULL ordering never satisfies them — so those three are AGREE guards for
+    when the nested loop stops using the bare comparator.
+    `nested_loop_join_inner` / `nested_loop_join_left` have no callers.
 - **Slices, in the R10 pattern — no-op slices kept apart from the one that
   changes answers:**
   1. ✅ **Pin the divergences, no engine change.** *(Done 2026-09-13.)* A per-operator matrix run through
@@ -822,7 +843,17 @@ feature work**, and so we can tell the difference between "this is awkward" and
      `Trilean::from_value`) and JOIN's bare comparison go through the same
      collapse. `WhereClause`'s connector list (above) can go with it. JOIN NULL keys need care on the *hash* path
      too, not only the nested loop. [R8](#r8) stage 2 (the legacy WHERE stack) is
-     a natural lull task alongside.
+     a natural lull task alongside. In parts:
+     - 6a ✅ pin (2026-10-03, above).
+     - 6b HAVING and `IIF` onto `Trilean::from_value` — exactly the 15
+       matrix entries and the two HAVING corpus cases move.
+     - 6c P52: the nested loop compares through the predicate layer; the hash
+       path skips NULL keys on build and probe, LEFT still emitting the
+       unmatched row. Dead single-condition builders deleted first. Exactly
+       the seven join cases move.
+     - 6d `WhereClause`'s connector list → `BinaryOp AND`; the adapter folds
+       into the row filter and `RecursiveWhereEvaluator` goes. Parity
+       byte-identical. R13 closes.
 - **Explicitly not in scope:** window evaluation (`BatchWindowEvaluator`),
   aggregate registries ([R12](#r12)), correlated scoping ([R7](#r7) /
   [P3](SQL_PARITY.md#p3), [P49](SQL_PARITY.md#p49)). And [P15](SQL_PARITY.md#p15)
@@ -926,7 +957,7 @@ R8 legacy WHERE ──── independent; stage 2 is self-contained, do it in a 
 R10 Trilean ──────── DONE; closed P18/P19 (parity 125 → 129)
 R11 ORDER BY resolver ─ independent; small, but a behaviour change — wants its own parity run; now slice 3 of R14
 R12 aggregate registries ─ independent; step 1 is a provable no-op, do it before the next aggregate fix
-R13 one evaluator ─── ACTIVE from 2026-09-13; slices 1 (pin), 2 (3VL), 3 (construction + case mode) DONE; 4 operators DONE (BETWEEN/IN, comparisons, IS NULL, LIKE); 5 (method calls) DONE; 4 tail (AND/OR/NOT/CASE, D4) DONE 2026-10-01 → 6
+R13 one evaluator ─── ACTIVE from 2026-09-13; slices 1 (pin), 2 (3VL), 3 (construction + case mode) DONE; 4 operators DONE (BETWEEN/IN, comparisons, IS NULL, LIKE); 5 (method calls) DONE; 4 tail (AND/OR/NOT/CASE, D4) DONE 2026-10-01 → 6 (6a pin DONE 2026-10-03 → 6b HAVING/IIF → 6c P52 joins → 6d retire WHERE evaluator)
 R14 one column resolver ─ after R13; slice 1 (pin) any time → 2 (stop flattening ColumnRef; P58 join) → 3 (converge copies, absorbs R11) → 4 (P49/P60 strictness) ──→ feeds P3 scope spine
 ```
 
@@ -974,3 +1005,4 @@ AGREE count — which makes it safe to land well before the semantics change.
 | 2026-09-26 | R13 slice 5: method calls. Pinned 55 divergences across both evaluators; P56 (NULL receiver → FALSE) and P57 (WHERE refused all but five methods on a comparison's left) filed and closed; D3 decided (search methods follow `--case-insensitive`). Registry search functions fixed first (180), then WHERE delegated and ~700 lines of its arms and readers deleted — 179 → **183 AGREE** / 213 | — |
 | 2026-10-01 | R14 filed from P58 (`alias."quoted col"`): parser fix landed on a branch and worked in every clause but JOIN ON, whose resolver strips at the last dot. Five resolver copies inventoried; P59 (quoted alias) and P60 (GROUP BY unknown column → NULL group) filed | — |
 | 2026-10-01 | R13 slice 4 finished: AND / OR / NOT / CASE. Pinned 19 divergences (sixth matrix, values as truth values); P61 (WHERE CASE without ELSE → FALSE) and P62 (five truth tables; `'f'` read as TRUE) filed and closed; D4 decided (DuckDB's cast to boolean). `Trilean::from_value` the one rule; WHERE evaluates nothing itself — 183 → **186 AGREE** / 217 | — |
+| 2026-10-03 | R13 slice 6 pin: HAVING (new matrix column) and `IIF` as truth-value sites — 15 divergences, the two copies disagreeing with each other and reading NaN as FALSE; P52 cased on all six live join paths plus expressions, only equality wrong, three inequality guards AGREE. No engine change — 217 → 229 cases, 186 → 190 AGREE (the guards) | — |
