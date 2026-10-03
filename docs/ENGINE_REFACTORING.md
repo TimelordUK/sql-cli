@@ -518,8 +518,9 @@ feature work**, and so we can tell the difference between "this is awkward" and
   closing P56 and P57 and deciding D3. **Slice 4 finished 2026-10-01** (AND /
   OR / NOT / CASE, one truth rule — closing P61 and P62, deciding D4): WHERE
   evaluates nothing itself any more. **Slice 6 (the last) begun 2026-10-03**:
-  pinned, then HAVING and `IIF` moved onto the one truth rule (P62 finished).
-  P52's join fix and retiring the WHERE evaluator remain.
+  pinned, then HAVING and `IIF` moved onto the one truth rule (P62 finished),
+  then JOIN's comparison onto the predicate layer (P52 closed). Only 6d —
+  retiring the WHERE evaluator — remains.
   **The active workstream:** parity fixes that touch expression evaluation land
   as slices of this entry, not as patches.
 - **Where:** `src/data/arithmetic_evaluator.rs` (`ArithmeticEvaluator`, value →
@@ -860,6 +861,18 @@ feature work**, and so we can tell the difference between "this is awkward" and
   Then the three uncalled join methods (`nested_loop_join_inner` / `_left`,
   `qualify_column_name`, 264 lines) were deleted ahead of 6c — rustc had been
   warning about them all along ([R5](#r5)). Parity report byte-identical.
+- **Slice 6, JOIN (2026-10-03) — P52.** The nested loop's `compare_values`
+  asks `compare_trilean` (now `pub(crate)`) and keeps a pair only when TRUE;
+  JOIN ON is now one more site of the single collapse. The hash path needed
+  less than the entry predicted — not indexing a NULL key is enough, since a
+  NULL probe then misses and LEFT's existing no-match branch emits the row.
+  Six of the seven pinned cases flipped and the inequality guards held;
+  191 → **197 AGREE** / 230; FORMAL examples, Python and Rust suites green;
+  100k-row hash join level with main. The seventh case (hash RIGHT) now has
+  DuckDB's row count but **uncovered [P63](SQL_PARITY.md#p63)**: that path
+  swaps the two tables' columns on every row — [P8](SQL_PARITY.md#p8)'s fault,
+  never fixed for the hash path because no corpus case reached it. Outside
+  R13; filed, pinned, its own PR.
 - **Slices, in the R10 pattern — no-op slices kept apart from the one that
   changes answers:**
   1. ✅ **Pin the divergences, no engine change.** *(Done 2026-09-13.)* A per-operator matrix run through
@@ -896,9 +909,9 @@ feature work**, and so we can tell the difference between "this is awkward" and
      - 6b ✅ HAVING and `IIF` onto `Trilean::from_value` (2026-10-03) —
        exactly the 15 matrix entries and the two HAVING corpus cases moved.
        Dead single-condition join builders deleted with it.
-     - 6c P52: the nested loop compares through the predicate layer; the hash
-       path skips NULL keys on build and probe, LEFT still emitting the
-       unmatched row. Exactly the seven join cases move.
+     - 6c ✅ P52 (2026-10-03): the nested loop compares through the
+       predicate layer; the hash path never indexes a NULL key. Six of the
+       seven join cases moved; the seventh is held by P63 (found here).
      - 6d `WhereClause`'s connector list → `BinaryOp AND`; the adapter folds
        into the row filter and `RecursiveWhereEvaluator` goes. Parity
        byte-identical. R13 closes.
@@ -1007,7 +1020,7 @@ R8 legacy WHERE ──── independent; stage 2 is self-contained, do it in a 
 R10 Trilean ──────── DONE; closed P18/P19 (parity 125 → 129)
 R11 ORDER BY resolver ─ independent; small, but a behaviour change — wants its own parity run; now slice 3 of R14
 R12 aggregate registries ─ independent; step 1 is a provable no-op, do it before the next aggregate fix
-R13 one evaluator ─── ACTIVE from 2026-09-13; slices 1 (pin), 2 (3VL), 3 (construction + case mode) DONE; 4 operators DONE (BETWEEN/IN, comparisons, IS NULL, LIKE); 5 (method calls) DONE; 4 tail (AND/OR/NOT/CASE, D4) DONE 2026-10-01 → 6 (6a pin, 6b HAVING/IIF DONE 2026-10-03 → 6c P52 joins → 6d retire WHERE evaluator)
+R13 one evaluator ─── ACTIVE from 2026-09-13; slices 1 (pin), 2 (3VL), 3 (construction + case mode) DONE; 4 operators DONE (BETWEEN/IN, comparisons, IS NULL, LIKE); 5 (method calls) DONE; 4 tail (AND/OR/NOT/CASE, D4) DONE 2026-10-01 → 6 (6a pin, 6b HAVING/IIF, 6c P52 joins DONE 2026-10-03 → 6d retire WHERE evaluator)
 R14 one column resolver ─ after R13; slice 1 (pin) any time → 2 (stop flattening ColumnRef; P58 join) → 3 (converge copies, absorbs R11) → 4 (P49/P60 strictness) ──→ feeds P3 scope spine
 ```
 
@@ -1058,3 +1071,4 @@ AGREE count — which makes it safe to land well before the semantics change.
 | 2026-10-03 | R13 slice 6 pin: HAVING (new matrix column) and `IIF` as truth-value sites — 15 divergences, the two copies disagreeing with each other and reading NaN as FALSE; P52 cased on all six live join paths plus expressions, only equality wrong, three inequality guards AGREE. No engine change — 217 → 229 cases, 186 → 190 AGREE (the guards) | — |
 | 2026-10-03 | R13 slice 6, HAVING and `IIF`: both onto `Trilean::from_value`, finishing P62 — exactly the 15 pinned entries and two HAVING cases moved, 190 → **191 AGREE** / 229. Three uncalled join methods deleted (264 lines), report byte-identical | — |
 | 2026-10-03 | R5 reopened as a workstream: rustc already names ~30 dead items (inventoried by area), invisible in the warning noise; four slices — harvest rustc's list, coverage pass for `pub` code, `pub(crate)`, lints in CI | — |
+| 2026-10-03 | R13 slice 6, JOIN: nested loop onto `compare_trilean`, hash path never indexes a NULL key — closes P52, 191 → **197 AGREE** / 230. Uncovered P63 (single-condition RIGHT JOIN swaps `a.*`/`b.*`, pre-existing, outside R13), pinned | — |
