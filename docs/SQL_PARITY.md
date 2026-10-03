@@ -65,11 +65,11 @@ session apiece to fix properly, so **discovery is paused and the effort moves to
 picking them off**. Widen the corpus again when the open list is short, or
 opportunistically when a fix needs a case that doesn't exist yet.
 
-Corpus coverage today: tiers 01–10, **229 cases** (190 AGREE / 22 DIFFER /
-12 GAP / 2 OURS_ONLY / 3 BOTH_ERR as of 2026-10-03, after R13 slice 6's pin
-added P52's join paths and P62's HAVING copy — four guards AGREE, eight cases
-await slice 6; [P51](#p51), [P52](#p52) open, [P53](#p53) open at low
-priority). The largest single movement so far remains the 2026-09-05
+Corpus coverage today: tiers 01–10, **229 cases** (191 AGREE / 21 DIFFER /
+12 GAP / 1 OURS_ONLY / 4 BOTH_ERR as of 2026-10-03, after R13 slice 6 pinned
+P52 on every join path and moved HAVING and `IIF` onto the one truth rule,
+finishing [P62](#p62); [P51](#p51), [P52](#p52) open — seven join cases
+waiting — [P53](#p53) open at low priority). The largest single movement so far remains the 2026-09-05
 NULL-ordering slice, which closed [P13](#p13) stage 2 and [P17](#p17) together —
 eleven cases in one change. **Tier 10 (aggregate & NULL edges) is still
 deliberately partial** — it holds the P14, P18–P20 and P41 cases and their
@@ -94,7 +94,7 @@ Suggested fix order, by silent blast radius:
 | ~~9d~~ | ~~[P37](#p37) window in `WHERE` returns 0 rows~~ | ✅ **Fixed 2026-09-05** — corpus count unchanged, and that is the finding: the case is `OURS_ONLY` before *and* after, so the harness cannot see this fix or a future regression of it (first entry of that kind — the regression test is a Rust module). The filed root cause was wrong: `ExpressionLifter` *does* lift from `WHERE`. The real defect was one arm in the WHERE evaluator answering FALSE for any bare value used as a predicate — `WHERE true` returned zero rows too. It did **not** close [P15](#p15), which needs the opposite change |
 | ~~9e~~ | ~~[P41](#p41) `MODE` tie-break is random per run~~ | ✅ **Fixed 2026-09-06** — 152 → **156 AGREE** (four new cases). Small, as predicted, but not where it was filed: the named `ModeState` was a *shadowed* implementation and fixing it moved nothing. Reference does specify a rule and it is **first-occurrence**, not the "smallest value wins" this row proposed. Unblocked both example files, now FORMAL. Spun off [P42](#p42), [P43](#p43), [R12](ENGINE_REFACTORING.md#r12) |
 | ~~9g~~ | ~~[P46](#p46) column-vs-column `WHERE` returns 0 rows~~ | ✅ **Fixed 2026-09-13** — 157 → **168 AGREE**. Wider than filed: *every* non-literal right-hand operand read as NULL (comparisons, `IN` items, `BETWEEN` bounds), and a literal on the left errored (`WHERE 1=0`). One resolver for all operands closed it. Did **not** need [P48](#p48) alongside, as this row predicted — the fix kept the comparison in the WHERE evaluator. Spun off [P49](#p49) (correlated outer refs bind to the inner table), accepted knowingly |
-| **NEXT** | [R13](ENGINE_REFACTORING.md#r13) one expression evaluator — **the active workstream from 2026-09-13** | **Slices 1–2 done 2026-09-13** (value evaluator three-valued, 168 → 174 AGREE, closed P48/P50); **slice 3 done 2026-09-14** (one construction path; case-insensitive mode now honoured outside WHERE, parity unmoved); **slice 4 in progress** (WHERE arms delegate, one operator per commit: BETWEEN/IN 2026-09-15, comparisons 2026-09-18 closing [P54](#p54), IS NULL and LIKE 2026-09-19 closing [P55](#p55), 175 → 179 AGREE; every WHERE operator now delegates; **finished 2026-10-01** with AND/OR/NOT/CASE, closing [P61](#p61) and [P62](#p62) under [D4](#d4), 183 → 186 AGREE); slice 5 (method calls) done 2026-09-26; slice 6 (HAVING, `IIF`, JOIN collapse) next. Not a finding but the reason several are cheap to fix only once. WHERE and the value evaluator implement every boolean operator separately with different NULL rules, so the same predicate answers differently in WHERE, HAVING, SELECT and JOIN ON. **Working rule:** a parity fix that touches expression evaluation lands as an R13 slice, not a patch. [P52](#p52) (NULL join keys) is slice 6 |
+| **NEXT** | [R13](ENGINE_REFACTORING.md#r13) one expression evaluator — **the active workstream from 2026-09-13** | **Slices 1–2 done 2026-09-13** (value evaluator three-valued, 168 → 174 AGREE, closed P48/P50); **slice 3 done 2026-09-14** (one construction path; case-insensitive mode now honoured outside WHERE, parity unmoved); **slice 4 in progress** (WHERE arms delegate, one operator per commit: BETWEEN/IN 2026-09-15, comparisons 2026-09-18 closing [P54](#p54), IS NULL and LIKE 2026-09-19 closing [P55](#p55), 175 → 179 AGREE; every WHERE operator now delegates; **finished 2026-10-01** with AND/OR/NOT/CASE, closing [P61](#p61) and [P62](#p62) under [D4](#d4), 183 → 186 AGREE); slice 5 (method calls) done 2026-09-26; slice 6 in progress (2026-10-03: pin, then HAVING and `IIF` onto the one truth rule, finishing P62; JOIN NULL keys and retiring the WHERE evaluator left). Not a finding but the reason several are cheap to fix only once. WHERE and the value evaluator implement every boolean operator separately with different NULL rules, so the same predicate answers differently in WHERE, HAVING, SELECT and JOIN ON. **Working rule:** a parity fix that touches expression evaluation lands as an R13 slice, not a patch. [P52](#p52) (NULL join keys) is slice 6 |
 | then | [P60](#p60) `GROUP BY` unknown column → NULL group; [P58](#p58) JOIN ON half | Filed 2026-10-01. P60 is silent and a one-line cause, so cheap; P58's join half is a resolver fix — take it as the first slice of [R14](ENGINE_REFACTORING.md#r14) rather than a patch. [P59](#p59) (quoted alias) rides along if convenient |
 | then | [P47](#p47) `MIN`/`MAX` ranked by type | Silent and cheap, and outside the evaluator (aggregate registries — confirm the live one first, [R12](ENGINE_REFACTORING.md#r12)), so it can land alongside R13 without breaking the working rule |
 | then | [P14](#p14), [P20](#p20), [P23](#p23) | Smaller, self-contained, decisions already taken. Was row 9b, then NEXT until the 2026-09-12 findings displaced it. **Check each against the R13 working rule first** — P20 (`\|\|` with NULL) is an operator in the value evaluator |
@@ -2457,7 +2457,8 @@ out of date.
   `left_join_on_null_score_inequality` — because the comparator's ordering and
   `<>` answers with a NULL side are never true; they are there to hold when the
   nested loop's comparator changes. `nested_loop_join_inner` and
-  `nested_loop_join_left` (the single-condition forms) have no callers.
+  `nested_loop_join_left` (the single-condition forms) had no callers —
+  deleted 2026-10-03 ahead of the fix.
 - **Observed:** `null_edges a JOIN null_edges b ON a.label = b.label` returns
   **32** rows; DuckDB **7**. Seven distinct non-NULL labels match themselves;
   the five NULL-label rows then pair with each other, 5 × 5 = 25.
@@ -2694,18 +2695,19 @@ out of date.
 ### P62 — Text and dates used as a truth value are read as TRUE when non-empty
 - **Status:** ✅ FIXED 2026-10-01 by [R13](ENGINE_REFACTORING.md#r13) slice 4
   under [D4](#d4): `Trilean::from_value` is the one rule, and three of the
-  five copies below are gone (183 → 185 AGREE). HAVING's `is_truthy` and
-  `IIF` still carry their own tables — slice 6, **pinned 2026-10-03**: 7
-  HAVING and 8 `IIF` divergences recorded in the matrix, two corpus cases
-  waiting (below).
+  five copies below are gone (183 → 185 AGREE). **The last two — HAVING's
+  `is_truthy` and `IIF` — went 2026-10-03 in R13 slice 6** (pinned first: 7
+  HAVING and 8 `IIF` matrix entries, all FIXED in one change; 190 → 191 AGREE).
+  All five copies are now `Trilean::from_value`. `IIF('abc', …)` and
+  `HAVING word` are errors, as WHERE already was.
 - **Corpus:** `02_where.toml :: where_text_flag_as_predicate`,
   `where_not_text_flag` (DIFFER → AGREE), `where_text_not_a_boolean`
   (OURS_ONLY → `expect = "BOTH_ERR"`), over new `data/predicate_text.csv`. Evaluator
   matrix: `TEXT_TRUTHY` / `TEXT_REFUSED` / `DATE_TRUTHY` entries.
   Slice 6 (the two remaining copies): `07_grouping.toml ::
-  having_text_flag_as_condition` (`expect = "DIFFER"` — `'f'`, `'N'`, `'no'`
-  keep their groups), `having_text_not_a_boolean` (`expect = "OURS_ONLY"`, to
-  become BOTH_ERR) and the guard `having_not_text_flag`. Matrix:
+  having_text_flag_as_condition` (DIFFER → AGREE — `'f'`, `'N'`, `'no'`
+  kept their groups), `having_text_not_a_boolean` (OURS_ONLY →
+  `expect = "BOTH_ERR"`) and the guard `having_not_text_flag`. Matrix:
   `EXPECTED_TRUTH_HAVING` / `KNOWN_TRUTH_HAVING` (a new `Having` column — each
   row a group of its own through `QueryEngine`) and `EXPECTED_TRUTH_IIF` /
   `KNOWN_TRUTH_IIF`. **`IIF` has no corpus case:** DuckDB has no `IIF`; its

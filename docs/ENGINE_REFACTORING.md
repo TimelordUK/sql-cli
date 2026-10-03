@@ -207,19 +207,58 @@ feature work**, and so we can tell the difference between "this is awkward" and
   why people reach for `Default`-ish shortcuts.
 
 ### R5 — Dead code accumulates undetected
-- **Status:** 🔴 OPEN
-- **Observed:** `column_dependency_lifter.rs` sat in the tree fully dead —
-  absent from `query_plan/mod.rs`, referenced nowhere, and no longer compiling
-  against the current AST (its `SelectStatement` literal was missing six
-  fields). Deleted in PR #30. `cte_hoister::hoist_from_condition` is still dead
-  (confirmed pre-existing).
-- **Impact:** Modest in isolation, but dead code inflates every audit — the
-  deleted file alone accounted for 9 deprecated-field sites and 14
-  `SqlExpression` match arms in the R2/R3 survey.
-- **Decision:** Not worth a dedicated project. Cheapest fix is to stop tolerating
-  the warnings: the tree currently emits ~368 clippy warnings and ~67
-  `#[allow(deprecated)]` annotations, which is enough noise to hide a real
-  signal. Consider a `[lints]` table in `Cargo.toml` once the count is down.
+- **Status:** 🟡 REOPENED 2026-10-03 as a workstream, at the user's request —
+  a year of refactoring (R2, R8, R13 above all) has left code behind, and
+  slice 6 of R13 found three uncalled join methods that rustc had been
+  reporting all along. Was: "not worth a dedicated project".
+- **Observed (2026-07):** `column_dependency_lifter.rs` sat in the tree fully
+  dead — absent from `query_plan/mod.rs`, referenced nowhere, and no longer
+  compiling against the current AST. Deleted in PR #30.
+  `cte_hoister::hoist_from_condition` is still dead (confirmed pre-existing).
+- **Observed (2026-10-03):** `cargo build` names **~30 dead items** today,
+  lost among ~350 other warnings. By area:
+
+  | Area | Items rustc reports as never used / never read |
+  |---|---|
+  | Engine | `QueryEngine::build_view`, `build_view_internal`, `apply_multi_order_by`; `ArithmeticEvaluator` field `row_index`; `BatchWindowEvaluator` fields `specs`, `contexts`; `DataType::looks_like_datetime`; `DataAnalyzer::looks_like_date{,_fast}`; `CsvDataSource::filter_results`; `analysis::format_cte_as_query` |
+  | Parser | `recursive_parser`: `contains_aggregate_function`, `parse_select_statement`, `parse_column_reference` (see [R14](#r14)); `formatter`: `find_token_position`, `format_token` |
+  | CLI | `non_interactive`: `check_temp_table_usage`, `make_transformer_config`; `main_handlers::is_non_interactive`; `main` field `analyze_correlations_arg` |
+  | TUI | `enhanced_tui`: `TOTAL_UI_CHROME`, `TABLE_CHROME_ROWS`, `render_help_two_column`; `viewport_manager`: `TABLE_CHROME_ROWS`, `visible_row_cache`, `cache_signature`; `ui_layout_utils::TABLE_BORDER_WIDTH`; `tui_app` field `sql_parser`; `buffer::sync_to_input_manager`; `virtual_table` field `row_style` |
+  | Other | `debug_info::value_to_rust_code`; `http_fetcher::extract_json_path`; `window_functions/aggregates.rs` `has_non_null` assigned, never read |
+
+  And rustc only sees *private* items. Most modules are `pub` from `lib.rs`,
+  so a `pub fn` with no caller anywhere is invisible to it — R13's deleted
+  WHERE readers were of that kind. Seven `#[allow(dead_code)]` / `unused`
+  annotations hide more. The same warning noise hides a neighbouring smell:
+  `hash_join.rs` ignores nine `add_row` `Result`s (`unused_must_use`).
+- **Impact:** dead code inflates every audit (the deleted lifter alone was 9
+  deprecated-field sites and 14 `SqlExpression` arms in the R2/R3 survey),
+  and a fix can land in a copy nothing calls — R13 slice 6 would have had to
+  change the nested-loop comparator in two dead builders as well as three
+  live ones, and R14 counted a dead parser reader as a live one.
+- **Slices — each deletion its own commit, no behaviour change, parity report
+  byte-identical and all three suites green:**
+  1. **Harvest rustc's list** (the table above), one commit per area. Items
+     that look *intended* rather than abandoned (TUI layout constants, the
+     viewport cache fields) are asked about, not deleted.
+  2. **Coverage pass for `pub` code.** `cargo llvm-cov` over the Rust tests,
+     the Python tests, the examples and the parity corpus (the release binary
+     instrumented, `LLVM_PROFILE_FILE` per run), merged into one list of
+     functions never executed. Unexecuted is not dead — TUI paths, error
+     arms, platform and feature code — so the list is triaged: *dead*
+     (delete), *live but untested* (log a test gap), *out of reach* (TUI,
+     `system-tables`, network). A by-hand cross-check: `pub fn` with no
+     reference outside its own file.
+  3. **Let the compiler see more.** Narrow module visibility to `pub(crate)`
+     where nothing outside the crate (bins, `tests/`) uses it, so rustc's
+     lint covers it; remove the `#[allow(dead_code)]`s that no longer hide
+     anything. Unused dependencies (`cargo machete`) alongside.
+  4. **Keep it dead.** Once the warning count is low enough to read, a
+     `[lints]` table in `Cargo.toml` (`dead_code`, `unused_must_use`) and CI
+     `-D` for those two, so the next abandoned function fails the build.
+- **Sequencing:** a lull task, independent of R13/R14 — but slice 1's parser
+  item is worth doing before R14 slice 2, and slice 1 generally before
+  anyone fixes a finding in a file it touches.
 
 ### R6 — `CorrelatedSubqueryAnalyzer` is unwired and untested
 - **Status:** 🔴 OPEN
@@ -478,8 +517,9 @@ feature work**, and so we can tell the difference between "this is awkward" and
   WHERE *operator* now delegates. **Slice 5 (method calls) done 2026-09-26**,
   closing P56 and P57 and deciding D3. **Slice 4 finished 2026-10-01** (AND /
   OR / NOT / CASE, one truth rule — closing P61 and P62, deciding D4): WHERE
-  evaluates nothing itself any more. **Slice 6 (the last) begun 2026-10-03**
-  with its pin — no engine change.
+  evaluates nothing itself any more. **Slice 6 (the last) begun 2026-10-03**:
+  pinned, then HAVING and `IIF` moved onto the one truth rule (P62 finished).
+  P52's join fix and retiring the WHERE evaluator remain.
   **The active workstream:** parity fixes that touch expression evaluation land
   as slices of this entry, not as patches.
 - **Where:** `src/data/arithmetic_evaluator.rs` (`ArithmeticEvaluator`, value →
@@ -812,6 +852,14 @@ feature work**, and so we can tell the difference between "this is awkward" and
     NULL ordering never satisfies them — so those three are AGREE guards for
     when the nested loop stops using the bare comparator.
     `nested_loop_join_inner` / `nested_loop_join_left` have no callers.
+- **Slice 6, HAVING and `IIF` (2026-10-03).** Both read their condition with
+  `Trilean::from_value(..)?.is_true()`; `is_truthy` and `IIF`'s match are
+  gone, so all five of P62's copies are now the one function. Exactly the 15
+  matrix entries went FIXED; parity moved by exactly the two HAVING cases
+  (190 → **191 AGREE**, one OURS_ONLY → BOTH_ERR); FORMAL examples unchanged.
+  Then the three uncalled join methods (`nested_loop_join_inner` / `_left`,
+  `qualify_column_name`, 264 lines) were deleted ahead of 6c — rustc had been
+  warning about them all along ([R5](#r5)). Parity report byte-identical.
 - **Slices, in the R10 pattern — no-op slices kept apart from the one that
   changes answers:**
   1. ✅ **Pin the divergences, no engine change.** *(Done 2026-09-13.)* A per-operator matrix run through
@@ -845,12 +893,12 @@ feature work**, and so we can tell the difference between "this is awkward" and
      too, not only the nested loop. [R8](#r8) stage 2 (the legacy WHERE stack) is
      a natural lull task alongside. In parts:
      - 6a ✅ pin (2026-10-03, above).
-     - 6b HAVING and `IIF` onto `Trilean::from_value` — exactly the 15
-       matrix entries and the two HAVING corpus cases move.
+     - 6b ✅ HAVING and `IIF` onto `Trilean::from_value` (2026-10-03) —
+       exactly the 15 matrix entries and the two HAVING corpus cases moved.
+       Dead single-condition join builders deleted with it.
      - 6c P52: the nested loop compares through the predicate layer; the hash
        path skips NULL keys on build and probe, LEFT still emitting the
-       unmatched row. Dead single-condition builders deleted first. Exactly
-       the seven join cases move.
+       unmatched row. Exactly the seven join cases move.
      - 6d `WhereClause`'s connector list → `BinaryOp AND`; the adapter folds
        into the row filter and `RecursiveWhereEvaluator` goes. Parity
        byte-identical. R13 closes.
@@ -896,7 +944,9 @@ feature work**, and so we can tell the difference between "this is awkward" and
   are the same string, and every re-split has to guess. P34 and P58 are both
   that guess going wrong. The parser has three separate `ident . ident` readers
   too (`parse_primary`, `parse_identifier_list`, `parse_column_reference`) —
-  P58 fixed only the first.
+  P58 fixed only the first. (2026-10-03: rustc reports
+  `parse_column_reference` as never used — so it is two live readers and a
+  dead one; [R5](#r5) slice 1 deletes it.)
 - **Impact:** every resolution rule — alias handling, quoting, case
   sensitivity, the P49 strictness decision, the error wording — has to be
   changed in N places, and the history says it isn't: P34 fixed ORDER BY's copy,
@@ -952,12 +1002,12 @@ R2 walkers ──┬─→ R3 catch-alls retired
 
 R1 FROM migration ── independent; deferred (larger than P3)
 R4 fixtures ──────── adopt opportunistically, per transformer touched
-R5 dead code ─────── opportunistic
+R5 dead code ─────── REOPENED 2026-10-03 as a lull workstream: 1 rustc's list → 2 coverage pass → 3 pub(crate) → 4 lints in CI
 R8 legacy WHERE ──── independent; stage 2 is self-contained, do it in a lull
 R10 Trilean ──────── DONE; closed P18/P19 (parity 125 → 129)
 R11 ORDER BY resolver ─ independent; small, but a behaviour change — wants its own parity run; now slice 3 of R14
 R12 aggregate registries ─ independent; step 1 is a provable no-op, do it before the next aggregate fix
-R13 one evaluator ─── ACTIVE from 2026-09-13; slices 1 (pin), 2 (3VL), 3 (construction + case mode) DONE; 4 operators DONE (BETWEEN/IN, comparisons, IS NULL, LIKE); 5 (method calls) DONE; 4 tail (AND/OR/NOT/CASE, D4) DONE 2026-10-01 → 6 (6a pin DONE 2026-10-03 → 6b HAVING/IIF → 6c P52 joins → 6d retire WHERE evaluator)
+R13 one evaluator ─── ACTIVE from 2026-09-13; slices 1 (pin), 2 (3VL), 3 (construction + case mode) DONE; 4 operators DONE (BETWEEN/IN, comparisons, IS NULL, LIKE); 5 (method calls) DONE; 4 tail (AND/OR/NOT/CASE, D4) DONE 2026-10-01 → 6 (6a pin, 6b HAVING/IIF DONE 2026-10-03 → 6c P52 joins → 6d retire WHERE evaluator)
 R14 one column resolver ─ after R13; slice 1 (pin) any time → 2 (stop flattening ColumnRef; P58 join) → 3 (converge copies, absorbs R11) → 4 (P49/P60 strictness) ──→ feeds P3 scope spine
 ```
 
@@ -1006,3 +1056,5 @@ AGREE count — which makes it safe to land well before the semantics change.
 | 2026-10-01 | R14 filed from P58 (`alias."quoted col"`): parser fix landed on a branch and worked in every clause but JOIN ON, whose resolver strips at the last dot. Five resolver copies inventoried; P59 (quoted alias) and P60 (GROUP BY unknown column → NULL group) filed | — |
 | 2026-10-01 | R13 slice 4 finished: AND / OR / NOT / CASE. Pinned 19 divergences (sixth matrix, values as truth values); P61 (WHERE CASE without ELSE → FALSE) and P62 (five truth tables; `'f'` read as TRUE) filed and closed; D4 decided (DuckDB's cast to boolean). `Trilean::from_value` the one rule; WHERE evaluates nothing itself — 183 → **186 AGREE** / 217 | — |
 | 2026-10-03 | R13 slice 6 pin: HAVING (new matrix column) and `IIF` as truth-value sites — 15 divergences, the two copies disagreeing with each other and reading NaN as FALSE; P52 cased on all six live join paths plus expressions, only equality wrong, three inequality guards AGREE. No engine change — 217 → 229 cases, 186 → 190 AGREE (the guards) | — |
+| 2026-10-03 | R13 slice 6, HAVING and `IIF`: both onto `Trilean::from_value`, finishing P62 — exactly the 15 pinned entries and two HAVING cases moved, 190 → **191 AGREE** / 229. Three uncalled join methods deleted (264 lines), report byte-identical | — |
+| 2026-10-03 | R5 reopened as a workstream: rustc already names ~30 dead items (inventoried by area), invisible in the warning noise; four slices — harvest rustc's list, coverage pass for `pub` code, `pub(crate)`, lints in CI | — |
