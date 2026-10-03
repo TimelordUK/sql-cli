@@ -65,11 +65,11 @@ session apiece to fix properly, so **discovery is paused and the effort moves to
 picking them off**. Widen the corpus again when the open list is short, or
 opportunistically when a fix needs a case that doesn't exist yet.
 
-Corpus coverage today: tiers 01–10, **229 cases** (191 AGREE / 21 DIFFER /
-12 GAP / 1 OURS_ONLY / 4 BOTH_ERR as of 2026-10-03, after R13 slice 6 pinned
-P52 on every join path and moved HAVING and `IIF` onto the one truth rule,
-finishing [P62](#p62); [P51](#p51), [P52](#p52) open — seven join cases
-waiting — [P53](#p53) open at low priority). The largest single movement so far remains the 2026-09-05
+Corpus coverage today: tiers 01–10, **230 cases** (197 AGREE / 16 DIFFER /
+12 GAP / 1 OURS_ONLY / 4 BOTH_ERR as of 2026-10-03, after R13 slice 6 moved
+HAVING and `IIF` onto the one truth rule, finishing [P62](#p62), and closed
+[P52](#p52) on every join path — which uncovered [P63](#p63), open; [P51](#p51)
+open, [P53](#p53) open at low priority). The largest single movement so far remains the 2026-09-05
 NULL-ordering slice, which closed [P13](#p13) stage 2 and [P17](#p17) together —
 eleven cases in one change. **Tier 10 (aggregate & NULL edges) is still
 deliberately partial** — it holds the P14, P18–P20 and P41 cases and their
@@ -94,7 +94,8 @@ Suggested fix order, by silent blast radius:
 | ~~9d~~ | ~~[P37](#p37) window in `WHERE` returns 0 rows~~ | ✅ **Fixed 2026-09-05** — corpus count unchanged, and that is the finding: the case is `OURS_ONLY` before *and* after, so the harness cannot see this fix or a future regression of it (first entry of that kind — the regression test is a Rust module). The filed root cause was wrong: `ExpressionLifter` *does* lift from `WHERE`. The real defect was one arm in the WHERE evaluator answering FALSE for any bare value used as a predicate — `WHERE true` returned zero rows too. It did **not** close [P15](#p15), which needs the opposite change |
 | ~~9e~~ | ~~[P41](#p41) `MODE` tie-break is random per run~~ | ✅ **Fixed 2026-09-06** — 152 → **156 AGREE** (four new cases). Small, as predicted, but not where it was filed: the named `ModeState` was a *shadowed* implementation and fixing it moved nothing. Reference does specify a rule and it is **first-occurrence**, not the "smallest value wins" this row proposed. Unblocked both example files, now FORMAL. Spun off [P42](#p42), [P43](#p43), [R12](ENGINE_REFACTORING.md#r12) |
 | ~~9g~~ | ~~[P46](#p46) column-vs-column `WHERE` returns 0 rows~~ | ✅ **Fixed 2026-09-13** — 157 → **168 AGREE**. Wider than filed: *every* non-literal right-hand operand read as NULL (comparisons, `IN` items, `BETWEEN` bounds), and a literal on the left errored (`WHERE 1=0`). One resolver for all operands closed it. Did **not** need [P48](#p48) alongside, as this row predicted — the fix kept the comparison in the WHERE evaluator. Spun off [P49](#p49) (correlated outer refs bind to the inner table), accepted knowingly |
-| **NEXT** | [R13](ENGINE_REFACTORING.md#r13) one expression evaluator — **the active workstream from 2026-09-13** | **Slices 1–2 done 2026-09-13** (value evaluator three-valued, 168 → 174 AGREE, closed P48/P50); **slice 3 done 2026-09-14** (one construction path; case-insensitive mode now honoured outside WHERE, parity unmoved); **slice 4 in progress** (WHERE arms delegate, one operator per commit: BETWEEN/IN 2026-09-15, comparisons 2026-09-18 closing [P54](#p54), IS NULL and LIKE 2026-09-19 closing [P55](#p55), 175 → 179 AGREE; every WHERE operator now delegates; **finished 2026-10-01** with AND/OR/NOT/CASE, closing [P61](#p61) and [P62](#p62) under [D4](#d4), 183 → 186 AGREE); slice 5 (method calls) done 2026-09-26; slice 6 in progress (2026-10-03: pin, then HAVING and `IIF` onto the one truth rule, finishing P62; JOIN NULL keys and retiring the WHERE evaluator left). Not a finding but the reason several are cheap to fix only once. WHERE and the value evaluator implement every boolean operator separately with different NULL rules, so the same predicate answers differently in WHERE, HAVING, SELECT and JOIN ON. **Working rule:** a parity fix that touches expression evaluation lands as an R13 slice, not a patch. [P52](#p52) (NULL join keys) is slice 6 |
+| **NEXT** | [R13](ENGINE_REFACTORING.md#r13) one expression evaluator — **the active workstream from 2026-09-13** | **Slices 1–2 done 2026-09-13** (value evaluator three-valued, 168 → 174 AGREE, closed P48/P50); **slice 3 done 2026-09-14** (one construction path; case-insensitive mode now honoured outside WHERE, parity unmoved); **slice 4 in progress** (WHERE arms delegate, one operator per commit: BETWEEN/IN 2026-09-15, comparisons 2026-09-18 closing [P54](#p54), IS NULL and LIKE 2026-09-19 closing [P55](#p55), 175 → 179 AGREE; every WHERE operator now delegates; **finished 2026-10-01** with AND/OR/NOT/CASE, closing [P61](#p61) and [P62](#p62) under [D4](#d4), 183 → 186 AGREE); slice 5 (method calls) done 2026-09-26; slice 6 in progress (2026-10-03: pin, then HAVING and `IIF` onto the one truth rule, finishing P62, then JOIN NULL keys, closing [P52](#p52), 191 → 197 AGREE; retiring the WHERE evaluator left). Not a finding but the reason several are cheap to fix only once. WHERE and the value evaluator implement every boolean operator separately with different NULL rules, so the same predicate answers differently in WHERE, HAVING, SELECT and JOIN ON. **Working rule:** a parity fix that touches expression evaluation lands as an R13 slice, not a patch. [P52](#p52) (NULL join keys) is slice 6 |
+| **NEXT** (beside R13) | [P63](#p63) single-condition `RIGHT JOIN` swaps `a.*` and `b.*` | Found 2026-10-03 by R13 slice 6. Silent, wrong values on *every* row, and every single-equality RIGHT JOIN is affected — the worst shape there is. Outside R13 (result assembly, not evaluation), so its own PR; pinned already |
 | then | [P60](#p60) `GROUP BY` unknown column → NULL group; [P58](#p58) JOIN ON half | Filed 2026-10-01. P60 is silent and a one-line cause, so cheap; P58's join half is a resolver fix — take it as the first slice of [R14](ENGINE_REFACTORING.md#r14) rather than a patch. [P59](#p59) (quoted alias) rides along if convenient |
 | then | [P47](#p47) `MIN`/`MAX` ranked by type | Silent and cheap, and outside the evaluator (aggregate registries — confirm the live one first, [R12](ENGINE_REFACTORING.md#r12)), so it can land alongside R13 without breaking the working rule |
 | then | [P14](#p14), [P20](#p20), [P23](#p23) | Smaller, self-contained, decisions already taken. Was row 9b, then NEXT until the 2026-09-12 findings displaced it. **Check each against the R13 working rule first** — P20 (`\|\|` with NULL) is an operator in the value evaluator |
@@ -369,6 +370,8 @@ annotation be removed.
   defect was purely in RIGHT-join result-column assembly.
 - **Scope note:** Single-condition RIGHT joins (the hash path) always AGREEd, so
   this was confined to the multi-condition nested-loop RIGHT path.
+  **Wrong, found 2026-10-03:** there was no single-condition RIGHT JOIN case
+  to AGREE — the hash path has the same fault, filed as [P63](#p63).
 - **Fix:** Added a dedicated `nested_loop_join_right_multi` in `hash_join.rs`
   instead of reusing the swapped LEFT builder. It emits result columns in
   `[FROM, joined]` order (matching INNER/LEFT), keeps the FROM table's qualified
@@ -2436,7 +2439,14 @@ out of date.
 ---
 
 ### P52 — A join on NULL keys pairs the NULL rows with each other
-- **Status:** 🔴 OPEN — silent, too many rows. [R13](ENGINE_REFACTORING.md#r13) slice 6.
+- **Status:** ✅ FIXED 2026-10-03 by [R13](ENGINE_REFACTORING.md#r13) slice 6
+  — on every path. Six of the seven cases below DIFFER → AGREE (191 → 197);
+  the seventh, the hash RIGHT join, now returns DuckDB's 12 rows but still
+  differs because of [P63](#p63), which it uncovered.
+- **Fix:** the nested loop's `compare_values` asks the predicate-layer
+  `compare_trilean` and keeps a pair only when it is TRUE; the hash path never
+  indexes a NULL key, so a NULL probe finds nothing and LEFT emits its row
+  unmatched — no probe-side change. 100k-row hash join level with main.
 - **Corpus:** `10_aggregate_nulls.toml :: join_on_null_key_both_sides`
   (`expect = "DIFFER"`). Its neighbour `join_on_null_key` AGREEs and could not
   see this: it has NULL on only one side. **Every live join path pinned
@@ -2737,6 +2747,35 @@ out of date.
   sites.
 - **Found:** 2026-10-01, pinning AND / OR / NOT / CASE for R13 slice 4 — the
   two evaluators could not delegate to each other without choosing one rule.
+
+### P63 — A single-condition RIGHT JOIN swaps the two tables' columns
+- **Status:** 🔴 OPEN — silent, wrong values on every row. Pinned; outside
+  [R13](ENGINE_REFACTORING.md#r13) (join result assembly, not evaluation), so
+  its own fix.
+- **Corpus:** `04_joins.toml :: right_join_single_condition`
+  (`expect = "DIFFER"`), and `10_aggregate_nulls.toml ::
+  right_join_on_null_key_both_sides`, whose P52 half is fixed.
+- **Observed:** `null_edges a RIGHT JOIN null_edges b ON a.partner_id = b.id`
+  returns 12 rows, as DuckDB does, but `a.*` holds the `b` row and `b.*` the
+  `a` row: for `b.id = 1` we return `a.id = 3` (b's own partner) where DuckDB
+  returns 2, and the five unmatched `b` rows come back with `b` NULL and `a`
+  filled instead of the reverse.
+- **Cause:** `execute_join` sends a single plain-column equality RIGHT join
+  to `hash_join_left` with the tables swapped, and that builder emits its
+  columns in `[left, right]` order under the original labels — exactly
+  [P8](#p8)'s fault, which P8 fixed only for the multi-condition nested loop
+  (`nested_loop_join_right_multi`) and whose scope note called this path safe.
+- **Why it hid:** no corpus case had a single-condition RIGHT JOIN. R13 slice
+  6 added one for P52 — a self-join on `label`, symmetric, so swapping `a` and
+  `b` gave the same rows until the 5 × 5 NULL pairing went away.
+- **Fix direction:** a `hash_join_right` that indexes the FROM table and
+  probes with the joined table as the outer loop, sharing its column assembly
+  with `nested_loop_join_right_multi` (factor it out) rather than copying it.
+  Routing through `right_multi` would be correct but lose the hash path.
+  Pin with a Rust regression test beside P8's in
+  `tests/join_operand_order_tests.rs`.
+- **Found:** 2026-10-03, R13 slice 6 (P52's RIGHT case stayed DIFFER after
+  the NULL fix).
 
 ---
 
