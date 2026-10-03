@@ -1,46 +1,41 @@
-# SQL CLI v1.85.14
+# SQL CLI v1.85.15
 
-**Release Date:** October 01, 2026
+**Release Date:** October 03, 2026
 
 ## 📊 Release Overview
 - **Commits in this release:** 12
-- **Files updated:** 17
+- **Files updated:** 13
 
 ## ✨ Highlights
-
-### 🔍 Enhanced Debugging
-- **Better Diagnostics**: Improved error messages and state dumps
 
 ## 📝 Changes by Category
 
 ### 🐛 Bug Fixes
-- compute PHI() instead of writing the golden ratio literal
-- one rule for a value's truth, DuckDB's cast to boolean (D4, R13 slice 4)
-- accept quoted column after alias qualifier (alias."col name")
+- NULL join keys never pair, on the hash and nested-loop paths (P52, R13 slice 6)
+- HAVING and IIF read a value's truth with the one rule (D4, R13 slice 6)
 
 ### 🔧 Refactoring
-- WHERE's NOT / AND / OR delegate; its own arms go (R13 slice 4)
-- WHERE's CASE delegates to the value evaluator (R13 slice 4)
+- delete the unused single-condition nested-loop builders (R13 slice 6)
 
 ### 📚 Documentation
-- record slice 4 fourth part (AND / OR / NOT / CASE; P61, P62, D4)
-- file P58-P60, R14, T19 from the qualified quoted column work
+- record slice 6 JOIN (P52 closed); file P63
+- record slice 6 HAVING / IIF (P62 finished); reopen R5 as a workstream
 
 <details>
 <summary>📋 View all commits</summary>
 
-- Merge pull request #99 from TimelordUK/refactor/r13-slice4d-and-or-not-case (TimelordUK)
-- docs(r13): record slice 4 fourth part (AND / OR / NOT / CASE; P61, P62, D4) (TimelordUK)
-- refactor(r13): WHERE's NOT / AND / OR delegate; its own arms go (R13 slice 4) (TimelordUK)
-- fix(clippy): compute PHI() instead of writing the golden ratio literal (TimelordUK)
-- refactor(r13): WHERE's CASE delegates to the value evaluator (R13 slice 4) (TimelordUK)
-- fix(r13): one rule for a value's truth, DuckDB's cast to boolean (D4, R13 slice 4) (TimelordUK)
-- test(r13): pin values used as truth values; file P61, P62, D4 (R13 slice 4) (TimelordUK)
-- docs: file P58-P60, R14, T19 from the qualified quoted column work (TimelordUK)
-- Merge pull request #97 from TimelordUK/fix/qualified-quoted-columns (TimelordUK)
-- fix(parser): accept quoted column after alias qualifier (alias."col name") (TimelordUK)
-- Merge pull request #96 from TimelordUK/chore/chocolatey-resubmit (TimelordUK)
-- chore(choco): address moderator feedback, publish manually (TimelordUK)
+- Merge pull request #103 from TimelordUK/refactor/r13-slice6c-join-null-keys (TimelordUK)
+- docs(r13): record slice 6 JOIN (P52 closed); file P63 (TimelordUK)
+- fix(r13): NULL join keys never pair, on the hash and nested-loop paths (P52, R13 slice 6) (TimelordUK)
+- Merge pull request #102 from TimelordUK/refactor/r13-slice6b-having-iif (TimelordUK)
+- docs(r13): record slice 6 HAVING / IIF (P62 finished); reopen R5 as a workstream (TimelordUK)
+- refactor(joins): delete the unused single-condition nested-loop builders (R13 slice 6) (TimelordUK)
+- fix(r13): HAVING and IIF read a value's truth with the one rule (D4, R13 slice 6) (TimelordUK)
+- Merge pull request #101 from TimelordUK/refactor/r13-slice6-pin (TimelordUK)
+- test(r13): pin HAVING / IIF truth values and P52 on every join path (R13 slice 6) (TimelordUK)
+- Merge pull request #100 from TimelordUK/chore/choco-icon-jsdelivr (TimelordUK)
+- add county query (TimelordUK)
+- chore(choco): serve iconUrl from jsdelivr, not raw.githubusercontent (TimelordUK)
 
 </details>
 
