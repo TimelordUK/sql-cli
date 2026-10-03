@@ -5,9 +5,8 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use tracing::{debug, info};
 
-use crate::data::arithmetic_evaluator::ArithmeticEvaluator;
+use crate::data::arithmetic_evaluator::{compare_trilean, ArithmeticEvaluator};
 use crate::data::datatable::{DataColumn, DataRow, DataTable, DataValue};
-use crate::data::value_comparisons::compare_with_op;
 use crate::sql::parser::ast::{JoinClause, JoinOperator, JoinType};
 use crate::sql::recursive_parser::SqlExpression;
 
@@ -514,6 +513,12 @@ impl HashJoinExecutor {
         // Build hash index on the smaller table
         let mut hash_index: HashMap<DataValue, Vec<usize>> = HashMap::new();
         for (row_idx, row) in build_table.rows.iter().enumerate() {
+            // A NULL key equals nothing, not even another NULL (P52), so it
+            // is never indexed: a NULL probe then finds no match, and LEFT
+            // still emits its row unmatched.
+            if matches!(row.values[build_col_idx], DataValue::Null) {
+                continue;
+            }
             let key = canonical_join_key(&row.values[build_col_idx], coerce);
             hash_index.entry(key).or_default().push(row_idx);
         }
@@ -664,6 +669,12 @@ impl HashJoinExecutor {
         // Build hash index on right table
         let mut hash_index: HashMap<DataValue, Vec<usize>> = HashMap::new();
         for (row_idx, row) in right_table.rows.iter().enumerate() {
+            // A NULL key equals nothing, not even another NULL (P52), so it
+            // is never indexed: a NULL probe then finds no match, and LEFT
+            // still emits its row unmatched.
+            if matches!(row.values[right_col_idx], DataValue::Null) {
+                continue;
+            }
             let key = canonical_join_key(&row.values[right_col_idx], coerce);
             hash_index.entry(key).or_default().push(row_idx);
         }
@@ -852,11 +863,12 @@ impl HashJoinExecutor {
 
     /// Compare two values based on the join operator.
     ///
-    /// The nested-loop path has both values in hand, so it defers to the same
-    /// pairwise comparator WHERE uses (`value_comparisons::compare_with_op`).
-    /// That keeps JOIN equality identical to WHERE equality — including its
-    /// type-aware coercion (`String` vs `Integer` coerces; `String` vs `String`
-    /// compares as text) — so the nested-loop and hash paths agree.
+    /// The nested-loop path has both values in hand, so it asks the same
+    /// predicate-layer comparison WHERE and SELECT use (`compare_trilean`) and
+    /// keeps the pair only when it is TRUE. That keeps JOIN equality identical
+    /// to WHERE equality — including its type-aware coercion (`String` vs
+    /// `Integer` coerces; `String` vs `String` compares as text) — and a NULL
+    /// on either side is UNKNOWN, so NULL keys never pair (P52).
     fn compare_values(&self, left: &DataValue, right: &DataValue, op: &JoinOperator) -> bool {
         let op_str = match op {
             JoinOperator::Equal => "=",
@@ -866,7 +878,7 @@ impl HashJoinExecutor {
             JoinOperator::LessThanOrEqual => "<=",
             JoinOperator::GreaterThanOrEqual => ">=",
         };
-        compare_with_op(left, right, op_str, self.case_insensitive)
+        compare_trilean(left, right, op_str, self.case_insensitive).is_true()
     }
 
     /// Nested loop join for INNER JOIN with multiple conditions

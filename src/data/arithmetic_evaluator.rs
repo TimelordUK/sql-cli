@@ -1526,9 +1526,9 @@ impl<'a> ArithmeticEvaluator<'a> {
 /// `compare_with_op`: the `compare_values` beneath it reports `NULL = NULL` as
 /// equal on purpose, because ORDER BY needs NULLs to group. Reusing that answer
 /// for predicates is what made `SELECT x = NULL` TRUE for NULL rows (P48, the
-/// value-evaluator twin of P18). Same rule as the WHERE evaluator's
-/// `compare_trilean`, which R13 slice 4 will make the only copy.
-fn compare_trilean(
+/// value-evaluator twin of P18). The one copy since R13 slice 4; JOIN's
+/// nested loop uses it too (slice 6), so `ON a.k = b.k` never pairs NULLs.
+pub(crate) fn compare_trilean(
     left: &DataValue,
     right: &DataValue,
     op: &str,

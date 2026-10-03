@@ -98,3 +98,15 @@ expect = "GAP"
 #
 # AND in a join condition already works and is well covered by the P7/P8 cases
 # above, so this is specifically OR.
+
+[[case]]
+id = "right_join_single_condition"
+data = "null_edges.csv"
+sql = "SELECT a.id AS aid, b.id AS bid, b.team AS bteam FROM null_edges a RIGHT JOIN null_edges b ON a.partner_id = b.id ORDER BY b.id"
+expect = "DIFFER"
+# P63, found 2026-10-03 in R13 slice 6. A single-equality RIGHT join takes the
+# hash path as a LEFT join with the tables swapped, and keeps the swapped
+# column order and labels - P8's fault, on the path P8's scope note called
+# safe. Every row is wrong, matched or not: `b.id = 1` comes back paired with
+# a.id 3 (b's own partner) instead of 2, and the unmatched b rows come back
+# with b NULL. There was no single-condition RIGHT JOIN case before this one.
