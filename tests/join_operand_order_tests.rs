@@ -241,3 +241,97 @@ fn right_join_multi_condition_labels_correct_side() {
         }
     }
 }
+
+/// An `edges` table whose join is *asymmetric*: `a.partner_id = b.id` pairs
+/// different rows than `a.id = b.partner_id`, so swapping the two sides of a
+/// RIGHT JOIN changes the answer. (P8's test above self-joins on `symbol`,
+/// which is symmetric — the reason P63 hid.)
+fn edges_table() -> DataTable {
+    let mut table = DataTable::new("edges");
+    table.add_column(DataColumn::new("id").with_type(DataType::Integer));
+    table.add_column(DataColumn::new("partner_id").with_type(DataType::Integer));
+    for (id, partner) in [(1, Some(2)), (2, Some(3)), (3, None), (4, Some(1))] {
+        let _ = table.add_row(DataRow {
+            values: vec![
+                DataValue::Integer(id),
+                partner.map_or(DataValue::Null, DataValue::Integer),
+            ],
+        });
+    }
+    table
+}
+
+/// Run a query over `edges` and return its sorted `(aid, bid)` rows; `bid` is
+/// the RIGHT JOIN's kept side, so it is never NULL.
+fn aid_bid_rows_right(sql: &str) -> Vec<(Option<i64>, i64)> {
+    let context = &mut ExecutionContext::new(Arc::new(edges_table()));
+    let executor = StatementExecutor::new();
+    let mut parser = Parser::new(sql);
+    let stmt = parser
+        .parse()
+        .unwrap_or_else(|e| panic!("parse failed for `{sql}`: {e}"));
+    let result = executor
+        .execute(stmt, context)
+        .unwrap_or_else(|e| panic!("exec failed for `{sql}`: {e}"));
+
+    let view = &result.dataview;
+    let src = view.source();
+    let aid_idx = src.get_column_index("aid").expect("aid column");
+    let bid_idx = src.get_column_index("bid").expect("bid column");
+
+    let as_int = |v: &DataValue| -> Option<i64> {
+        match v {
+            DataValue::Integer(i) => Some(*i),
+            DataValue::Null => None,
+            other => panic!("unexpected id value: {other:?}"),
+        }
+    };
+
+    let mut rows: Vec<(Option<i64>, i64)> = (0..view.row_count())
+        .map(|r| {
+            let aid = as_int(&src.get_value(r, aid_idx).expect("aid value"));
+            let bid = as_int(&src.get_value(r, bid_idx).expect("bid value"))
+                .expect("bid is never NULL on the RIGHT outer side");
+            (aid, bid)
+        })
+        .collect();
+    rows.sort();
+    rows
+}
+
+#[test]
+fn right_join_single_condition_labels_correct_side() {
+    // P63: a single plain-column equality RIGHT JOIN takes the hash path, which
+    // used to run the LEFT builder with the tables swapped and keep the swapped
+    // layout — every row came back with `a` and `b` exchanged.
+    let expected = vec![
+        (None, 4),    // nothing has partner 4
+        (Some(1), 2), // a=1 partners b=2
+        (Some(2), 3), // a=2 partners b=3
+        (Some(4), 1), // a=4 partners b=1
+    ];
+    let mut expected_sorted = expected.clone();
+    expected_sorted.sort();
+
+    for sql in [
+        "SELECT a.id AS aid, b.id AS bid FROM edges a RIGHT JOIN edges b ON a.partner_id = b.id",
+        // Operands written joined-side first — the same predicate.
+        "SELECT a.id AS aid, b.id AS bid FROM edges a RIGHT JOIN edges b ON b.id = a.partner_id",
+    ] {
+        assert_eq!(aid_bid_rows_right(sql), expected_sorted, "`{sql}`");
+    }
+}
+
+#[test]
+fn right_join_single_condition_matches_multi_condition_path() {
+    // The hash path (one equality) and the nested loop (P8's builder, reached
+    // here by a tautological second condition) must give the same RIGHT JOIN.
+    let hash = aid_bid_rows_right(
+        "SELECT a.id AS aid, b.id AS bid FROM edges a RIGHT JOIN edges b ON a.partner_id = b.id",
+    );
+    let nested = aid_bid_rows_right(
+        "SELECT a.id AS aid, b.id AS bid FROM edges a RIGHT JOIN edges b \
+         ON a.partner_id = b.id AND b.id >= 0",
+    );
+    assert_eq!(hash, nested);
+}

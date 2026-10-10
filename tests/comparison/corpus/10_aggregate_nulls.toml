@@ -136,13 +136,13 @@ sql = "SELECT a.id AS aid, b.id AS bid FROM null_edges a LEFT JOIN null_edges b 
 id = "right_join_on_null_key_both_sides"
 data = "null_edges.csv"
 sql = "SELECT a.id AS aid, b.id AS bid FROM null_edges a RIGHT JOIN null_edges b ON a.label = b.label ORDER BY b.id, a.id"
-expect = "DIFFER"
 # P52, hash path via the swapped LEFT join. DuckDB 12 rows, we returned 32.
 # P52's half FIXED 2026-10-03 (R13 slice 6): 12 rows now. Still DIFFER because
 # of P63, which this case uncovered - the single-condition RIGHT join labels
 # the swapped tables backwards, so the 5 unmatched rows come back with `a`
 # filled and `b` NULL. The old 5 x 5 NULL pairing had hidden it: a symmetric
 # self-join where every row matches looks the same either way round.
+# AGREE since P63's fix, 2026-10-10.
 
 [[case]]
 id = "join_on_null_keys_two_conditions"
