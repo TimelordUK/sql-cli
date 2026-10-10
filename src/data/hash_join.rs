@@ -167,22 +167,41 @@ impl HashJoinExecutor {
                 break;
             }
 
+            // Route the operands by alias, not by where they are written (P7,
+            // P64): `b.id = a.partner_id` is `a.partner_id = b.id`. Column
+            // lookup drops the qualifier, so without this a self-join resolves
+            // each name in the wrong table and pairs the wrong rows.
+            let (mut from_col_name, mut joined_col_name) =
+                (left_col_name.unwrap(), right_col_name.unwrap());
+            let mut operator = single_condition.operator.clone();
+            let written_reversed = self.operand_uses_right(
+                &single_condition.left_expr,
+                &join_clause.alias,
+                true,
+                false,
+            ) && !self.operand_uses_right(
+                &single_condition.right_expr,
+                &join_clause.alias,
+                true,
+                true,
+            );
+            if written_reversed {
+                std::mem::swap(&mut from_col_name, &mut joined_col_name);
+                operator = self.reverse_operator(&operator);
+            }
+
             let (left_col_idx, right_col_idx) = self.resolve_join_columns(
                 &left_table,
                 &right_table,
-                &left_col_name.unwrap(),
-                &right_col_name.unwrap(),
+                &from_col_name,
+                &joined_col_name,
             )?;
 
-            if single_condition.operator != JoinOperator::Equal {
+            if operator != JoinOperator::Equal {
                 all_equal = false;
             }
 
-            condition_indices.push((
-                left_col_idx,
-                right_col_idx,
-                single_condition.operator.clone(),
-            ));
+            condition_indices.push((left_col_idx, right_col_idx, operator));
         }
 
         // Choose join algorithm based on operators - use hash join only if:
@@ -196,21 +215,11 @@ impl HashJoinExecutor {
                 if use_hash_join && condition_indices.len() == 1 {
                     // Single equality condition with simple columns - use optimized hash join
                     let (left_col_idx, right_col_idx, _) = condition_indices[0];
-                    let left_col_name = Self::extract_simple_column_name(
-                        &join_clause.condition.conditions[0].left_expr,
-                    )
-                    .expect("left_expr should be a simple column in hash join path");
-                    let right_col_name = Self::extract_simple_column_name(
-                        &join_clause.condition.conditions[0].right_expr,
-                    )
-                    .expect("right_expr should be a simple column in hash join path");
                     self.hash_join_inner(
                         left_table,
                         right_table,
                         left_col_idx,
                         right_col_idx,
-                        &left_col_name,
-                        &right_col_name,
                         &join_clause.alias,
                     )
                 } else {
@@ -228,21 +237,11 @@ impl HashJoinExecutor {
                 if use_hash_join && condition_indices.len() == 1 {
                     // Single equality condition with simple columns - use optimized hash join
                     let (left_col_idx, right_col_idx, _) = condition_indices[0];
-                    let left_col_name = Self::extract_simple_column_name(
-                        &join_clause.condition.conditions[0].left_expr,
-                    )
-                    .expect("left_expr should be a simple column in hash join path");
-                    let right_col_name = Self::extract_simple_column_name(
-                        &join_clause.condition.conditions[0].right_expr,
-                    )
-                    .expect("right_expr should be a simple column in hash join path");
                     self.hash_join_left(
                         left_table,
                         right_table,
                         left_col_idx,
                         right_col_idx,
-                        &left_col_name,
-                        &right_col_name,
                         &join_clause.alias,
                     )
                 } else {
@@ -257,30 +256,16 @@ impl HashJoinExecutor {
                 }
             }
             JoinType::Right => {
-                // Swap condition indices for right join
-                let swapped_indices: Vec<(usize, usize, JoinOperator)> = condition_indices
-                    .into_iter()
-                    .map(|(l, r, op)| (r, l, self.reverse_operator(&op)))
-                    .collect();
-
-                if use_hash_join && swapped_indices.len() == 1 {
-                    // Right join is just a left join with tables swapped
-                    let (right_col_idx, left_col_idx, _) = swapped_indices[0];
-                    let left_col_name = Self::extract_simple_column_name(
-                        &join_clause.condition.conditions[0].left_expr,
-                    )
-                    .expect("left_expr should be a simple column in hash join path");
-                    let right_col_name = Self::extract_simple_column_name(
-                        &join_clause.condition.conditions[0].right_expr,
-                    )
-                    .expect("right_expr should be a simple column in hash join path");
-                    self.hash_join_left(
-                        right_table,
+                if use_hash_join && condition_indices.len() == 1 {
+                    // Single equality condition with simple columns. Not a LEFT
+                    // join with the tables swapped: that swaps the result
+                    // layout too (P63, P8's fault on the hash path).
+                    let (from_col_idx, joined_col_idx, _) = condition_indices[0];
+                    self.hash_join_right(
                         left_table,
-                        right_col_idx,
-                        left_col_idx,
-                        &right_col_name,
-                        &left_col_name,
+                        right_table,
+                        from_col_idx,
+                        joined_col_idx,
                         &join_clause.alias,
                     )
                 } else {
@@ -473,8 +458,6 @@ impl HashJoinExecutor {
         right_table: Arc<DataTable>,
         left_col_idx: usize,
         right_col_idx: usize,
-        _left_col_name: &str,
-        _right_col_name: &str,
         join_alias: &Option<String>,
     ) -> Result<DataTable> {
         let start = std::time::Instant::now();
@@ -652,8 +635,6 @@ impl HashJoinExecutor {
         right_table: Arc<DataTable>,
         left_col_idx: usize,
         right_col_idx: usize,
-        _left_col_name: &str,
-        _right_col_name: &str,
         join_alias: &Option<String>,
     ) -> Result<DataTable> {
         let start = std::time::Instant::now();
@@ -1206,41 +1187,81 @@ impl HashJoinExecutor {
         Ok(result)
     }
 
-    /// Nested loop join for RIGHT JOIN with multiple conditions (P8).
+    /// Hash join for a single-equality RIGHT OUTER JOIN (P63).
     ///
-    /// A RIGHT JOIN keeps every row of the *joined* table (`b`), NULL-filling the
-    /// FROM table (`a`) where nothing matches. It is tempting to model this as a
-    /// LEFT join with the two tables swapped, but that swaps the *result* layout
-    /// too: columns come out `[joined, FROM]` and the join alias lands on the
-    /// swapped-in FROM table, so `a.*`/`b.*` labels (and the NULL side) invert.
-    ///
-    /// This builder instead keeps the physical layout stable and inverts only the
-    /// iteration/NULL-fill direction:
-    ///   - result columns are `[FROM (a.*), joined (b.*)]`, exactly like INNER/LEFT,
-    ///     so the FROM table keeps its qualified names and only the joined table
-    ///     carries the join alias on a name collision;
-    ///   - the outer loop is over the joined table so every `b` row is emitted in
-    ///     `b` order, with the FROM columns NULLed when no `a` row matches.
-    ///
-    /// Operand routing (P7) is preserved: `a.price < b.price` evaluates against the
-    /// tables named by the aliases regardless of which side is written first.
-    fn nested_loop_join_right_multi(
+    /// Indexes the FROM table and probes it with every joined-table row, so
+    /// each joined row is kept, in order, with the FROM columns NULLed when
+    /// nothing matches. The result layout is `nested_loop_join_right_multi`'s.
+    fn hash_join_right(
         &self,
         from_table: Arc<DataTable>,
         joined_table: Arc<DataTable>,
-        conditions: &[crate::sql::parser::ast::SingleJoinCondition],
+        from_col_idx: usize,
+        joined_col_idx: usize,
         join_alias: &Option<String>,
     ) -> Result<DataTable> {
         let start = std::time::Instant::now();
 
+        // Coerce string keys only when the join columns differ in type.
+        let coerce = join_key_coercion(&from_table, from_col_idx, &joined_table, joined_col_idx);
+
+        // A NULL key equals nothing, not even another NULL (P52), so it is
+        // never indexed: a NULL probe then finds no match and is kept unmatched.
+        let mut hash_index: HashMap<DataValue, Vec<usize>> = HashMap::new();
+        for (row_idx, row) in from_table.rows.iter().enumerate() {
+            if matches!(row.values[from_col_idx], DataValue::Null) {
+                continue;
+            }
+            let key = canonical_join_key(&row.values[from_col_idx], coerce);
+            hash_index.entry(key).or_default().push(row_idx);
+        }
+
+        let mut result = Self::right_join_result_table(&from_table, &joined_table, join_alias);
+
+        let mut match_count = 0;
+        let mut null_count = 0;
+
+        for joined_row in &joined_table.rows {
+            let joined_key = canonical_join_key(&joined_row.values[joined_col_idx], coerce);
+
+            if let Some(matching_indices) = hash_index.get(&joined_key) {
+                for &from_idx in matching_indices {
+                    let mut row = DataRow { values: Vec::new() };
+                    row.values
+                        .extend_from_slice(&from_table.rows[from_idx].values);
+                    row.values.extend_from_slice(&joined_row.values);
+                    result.add_row(row).map_err(|e| anyhow!(e))?;
+                    match_count += 1;
+                }
+            } else {
+                let mut row = DataRow { values: Vec::new() };
+                row.values
+                    .resize(from_table.column_count(), DataValue::Null);
+                row.values.extend_from_slice(&joined_row.values);
+                result.add_row(row).map_err(|e| anyhow!(e))?;
+                null_count += 1;
+            }
+        }
+
         info!(
-            "Executing nested loop RIGHT JOIN with {} conditions: {} x {} rows",
-            conditions.len(),
-            from_table.row_count(),
-            joined_table.row_count()
+            "RIGHT JOIN complete: {} matches, {} nulls in {:?}",
+            match_count,
+            null_count,
+            start.elapsed()
         );
 
-        // Create result table with columns in [FROM, joined] order.
+        Ok(result)
+    }
+
+    /// The empty result table of a RIGHT JOIN, columns in `[FROM (a.*), joined
+    /// (b.*)]` order — the same layout as INNER and LEFT. The FROM side is
+    /// nullable (unmatched joined rows NULL-fill it), and only the joined table
+    /// takes the join alias on a name collision (P8, P63).
+    fn right_join_result_table(
+        from_table: &DataTable,
+        joined_table: &DataTable,
+        join_alias: &Option<String>,
+    ) -> DataTable {
         let mut result = DataTable::new("joined");
 
         // Add columns from the FROM table (a.*), unchanged — these are NULLable
@@ -1300,6 +1321,45 @@ impl HashJoinExecutor {
                 });
             }
         }
+
+        result
+    }
+
+    /// Nested loop join for RIGHT JOIN with multiple conditions (P8).
+    ///
+    /// A RIGHT JOIN keeps every row of the *joined* table (`b`), NULL-filling the
+    /// FROM table (`a`) where nothing matches. It is tempting to model this as a
+    /// LEFT join with the two tables swapped, but that swaps the *result* layout
+    /// too: columns come out `[joined, FROM]` and the join alias lands on the
+    /// swapped-in FROM table, so `a.*`/`b.*` labels (and the NULL side) invert.
+    ///
+    /// This builder instead keeps the physical layout stable and inverts only the
+    /// iteration/NULL-fill direction:
+    ///   - result columns are `[FROM (a.*), joined (b.*)]`, exactly like INNER/LEFT,
+    ///     so the FROM table keeps its qualified names and only the joined table
+    ///     carries the join alias on a name collision;
+    ///   - the outer loop is over the joined table so every `b` row is emitted in
+    ///     `b` order, with the FROM columns NULLed when no `a` row matches.
+    ///
+    /// Operand routing (P7) is preserved: `a.price < b.price` evaluates against the
+    /// tables named by the aliases regardless of which side is written first.
+    fn nested_loop_join_right_multi(
+        &self,
+        from_table: Arc<DataTable>,
+        joined_table: Arc<DataTable>,
+        conditions: &[crate::sql::parser::ast::SingleJoinCondition],
+        join_alias: &Option<String>,
+    ) -> Result<DataTable> {
+        let start = std::time::Instant::now();
+
+        info!(
+            "Executing nested loop RIGHT JOIN with {} conditions: {} x {} rows",
+            conditions.len(),
+            from_table.row_count(),
+            joined_table.row_count()
+        );
+
+        let mut result = Self::right_join_result_table(&from_table, &joined_table, join_alias);
 
         // Create evaluators for both sides. The join-alias (joined) table is the
         // "right" evaluator, so alias-qualified operands route correctly (P7).
