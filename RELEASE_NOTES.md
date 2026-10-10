@@ -1,41 +1,27 @@
-# SQL CLI v1.85.15
+# SQL CLI v1.85.16
 
-**Release Date:** October 03, 2026
+**Release Date:** October 10, 2026
 
 ## 📊 Release Overview
-- **Commits in this release:** 12
-- **Files updated:** 13
+- **Commits in this release:** 3
+- **Files updated:** 5
 
 ## ✨ Highlights
 
 ## 📝 Changes by Category
 
 ### 🐛 Bug Fixes
-- NULL join keys never pair, on the hash and nested-loop paths (P52, R13 slice 6)
-- HAVING and IIF read a value's truth with the one rule (D4, R13 slice 6)
-
-### 🔧 Refactoring
-- delete the unused single-condition nested-loop builders (R13 slice 6)
+- single-equality RIGHT JOIN layout and operand routing (P63, P64)
 
 ### 📚 Documentation
-- record slice 6 JOIN (P52 closed); file P63
-- record slice 6 HAVING / IIF (P62 finished); reopen R5 as a workstream
+- close P63, file and close P64
 
 <details>
 <summary>📋 View all commits</summary>
 
-- Merge pull request #103 from TimelordUK/refactor/r13-slice6c-join-null-keys (TimelordUK)
-- docs(r13): record slice 6 JOIN (P52 closed); file P63 (TimelordUK)
-- fix(r13): NULL join keys never pair, on the hash and nested-loop paths (P52, R13 slice 6) (TimelordUK)
-- Merge pull request #102 from TimelordUK/refactor/r13-slice6b-having-iif (TimelordUK)
-- docs(r13): record slice 6 HAVING / IIF (P62 finished); reopen R5 as a workstream (TimelordUK)
-- refactor(joins): delete the unused single-condition nested-loop builders (R13 slice 6) (TimelordUK)
-- fix(r13): HAVING and IIF read a value's truth with the one rule (D4, R13 slice 6) (TimelordUK)
-- Merge pull request #101 from TimelordUK/refactor/r13-slice6-pin (TimelordUK)
-- test(r13): pin HAVING / IIF truth values and P52 on every join path (R13 slice 6) (TimelordUK)
-- Merge pull request #100 from TimelordUK/chore/choco-icon-jsdelivr (TimelordUK)
-- add county query (TimelordUK)
-- chore(choco): serve iconUrl from jsdelivr, not raw.githubusercontent (TimelordUK)
+- Merge pull request #104 from TimelordUK/fix/p63-right-join-hash (TimelordUK)
+- docs(parity): close P63, file and close P64 (TimelordUK)
+- fix(joins): single-equality RIGHT JOIN layout and operand routing (P63, P64) (TimelordUK)
 
 </details>
 
